@@ -55,9 +55,16 @@ export class AuthGuard implements CanActivate {
         }
 
         // 2. better-auth session cookie
+        const cookies = request.cookies || {};
         const cookieToken =
-            request.cookies?.['better-auth.session_token'] ??
-            request.cookies?.['__Secure-better-auth.session_token'];
+            cookies['better-auth.session_token'] ??
+            cookies['__Secure-better-auth.session_token'];
+
+        if (!cookieToken) {
+            // Debug: log available cookies
+            console.log('[AuthGuard] No session cookie found. Available cookies:', Object.keys(cookies));
+        }
+
         if (cookieToken) {
             return cookieToken;
         }

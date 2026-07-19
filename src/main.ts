@@ -15,7 +15,8 @@ async function bootstrap() {
   });
 
   // Parse cookies (for better-auth session token)
-  const cookieParser = (await import('cookie-parser')).default;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const cookieParser = require('cookie-parser');
   app.use(cookieParser());
 
   // Global prefix: all routes are under /api
