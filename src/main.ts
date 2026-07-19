@@ -1,6 +1,5 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,6 +15,7 @@ async function bootstrap() {
   });
 
   // Parse cookies (for better-auth session token)
+  const cookieParser = (await import('cookie-parser')).default;
   app.use(cookieParser());
 
   // Global prefix: all routes are under /api
