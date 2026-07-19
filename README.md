@@ -1,6 +1,8 @@
 # Kontabb API
 
-Backend NestJS que replica a API do projeto Next.js (web), preparado para separação futura de frontend e backend.
+Backend NestJS responsável pelos dados e regras de negócio do Kontabb. O
+frontend Next.js mantém somente o Better Auth e encaminha as demais chamadas
+`/api/*` para este serviço.
 
 ## Setup
 
@@ -32,10 +34,16 @@ pnpm start:prod
 | GET | `/api/health` | Health check (DB) |
 | GET | `/api/cron/storage-cleanup` | Cron job (requer Bearer CRON_SECRET) |
 
+### Admin — Painel (Staff)
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/api/admin/dashboard` | Resumo do painel administrativo |
+
 ### Admin — Clientes (Staff)
 | Método | Rota | Descrição |
 |--------|------|-----------|
 | GET | `/api/admin/clientes` | Listar clientes (paginado, busca) |
+| GET | `/api/admin/clientes/:id` | Obter dados de um cliente |
 | POST | `/api/admin/clientes` | Criar cliente |
 | POST | `/api/admin/clientes/batch` | Criar clientes em lote |
 | PATCH | `/api/admin/clientes/:id` | Atualizar cliente |
@@ -81,13 +89,24 @@ pnpm start:prod
 | Método | Rota | Descrição |
 |--------|------|-----------|
 | GET | `/api/documentos/:id` | Obter URL assinada do arquivo |
+| GET | `/api/documentos/:id/comprovante` | Obter URL assinada do comprovante |
 | PATCH | `/api/documentos/:id/pagar` | Confirmar pagamento |
 
 ## Autenticação
 
-A API valida sessões do better-auth. Aceita:
-- **Cookie**: `better-auth.session_token` ou `__Secure-better-auth.session_token`
-- **Header**: `Authorization: Bearer <session_token>`
+A API valida as sessões criadas pelo Better Auth:
+
+- **Browser:** cookie assinado `better-auth.session_token` ou
+  `__Secure-better-auth.session_token`. A assinatura HMAC-SHA256 é verificada
+  com `BETTER_AUTH_SECRET` antes de o token bruto ser consultado no banco.
+- **Integrações controladas:** `Authorization: Bearer <session_token_bruto>`.
+
+Cookie ausente/inválido retorna `401`. Sessão válida sem papel ou acesso ao
+recurso retorna `403`.
+
+Erros públicos usam o contrato
+`{ "code": string, "message": string, "requestId": string }`; detalhes internos
+de PostgreSQL, R2, Better Auth e Mailtrap não são retornados.
 
 ## Banco de Dados
 
@@ -98,8 +117,23 @@ Compartilha o mesmo banco PostgreSQL do projeto web (Drizzle ORM). Todas as tabe
 | Variável | Descrição |
 |----------|-----------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Secret para sessões (use o BETTER_AUTH_SECRET do web) |
+| `BETTER_AUTH_SECRET` | Mesmo segredo usado pelo Better Auth no projeto `web` |
 | `APP_URL` | URL do frontend (para e-mails) |
 | `R2_*` | Credenciais do Cloudflare R2 |
 | `CRON_SECRET` | Secret para endpoints cron |
 | `MAILTRAP_*` | Configurações do Mailtrap |
+
+`JWT_SECRET` é aceito apenas como fallback temporário para ambientes antigos.
+Configure `BETTER_AUTH_SECRET`; se as duas variáveis existirem, elas precisam
+ter o mesmo valor.
+
+## Validação
+
+```bash
+pnpm exec tsc --noEmit
+pnpm test
+pnpm build
+```
+
+Os testes unitários cobrem assinatura do cookie, nomes normal/seguro, Bearer,
+sessões inválidas, matriz de papéis e autorização do comprovante.

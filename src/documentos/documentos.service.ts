@@ -43,7 +43,12 @@ export class DocumentosService {
         if (input.search) {
             const searchConditions: SQL[] = [ilike(clientes.razaoSocial, `%${input.search}%`)];
             const cnpjDigits = input.search.replace(/\D/g, '');
-            if (cnpjDigits) searchConditions.push(ilike(clientes.cnpj, `%${cnpjDigits}%`));
+            if (cnpjDigits) {
+                searchConditions.push(
+                    ilike(clientes.cnpj, `%${cnpjDigits}%`),
+                    ilike(clientes.cpf, `%${cnpjDigits}%`),
+                );
+            }
             conditions.push(or(...searchConditions)!);
         }
         const where = conditions.length ? and(...conditions) : undefined;
@@ -61,6 +66,9 @@ export class DocumentosService {
                     fileName: documentos.arquivoNome,
                     emailStatus: documentos.emailStatus,
                     emailError: documentos.emailErro,
+                    paidAt: documentos.pagoEm,
+                    receiptKey: documentos.comprovanteKey,
+                    installmentNumber: documentos.numeroParcelamento,
                     client: { companyName: clientes.razaoSocial, cnpj: clientes.cnpj, emails: clientes.emails },
                     visualizado: sql<boolean>`EXISTS (SELECT 1 FROM visualizacoes_documentos WHERE visualizacoes_documentos.documento_id = ${documentos.id})`.as('visualizado'),
                     primeiraVisualizacao: sql<string | null>`(SELECT MIN(visualizado_em) FROM visualizacoes_documentos WHERE visualizacoes_documentos.documento_id = ${documentos.id})`.as('primeira_visualizacao'),
@@ -86,6 +94,9 @@ export class DocumentosService {
                 file_name: doc.fileName,
                 email_status: doc.emailStatus,
                 email_error: doc.emailError,
+                paid_at: doc.paidAt?.toISOString() ?? null,
+                has_receipt: Boolean(doc.receiptKey),
+                numero_parcelamento: doc.installmentNumber,
                 client: doc.client ? { company_name: doc.client.companyName, cnpj: doc.client.cnpj, has_email: (doc.client.emails ?? []).length > 0 } : null,
                 visualizado: doc.visualizado ?? false,
                 primeira_visualizacao: doc.primeiraVisualizacao ?? null,
@@ -122,6 +133,9 @@ export class DocumentosService {
                     fileName: documentos.arquivoNome,
                     status: documentos.status,
                     createdAt: documentos.criadoEm,
+                    paidAt: documentos.pagoEm,
+                    receiptKey: documentos.comprovanteKey,
+                    installmentNumber: documentos.numeroParcelamento,
                     visualizado: sql<boolean>`EXISTS (SELECT 1 FROM visualizacoes_documentos WHERE visualizacoes_documentos.documento_id = ${documentos.id})`.as('visualizado'),
                     totalVisualizacoes: sql<number>`(SELECT COUNT(*) FROM visualizacoes_documentos WHERE visualizacoes_documentos.documento_id = ${documentos.id})`.as('total_visualizacoes'),
                 })
@@ -144,6 +158,9 @@ export class DocumentosService {
                 file_name: doc.fileName,
                 status: deriveDocumentStatus(doc.status, doc.dueDate, today),
                 created_at: doc.createdAt.toISOString(),
+                paid_at: doc.paidAt?.toISOString() ?? null,
+                has_receipt: Boolean(doc.receiptKey),
+                numero_parcelamento: doc.installmentNumber,
                 visualizado: doc.visualizado ?? false,
                 total_visualizacoes: Number(doc.totalVisualizacoes ?? 0),
             })),
@@ -179,6 +196,9 @@ export class DocumentosService {
                     fileName: documentos.arquivoNome,
                     status: documentos.status,
                     createdAt: documentos.criadoEm,
+                    paidAt: documentos.pagoEm,
+                    receiptKey: documentos.comprovanteKey,
+                    installmentNumber: documentos.numeroParcelamento,
                     visualizado: sql<boolean>`EXISTS (SELECT 1 FROM visualizacoes_documentos WHERE visualizacoes_documentos.documento_id = ${documentos.id} AND visualizacoes_documentos.user_id = ${input.userId})`.as('visualizado'),
                 })
                 .from(documentos)
@@ -200,6 +220,9 @@ export class DocumentosService {
                 file_name: doc.fileName,
                 status: deriveDocumentStatus(doc.status, doc.dueDate, today),
                 created_at: doc.createdAt.toISOString(),
+                paid_at: doc.paidAt?.toISOString() ?? null,
+                has_receipt: Boolean(doc.receiptKey),
+                numero_parcelamento: doc.installmentNumber,
                 visualizado: doc.visualizado ?? false,
             })),
         };
@@ -208,7 +231,15 @@ export class DocumentosService {
     // ─── Get accessible document ───
     async getAccessibleDocument(documentId: string, currentUser: { id: string; role: string }) {
         const result = await this.database.db
-            .select({ id: documentos.id, clienteId: documentos.clienteId, arquivoKey: documentos.arquivoKey, tipo: documentos.tipo, periodo: documentos.periodo, status: documentos.status })
+            .select({
+                id: documentos.id,
+                clienteId: documentos.clienteId,
+                arquivoKey: documentos.arquivoKey,
+                comprovanteKey: documentos.comprovanteKey,
+                tipo: documentos.tipo,
+                periodo: documentos.periodo,
+                status: documentos.status,
+            })
             .from(documentos)
             .where(eq(documentos.id, documentId))
             .limit(1);
@@ -313,6 +344,7 @@ export class DocumentosService {
         valorNumerico: string | null;
         valorLabel: string | null;
         parcelaLabel: string | null;
+        numeroParcelamento: string | null;
     }) {
         const obligationId = crypto.randomUUID();
         const r2Key = this.storage.documentObjectKey({
@@ -334,8 +366,8 @@ export class DocumentosService {
             const emailStatus = input.client.emails?.length ? 'PENDENTE' : 'SEM_EMAIL';
             const insertResult = await this.database.db.execute(sql`
         WITH inserted_document AS (
-          INSERT INTO documentos (id, cliente_id, tipo, periodo, vencimento, valor, arquivo_key, arquivo_nome, status, email_status)
-          VALUES (${obligationId}::uuid, ${input.client.id}::uuid, ${input.tipo}, ${input.periodo}, ${input.vencimento}::date, ${input.valorNumerico}::numeric, ${r2Key}, ${fileName}, 'PENDENTE', ${emailStatus})
+          INSERT INTO documentos (id, cliente_id, tipo, periodo, vencimento, valor, arquivo_key, arquivo_nome, status, email_status, numero_parcelamento)
+          VALUES (${obligationId}::uuid, ${input.client.id}::uuid, ${input.tipo}, ${input.periodo}, ${input.vencimento}::date, ${input.valorNumerico}::numeric, ${r2Key}, ${fileName}, 'PENDENTE', ${emailStatus}, ${input.numeroParcelamento})
           RETURNING id
         ),
         audit_event AS (
@@ -383,11 +415,23 @@ export class DocumentosService {
     }
 
     // ─── Find duplicate document ───
-    async findDuplicateDocument(input: { clientId: string; type: string; period: string }) {
+    async findDuplicateDocument(input: {
+        clientId: string;
+        type: string;
+        period: string;
+        installmentNumber: string | null;
+    }) {
         const result = await this.database.db
             .select({ id: documentos.id, arquivoNome: documentos.arquivoNome })
             .from(documentos)
-            .where(and(eq(documentos.clienteId, input.clientId), eq(documentos.tipo, input.type), eq(documentos.periodo, input.period)))
+            .where(and(
+                eq(documentos.clienteId, input.clientId),
+                eq(documentos.tipo, input.type),
+                eq(documentos.periodo, input.period),
+                input.installmentNumber
+                    ? eq(documentos.numeroParcelamento, input.installmentNumber)
+                    : isNull(documentos.numeroParcelamento),
+            ))
             .limit(1);
         return result[0];
     }

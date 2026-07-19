@@ -19,6 +19,7 @@ import { AppLogger } from '../common/logger.service';
 import { hasValidFileSignature } from '../common/file-validation';
 import { extractPdfText, extractDadosFiscais, type DadosFiscais } from '../common/pdf-extraction';
 import type { CurrentUser as CurrentUserType } from '../common/types';
+import { RateLimitService } from '../common/rate-limit.service';
 
 interface FileResult {
     fileName: string;
@@ -44,6 +45,7 @@ export class UploadController {
         private readonly documentosService: DocumentosService,
         private readonly clientesService: ClientesService,
         private readonly logger: AppLogger,
+        private readonly rateLimit: RateLimitService,
     ) { }
 
     @Post()
@@ -54,6 +56,11 @@ export class UploadController {
         @Body() body: { cnpj?: string; period?: string; type?: string; due_date?: string },
         @CurrentUser() currentUser: CurrentUserType,
     ) {
+        await this.rateLimit.consume({
+            key: `document-upload:${currentUser.id}`,
+            limit: 20,
+            windowMs: 60_000,
+        });
         const requestId = this.logger.generateRequestId();
 
         if (!files || files.length === 0) {
@@ -99,6 +106,11 @@ export class UploadController {
         @UploadedFiles() files: Express.Multer.File[],
         @CurrentUser() currentUser: CurrentUserType,
     ) {
+        await this.rateLimit.consume({
+            key: `document-validation:${currentUser.id}`,
+            limit: 30,
+            windowMs: 60_000,
+        });
         if (!files || files.length === 0) {
             throw new BadRequestException('Nenhum arquivo enviado.');
         }
@@ -172,24 +184,37 @@ export class UploadController {
             // extraction failed, continue with manual data
         }
 
-        const cnpjRaw = ctx.manualCnpj || (dados?.cnpj ? dados.cnpj.replace(/\D/g, '') : null) || null;
+        const identifierRaw =
+            ctx.manualCnpj ||
+            (dados?.cnpj ? dados.cnpj.replace(/\D/g, '') : null) ||
+            (dados?.cpf ? dados.cpf.replace(/\D/g, '') : null) ||
+            null;
         const tipo = ctx.manualType || (dados?.tipo && dados.tipo !== 'DESCONHECIDO' ? dados.tipo : null) || 'OUTROS';
         const periodo = ctx.manualPeriod || dados?.periodo || null;
         const vencimento = ctx.manualDueDate || (dados?.vencimento ? vencimentoToIso(dados.vencimento) : null) || null;
+        const installmentNumber =
+            dados?.parcelamento?.numeroParcelamento ??
+            dados?.parcelamento?.codigoPgfn ??
+            null;
 
-        if (!cnpjRaw) {
-            return { fileName: file.originalname, success: false, message: 'Não foi possível identificar o CNPJ. Preencha manualmente.' };
+        if (!identifierRaw) {
+            return { fileName: file.originalname, success: false, message: 'Não foi possível identificar o CNPJ ou CPF. Preencha manualmente.' };
         }
 
-        const client = await this.clientesService.findClientForUpload(cnpjRaw);
+        const client = await this.clientesService.findClientForUpload(identifierRaw);
         if (!client) {
-            return { fileName: file.originalname, success: false, message: `Cliente com CNPJ ${cnpjRaw} não encontrado.`, cnpj: cnpjRaw };
+            return { fileName: file.originalname, success: false, message: `Cliente com identificador ${identifierRaw} não encontrado.`, cnpj: identifierRaw };
         }
 
         const now = new Date();
         const finalPeriod = periodo || `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
 
-        const existing = await this.documentosService.findDuplicateDocument({ clientId: client.id, type: tipo, period: finalPeriod });
+        const existing = await this.documentosService.findDuplicateDocument({
+            clientId: client.id,
+            type: tipo,
+            period: finalPeriod,
+            installmentNumber,
+        });
         if (existing) {
             return {
                 fileName: file.originalname,
@@ -214,6 +239,7 @@ export class UploadController {
             valorNumerico,
             valorLabel: dados?.valor ?? null,
             parcelaLabel: parcela,
+            numeroParcelamento: installmentNumber,
         });
 
         if (!upload.ok) {

@@ -12,11 +12,15 @@ import { ClienteService } from './cliente.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { CurrentUser as CurrentUserType } from '../common/types';
+import { RateLimitService } from '../common/rate-limit.service';
 
 @Controller('cliente')
 @UseGuards(AuthGuard)
 export class ClienteController {
-    constructor(private readonly clienteService: ClienteService) { }
+    constructor(
+        private readonly clienteService: ClienteService,
+        private readonly rateLimit: RateLimitService,
+    ) { }
 
     @Patch('first-login')
     @HttpCode(HttpStatus.OK)
@@ -27,6 +31,12 @@ export class ClienteController {
         if (currentUser.role !== 'CLIENTE') {
             throw new ForbiddenException('Sem permissão.');
         }
+
+        await this.rateLimit.consume({
+            key: `first-login:${currentUser.id}`,
+            limit: 5,
+            windowMs: 60_000,
+        });
 
         if (body.currentPassword === body.newPassword) {
             throw new BadRequestException('A nova senha deve ser diferente da senha atual.');

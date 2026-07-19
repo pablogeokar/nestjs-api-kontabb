@@ -16,7 +16,7 @@ export class EnvironmentVariables {
 
     @IsString()
     @MinLength(32)
-    JWT_SECRET: string;
+    BETTER_AUTH_SECRET: string;
 
     @IsString()
     @IsOptional()
@@ -59,7 +59,26 @@ export class EnvironmentVariables {
 }
 
 export function validate(config: Record<string, unknown>) {
-    const validatedConfig = plainToInstance(EnvironmentVariables, config, {
+    const currentSecret = config.BETTER_AUTH_SECRET;
+    const legacySecret = config.JWT_SECRET;
+
+    if (
+        typeof currentSecret === 'string' &&
+        typeof legacySecret === 'string' &&
+        currentSecret !== legacySecret
+    ) {
+        throw new Error(
+            'BETTER_AUTH_SECRET e JWT_SECRET estão configurados com valores diferentes.',
+        );
+    }
+
+    const normalizedConfig: Record<string, unknown> = {
+        ...config,
+        BETTER_AUTH_SECRET: currentSecret ?? legacySecret,
+    };
+    delete normalizedConfig.JWT_SECRET;
+
+    const validatedConfig = plainToInstance(EnvironmentVariables, normalizedConfig, {
         enableImplicitConversion: true,
     });
     const errors = validateSync(validatedConfig, { skipMissingProperties: false });

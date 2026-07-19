@@ -84,14 +84,19 @@ export const clientes = pgTable(
     'clientes',
     {
         id: uuid('id').primaryKey().defaultRandom(),
+        tipoPessoa: text('tipo_pessoa').notNull().default('PJ'),
         cnpj: text('cnpj').notNull().unique(),
+        cpf: text('cpf').unique(),
         razaoSocial: text('razao_social').notNull(),
         emails: text('emails').array().notNull().default([]),
         primeiroLogin: boolean('primeiro_login').notNull().default(true),
         userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
         criadoEm: timestamp('criado_em').notNull().defaultNow(),
     },
-    (table) => [uniqueIndex('uidx_clientes_user_id').on(table.userId)],
+    (table) => [
+        uniqueIndex('uidx_clientes_user_id').on(table.userId),
+        check('chk_clientes_tipo_pessoa', sql`${table.tipoPessoa} IN ('PF', 'PJ')`),
+    ],
 );
 
 export const documentos = pgTable(
@@ -116,6 +121,7 @@ export const documentos = pgTable(
         comprovanteKey: text('comprovante_key'),
         emailStatus: text('email_status').notNull().default('NAO_ENVIADO'),
         emailErro: text('email_erro'),
+        numeroParcelamento: text('numero_parcelamento'),
         criadoEm: timestamp('criado_em').notNull().defaultNow(),
     },
     (table) => [
@@ -124,14 +130,9 @@ export const documentos = pgTable(
         index('idx_documentos_periodo').on(table.periodo),
         index('idx_documentos_status').on(table.status),
         index('idx_documentos_pagamento_confirmado_por').on(table.pagamentoConfirmadoPor),
-        uniqueIndex('uidx_documentos_cliente_tipo_periodo').on(
-            table.clienteId,
-            table.tipo,
-            table.periodo,
-        ),
         check(
             'chk_documentos_tipo',
-            sql`${table.tipo} IN ('FGTS', 'DARF', 'DAS', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'OUTROS')`,
+            sql`${table.tipo} IN ('FGTS', 'DARF', 'DAS', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS')`,
         ),
         check('chk_documentos_status', sql`${table.status} IN ('PENDENTE', 'PAGO')`),
         check(

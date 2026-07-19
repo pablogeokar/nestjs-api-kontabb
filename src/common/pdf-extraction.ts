@@ -7,6 +7,7 @@ export type TipoDocumento =
     | 'DAS'
     | 'DAS-PARCSN'
     | 'DAS-PGFN'
+    | 'PGFN-SISPAR'
     | 'FGTS'
     | 'DARF'
     | 'INSS'
@@ -15,6 +16,7 @@ export type TipoDocumento =
 
 export interface DadosFiscais {
     cnpj: string | null;
+    cpf: string | null;
     periodo: string | null;
     vencimento: string | null;
     tipo: TipoDocumento;
@@ -33,7 +35,7 @@ function formatCnpj(digits: string): string {
 
 function extractCnpj(text: string): string | null {
     const contextMatch = text.match(
-        /(?:CPF\/CNPJ[^\d]{0,25}|CNPJ[^\d]{0,15})(\d{2}[\.\s]?\d{3}[\.\s]?\d{3}(?:[\/\s]?\d{4}[-\s]?\d{2})?)/i,
+        /(?:CPF\/CNPJ[^\d]{0,25}|CNPJ[^\d]{0,15})(\d{2}[.\s]?\d{3}[.\s]?\d{3}(?:[/\s]?\d{4}[-\s]?\d{2})?)/i,
     );
     if (contextMatch) {
         const raw = contextMatch[1].replace(/[^\d]/g, '');
@@ -43,6 +45,23 @@ function extractCnpj(text: string): string | null {
     const fullMatch = text.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
     if (fullMatch) return fullMatch[0];
     return null;
+}
+
+function extractCpf(text: string): string | null {
+    const contextMatch = text.match(
+        /(?:CPF[^\d/]{0,15})(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\s]?\d{2})/i,
+    );
+    if (contextMatch) {
+        const raw = contextMatch[1].replace(/[^\d]/g, '');
+        if (raw.length === 11) {
+            return raw.replace(
+                /(\d{3})(\d{3})(\d{3})(\d{2})/,
+                '$1.$2.$3-$4',
+            );
+        }
+    }
+
+    return text.match(/\d{3}\.\d{3}\.\d{3}-\d{2}/)?.[0] ?? null;
 }
 
 const MES_MAP: Record<string, string> = {
@@ -89,6 +108,7 @@ function detectTipo(text: string): TipoDocumento {
         if (/DAS\s+de\s+PARCSN|N[uú]mero\s+do\s+Parcelamento/i.test(text)) return 'DAS-PARCSN';
         return 'DAS';
     }
+    if (/PGFN[-\s]?SISPAR/i.test(text)) return 'PGFN-SISPAR';
     if (/FGTS Digital|GFD|Guia do FGTS/i.test(text)) return 'FGTS';
     if (/Receitas Federais/i.test(text)) {
         if (/CP SEGURADOS|CONTR PREV|10[89][0-9]/i.test(text)) return 'INSS';
@@ -106,7 +126,13 @@ function extractValor(text: string): string | null {
 }
 
 function extractParcelamento(text: string, tipo: TipoDocumento): DadosFiscais['parcelamento'] {
-    if (tipo !== 'DAS-PARCSN' && tipo !== 'DAS-PGFN') return null;
+    if (
+        tipo !== 'DAS-PARCSN' &&
+        tipo !== 'DAS-PGFN' &&
+        tipo !== 'PGFN-SISPAR'
+    ) {
+        return null;
+    }
     const result: NonNullable<DadosFiscais['parcelamento']> = {};
     const parcelaMatch = text.match(/Parcela:\s*(\d+)\/(\d+)/i);
     if (parcelaMatch) {
@@ -124,6 +150,7 @@ export function extractDadosFiscais(text: string): DadosFiscais {
     const tipo = detectTipo(text);
     return {
         cnpj: extractCnpj(text),
+        cpf: extractCpf(text),
         periodo: extractPeriodo(text),
         vencimento: extractVencimento(text),
         tipo,

@@ -4,9 +4,9 @@ export function resultRows<T>(result: unknown): T[] {
         result &&
         typeof result === 'object' &&
         'rows' in result &&
-        Array.isArray((result as { rows: unknown }).rows)
+        Array.isArray(result.rows)
     ) {
-        return (result as { rows: T[] }).rows;
+        return result.rows as T[];
     }
     return [];
 }

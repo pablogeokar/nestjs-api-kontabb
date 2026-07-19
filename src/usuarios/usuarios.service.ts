@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { account, user } from '../database/schema';
+import { user } from '../database/schema';
 import { AuthService } from '../auth/auth.service';
 import { AppLogger } from '../common/logger.service';
 import { resultRows } from '../common/db-result';

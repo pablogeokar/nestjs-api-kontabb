@@ -1,6 +1,7 @@
 import {
     CanActivate,
     ExecutionContext,
+    ForbiddenException,
     Injectable,
     UnauthorizedException,
 } from '@nestjs/common';
@@ -8,18 +9,22 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { ROLES_KEY } from './roles.decorator';
-import type { UserRole } from '../common/types';
+import type { CurrentUser, UserRole } from '../common/types';
+import { SessionTokenService } from './session-token.service';
+
+type AuthenticatedRequest = Request & { user?: CurrentUser };
 
 @Injectable()
 export class AuthGuard implements CanActivate {
     constructor(
         private readonly authService: AuthService,
         private readonly reflector: Reflector,
+        private readonly sessionTokenService: SessionTokenService,
     ) { }
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
-        const request = context.switchToHttp().getRequest<Request>();
-        const token = this.extractToken(request);
+        const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+        const token = this.sessionTokenService.extract(request);
 
         if (!token) {
             throw new UnauthorizedException('Não autorizado.');
@@ -38,37 +43,11 @@ export class AuthGuard implements CanActivate {
 
         if (requiredRoles && requiredRoles.length > 0) {
             if (!requiredRoles.includes(user.role)) {
-                throw new UnauthorizedException('Sem permissão.');
+                throw new ForbiddenException('Sem permissão.');
             }
         }
 
-        // Attach user to request
-        (request as any).user = user;
+        request.user = user;
         return true;
-    }
-
-    private extractToken(request: Request): string | null {
-        // 1. Authorization header: Bearer <token>
-        const authHeader = request.headers.authorization;
-        if (authHeader?.startsWith('Bearer ')) {
-            return authHeader.slice(7);
-        }
-
-        // 2. better-auth session cookie
-        const cookies = request.cookies || {};
-        const cookieToken =
-            cookies['better-auth.session_token'] ??
-            cookies['__Secure-better-auth.session_token'];
-
-        if (!cookieToken) {
-            // Debug: log available cookies
-            console.log('[AuthGuard] No session cookie found. Available cookies:', Object.keys(cookies));
-        }
-
-        if (cookieToken) {
-            return cookieToken;
-        }
-
-        return null;
     }
 }

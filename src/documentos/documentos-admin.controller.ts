@@ -1,4 +1,6 @@
 import {
+    BadGatewayException,
+    BadRequestException,
     Controller,
     Delete,
     Get,
@@ -6,6 +8,7 @@ import {
     HttpStatus,
     NotFoundException,
     Param,
+    ParseUUIDPipe,
     Post,
     Query,
     UseGuards,
@@ -18,6 +21,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { AppLogger } from '../common/logger.service';
 import { parsePaginationParams, buildPaginatedResponse } from '../common/pagination';
 import type { CurrentUser as CurrentUserType } from '../common/types';
+import { RateLimitService } from '../common/rate-limit.service';
 
 @Controller('admin/documentos')
 @UseGuards(AuthGuard)
@@ -27,6 +31,7 @@ export class DocumentosAdminController {
         private readonly documentosService: DocumentosService,
         private readonly clientesService: ClientesService,
         private readonly logger: AppLogger,
+        private readonly rateLimit: RateLimitService,
     ) { }
 
     @Get()
@@ -44,7 +49,10 @@ export class DocumentosAdminController {
     }
 
     @Delete(':id')
-    async delete(@Param('id') id: string, @CurrentUser() currentUser: CurrentUserType) {
+    async delete(
+        @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+        @CurrentUser() currentUser: CurrentUserType,
+    ) {
         const requestId = this.logger.generateRequestId();
         const result = await this.documentosService.deleteDocument({
             requestId,
@@ -57,7 +65,15 @@ export class DocumentosAdminController {
 
     @Post(':id/notificar')
     @HttpCode(HttpStatus.OK)
-    async notify(@Param('id') id: string, @CurrentUser() currentUser: CurrentUserType) {
+    async notify(
+        @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+        @CurrentUser() currentUser: CurrentUserType,
+    ) {
+        await this.rateLimit.consume({
+            key: `document-notification:${currentUser.id}`,
+            limit: 10,
+            windowMs: 60_000,
+        });
         const requestId = this.logger.generateRequestId();
         const result = await this.documentosService.notifyDocument({
             requestId,
@@ -67,13 +83,19 @@ export class DocumentosAdminController {
         if (result.ok) return { success: true, status: result.status, error: null };
         if (result.code === 'DOCUMENT_NOT_FOUND') throw new NotFoundException('Documento não encontrado.');
         if (result.code === 'CLIENT_WITHOUT_EMAIL') {
-            return { code: result.code, error: 'Cliente não possui e-mail cadastrado no sistema.', statusCode: 400 };
+            throw new BadRequestException({
+                code: result.code,
+                message: 'Cliente não possui e-mail cadastrado no sistema.',
+            });
         }
-        return { code: result.code, error: 'Falha ao enviar a notificação.', statusCode: 502 };
+        throw new BadGatewayException({
+            code: result.code,
+            message: 'Falha ao enviar a notificação.',
+        });
     }
 
     @Get(':id/visualizacoes')
-    async views(@Param('id') id: string) {
+    async views(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
         const data = await this.documentosService.listDocumentViews(id);
         return { data, total: data.length };
     }
@@ -91,7 +113,7 @@ export class ClientDocumentsAdminController {
 
     @Get()
     async list(
-        @Param('clientId') clientId: string,
+        @Param('clientId', new ParseUUIDPipe({ version: '4' })) clientId: string,
         @Query() query: { page?: string; pageSize?: string; type?: string; period?: string; periodType?: string },
     ) {
         const client = await this.clientesService.getClientSummary(clientId);

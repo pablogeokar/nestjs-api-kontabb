@@ -14,6 +14,8 @@ export type ObligationType =
     | 'CSLL'
     | 'IRPJ'
     | 'DAE'
+    | 'PGFN-SISPAR'
+    | 'TAXA-ASSISTENCIAL'
     | 'OUTROS';
 
 export type ObligationStatus = 'PENDENTE' | 'VENCIDO' | 'PAGO';
@@ -32,6 +34,8 @@ export const OBLIGATION_TYPE_LABELS: Record<ObligationType, string> = {
     CSLL: 'CSLL',
     IRPJ: 'IRPJ',
     DAE: 'DAE',
+    'PGFN-SISPAR': 'PGFN - Parcelamento SISPAR',
+    'TAXA-ASSISTENCIAL': 'Taxa Assistencial',
     OUTROS: 'Outros',
 };
 

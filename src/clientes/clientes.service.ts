@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes, user } from '../database/schema';
+import { clientes } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
@@ -20,7 +20,11 @@ export class ClientesService {
     async listClients(input: { search: string; pagination: PaginationParams }) {
         const searchDigits = input.search.replace(/\D/g, '');
         const where = input.search
-            ? or(ilike(clientes.razaoSocial, `%${input.search}%`), ilike(clientes.cnpj, `%${searchDigits}%`))
+            ? or(
+                ilike(clientes.razaoSocial, `%${input.search}%`),
+                ilike(clientes.cnpj, `%${searchDigits}%`),
+                ilike(clientes.cpf, `%${searchDigits}%`),
+            )
             : undefined;
 
         const [countResult, rows] = await Promise.all([
@@ -28,7 +32,9 @@ export class ClientesService {
             this.database.db
                 .select({
                     id: clientes.id,
+                    tipoPessoa: clientes.tipoPessoa,
                     cnpj: clientes.cnpj,
+                    cpf: clientes.cpf,
                     companyName: clientes.razaoSocial,
                     emails: clientes.emails,
                     isFirstLogin: clientes.primeiroLogin,
@@ -46,7 +52,9 @@ export class ClientesService {
             total: Number(countResult[0]?.count ?? 0),
             data: rows.map((client) => ({
                 id: client.id,
+                tipo_pessoa: client.tipoPessoa,
                 cnpj: client.cnpj,
+                cpf: client.cpf,
                 company_name: client.companyName,
                 emails: client.emails ?? [],
                 is_first_login: client.isFirstLogin,
@@ -59,17 +67,22 @@ export class ClientesService {
     async registerClient(input: {
         requestId?: string;
         actorUserId: string;
+        tipoPessoa: 'PF' | 'PJ';
         companyName: string;
         cnpj: string;
+        cpf: string;
         emails: string[];
     }) {
-        const authEmail = `${input.cnpj}@kontabb.local`;
+        const authIdentifier = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
+        const authEmail = `${authIdentifier}@kontabb.local`;
         const hashedPassword = await this.authService.hashPassword('123456');
         const authUserId = crypto.randomUUID();
 
         try {
             // Create auth user + account directly (matching better-auth structure)
             const emails = this.textArray(input.emails);
+            const cnpjValue = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
+            const cpfValue = input.tipoPessoa === 'PF' ? input.cpf : null;
             const result = await this.database.db.execute(sql`
         WITH inserted_user AS (
           INSERT INTO "user" (id, name, email, email_verified, role, created_at, updated_at)
@@ -90,15 +103,15 @@ export class ClientesService {
           RETURNING user_id
         ),
         inserted_client AS (
-          INSERT INTO clientes (razao_social, cnpj, emails, primeiro_login, user_id)
-          SELECT ${input.companyName}, ${input.cnpj}, ${emails}, true, id
+          INSERT INTO clientes (tipo_pessoa, razao_social, cnpj, cpf, emails, primeiro_login, user_id)
+          SELECT ${input.tipoPessoa}, ${input.companyName}, ${cnpjValue}, ${cpfValue}, ${emails}, true, id
           FROM inserted_user
           RETURNING id
         ),
         audit_event AS (
           INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
           SELECT ${input.actorUserId}, 'CLIENTE_CRIADO', 'CLIENTE', id::text,
-            jsonb_build_object('cnpj', ${input.cnpj}::text)
+            jsonb_build_object('tipoPessoa', ${input.tipoPessoa}::text)
           FROM inserted_client
           RETURNING id
         )
@@ -215,16 +228,41 @@ export class ClientesService {
 
     async getClientSummary(clientId: string) {
         const result = await this.database.db
-            .select({ id: clientes.id, cnpj: clientes.cnpj, razaoSocial: clientes.razaoSocial })
+            .select({
+                id: clientes.id,
+                tipoPessoa: clientes.tipoPessoa,
+                cnpj: clientes.cnpj,
+                cpf: clientes.cpf,
+                razaoSocial: clientes.razaoSocial,
+            })
             .from(clientes)
             .where(eq(clientes.id, clientId))
             .limit(1);
-        return result[0];
+        const client = result[0];
+        if (!client) return undefined;
+        return {
+            id: client.id,
+            tipo_pessoa: client.tipoPessoa,
+            cnpj: client.cnpj,
+            cpf: client.cpf,
+            company_name: client.razaoSocial,
+        };
     }
 
-    async findClientForUpload(cnpj: string) {
-        if (cnpj.length !== 14 && cnpj.length !== 8) return undefined;
-        const where = cnpj.length === 14 ? eq(clientes.cnpj, cnpj) : like(clientes.cnpj, `${cnpj}%`);
+    async findClientForUpload(identifier: string) {
+        if (
+            identifier.length !== 14 &&
+            identifier.length !== 11 &&
+            identifier.length !== 8
+        ) {
+            return undefined;
+        }
+        const where =
+            identifier.length === 11
+                ? eq(clientes.cpf, identifier)
+                : identifier.length === 14
+                    ? eq(clientes.cnpj, identifier)
+                    : like(clientes.cnpj, `${identifier}%`);
         const result = await this.database.db
             .select({ id: clientes.id, cnpj: clientes.cnpj, razaoSocial: clientes.razaoSocial, emails: clientes.emails })
             .from(clientes)
@@ -236,21 +274,22 @@ export class ClientesService {
     async findRegisteredCnpjs(cnpjs: string[]) {
         const fullCnpjs = cnpjs.filter((c) => c.length === 14);
         const rootCnpjs = cnpjs.filter((c) => c.length === 8);
-        const [fullRows, rootRows] = await Promise.all([
-            fullCnpjs.length
-                ? this.database.db.select({ cnpj: clientes.cnpj }).from(clientes).where(inArray(clientes.cnpj, fullCnpjs))
-                : [],
-            Promise.all(
-                rootCnpjs.map(async (root) => {
-                    const result = await this.database.db
-                        .select({ cnpj: clientes.cnpj })
-                        .from(clientes)
-                        .where(like(clientes.cnpj, `${root}%`))
-                        .limit(1);
-                    return result[0] ? root : null;
-                }),
-            ),
-        ]);
+        const fullRows = (fullCnpjs.length
+            ? await this.database.db
+                .select({ cnpj: clientes.cnpj })
+                .from(clientes)
+                .where(inArray(clientes.cnpj, fullCnpjs))
+            : []) as Array<{ cnpj: string }>;
+        const rootRows = await Promise.all(
+            rootCnpjs.map(async (root) => {
+                const result = await this.database.db
+                    .select({ cnpj: clientes.cnpj })
+                    .from(clientes)
+                    .where(like(clientes.cnpj, `${root}%`))
+                    .limit(1);
+                return result[0] ? root : null;
+            }),
+        );
         return new Set([
             ...fullRows.map((r) => r.cnpj),
             ...rootRows.filter((r): r is string => Boolean(r)),

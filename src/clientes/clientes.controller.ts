@@ -1,12 +1,15 @@
 import {
     Body,
     Controller,
+    ConflictException,
     Delete,
     Get,
     HttpCode,
     HttpStatus,
+    InternalServerErrorException,
     NotFoundException,
     Param,
+    ParseUUIDPipe,
     Patch,
     Post,
     Query,
@@ -40,24 +43,43 @@ export class ClientesController {
         return buildPaginatedResponse(result.data, result.total, pagination);
     }
 
+    @Get(':id')
+    async get(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+        const client = await this.clientesService.getClientSummary(id);
+        if (!client) throw new NotFoundException('Cliente não encontrado.');
+        return client;
+    }
+
     @Post()
     async create(@Body() dto: CreateClientDto, @CurrentUser() currentUser: CurrentUserType) {
         const requestId = this.logger.generateRequestId();
         const emails = this.normalizeEmails(dto.emails);
+        const tipoPessoa = dto.tipo_pessoa;
+        const cnpj = dto.cnpj?.replace(/\D/g, '') ?? '';
+        const cpf = dto.cpf?.replace(/\D/g, '') ?? '';
 
         const result = await this.clientesService.registerClient({
             requestId,
             actorUserId: currentUser.id,
+            tipoPessoa,
             companyName: dto.company_name.trim(),
-            cnpj: dto.cnpj.replace(/\D/g, ''),
+            cnpj,
+            cpf,
             emails,
         });
 
         if (!result.ok) {
             if (result.code === 'DUPLICATE') {
-                return { code: 'DUPLICATE', error: 'CNPJ já cadastrado.', message: 'CNPJ já cadastrado.', statusCode: 409 };
+                const identifier = tipoPessoa === 'PF' ? 'CPF' : 'CNPJ';
+                throw new ConflictException({
+                    code: 'DUPLICATE',
+                    message: `${identifier} já cadastrado.`,
+                });
             }
-            return { code: result.code, error: 'Erro ao criar cliente.', message: 'Erro ao criar cliente.', statusCode: 500 };
+            throw new InternalServerErrorException({
+                code: result.code,
+                message: 'Erro ao criar cliente.',
+            });
         }
 
         return { success: true, id: result.clientId };
@@ -73,7 +95,9 @@ export class ClientesController {
             const result = await this.clientesService.registerClient({
                 requestId,
                 actorUserId: currentUser.id,
+                tipoPessoa: 'PJ',
                 cnpj: client.cnpj.replace(/\D/g, ''),
+                cpf: '',
                 companyName: client.company_name.trim(),
                 emails: [],
             });
@@ -101,7 +125,7 @@ export class ClientesController {
 
     @Patch(':id')
     async update(
-        @Param('id') id: string,
+        @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
         @Body() dto: UpdateClientDto,
         @CurrentUser() currentUser: CurrentUserType,
     ) {
@@ -116,7 +140,10 @@ export class ClientesController {
     }
 
     @Delete(':id')
-    async delete(@Param('id') id: string, @CurrentUser() currentUser: CurrentUserType) {
+    async delete(
+        @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+        @CurrentUser() currentUser: CurrentUserType,
+    ) {
         const requestId = this.logger.generateRequestId();
         const result = await this.clientesService.deleteClient({
             requestId,
