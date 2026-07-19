@@ -12,6 +12,7 @@ import { UploadModule } from './upload/upload.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { ClienteModule } from './cliente/cliente.module';
 import { HealthController } from './health/health.controller';
+import { DashboardController } from './health/dashboard.controller';
 import { CronController } from './cron/cron.controller';
 import { StorageAdminController } from './storage/storage.controller';
 
@@ -29,6 +30,6 @@ import { StorageAdminController } from './storage/storage.controller';
     UsuariosModule,
     ClienteModule,
   ],
-  controllers: [HealthController, CronController, StorageAdminController],
+  controllers: [HealthController, DashboardController, CronController, StorageAdminController],
 })
 export class AppModule { }

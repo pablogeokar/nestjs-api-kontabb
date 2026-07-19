@@ -11,6 +11,8 @@ export class AuthService {
     /**
      * Validates a session token from the Authorization header (Bearer token)
      * or from better-auth cookies. Returns the user if session is valid.
+     *
+     * better-auth stores the raw token directly in the session table.
      */
     async validateSession(token: string): Promise<CurrentUser | null> {
         if (!token) return null;
