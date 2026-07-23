@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { eq, and, gt } from 'drizzle-orm';
+import { randomBytes } from 'crypto';
 import { DatabaseService } from '../database/database.service';
-import { account, session, user } from '../database/schema';
+import { account, session, user, verification } from '../database/schema';
 import type { CurrentUser, UserRole } from '../common/types';
 
 @Injectable()
@@ -217,5 +218,102 @@ export class AuthService {
         },
       );
     });
+  }
+
+  /**
+   * Create a password reset token for the given email.
+   * Returns the token string if the user exists, null otherwise.
+   * Token expires in 1 hour.
+   */
+  async createPasswordResetToken(email: string): Promise<string | null> {
+    const [existingUser] = await this.database.db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, email))
+      .limit(1);
+
+    if (!existingUser) return null;
+
+    const token = randomBytes(32).toString('base64url');
+    const id = randomBytes(16).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Delete any existing reset tokens for this email
+    await this.database.db
+      .delete(verification)
+      .where(eq(verification.identifier, `password-reset:${email}`));
+
+    // Create new token
+    await this.database.db.insert(verification).values({
+      id,
+      identifier: `password-reset:${email}`,
+      value: token,
+      expiresAt,
+    });
+
+    return token;
+  }
+
+  /**
+   * Reset password using a valid reset token.
+   * Deletes the token after use.
+   */
+  async resetPasswordWithToken(
+    token: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean; userId?: string }> {
+    const now = new Date();
+    const [record] = await this.database.db
+      .select({
+        id: verification.id,
+        identifier: verification.identifier,
+        expiresAt: verification.expiresAt,
+      })
+      .from(verification)
+      .where(eq(verification.value, token))
+      .limit(1);
+
+    if (!record) return { ok: false };
+
+    // Check expiration
+    if (record.expiresAt < now) {
+      await this.database.db
+        .delete(verification)
+        .where(eq(verification.id, record.id));
+      return { ok: false };
+    }
+
+    // Extract email from identifier (format: "password-reset:email@example.com")
+    const prefix = 'password-reset:';
+    if (!record.identifier.startsWith(prefix)) return { ok: false };
+    const email = record.identifier.slice(prefix.length);
+
+    // Find the user
+    const [existingUser] = await this.database.db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, email))
+      .limit(1);
+
+    if (!existingUser) return { ok: false };
+
+    // Update password
+    const newHash = await this.hashPassword(newPassword);
+    await this.database.db
+      .update(account)
+      .set({ password: newHash, updatedAt: new Date() })
+      .where(
+        and(
+          eq(account.userId, existingUser.id),
+          eq(account.providerId, 'credential'),
+        ),
+      );
+
+    // Delete the used token
+    await this.database.db
+      .delete(verification)
+      .where(eq(verification.id, record.id));
+
+    return { ok: true, userId: existingUser.id };
   }
 }
