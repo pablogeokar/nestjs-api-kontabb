@@ -1,15 +1,23 @@
 import {
-    BadRequestException,
-    Controller,
-    HttpCode,
-    HttpStatus,
-    Post,
-    UploadedFiles,
-    UseGuards,
-    UseInterceptors,
-    Body,
+  BadRequestException,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
+  Body,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { DocumentosService } from '../documentos/documentos.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -17,249 +25,404 @@ import { StaffOnly } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AppLogger } from '../common/logger.service';
 import { hasValidFileSignature } from '../common/file-validation';
-import { extractPdfText, extractDadosFiscais, type DadosFiscais } from '../common/pdf-extraction';
+import {
+  extractPdfText,
+  extractDadosFiscais,
+  type DadosFiscais,
+} from '../common/pdf-extraction';
 import type { CurrentUser as CurrentUserType } from '../common/types';
 import { RateLimitService } from '../common/rate-limit.service';
 
 interface FileResult {
-    fileName: string;
-    success: boolean;
-    message: string;
-    cnpj?: string;
-    period?: string;
-    type?: string;
-    valor?: string;
-    parcela?: string;
+  fileName: string;
+  success: boolean;
+  message: string;
+  cnpj?: string;
+  period?: string;
+  type?: string;
+  valor?: string;
+  parcela?: string;
 }
 
 function vencimentoToIso(v: string): string {
-    const [dd, mm, yyyy] = v.split('/');
-    return `${yyyy}-${mm}-${dd}`;
+  const [dd, mm, yyyy] = v.split('/');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
+@ApiTags('Upload')
+@ApiBearerAuth('session-token')
 @Controller('admin/upload')
 @UseGuards(AuthGuard)
 @StaffOnly()
 export class UploadController {
-    constructor(
-        private readonly documentosService: DocumentosService,
-        private readonly clientesService: ClientesService,
-        private readonly logger: AppLogger,
-        private readonly rateLimit: RateLimitService,
-    ) { }
+  constructor(
+    private readonly documentosService: DocumentosService,
+    private readonly clientesService: ClientesService,
+    private readonly logger: AppLogger,
+    private readonly rateLimit: RateLimitService,
+  ) {}
 
-    @Post()
-    @HttpCode(HttpStatus.OK)
-    @UseInterceptors(FilesInterceptor('files', 20, { limits: { fileSize: 10 * 1024 * 1024 } }))
-    async upload(
-        @UploadedFiles() files: Express.Multer.File[],
-        @Body() body: { cnpj?: string; period?: string; type?: string; due_date?: string },
-        @CurrentUser() currentUser: CurrentUserType,
-    ) {
-        await this.rateLimit.consume({
-            key: `document-upload:${currentUser.id}`,
-            limit: 20,
-            windowMs: 60_000,
-        });
-        const requestId = this.logger.generateRequestId();
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('files', 20, { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Upload de documentos fiscais',
+    description:
+      'Faz upload de até 20 PDFs por vez. Extrai automaticamente CNPJ/CPF, tipo, período e vencimento do conteúdo do PDF. Aceita parâmetros manuais para sobrescrever os dados extraídos.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['files'],
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Arquivos PDF (máx 20, 10MB cada)',
+        },
+        cnpj: {
+          type: 'string',
+          description: 'CNPJ manual (sobrescreve extração)',
+        },
+        period: { type: 'string', description: 'Período manual (MM/YYYY)' },
+        type: { type: 'string', description: 'Tipo de obrigação manual' },
+        due_date: {
+          type: 'string',
+          description: 'Data de vencimento manual (YYYY-MM-DD)',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado do processamento dos arquivos.',
+  })
+  @ApiResponse({ status: 400, description: 'Nenhum arquivo enviado.' })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit excedido (20 uploads/minuto).',
+  })
+  async upload(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body()
+    body: { cnpj?: string; period?: string; type?: string; due_date?: string },
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.rateLimit.consume({
+      key: `document-upload:${currentUser.id}`,
+      limit: 20,
+      windowMs: 60_000,
+    });
+    const requestId = this.logger.generateRequestId();
 
-        if (!files || files.length === 0) {
-            throw new BadRequestException('Nenhum arquivo enviado.');
-        }
-
-        const manualCnpj = body.cnpj?.trim().replace(/\D/g, '') || null;
-        const manualPeriod = body.period?.trim() || null;
-        const manualType = body.type?.trim() || null;
-        const manualDueDate = body.due_date?.trim() || null;
-
-        const results: FileResult[] = [];
-
-        for (const file of files) {
-            const result = await this.processFile(file, {
-                requestId,
-                actorUserId: currentUser.id,
-                manualCnpj,
-                manualPeriod,
-                manualType,
-                manualDueDate,
-            });
-            results.push(result);
-        }
-
-        const allSuccess = results.every((r) => r.success);
-        const someSuccess = results.some((r) => r.success);
-
-        return {
-            success: allSuccess,
-            partial: !allSuccess && someSuccess,
-            total: results.length,
-            processed: results.filter((r) => r.success).length,
-            failed: results.filter((r) => !r.success).length,
-            results,
-        };
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Nenhum arquivo enviado.');
     }
 
-    @Post('validate')
-    @HttpCode(HttpStatus.OK)
-    @UseInterceptors(FilesInterceptor('files', 20, { limits: { fileSize: 10 * 1024 * 1024 } }))
-    async validate(
-        @UploadedFiles() files: Express.Multer.File[],
-        @CurrentUser() currentUser: CurrentUserType,
-    ) {
-        await this.rateLimit.consume({
-            key: `document-validation:${currentUser.id}`,
-            limit: 30,
-            windowMs: 60_000,
-        });
-        if (!files || files.length === 0) {
-            throw new BadRequestException('Nenhum arquivo enviado.');
-        }
+    const manualCnpj = body.cnpj?.trim().replace(/\D/g, '') || null;
+    const manualPeriod = body.period?.trim() || null;
+    const manualType = body.type?.trim() || null;
+    const manualDueDate = body.due_date?.trim() || null;
 
-        const results: Array<{ fileName: string; cnpj: string | null; registered: boolean }> = [];
-        const cnpjSet = new Set<string>();
+    const results: FileResult[] = [];
 
-        for (const file of files) {
-            if (file.mimetype !== 'application/pdf') {
-                results.push({ fileName: file.originalname, cnpj: null, registered: false });
-                continue;
-            }
-            try {
-                const bytes = new Uint8Array(file.buffer);
-                if (!hasValidFileSignature(bytes, file.mimetype)) {
-                    results.push({ fileName: file.originalname, cnpj: null, registered: false });
-                    continue;
-                }
-                const text = await extractPdfText(Buffer.from(file.buffer));
-                const dados = extractDadosFiscais(text);
-                const rawCnpj = dados.cnpj ? dados.cnpj.replace(/\D/g, '') : null;
-                results.push({ fileName: file.originalname, cnpj: rawCnpj, registered: false });
-                if (rawCnpj) cnpjSet.add(rawCnpj);
-            } catch {
-                results.push({ fileName: file.originalname, cnpj: null, registered: false });
-            }
-        }
-
-        const cnpjArray = Array.from(cnpjSet);
-        const registeredCnpjs = await this.clientesService.findRegisteredCnpjs(cnpjArray);
-
-        for (const r of results) {
-            if (r.cnpj) r.registered = registeredCnpjs.has(r.cnpj);
-        }
-
-        const unregistered = results
-            .filter((r) => r.cnpj && !r.registered)
-            .reduce<Array<{ cnpj: string; fileNames: string[] }>>((acc, r) => {
-                const existing = acc.find((item) => item.cnpj === r.cnpj);
-                if (existing) existing.fileNames.push(r.fileName);
-                else acc.push({ cnpj: r.cnpj!, fileNames: [r.fileName] });
-                return acc;
-            }, []);
-
-        const undetected = results.filter((r) => !r.cnpj).map((r) => r.fileName);
-
-        return { needsRegistration: unregistered.length > 0, unregistered, undetected };
+    for (const file of files) {
+      const result = await this.processFile(file, {
+        requestId,
+        actorUserId: currentUser.id,
+        manualCnpj,
+        manualPeriod,
+        manualType,
+        manualDueDate,
+      });
+      results.push(result);
     }
 
-    private async processFile(
-        file: Express.Multer.File,
-        ctx: { requestId: string; actorUserId: string; manualCnpj: string | null; manualPeriod: string | null; manualType: string | null; manualDueDate: string | null },
-    ): Promise<FileResult> {
-        if (file.mimetype !== 'application/pdf') {
-            return { fileName: file.originalname, success: false, message: 'Apenas arquivos PDF são aceitos.' };
-        }
-        if (file.size > 10 * 1024 * 1024) {
-            return { fileName: file.originalname, success: false, message: 'Arquivo muito grande (máx 10MB).' };
-        }
+    const allSuccess = results.every((r) => r.success);
+    const someSuccess = results.some((r) => r.success);
 
+    return {
+      success: allSuccess,
+      partial: !allSuccess && someSuccess,
+      total: results.length,
+      processed: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
+      results,
+    };
+  }
+
+  @Post('validate')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('files', 20, { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Validar arquivos antes do upload',
+    description:
+      'Pré-valida PDFs, extrai CNPJs e verifica se os clientes estão cadastrados. Útil para identificar clientes não registrados antes de processar o upload.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['files'],
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Arquivos PDF para validação',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Resultado da validação com clientes não registrados e arquivos sem CNPJ detectado.',
+  })
+  @ApiResponse({ status: 400, description: 'Nenhum arquivo enviado.' })
+  @ApiResponse({ status: 429, description: 'Rate limit excedido.' })
+  async validate(
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.rateLimit.consume({
+      key: `document-validation:${currentUser.id}`,
+      limit: 30,
+      windowMs: 60_000,
+    });
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Nenhum arquivo enviado.');
+    }
+
+    const results: Array<{
+      fileName: string;
+      cnpj: string | null;
+      registered: boolean;
+    }> = [];
+    const cnpjSet = new Set<string>();
+
+    for (const file of files) {
+      if (file.mimetype !== 'application/pdf') {
+        results.push({
+          fileName: file.originalname,
+          cnpj: null,
+          registered: false,
+        });
+        continue;
+      }
+      try {
         const bytes = new Uint8Array(file.buffer);
         if (!hasValidFileSignature(bytes, file.mimetype)) {
-            return { fileName: file.originalname, success: false, message: 'Conteúdo do arquivo não corresponde a um PDF válido.' };
-        }
-
-        let dados: DadosFiscais | null = null;
-        try {
-            const text = await extractPdfText(Buffer.from(file.buffer));
-            dados = extractDadosFiscais(text);
-        } catch {
-            // extraction failed, continue with manual data
-        }
-
-        const identifierRaw =
-            ctx.manualCnpj ||
-            (dados?.cnpj ? dados.cnpj.replace(/\D/g, '') : null) ||
-            (dados?.cpf ? dados.cpf.replace(/\D/g, '') : null) ||
-            null;
-        const tipo = ctx.manualType || (dados?.tipo && dados.tipo !== 'DESCONHECIDO' ? dados.tipo : null) || 'OUTROS';
-        const periodo = ctx.manualPeriod || dados?.periodo || null;
-        const vencimento = ctx.manualDueDate || (dados?.vencimento ? vencimentoToIso(dados.vencimento) : null) || null;
-        const installmentNumber =
-            dados?.parcelamento?.numeroParcelamento ??
-            dados?.parcelamento?.codigoPgfn ??
-            null;
-
-        if (!identifierRaw) {
-            return { fileName: file.originalname, success: false, message: 'Não foi possível identificar o CNPJ ou CPF. Preencha manualmente.' };
-        }
-
-        const client = await this.clientesService.findClientForUpload(identifierRaw);
-        if (!client) {
-            return { fileName: file.originalname, success: false, message: `Cliente com identificador ${identifierRaw} não encontrado.`, cnpj: identifierRaw };
-        }
-
-        const now = new Date();
-        const finalPeriod = periodo || `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-
-        const existing = await this.documentosService.findDuplicateDocument({
-            clientId: client.id,
-            type: tipo,
-            period: finalPeriod,
-            installmentNumber,
-        });
-        if (existing) {
-            return {
-                fileName: file.originalname,
-                success: false,
-                message: `Documento duplicado: já existe um ${tipo} para o período ${finalPeriod} deste cliente (enviado como "${existing.arquivoNome}").`,
-                cnpj: client.cnpj, period: finalPeriod, type: tipo,
-            };
-        }
-
-        const valorNumerico = dados?.valor ? dados.valor.replace(/\./g, '').replace(',', '.') : null;
-        const parcela = dados?.parcelamento ? `${dados.parcelamento.parcela ?? '?'}/${dados.parcelamento.totalParcelas ?? '?'}` : null;
-
-        const upload = await this.documentosService.uploadDocument({
-            requestId: ctx.requestId,
-            actorUserId: ctx.actorUserId,
-            client: { id: client.id, cnpj: client.cnpj, razaoSocial: client.razaoSocial, emails: client.emails },
-            bytes: Buffer.from(file.buffer),
+          results.push({
             fileName: file.originalname,
-            tipo,
-            periodo: finalPeriod,
-            vencimento,
-            valorNumerico,
-            valorLabel: dados?.valor ?? null,
-            parcelaLabel: parcela,
-            numeroParcelamento: installmentNumber,
-        });
-
-        if (!upload.ok) {
-            const message = upload.code === 'DUPLICATE'
-                ? `Documento duplicado: já existe um ${tipo} para o período ${finalPeriod}.`
-                : upload.code === 'STORAGE_FAILED'
-                    ? 'Falha ao armazenar o documento. Tente novamente.'
-                    : 'Falha ao registrar o documento. Tente novamente.';
-            return { fileName: file.originalname, success: false, message, cnpj: client.cnpj };
+            cnpj: null,
+            registered: false,
+          });
+          continue;
         }
-
-        return {
-            fileName: file.originalname,
-            success: true,
-            message: 'Documento processado com sucesso.',
-            cnpj: client.cnpj,
-            period: finalPeriod,
-            type: tipo,
-            valor: dados?.valor ?? undefined,
-            parcela: parcela ?? undefined,
-        };
+        const text = await extractPdfText(Buffer.from(file.buffer));
+        const dados = extractDadosFiscais(text);
+        const rawCnpj = dados.cnpj ? dados.cnpj.replace(/\D/g, '') : null;
+        results.push({
+          fileName: file.originalname,
+          cnpj: rawCnpj,
+          registered: false,
+        });
+        if (rawCnpj) cnpjSet.add(rawCnpj);
+      } catch {
+        results.push({
+          fileName: file.originalname,
+          cnpj: null,
+          registered: false,
+        });
+      }
     }
+
+    const cnpjArray = Array.from(cnpjSet);
+    const registeredCnpjs =
+      await this.clientesService.findRegisteredCnpjs(cnpjArray);
+
+    for (const r of results) {
+      if (r.cnpj) r.registered = registeredCnpjs.has(r.cnpj);
+    }
+
+    const unregistered = results
+      .filter((r) => r.cnpj && !r.registered)
+      .reduce<Array<{ cnpj: string; fileNames: string[] }>>((acc, r) => {
+        const existing = acc.find((item) => item.cnpj === r.cnpj);
+        if (existing) existing.fileNames.push(r.fileName);
+        else acc.push({ cnpj: r.cnpj!, fileNames: [r.fileName] });
+        return acc;
+      }, []);
+
+    const undetected = results.filter((r) => !r.cnpj).map((r) => r.fileName);
+
+    return {
+      needsRegistration: unregistered.length > 0,
+      unregistered,
+      undetected,
+    };
+  }
+
+  private async processFile(
+    file: Express.Multer.File,
+    ctx: {
+      requestId: string;
+      actorUserId: string;
+      manualCnpj: string | null;
+      manualPeriod: string | null;
+      manualType: string | null;
+      manualDueDate: string | null;
+    },
+  ): Promise<FileResult> {
+    if (file.mimetype !== 'application/pdf') {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: 'Apenas arquivos PDF são aceitos.',
+      };
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: 'Arquivo muito grande (máx 10MB).',
+      };
+    }
+
+    const bytes = new Uint8Array(file.buffer);
+    if (!hasValidFileSignature(bytes, file.mimetype)) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: 'Conteúdo do arquivo não corresponde a um PDF válido.',
+      };
+    }
+
+    let dados: DadosFiscais | null = null;
+    try {
+      const text = await extractPdfText(Buffer.from(file.buffer));
+      dados = extractDadosFiscais(text);
+    } catch {
+      // extraction failed, continue with manual data
+    }
+
+    const identifierRaw =
+      ctx.manualCnpj ||
+      (dados?.cnpj ? dados.cnpj.replace(/\D/g, '') : null) ||
+      (dados?.cpf ? dados.cpf.replace(/\D/g, '') : null) ||
+      null;
+    const tipo =
+      ctx.manualType ||
+      (dados?.tipo && dados.tipo !== 'DESCONHECIDO' ? dados.tipo : null) ||
+      'OUTROS';
+    const periodo = ctx.manualPeriod || dados?.periodo || null;
+    const vencimento =
+      ctx.manualDueDate ||
+      (dados?.vencimento ? vencimentoToIso(dados.vencimento) : null) ||
+      null;
+    const installmentNumber =
+      dados?.parcelamento?.numeroParcelamento ??
+      dados?.parcelamento?.codigoPgfn ??
+      null;
+
+    if (!identifierRaw) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message:
+          'Não foi possível identificar o CNPJ ou CPF. Preencha manualmente.',
+      };
+    }
+
+    const client =
+      await this.clientesService.findClientForUpload(identifierRaw);
+    if (!client) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: `Cliente com identificador ${identifierRaw} não encontrado.`,
+        cnpj: identifierRaw,
+      };
+    }
+
+    const now = new Date();
+    const finalPeriod =
+      periodo ||
+      `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+
+    const existing = await this.documentosService.findDuplicateDocument({
+      clientId: client.id,
+      type: tipo,
+      period: finalPeriod,
+      installmentNumber,
+    });
+    if (existing) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: `Documento duplicado: já existe um ${tipo} para o período ${finalPeriod} deste cliente (enviado como "${existing.arquivoNome}").`,
+        cnpj: client.cnpj,
+        period: finalPeriod,
+        type: tipo,
+      };
+    }
+
+    const valorNumerico = dados?.valor
+      ? dados.valor.replace(/\./g, '').replace(',', '.')
+      : null;
+    const parcela = dados?.parcelamento
+      ? `${dados.parcelamento.parcela ?? '?'}/${dados.parcelamento.totalParcelas ?? '?'}`
+      : null;
+
+    const upload = await this.documentosService.uploadDocument({
+      requestId: ctx.requestId,
+      actorUserId: ctx.actorUserId,
+      client: {
+        id: client.id,
+        cnpj: client.cnpj,
+        razaoSocial: client.razaoSocial,
+        emails: client.emails,
+      },
+      bytes: Buffer.from(file.buffer),
+      fileName: file.originalname,
+      tipo,
+      periodo: finalPeriod,
+      vencimento,
+      valorNumerico,
+      valorLabel: dados?.valor ?? null,
+      parcelaLabel: parcela,
+      numeroParcelamento: installmentNumber,
+    });
+
+    if (!upload.ok) {
+      const message =
+        upload.code === 'DUPLICATE'
+          ? `Documento duplicado: já existe um ${tipo} para o período ${finalPeriod}.`
+          : upload.code === 'STORAGE_FAILED'
+            ? 'Falha ao armazenar o documento. Tente novamente.'
+            : 'Falha ao registrar o documento. Tente novamente.';
+      return {
+        fileName: file.originalname,
+        success: false,
+        message,
+        cnpj: client.cnpj,
+      };
+    }
+
+    return {
+      fileName: file.originalname,
+      success: true,
+      message: 'Documento processado com sucesso.',
+      cnpj: client.cnpj,
+      period: finalPeriod,
+      type: tipo,
+      valor: dados?.valor ?? undefined,
+      parcela: parcela ?? undefined,
+    };
+  }
 }
