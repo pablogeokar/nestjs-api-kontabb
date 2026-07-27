@@ -11,6 +11,7 @@ import { DocumentosModule } from './documentos/documentos.module';
 import { UploadModule } from './upload/upload.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { ClienteModule } from './cliente/cliente.module';
+import { RhModule } from './rh/rh.module';
 import { HealthController } from './health/health.controller';
 import { DashboardController } from './health/dashboard.controller';
 import { CronController } from './cron/cron.controller';
@@ -29,7 +30,13 @@ import { StorageAdminController } from './storage/storage.controller';
     UploadModule,
     UsuariosModule,
     ClienteModule,
+    RhModule,
   ],
-  controllers: [HealthController, DashboardController, CronController, StorageAdminController],
+  controllers: [
+    HealthController,
+    DashboardController,
+    CronController,
+    StorageAdminController,
+  ],
 })
-export class AppModule { }
+export class AppModule {}
