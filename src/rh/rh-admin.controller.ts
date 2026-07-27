@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { RhService } from './rh.service';
+import { StorageService } from '../storage/storage.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StaffOnly } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -35,6 +36,7 @@ import type { CurrentUser as CurrentUserType } from '../common/types';
 export class RhAdminController {
   constructor(
     private readonly rhService: RhService,
+    private readonly storage: StorageService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -178,6 +180,39 @@ export class RhAdminController {
       message: 'Folha excluída com sucesso.',
       cleanupPending: result.cleanupPending,
     };
+  }
+
+  @Get('folhas/:folhaId/download')
+  @ApiOperation({ summary: 'URL assinada para download do PDF original' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'URL assinada gerada.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Folha ou documento não encontrado.',
+  })
+  async downloadFolha(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+  ) {
+    const key = await this.rhService.getFolhaDocumentoKey(folhaId);
+    if (!key) throw new NotFoundException('Documento da folha não encontrado.');
+    const url = await this.storage.getSignedUrl(key);
+    return { url };
+  }
+
+  @Get('folhas/:folhaId/recibos')
+  @ApiOperation({
+    summary: 'Todos os recibos de uma folha (para geração de PDF)',
+  })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Lista de recibos completos.' })
+  @ApiResponse({ status: 404, description: 'Folha não encontrada.' })
+  async getAllRecibos(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+  ) {
+    const folha = await this.rhService.getFolhaDetail(folhaId);
+    if (!folha) throw new NotFoundException('Folha não encontrada.');
+    const recibos = await this.rhService.getAllRecibosByFolha(folhaId);
+    return { recibos };
   }
 
   @Get('dashboard')

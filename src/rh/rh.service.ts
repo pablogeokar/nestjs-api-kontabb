@@ -633,6 +633,104 @@ export class RhService {
     return { deleted: true, cleanupPending: cleanup.failed };
   }
 
+  // ─── Get folha download URL ───
+  async getFolhaDocumentoKey(folhaId: string): Promise<string | null> {
+    const result = await this.database.db
+      .select({ arquivoKey: documentos.arquivoKey })
+      .from(folhasPagamento)
+      .leftJoin(documentos, eq(folhasPagamento.documentoId, documentos.id))
+      .where(eq(folhasPagamento.id, folhaId))
+      .limit(1);
+    return result[0]?.arquivoKey ?? null;
+  }
+
+  // ─── Get all recibos for a folha (for bulk PDF generation) ───
+  async getAllRecibosByFolha(folhaId: string) {
+    const rows = await this.database.db
+      .select({
+        item: {
+          id: itensFolhaPagamento.id,
+          salarioBase: itensFolhaPagamento.salarioBase,
+          totalProventos: itensFolhaPagamento.totalProventos,
+          totalDescontos: itensFolhaPagamento.totalDescontos,
+          salarioLiquido: itensFolhaPagamento.salarioLiquido,
+          baseInss: itensFolhaPagamento.baseInss,
+          aliquotaInss: itensFolhaPagamento.aliquotaInss,
+          valorInss: itensFolhaPagamento.valorInss,
+          baseFgts: itensFolhaPagamento.baseFgts,
+          valorFgts: itensFolhaPagamento.valorFgts,
+          baseIrrf: itensFolhaPagamento.baseIrrf,
+          valorIrrf: itensFolhaPagamento.valorIrrf,
+          referencia: itensFolhaPagamento.referencia,
+          dependentesIr: itensFolhaPagamento.dependentesIr,
+          dependentesSf: itensFolhaPagamento.dependentesSf,
+          rubricas: itensFolhaPagamento.rubricas,
+        },
+        funcionario: {
+          codigoFuncionario: funcionariosRh.codigoFuncionario,
+          nomeCompleto: funcionariosRh.nomeCompleto,
+          cargo: funcionariosRh.cargo,
+          dataAdmissao: funcionariosRh.dataAdmissao,
+        },
+        folha: {
+          competencia: folhasPagamento.competencia,
+          periodoInicio: folhasPagamento.periodoInicio,
+          periodoFim: folhasPagamento.periodoFim,
+        },
+        empresa: {
+          razaoSocial: clientes.razaoSocial,
+          cnpj: clientes.cnpj,
+        },
+      })
+      .from(itensFolhaPagamento)
+      .leftJoin(
+        funcionariosRh,
+        eq(itensFolhaPagamento.funcionarioId, funcionariosRh.id),
+      )
+      .leftJoin(
+        folhasPagamento,
+        eq(itensFolhaPagamento.folhaId, folhasPagamento.id),
+      )
+      .leftJoin(clientes, eq(itensFolhaPagamento.clienteId, clientes.id))
+      .where(eq(itensFolhaPagamento.folhaId, folhaId))
+      .orderBy(funcionariosRh.nomeCompleto);
+
+    return rows.map((row) => ({
+      empresa: {
+        razaoSocial: row.empresa?.razaoSocial ?? '',
+        cnpj: row.empresa?.cnpj ?? '',
+      },
+      competencia: row.folha?.competencia ?? '',
+      periodoInicio: row.folha?.periodoInicio ?? '',
+      periodoFim: row.folha?.periodoFim ?? '',
+      funcionario: {
+        codigoFuncionario: row.funcionario?.codigoFuncionario ?? '',
+        nomeCompleto: row.funcionario?.nomeCompleto ?? '',
+        cargo: row.funcionario?.cargo ?? null,
+        dataAdmissao: row.funcionario?.dataAdmissao ?? null,
+        dependentesIr: row.item.dependentesIr ?? 0,
+        dependentesSf: row.item.dependentesSf ?? 0,
+        referencia: row.item.referencia,
+      },
+      valores: {
+        salarioBase: Number(row.item.salarioBase),
+        totalProventos: Number(row.item.totalProventos),
+        totalDescontos: Number(row.item.totalDescontos),
+        salarioLiquido: Number(row.item.salarioLiquido),
+        baseInss: row.item.baseInss ? Number(row.item.baseInss) : null,
+        aliquotaInss: row.item.aliquotaInss
+          ? Number(row.item.aliquotaInss)
+          : null,
+        valorInss: row.item.valorInss ? Number(row.item.valorInss) : null,
+        baseFgts: row.item.baseFgts ? Number(row.item.baseFgts) : null,
+        valorFgts: row.item.valorFgts ? Number(row.item.valorFgts) : null,
+        baseIrrf: row.item.baseIrrf ? Number(row.item.baseIrrf) : null,
+        valorIrrf: row.item.valorIrrf ? Number(row.item.valorIrrf) : null,
+      },
+      rubricas: row.item.rubricas ?? [],
+    }));
+  }
+
   // ─── Get folha owner (for client access check) ───
   async getFolhaClienteId(folhaId: string): Promise<string | null> {
     const result = await this.database.db
