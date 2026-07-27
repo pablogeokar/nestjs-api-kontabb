@@ -37,12 +37,6 @@ function formatCnpj(digits: string): string {
 }
 
 function extractCnpj(text: string): string | null {
-  // Pattern for payroll PDFs: 14 digits immediately before "CNPJ/CEI:"
-  const payrollMatch = text.match(/(\d{14})CNPJ\/CEI:/);
-  if (payrollMatch) {
-    return formatCnpj(payrollMatch[1]);
-  }
-
   const contextMatch = text.match(
     /(?:CPF\/CNPJ[^\d]{0,25}|CNPJ[^\d]{0,15})(\d{2}[.\s]?\d{3}[.\s]?\d{3}(?:[/\s]?\d{4}[-\s]?\d{2})?)/i,
   );
