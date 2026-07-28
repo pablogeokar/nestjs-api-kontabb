@@ -71,7 +71,11 @@ function formatCnpj(digits: string): string {
 
 function classificarRubrica(codigo: string): 'PROVENTO' | 'DESCONTO' {
   const num = parseInt(codigo, 10);
-  return num >= 900 ? 'DESCONTO' : 'PROVENTO';
+  // Common discount ranges in Brazilian payroll systems:
+  // 600-699: Loan deductions, transportation vouchers, etc.
+  // 900-999: INSS, IRRF, union fees, etc.
+  if (num >= 900 || (num >= 600 && num < 700)) return 'DESCONTO';
+  return 'PROVENTO';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,12 +118,26 @@ export function extractDadosFolhaPagamento(
   const periodoFim = `${anoFim}-${mesFim}-${diaFim}`;
   const competencia = `${mesInicio}/${anoInicio}`;
 
-  // Step 5: Split into employee blocks
-  // Each complete employee block includes rubricas + separator + totals/bases.
-  // Structure: [code+name+rubricas] *** separator *** [totals+bases] [next employee]
-  // We find all 6-digit employee codes and split between them.
-  const cnpjPos = text.indexOf(cnpjMatch[0]);
-  const textAfterCnpj = text.substring(cnpjPos + cnpjMatch[0].length);
+  // Step 5: Remove repeated page headers from multi-page PDFs
+  // Page headers look like: "00013MERCADINHO...Empresa : End. : Ref.: (...) DD/MM/YYYY DD/MM/YYYYa Dpto : Página : NNNNN Código Nome Ref. Sal. Contratual Adicionais Descontos Líquido TODOS Recibo FOLHA DE PAGAMENTO XXXXXXXXXXXXXX CNPJ/CEI:"
+  // Keep only the first occurrence, remove subsequent ones.
+  const pageHeaderPattern =
+    /\d{5}[A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\s.,]+?Empresa\s*:.*?FOLHA DE PAGAMENTO\s+\d{14}CNPJ\/CEI:\s*/g;
+  let cleanedText = text;
+  const headerMatches = [...text.matchAll(pageHeaderPattern)];
+  if (headerMatches.length > 1) {
+    // Remove all headers except the first one
+    for (let i = headerMatches.length - 1; i >= 1; i--) {
+      const hMatch = headerMatches[i];
+      cleanedText =
+        cleanedText.substring(0, hMatch.index!) +
+        cleanedText.substring(hMatch.index! + hMatch[0].length);
+    }
+  }
+
+  // Step 6: Split into employee blocks
+  const cnpjPos = cleanedText.indexOf(cnpjMatch[0]);
+  const textAfterCnpj = cleanedText.substring(cnpjPos + cnpjMatch[0].length);
 
   // Find the summary section
   const resumoIdx = textAfterCnpj.indexOf('Resumo da folha');
@@ -149,8 +167,9 @@ export function extractDadosFolhaPagamento(
     }
   }
 
-  // Step 6: Extract footer totals
-  const resumoText = resumoIdx !== -1 ? textAfterCnpj.substring(resumoIdx) : '';
+  // Step 7: Extract footer totals (use original text for resumo since it might span pages)
+  const resumoIdxFull = text.indexOf('Resumo da folha');
+  const resumoText = resumoIdxFull !== -1 ? text.substring(resumoIdxFull) : '';
   const totals = extractTotals(resumoText, text);
 
   return {
@@ -196,8 +215,10 @@ function parseEmployeeBlock(block: string): DadosFuncionarioFolha | null {
   const dependentesSf = depSfMatch ? parseInt(depSfMatch[1], 10) : 0;
 
   // Extract cargo/função
+  // Cargo can contain parentheses like REPOSITOR(A), INST.DE MUSCULAÇÃO, etc.
+  // After the cargo there may be vacation info ("Férias de ...") or "Salário Base"
   const cargoMatch = block.match(
-    /Fun[cç][aã]o\s*:\s*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\w\s.]+?)(?=\s+Sal[aá]rio\s+Base|\s+\d{1,3}(?:\.\d{3})*,\d{2})/i,
+    /Fun[cç][aã]o\s*:\s*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\w\s.()\/\-]+?)(?=\s+F[eé]rias\s+de\s|\s+Sal[aá]rio\s+Base|\s+\d{1,3}(?:\.\d{3})*,\d{2})/i,
   );
   const cargo = cargoMatch ? cargoMatch[1].trim() : null;
 
@@ -326,15 +347,14 @@ function extractRubricas(block: string): RubricaFolha[] {
   const sepIdx = block.indexOf('***************');
   const beforeSep = sepIdx !== -1 ? block.substring(0, sepIdx) : block;
 
-  // Find the rubricas section: starts after "Função : {CARGO}" with "Salário Base" or first rubrica
-  // This avoids capturing cargo text as part of a rubrica description
+  // Find the rubricas section: starts after "Função : {CARGO}" or "Férias..." with "Salário Base" or first rubrica
   const funcaoMatch = beforeSep.match(/Fun[cç][aã]o\s*:\s*/i);
   let rubricaSection = beforeSep;
   if (funcaoMatch && funcaoMatch.index !== undefined) {
     const afterFuncao = beforeSep.substring(
       funcaoMatch.index + funcaoMatch[0].length,
     );
-    // Skip the cargo text - find the first "Salário" or "Sal" which starts the rubricas
+    // Skip the cargo text and optional vacation info - find the first "Salário" which starts the rubricas
     const salarioIdx = afterFuncao.search(/Sal[aá]rio/i);
     if (salarioIdx !== -1) {
       rubricaSection = afterFuncao.substring(salarioIdx);
@@ -343,16 +363,28 @@ function extractRubricas(block: string): RubricaFolha[] {
     }
   }
 
-  // Pattern: {Descricao} {valor BRL}{codigo 3-digitos}
-  // The rubrica code (3 digits) immediately follows the BRL value with no space.
-  // Description can contain letters (including accented), digits, spaces, dots, %
-  // First char must be a letter.
+  // The rubrica pattern in these PDFs is:
+  // {Descrição} {valor BRL}{referência opcional NNN:NN}{código 3 dígitos}
+  //
+  // Examples:
+  //   "Salário Base 1.966,00220:00001" → desc="Salário Base", val="1.966,00", ref="220:00", cod="001"
+  //   "INSS Folha 218,36903" → desc="INSS Folha", val="218,36", cod="903"
+  //   "Horas Extras 497,22026:00409" → desc="Horas Extras", val="497,22", ref="026:00", cod="409"
+  //   "Empréstimo (Crédito Trabalhador) Parc. 11/12 64,32625" → desc="Empréstimo (Crédito Trabalhador) Parc. 11/12", val="64,32", cod="625"
+  //   "Salário Base 295,00036:40001" → desc="Salário Base", val="295,00", ref="036:40", cod="001"
+  //
+  // Pattern breakdown:
+  //   Description: starts with a letter, can contain letters, digits, spaces, dots, %, (), /
+  //   Value: BRL format (digits with optional . thousands separator, comma decimal, 2 decimal digits)
+  //   Optional reference: 3 digits + : + 2 digits (hours:minutes format)
+  //   Code: exactly 3 digits at the end
+
   const rubricaRegex =
-    /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\d\s.%]+?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})(\d{3})/g;
+    /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\d\s.%()\/\-,]*?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})(?:\d{3}:\d{2})?(\d{3})/g;
 
   let match: RegExpExecArray | null;
   while ((match = rubricaRegex.exec(rubricaSection)) !== null) {
-    const descricao = match[1].trim();
+    let descricao = match[1].trim();
     const valor = parseBRL(match[2]);
     const codigo = match[3];
 
@@ -364,6 +396,10 @@ function extractRubricas(block: string): RubricaFolha[] {
     ) {
       continue;
     }
+
+    // Clean up description: remove trailing "Parc." info numbers that leaked
+    // e.g. "Empréstimo (Crédito Trabalhador) Parc. 11/12" should stay as-is
+    descricao = descricao.replace(/\s+$/, '');
 
     rubricas.push({
       codigo,
