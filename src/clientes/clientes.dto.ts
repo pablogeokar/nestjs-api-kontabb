@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -14,6 +14,57 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type ClientType = 'PF' | 'PJ';
+
+export class ClientAddressDto {
+  @IsString()
+  @Matches(/^(?:\d{8})?$/, { message: 'CEP deve conter 8 dígitos.' })
+  postal_code: string;
+
+  @IsString()
+  @Length(0, 200)
+  street: string;
+
+  @IsString()
+  @Length(0, 30)
+  number: string;
+
+  @IsString()
+  @Length(0, 120)
+  complement: string;
+
+  @IsString()
+  @Length(0, 120)
+  district: string;
+
+  @IsString()
+  @Length(0, 120)
+  city: string;
+
+  @IsString()
+  @Matches(/^(?:[A-Z]{2})?$/, {
+    message: 'UF deve conter 2 letras maiúsculas.',
+  })
+  state: string;
+}
+
+export class ClientCnaeDto {
+  @IsString()
+  @Matches(/^\d{7}$/, { message: 'CNAE deve conter 7 dígitos.' })
+  code: string;
+
+  @IsString()
+  @Length(0, 500)
+  description: string;
+}
+
+export class LookupCnpjParamsDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+  )
+  @IsString()
+  @Matches(/^\d{14}$/, { message: 'CNPJ deve conter 14 dígitos.' })
+  cnpj: string;
+}
 
 export class CreateClientDto {
   @ApiProperty({
@@ -58,6 +109,29 @@ export class CreateClientDto {
   @IsOptional()
   @IsEmail({}, { each: true })
   emails?: string | string[];
+
+  @ApiPropertyOptional({ description: 'Endereço completo do cliente' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ClientAddressDto)
+  address?: ClientAddressDto;
+
+  @ApiPropertyOptional({ description: 'CNAE principal do cliente' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ClientCnaeDto)
+  primary_activity?: ClientCnaeDto | null;
+
+  @ApiPropertyOptional({
+    description: 'CNAEs secundários do cliente',
+    type: [ClientCnaeDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ClientCnaeDto)
+  secondary_activities?: ClientCnaeDto[];
 }
 
 export class UpdateClientDto {
@@ -78,6 +152,29 @@ export class UpdateClientDto {
   @IsOptional()
   @IsEmail({}, { each: true })
   emails?: string | string[];
+
+  @ApiPropertyOptional({ description: 'Endereço completo do cliente' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ClientAddressDto)
+  address?: ClientAddressDto;
+
+  @ApiPropertyOptional({ description: 'CNAE principal do cliente' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ClientCnaeDto)
+  primary_activity?: ClientCnaeDto | null;
+
+  @ApiPropertyOptional({
+    description: 'CNAEs secundários do cliente',
+    type: [ClientCnaeDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ClientCnaeDto)
+  secondary_activities?: ClientCnaeDto[];
 }
 
 export class BatchClientItemDto {

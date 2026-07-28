@@ -92,6 +92,19 @@ export const clientes = pgTable(
     cpf: text('cpf').unique(),
     razaoSocial: text('razao_social').notNull(),
     emails: text('emails').array().notNull().default([]),
+    cep: text('cep'),
+    logradouro: text('logradouro'),
+    numero: text('numero'),
+    complemento: text('complemento'),
+    bairro: text('bairro'),
+    municipio: text('municipio'),
+    uf: text('uf'),
+    cnaePrincipalCodigo: text('cnae_principal_codigo'),
+    cnaePrincipalDescricao: text('cnae_principal_descricao'),
+    cnaesSecundarios: jsonb('cnaes_secundarios')
+      .$type<Array<{ code: string; description: string }>>()
+      .notNull()
+      .default([]),
     primeiroLogin: boolean('primeiro_login').notNull().default(true),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
@@ -99,6 +112,22 @@ export const clientes = pgTable(
   (table) => [
     uniqueIndex('uidx_clientes_user_id').on(table.userId),
     check('chk_clientes_tipo_pessoa', sql`${table.tipoPessoa} IN ('PF', 'PJ')`),
+    check(
+      'chk_clientes_cep',
+      sql`${table.cep} IS NULL OR ${table.cep} ~ '^[0-9]{8}$'`,
+    ),
+    check(
+      'chk_clientes_uf',
+      sql`${table.uf} IS NULL OR ${table.uf} ~ '^[A-Z]{2}$'`,
+    ),
+    check(
+      'chk_clientes_cnae_principal',
+      sql`${table.cnaePrincipalCodigo} IS NULL OR ${table.cnaePrincipalCodigo} ~ '^[0-9]{7}$'`,
+    ),
+    check(
+      'chk_clientes_cnaes_secundarios',
+      sql`jsonb_typeof(${table.cnaesSecundarios}) = 'array'`,
+    ),
   ],
 );
 

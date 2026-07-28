@@ -65,6 +65,7 @@ pnpm start:prod
 | Método | Rota                                 | Descrição                         |
 | ------ | ------------------------------------ | --------------------------------- |
 | GET    | `/api/admin/clientes`                | Listar clientes (paginado, busca) |
+| GET    | `/api/admin/clientes/consulta-cnpj/:cnpj` | Consultar razão social, endereço e CNAEs (OpenCNPJ com fallback ReceitaWS) |
 | GET    | `/api/admin/clientes/:id`            | Obter dados de um cliente         |
 | POST   | `/api/admin/clientes`                | Criar cliente                     |
 | POST   | `/api/admin/clientes/batch`          | Criar clientes em lote            |
@@ -145,7 +146,11 @@ de PostgreSQL, R2 e Mailtrap não são retornados.
 
 ## Banco de Dados
 
-Compartilha o mesmo banco PostgreSQL do projeto web (Drizzle ORM). Todas as tabelas são as mesmas — não requer migração adicional.
+Compartilha o mesmo banco PostgreSQL do projeto web (Drizzle ORM). As migrations
+de produção continuam versionadas no projeto `../web`. O cadastro estruturado de
+endereço e CNAEs requer a migration
+`../web/drizzle/0016_clientes_endereco_cnaes.sql`, que deve ser aplicada antes da
+versão da API que lê ou grava esses campos.
 
 ## Variáveis de Ambiente
 

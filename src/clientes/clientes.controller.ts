@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ConflictException,
@@ -13,11 +14,11 @@ import {
   Patch,
   Post,
   Query,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiBody,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -38,7 +39,16 @@ import {
   CreateClientDto,
   UpdateClientDto,
   BatchClientDto,
+  LookupCnpjParamsDto,
+  type ClientAddressDto,
+  type ClientCnaeDto,
 } from './clientes.dto';
+import {
+  CnpjLookupFailure,
+  CnpjLookupService,
+  isValidCnpj,
+} from './cnpj-lookup.service';
+import { RateLimitService } from '../common/rate-limit.service';
 
 @ApiTags('Clientes (Admin)')
 @ApiBearerAuth('session-token')
@@ -48,6 +58,8 @@ import {
 export class ClientesController {
   constructor(
     private readonly clientesService: ClientesService,
+    private readonly cnpjLookupService: CnpjLookupService,
+    private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -87,6 +99,57 @@ export class ClientesController {
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('consulta-cnpj/:cnpj')
+  @ApiOperation({
+    summary: 'Consultar dados de um CNPJ',
+    description:
+      'Consulta a OpenCNPJ e usa a ReceitaWS como fallback, retornando endereço e CNAEs em um contrato único.',
+  })
+  @ApiParam({ name: 'cnpj', description: 'CNPJ com 14 dígitos' })
+  @ApiResponse({ status: 200, description: 'Dados cadastrais normalizados.' })
+  @ApiResponse({ status: 404, description: 'CNPJ não encontrado.' })
+  @ApiResponse({
+    status: 503,
+    description: 'Provedores temporariamente indisponíveis.',
+  })
+  async lookupCnpj(
+    @Param() params: LookupCnpjParamsDto,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    if (!isValidCnpj(params.cnpj)) {
+      throw new BadRequestException({
+        code: 'INVALID_CNPJ',
+        message: 'CNPJ inválido.',
+      });
+    }
+
+    await this.rateLimit.consume({
+      key: `cnpj-lookup:${currentUser.id}`,
+      limit: currentUser.role === 'ADMIN' ? 20 : 10,
+      windowMs: 60_000,
+    });
+
+    const requestId = this.logger.generateRequestId();
+    try {
+      return await this.cnpjLookupService.lookup(params.cnpj, {
+        requestId,
+        userId: currentUser.id,
+      });
+    } catch (error) {
+      if (error instanceof CnpjLookupFailure && error.code === 'NOT_FOUND') {
+        throw new NotFoundException({
+          code: 'CNPJ_NOT_FOUND',
+          message: 'CNPJ não encontrado nas bases consultadas.',
+        });
+      }
+      throw new ServiceUnavailableException({
+        code: 'CNPJ_LOOKUP_UNAVAILABLE',
+        message:
+          'Não foi possível consultar o CNPJ agora. Preencha os dados manualmente ou tente novamente.',
+      });
+    }
   }
 
   @Get(':id')
@@ -136,6 +199,13 @@ export class ClientesController {
     const cnpj = dto.cnpj?.replace(/\D/g, '') ?? '';
     const cpf = dto.cpf?.replace(/\D/g, '') ?? '';
 
+    if (tipoPessoa === 'PJ' && !isValidCnpj(cnpj)) {
+      throw new BadRequestException({
+        code: 'INVALID_CNPJ',
+        message: 'CNPJ inválido.',
+      });
+    }
+
     const result = await this.clientesService.registerClient({
       requestId,
       actorUserId: currentUser.id,
@@ -144,6 +214,14 @@ export class ClientesController {
       cnpj,
       cpf,
       emails,
+      address: dto.address ? this.mapAddress(dto.address) : undefined,
+      primaryActivity: dto.primary_activity
+        ? this.mapCnae(dto.primary_activity)
+        : dto.primary_activity,
+      secondaryActivities: this.mapSecondaryCnaes(
+        dto.secondary_activities,
+        dto.primary_activity?.code,
+      ),
     });
 
     if (!result.ok) {
@@ -184,6 +262,15 @@ export class ClientesController {
     }> = [];
 
     for (const client of dto.clients) {
+      if (!isValidCnpj(client.cnpj)) {
+        results.push({
+          cnpj: client.cnpj,
+          company_name: client.company_name,
+          success: false,
+          message: 'CNPJ inválido.',
+        });
+        continue;
+      }
       const result = await this.clientesService.registerClient({
         requestId,
         actorUserId: currentUser.id,
@@ -238,6 +325,14 @@ export class ClientesController {
       actorUserId: currentUser.id,
       companyName: dto.company_name?.trim(),
       emails: dto.emails ? this.normalizeEmails(dto.emails) : undefined,
+      address: dto.address ? this.mapAddress(dto.address) : undefined,
+      primaryActivity: dto.primary_activity
+        ? this.mapCnae(dto.primary_activity)
+        : dto.primary_activity,
+      secondaryActivities: this.mapSecondaryCnaes(
+        dto.secondary_activities,
+        dto.primary_activity?.code,
+      ),
     });
     if (!updated) throw new NotFoundException('Cliente não encontrado.');
     return { success: true };
@@ -280,5 +375,43 @@ export class ClientesController {
   ): string[] {
     const list = Array.isArray(input) ? input : input ? [input] : [];
     return list.map((e) => e.trim().toLowerCase()).filter(Boolean);
+  }
+
+  private mapAddress(address: ClientAddressDto) {
+    return {
+      postalCode: address.postal_code.trim(),
+      street: address.street.trim(),
+      number: address.number.trim(),
+      complement: address.complement.trim(),
+      district: address.district.trim(),
+      city: address.city.trim(),
+      state: address.state.trim().toUpperCase(),
+    };
+  }
+
+  private mapCnae(cnae: ClientCnaeDto) {
+    return {
+      code: cnae.code.replace(/\D/g, ''),
+      description: cnae.description.trim(),
+    };
+  }
+
+  private mapSecondaryCnaes(
+    cnaes: ClientCnaeDto[] | undefined,
+    primaryCode: string | undefined,
+  ) {
+    if (!cnaes) return undefined;
+    const normalizedPrimary = primaryCode?.replace(/\D/g, '');
+    const unique = new Map<string, { code: string; description: string }>();
+    for (const cnae of cnaes) {
+      const normalized = this.mapCnae(cnae);
+      if (
+        normalized.code !== normalizedPrimary &&
+        !unique.has(normalized.code)
+      ) {
+        unique.set(normalized.code, normalized);
+      }
+    }
+    return [...unique.values()];
   }
 }

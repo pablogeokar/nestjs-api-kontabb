@@ -15,6 +15,13 @@
       "when": 1785470400000,
       "tag": "0001_folhas_arquivo_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785269665657,
+      "tag": "0002_wise_nico_minoru",
+      "breakpoints": true
     }
   ]
 }
