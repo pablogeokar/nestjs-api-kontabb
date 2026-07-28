@@ -243,6 +243,8 @@ export const folhasPagamento = pgTable(
     documentoId: uuid('documento_id').references(() => documentos.id, {
       onDelete: 'set null',
     }),
+    arquivoKey: text('arquivo_key'),
+    arquivoNome: text('arquivo_nome'),
     competencia: text('competencia').notNull(),
     periodoInicio: date('periodo_inicio').notNull(),
     periodoFim: date('periodo_fim').notNull(),

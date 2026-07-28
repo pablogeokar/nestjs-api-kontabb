@@ -3,7 +3,6 @@ import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import {
   clientes,
-  documentos,
   eventosAuditoria,
   folhasPagamento,
   funcionariosRh,
@@ -35,27 +34,13 @@ export class RhService {
     const { dados, clienteId, r2Key, fileName, actorUserId } = input;
 
     try {
-      // 1. Insert document record
-      const docId = crypto.randomUUID();
-      await this.database.db.insert(documentos).values({
-        id: docId,
-        clienteId,
-        tipo: 'FOLHA-PAGAMENTO',
-        periodo: dados.competencia,
-        vencimento: null,
-        valor: null,
-        arquivoKey: r2Key,
-        arquivoNome: fileName,
-        status: 'PENDENTE',
-        emailStatus: 'SEM_EMAIL',
-      });
-
-      // 2. Insert folha_pagamento
+      // 1. Insert folha_pagamento (no longer inserting into documentos table)
       const folhaId = crypto.randomUUID();
       await this.database.db.insert(folhasPagamento).values({
         id: folhaId,
         clienteId,
-        documentoId: docId,
+        arquivoKey: r2Key,
+        arquivoNome: fileName,
         competencia: dados.competencia,
         periodoInicio: dados.periodoInicio,
         periodoFim: dados.periodoFim,
@@ -70,7 +55,7 @@ export class RhService {
         uploadadoPor: actorUserId,
       });
 
-      // 3. Upsert funcionarios and insert itens
+      // 2. Upsert funcionarios and insert itens
       for (const func of dados.funcionarios) {
         // Upsert funcionario
         const existingFunc = await this.database.db
@@ -138,7 +123,7 @@ export class RhService {
         });
       }
 
-      // 4. Audit event
+      // 3. Audit event
       await this.database.db.insert(eventosAuditoria).values({
         atorUserId: actorUserId,
         acao: 'FOLHA_PAGAMENTO_UPLOADADA',
@@ -586,25 +571,18 @@ export class RhService {
   }) {
     const result = await this.database.db.execute(sql`
       WITH target_folha AS MATERIALIZED (
-        SELECT id, cliente_id, documento_id, competencia
+        SELECT id, cliente_id, arquivo_key, competencia
         FROM folhas_pagamento WHERE id = ${input.folhaId}::uuid
         FOR UPDATE
       ),
-      target_doc AS MATERIALIZED (
-        SELECT d.id, d.arquivo_key
-        FROM documentos d INNER JOIN target_folha f ON d.id = f.documento_id
-      ),
       deleted_folha AS (
         DELETE FROM folhas_pagamento f USING target_folha t WHERE f.id = t.id
-        RETURNING f.id, f.competencia
-      ),
-      deleted_doc AS (
-        DELETE FROM documentos d USING target_doc t WHERE d.id = t.id
-        RETURNING d.id, d.arquivo_key
+        RETURNING f.id, f.competencia, f.arquivo_key
       ),
       cleanup_jobs AS (
         INSERT INTO storage_cleanup_jobs (object_key, entidade_tipo, entidade_id)
-        SELECT arquivo_key, 'FOLHA_PAGAMENTO', id::text FROM deleted_doc
+        SELECT arquivo_key, 'FOLHA_PAGAMENTO', id::text FROM deleted_folha
+        WHERE arquivo_key IS NOT NULL
         ON CONFLICT (object_key) DO NOTHING
         RETURNING id
       ),
@@ -636,9 +614,8 @@ export class RhService {
   // ─── Get folha download URL ───
   async getFolhaDocumentoKey(folhaId: string): Promise<string | null> {
     const result = await this.database.db
-      .select({ arquivoKey: documentos.arquivoKey })
+      .select({ arquivoKey: folhasPagamento.arquivoKey })
       .from(folhasPagamento)
-      .leftJoin(documentos, eq(folhasPagamento.documentoId, documentos.id))
       .where(eq(folhasPagamento.id, folhaId))
       .limit(1);
     return result[0]?.arquivoKey ?? null;
