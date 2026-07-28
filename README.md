@@ -8,7 +8,7 @@ delega toda autenticação e operações de dados para esta API.
 
 ```bash
 pnpm install
-cp .env.example .env  # Preencha com as mesmas variáveis do projeto web
+cp .env.example .env  # Preencha as credenciais exclusivas da API
 ```
 
 ## Desenvolvimento
@@ -146,11 +146,25 @@ de PostgreSQL, R2 e Mailtrap não são retornados.
 
 ## Banco de Dados
 
-Compartilha o mesmo banco PostgreSQL do projeto web (Drizzle ORM). As migrations
-de produção continuam versionadas no projeto `../web`. O cadastro estruturado de
-endereço e CNAEs requer a migration
-`../web/drizzle/0016_clientes_endereco_cnaes.sql`, que deve ser aplicada antes da
-versão da API que lê ou grava esses campos.
+A API é a fonte absoluta de verdade para persistência. O frontend `../web` não
+possui driver, ORM, schema, migrations, seeds ou credenciais de banco.
+
+- schema: `src/database/schema.ts`;
+- migrations versionadas: `drizzle/`;
+- configuração de migration: `drizzle.config.ts`;
+- preflight e backfill operacionais: `scripts/`.
+
+O cadastro estruturado de endereço e CNAEs requer
+`drizzle/0002_alteracao_de_cliente.sql`, que deve ser aplicada antes da versão da
+API que lê ou grava esses campos.
+
+Para desenvolvimento local, suba o PostgreSQL e aplique as migrations:
+
+```bash
+docker compose up -d
+pnpm db:migrate
+pnpm db:check
+```
 
 ## Variáveis de Ambiente
 
@@ -172,6 +186,7 @@ ter o mesmo valor.
 ```bash
 pnpm exec tsc --noEmit
 pnpm test
+pnpm db:check
 pnpm build
 ```
 
