@@ -91,9 +91,10 @@ export function extractDadosFolhaPagamento(
   }
 
   // Step 2: Extract CNPJ
-  // In the extracted text the CNPJ digits appear BEFORE "CNPJ/CEI:" (e.g. "03198283000116CNPJ/CEI:")
+  // The CNPJ appears BEFORE "CNPJ/CEI:" — either as raw 14 digits or formatted XX.XXX.XXX/XXXX-XX
   const cnpjMatch =
     text.match(/(\d{14})CNPJ\/CEI:/) ||
+    text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s*CNPJ\/CEI:/) ||
     text.match(/CNPJ\/CEI:\s*(\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
   if (!cnpjMatch) return null;
   const cnpjRaw = cnpjMatch[1].replace(/\D/g, '');
@@ -122,7 +123,7 @@ export function extractDadosFolhaPagamento(
   // Page headers look like: "00013MERCADINHO...Empresa : End. : Ref.: (...) DD/MM/YYYY DD/MM/YYYYa Dpto : Página : NNNNN Código Nome Ref. Sal. Contratual Adicionais Descontos Líquido TODOS Recibo FOLHA DE PAGAMENTO XXXXXXXXXXXXXX CNPJ/CEI:"
   // Keep only the first occurrence, remove subsequent ones.
   const pageHeaderPattern =
-    /\d{5}[A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\s.,]+?Empresa\s*:.*?FOLHA DE PAGAMENTO\s+\d{14}CNPJ\/CEI:\s*/g;
+    /\d{5}[A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\s.,]+?Empresa\s*:.*?FOLHA DE PAGAMENTO\s+(?:\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s*CNPJ\/CEI:\s*/g;
   let cleanedText = text;
   const headerMatches = [...text.matchAll(pageHeaderPattern)];
   if (headerMatches.length > 1) {
