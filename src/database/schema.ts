@@ -386,6 +386,7 @@ export const itensFolhaPagamento = pgTable(
         Array<{
           codigo: string;
           descricao: string;
+          referencia: string | null;
           tipo: 'PROVENTO' | 'DESCONTO';
           valor: number;
         }>

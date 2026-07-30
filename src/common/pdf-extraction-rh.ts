@@ -10,6 +10,7 @@
 export interface RubricaFolha {
   codigo: string;
   descricao: string;
+  referencia: string | null;
   tipo: 'PROVENTO' | 'DESCONTO';
   valor: number;
 }
@@ -228,34 +229,24 @@ function parseEmployeeBlock(block: string): DadosFuncionarioFolha | null {
   const codigoFolha = folhaMatch ? folhaMatch[1] : null;
 
   // Extract referencia - value after name, format "220:00" or "13,80"
-  const afterName = block.substring(
-    (codeNameMatch.index ?? 0) + codeNameMatch[0].length - 1,
-  );
-  const refMatch = afterName.match(/^[\d,.:]+([\d]+[,:]\d+)/);
+  // We'll derive it from the "Salário Base" rubrica reference after extracting rubricas
   let referencia: string | null = null;
-  // Try a more direct approach: after name there should be a numeric value
-  const refMatch2 = block.match(
-    new RegExp(
-      codigoFuncionario +
-        '\\s+' +
-        nomeCompleto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
-        '\\s+(\\d+[,:.]\\d+)',
-    ),
-  );
-  if (refMatch2) {
-    referencia = refMatch2[1];
-  }
 
   // Extract rubricas (earnings and deductions)
   const rubricas = extractRubricas(block);
 
-  // Calculate salarioBase from rubricas
-  let salarioBase = 0;
+  // Derive employee-level referencia from the "Salário Base" rubrica's reference
   const salBaseRubrica = rubricas.find(
     (r) =>
       r.descricao.toLowerCase().includes('sal') &&
       r.descricao.toLowerCase().includes('base'),
   );
+  if (salBaseRubrica?.referencia) {
+    referencia = salBaseRubrica.referencia;
+  }
+
+  // Calculate salarioBase from rubricas
+  let salarioBase = 0;
   if (salBaseRubrica) {
     salarioBase = salBaseRubrica.valor;
   }
@@ -381,13 +372,14 @@ function extractRubricas(block: string): RubricaFolha[] {
   //   Code: exactly 3 digits at the end
 
   const rubricaRegex =
-    /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\d\s.%()\/\-,]*?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})(?:\d{3}:\d{2})?(\d{3})/g;
+    /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\d\s.%()\/\-,]*?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})(\d{3}:\d{2})?(\d{3})/g;
 
   let match: RegExpExecArray | null;
   while ((match = rubricaRegex.exec(rubricaSection)) !== null) {
     let descricao = match[1].trim();
     const valor = parseBRL(match[2]);
-    const codigo = match[3];
+    const referencia = match[3] || null; // e.g. "220:00", "026:00", or null
+    const codigo = match[4];
 
     // Skip header/meta fields that might leak through
     if (
@@ -405,6 +397,7 @@ function extractRubricas(block: string): RubricaFolha[] {
     rubricas.push({
       codigo,
       descricao,
+      referencia,
       tipo: classificarRubrica(codigo),
       valor,
     });
