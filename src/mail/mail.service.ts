@@ -153,7 +153,7 @@ export class MailService {
       from: { email: this.senderEmail, name: this.senderName },
       to: recipients,
       subject: `Folha de Pagamento disponível · Competência ${competencia}`,
-      text: `Olá, ${clientName}\n\nSua folha de pagamento referente à competência ${competencia} está disponível na área de RH do portal.\n\nResumo:\n• Competência: ${competencia}\n• Total de funcionários: ${totalFuncionarios}\n• Total líquido: R$ ${totalLiquido}\n\nAcesse o portal para consultar: ${this.portalUrl}/cliente\n\nAviso: Nunca enviamos documentos em anexo por e-mail.\n\n—\nKontabb · Contabilidade Borges`,
+      text: `Olá, ${clientName}\n\nSua folha de pagamento referente à competência ${competencia} está disponível na área de RH do portal.\n\nResumo:\n• Competência: ${competencia}\n• Total de funcionários: ${totalFuncionarios}\n• Total líquido: R$ ${this.formatCurrency(totalLiquido)}\n\nAcesse o portal para consultar: ${this.portalUrl}/cliente\n\nAviso: Nunca enviamos documentos em anexo por e-mail.\n\n—\nKontabb · Contabilidade Borges`,
       html: this.buildFolhaPagamentoHtml({
         clientName,
         competencia,
@@ -215,6 +215,18 @@ export class MailService {
     } catch {
       return isoDate;
     }
+  }
+
+  /**
+   * Formats a numeric string as BRL currency: "12345.67" → "12.345,67"
+   */
+  private formatCurrency(value: string): string {
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    return num.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   }
 
   private buildDocumentNotificationHtml(params: {
@@ -282,7 +294,7 @@ export class MailService {
         <span style="font-size:16px;font-weight:700;color:#0B1F3A;">Competência ${esc(competencia)}</span>
         <table width="100%" style="margin-top:16px;"><tr>
           <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Funcionários</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${totalFuncionarios}</span></td>
-          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Total Líquido</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">R$ ${esc(totalLiquido)}</span></td>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Total Líquido</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">R$ ${esc(this.formatCurrency(totalLiquido))}</span></td>
         </tr></table>
       </td></tr></table>
       <p style="text-align:center;">
