@@ -25,6 +25,7 @@ import { StaffOnly } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AppLogger } from '../common/logger.service';
 import { RateLimitService } from '../common/rate-limit.service';
+import { MailService } from '../mail/mail.service';
 import { hasValidFileSignature } from '../common/file-validation';
 import { extractPdfText } from '../common/pdf-extraction';
 import { extractDadosFolhaPagamento } from '../common/pdf-extraction-rh';
@@ -52,7 +53,8 @@ export class RhUploadController {
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
-  ) {}
+    private readonly mail: MailService,
+  ) { }
 
   @Post('upload')
   @HttpCode(HttpStatus.OK)
@@ -223,7 +225,7 @@ export class RhUploadController {
 
     if (!result.ok) {
       // Cleanup R2 on failure
-      await this.storage.delete(r2Key).catch(() => {});
+      await this.storage.delete(r2Key).catch(() => { });
       const message =
         result.code === 'FOLHA_DUPLICADA'
           ? `Folha duplicada: já existe uma folha para a competência ${dados.competencia}.`
@@ -234,6 +236,24 @@ export class RhUploadController {
         message,
         cnpj: dados.cnpj,
       };
+    }
+
+    // Notify client via email (fire-and-forget)
+    if (client.emails && client.emails.length > 0) {
+      this.mail
+        .sendFolhaPagamentoNotificationEmail({
+          to: client.emails,
+          clientName: client.razaoSocial,
+          competencia: dados.competencia,
+          totalFuncionarios: dados.totalFuncionarios,
+          totalLiquido: String(dados.totalLiquido),
+        })
+        .catch((err) => {
+          this.logger.error('rh_folha_email_notification_failed', err, {
+            requestId: ctx.requestId,
+            clienteId: client.id,
+          });
+        });
     }
 
     return {
