@@ -8,6 +8,21 @@ import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import type { PaginationParams } from '../common/types';
 import { AuthService } from '../auth/auth.service';
 
+export interface StoredAddress {
+    postalCode: string;
+    street: string;
+    number: string;
+    complement: string;
+    district: string;
+    city: string;
+    state: string;
+}
+
+export interface StoredCnae {
+    code: string;
+    description: string;
+}
+
 @Injectable()
 export class ClientesService {
     constructor(
@@ -37,6 +52,16 @@ export class ClientesService {
                     cpf: clientes.cpf,
                     companyName: clientes.razaoSocial,
                     emails: clientes.emails,
+                    cep: clientes.cep,
+                    logradouro: clientes.logradouro,
+                    numero: clientes.numero,
+                    complemento: clientes.complemento,
+                    bairro: clientes.bairro,
+                    municipio: clientes.municipio,
+                    uf: clientes.uf,
+                    cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
+                    cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
+                    cnaesSecundarios: clientes.cnaesSecundarios,
                     isFirstLogin: clientes.primeiroLogin,
                     authUserId: clientes.userId,
                     createdAt: clientes.criadoEm,
@@ -57,6 +82,14 @@ export class ClientesService {
                 cpf: client.cpf,
                 company_name: client.companyName,
                 emails: client.emails ?? [],
+                address: this.mapAddress(client),
+                primary_activity: client.cnaePrincipalCodigo
+                    ? {
+                        code: client.cnaePrincipalCodigo,
+                        description: client.cnaePrincipalDescricao ?? '',
+                    }
+                    : null,
+                secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
                 is_first_login: client.isFirstLogin,
                 auth_user_id: client.authUserId,
                 created_at: client.createdAt.toISOString(),
@@ -72,6 +105,9 @@ export class ClientesService {
         cnpj: string;
         cpf: string;
         emails: string[];
+        address?: StoredAddress;
+        primaryActivity?: StoredCnae | null;
+        secondaryActivities?: StoredCnae[];
     }) {
         const authIdentifier = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
         const authEmail = `${authIdentifier}@kontabb.local`;
@@ -83,6 +119,7 @@ export class ClientesService {
             const emails = this.textArray(input.emails);
             const cnpjValue = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
             const cpfValue = input.tipoPessoa === 'PF' ? input.cpf : null;
+            const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
             const result = await this.database.db.execute(sql`
         WITH inserted_user AS (
           INSERT INTO "user" (id, name, email, email_verified, role, created_at, updated_at)
@@ -103,8 +140,25 @@ export class ClientesService {
           RETURNING user_id
         ),
         inserted_client AS (
-          INSERT INTO clientes (tipo_pessoa, razao_social, cnpj, cpf, emails, primeiro_login, user_id)
-          SELECT ${input.tipoPessoa}, ${input.companyName}, ${cnpjValue}, ${cpfValue}, ${emails}, true, id
+          INSERT INTO clientes (
+            tipo_pessoa, razao_social, cnpj, cpf, emails,
+            cep, logradouro, numero, complemento, bairro, municipio, uf,
+            cnae_principal_codigo, cnae_principal_descricao, cnaes_secundarios,
+            primeiro_login, user_id
+          )
+          SELECT
+            ${input.tipoPessoa}, ${input.companyName}, ${cnpjValue}, ${cpfValue}, ${emails},
+            ${this.nullableText(input.address?.postalCode)},
+            ${this.nullableText(input.address?.street)},
+            ${this.nullableText(input.address?.number)},
+            ${this.nullableText(input.address?.complement)},
+            ${this.nullableText(input.address?.district)},
+            ${this.nullableText(input.address?.city)},
+            ${this.nullableText(input.address?.state)},
+            ${this.nullableText(input.primaryActivity?.code)},
+            ${this.nullableText(input.primaryActivity?.description)},
+            ${secondaryActivities}::jsonb,
+            true, id
           FROM inserted_user
           RETURNING id
         ),
@@ -139,14 +193,31 @@ export class ClientesService {
         actorUserId: string;
         companyName?: string;
         emails?: string[];
+        address?: StoredAddress;
+        primaryActivity?: StoredCnae | null;
+        secondaryActivities?: StoredCnae[];
     }) {
         const emails = input.emails ? this.textArray(input.emails) : sql`NULL::text[]`;
+        const hasAddress = input.address !== undefined;
+        const hasPrimaryActivity = input.primaryActivity !== undefined;
+        const hasSecondaryActivities = input.secondaryActivities !== undefined;
+        const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
         const result = await this.database.db.execute(sql`
       WITH updated_client AS (
         UPDATE clientes
         SET
           razao_social = COALESCE(${input.companyName ?? null}::text, razao_social),
-          emails = COALESCE(${emails}, emails)
+          emails = COALESCE(${emails}, emails),
+          cep = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.postalCode)} ELSE cep END,
+          logradouro = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.street)} ELSE logradouro END,
+          numero = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.number)} ELSE numero END,
+          complemento = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.complement)} ELSE complemento END,
+          bairro = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.district)} ELSE bairro END,
+          municipio = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.city)} ELSE municipio END,
+          uf = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.state)} ELSE uf END,
+          cnae_principal_codigo = CASE WHEN ${hasPrimaryActivity} THEN ${this.nullableText(input.primaryActivity?.code)} ELSE cnae_principal_codigo END,
+          cnae_principal_descricao = CASE WHEN ${hasPrimaryActivity} THEN ${this.nullableText(input.primaryActivity?.description)} ELSE cnae_principal_descricao END,
+          cnaes_secundarios = CASE WHEN ${hasSecondaryActivities} THEN ${secondaryActivities}::jsonb ELSE cnaes_secundarios END
         WHERE id = ${input.clientId}::uuid
         RETURNING id
       ),
@@ -234,6 +305,16 @@ export class ClientesService {
                 cnpj: clientes.cnpj,
                 cpf: clientes.cpf,
                 razaoSocial: clientes.razaoSocial,
+                cep: clientes.cep,
+                logradouro: clientes.logradouro,
+                numero: clientes.numero,
+                complemento: clientes.complemento,
+                bairro: clientes.bairro,
+                municipio: clientes.municipio,
+                uf: clientes.uf,
+                cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
+                cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
+                cnaesSecundarios: clientes.cnaesSecundarios,
             })
             .from(clientes)
             .where(eq(clientes.id, clientId))
@@ -246,6 +327,14 @@ export class ClientesService {
             cnpj: client.cnpj,
             cpf: client.cpf,
             company_name: client.razaoSocial,
+            address: this.mapAddress(client),
+            primary_activity: client.cnaePrincipalCodigo
+                ? {
+                    code: client.cnaePrincipalCodigo,
+                    description: client.cnaePrincipalDescricao ?? '',
+                }
+                : null,
+            secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
         };
     }
 
@@ -299,6 +388,56 @@ export class ClientesService {
     private textArray(values: string[]) {
         if (!values.length) return sql`ARRAY[]::text[]`;
         return sql`ARRAY[${sql.join(values.map((v) => sql`${v}`), sql`, `)}]::text[]`;
+    }
+
+    private nullableText(value: string | undefined) {
+        const normalized = value?.trim();
+        return normalized ? normalized : null;
+    }
+
+    private mapAddress(client: {
+        cep: string | null;
+        logradouro: string | null;
+        numero: string | null;
+        complemento: string | null;
+        bairro: string | null;
+        municipio: string | null;
+        uf: string | null;
+    }) {
+        const hasAddress = [
+            client.cep,
+            client.logradouro,
+            client.numero,
+            client.complemento,
+            client.bairro,
+            client.municipio,
+            client.uf,
+        ].some(Boolean);
+        if (!hasAddress) return null;
+        return {
+            postal_code: client.cep ?? '',
+            street: client.logradouro ?? '',
+            number: client.numero ?? '',
+            complement: client.complemento ?? '',
+            district: client.bairro ?? '',
+            city: client.municipio ?? '',
+            state: client.uf ?? '',
+        };
+    }
+
+    private normalizeStoredCnaes(value: unknown): StoredCnae[] {
+        if (!Array.isArray(value)) return [];
+        return value.flatMap((item) => {
+            if (!item || typeof item !== 'object') return [];
+            const candidate = item as { code?: unknown; description?: unknown };
+            if (typeof candidate.code !== 'string' || !/^\d{7}$/.test(candidate.code)) {
+                return [];
+            }
+            return [{
+                code: candidate.code,
+                description: typeof candidate.description === 'string' ? candidate.description : '',
+            }];
+        });
     }
 
     private isUniqueViolation(error: unknown) {

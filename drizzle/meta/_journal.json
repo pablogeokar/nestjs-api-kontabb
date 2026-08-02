@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785154615821,
+      "tag": "0000_common_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785470400000,
+      "tag": "0001_folhas_arquivo_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785556800000,
+      "tag": "0002_alteracao_de_cliente",
+      "breakpoints": true
+    }
+  ]
+}
