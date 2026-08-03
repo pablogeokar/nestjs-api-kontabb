@@ -115,7 +115,10 @@ export class ColaboradorService {
 
     // Verify current password
     if (employee.senhaHash) {
-      const valid = await this.verifyPassword(input.senhaAtual, employee.senhaHash);
+      const valid = await this.verifyPassword(
+        input.senhaAtual,
+        employee.senhaHash,
+      );
       if (!valid) return { ok: false, code: 'WRONG_PASSWORD' };
     } else {
       // No hash stored, accept default password
@@ -289,6 +292,104 @@ export class ColaboradorService {
         razaoSocial: row.empresa.razaoSocial,
         cnpj: row.empresa.cnpj,
       },
+    };
+  }
+
+  /**
+   * Get recibo in the ReciboData format used by the PDF generator.
+   * Includes funcionario info, empresa, valores, and rubricas.
+   */
+  async getReciboPdf(funcionarioId: string, itemFolhaId: string) {
+    const rows = await this.database.db
+      .select({
+        item: {
+          id: itensFolhaPagamento.id,
+          salarioBase: itensFolhaPagamento.salarioBase,
+          totalProventos: itensFolhaPagamento.totalProventos,
+          totalDescontos: itensFolhaPagamento.totalDescontos,
+          salarioLiquido: itensFolhaPagamento.salarioLiquido,
+          baseInss: itensFolhaPagamento.baseInss,
+          aliquotaInss: itensFolhaPagamento.aliquotaInss,
+          valorInss: itensFolhaPagamento.valorInss,
+          baseFgts: itensFolhaPagamento.baseFgts,
+          valorFgts: itensFolhaPagamento.valorFgts,
+          baseIrrf: itensFolhaPagamento.baseIrrf,
+          valorIrrf: itensFolhaPagamento.valorIrrf,
+          referencia: itensFolhaPagamento.referencia,
+          dependentesIr: itensFolhaPagamento.dependentesIr,
+          dependentesSf: itensFolhaPagamento.dependentesSf,
+          rubricas: itensFolhaPagamento.rubricas,
+        },
+        funcionario: {
+          codigoFuncionario: funcionariosRh.codigoFuncionario,
+          nomeCompleto: funcionariosRh.nomeCompleto,
+          cargo: funcionariosRh.cargo,
+          dataAdmissao: funcionariosRh.dataAdmissao,
+        },
+        folha: {
+          competencia: folhasPagamento.competencia,
+          periodoInicio: folhasPagamento.periodoInicio,
+          periodoFim: folhasPagamento.periodoFim,
+        },
+        empresa: {
+          razaoSocial: clientes.razaoSocial,
+          cnpj: clientes.cnpj,
+        },
+      })
+      .from(itensFolhaPagamento)
+      .innerJoin(
+        funcionariosRh,
+        eq(itensFolhaPagamento.funcionarioId, funcionariosRh.id),
+      )
+      .innerJoin(
+        folhasPagamento,
+        eq(itensFolhaPagamento.folhaId, folhasPagamento.id),
+      )
+      .innerJoin(clientes, eq(itensFolhaPagamento.clienteId, clientes.id))
+      .where(
+        and(
+          eq(itensFolhaPagamento.id, itemFolhaId),
+          eq(itensFolhaPagamento.funcionarioId, funcionarioId),
+        ),
+      )
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) return null;
+
+    return {
+      empresa: {
+        razaoSocial: row.empresa.razaoSocial,
+        cnpj: row.empresa.cnpj,
+      },
+      competencia: row.folha.competencia,
+      periodoInicio: row.folha.periodoInicio,
+      periodoFim: row.folha.periodoFim,
+      funcionario: {
+        codigoFuncionario: row.funcionario.codigoFuncionario,
+        nomeCompleto: row.funcionario.nomeCompleto,
+        cargo: row.funcionario.cargo,
+        dataAdmissao: row.funcionario.dataAdmissao,
+        dependentesIr: row.item.dependentesIr ?? 0,
+        dependentesSf: row.item.dependentesSf ?? 0,
+        referencia: row.item.referencia,
+      },
+      valores: {
+        salarioBase: Number(row.item.salarioBase),
+        totalProventos: Number(row.item.totalProventos),
+        totalDescontos: Number(row.item.totalDescontos),
+        salarioLiquido: Number(row.item.salarioLiquido),
+        baseInss: row.item.baseInss ? Number(row.item.baseInss) : null,
+        aliquotaInss: row.item.aliquotaInss
+          ? Number(row.item.aliquotaInss)
+          : null,
+        valorInss: row.item.valorInss ? Number(row.item.valorInss) : null,
+        baseFgts: row.item.baseFgts ? Number(row.item.baseFgts) : null,
+        valorFgts: row.item.valorFgts ? Number(row.item.valorFgts) : null,
+        baseIrrf: row.item.baseIrrf ? Number(row.item.baseIrrf) : null,
+        valorIrrf: row.item.valorIrrf ? Number(row.item.valorIrrf) : null,
+      },
+      rubricas: row.item.rubricas ?? [],
     };
   }
 

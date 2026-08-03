@@ -260,6 +260,25 @@ export class ColaboradorController {
     return recibo;
   }
 
+  @Get('recibos/:id/pdf')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Dados do recibo no formato para geração de PDF' })
+  async getReciboPdf(@Req() req: Request, @Param('id') id: string) {
+    const payload = this.requireAuth(req);
+    this.requirePasswordChanged(payload);
+
+    const recibo = await this.colaboradorService.getReciboPdf(
+      payload.funcionarioId,
+      id,
+    );
+
+    if (!recibo) {
+      throw new NotFoundException('Recibo não encontrado.');
+    }
+
+    return recibo;
+  }
+
   // ─── Helpers ───
 
   private requireAuth(req: Request): ColaboradorTokenPayload {
