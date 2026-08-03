@@ -20,7 +20,7 @@ export class RhService {
     private readonly database: DatabaseService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   // ─── Process payroll upload ───
   async processarFolhaPagamento(input: {
@@ -332,11 +332,11 @@ export class RhService {
         salarioLiquido: Number(r.salarioLiquido),
         funcionario: r.funcionario
           ? {
-              id: r.funcionario.id,
-              codigoFuncionario: r.funcionario.codigoFuncionario,
-              nomeCompleto: r.funcionario.nomeCompleto,
-              cargo: r.funcionario.cargo,
-            }
+            id: r.funcionario.id,
+            codigoFuncionario: r.funcionario.codigoFuncionario,
+            nomeCompleto: r.funcionario.nomeCompleto,
+            cargo: r.funcionario.cargo,
+          }
           : null,
       })),
     };
@@ -409,6 +409,13 @@ export class RhService {
         empresa: {
           razaoSocial: clientes.razaoSocial,
           cnpj: clientes.cnpj,
+          logradouro: clientes.logradouro,
+          numero: clientes.numero,
+          complemento: clientes.complemento,
+          bairro: clientes.bairro,
+          municipio: clientes.municipio,
+          uf: clientes.uf,
+          cep: clientes.cep,
         },
       })
       .from(itensFolhaPagamento)
@@ -431,6 +438,7 @@ export class RhService {
       empresa: {
         razaoSocial: row.empresa?.razaoSocial ?? '',
         cnpj: row.empresa?.cnpj ?? '',
+        endereco: this.buildEndereco(row.empresa),
       },
       competencia: row.folha?.competencia ?? '',
       periodoInicio: row.folha?.periodoInicio ?? '',
@@ -657,6 +665,13 @@ export class RhService {
         empresa: {
           razaoSocial: clientes.razaoSocial,
           cnpj: clientes.cnpj,
+          logradouro: clientes.logradouro,
+          numero: clientes.numero,
+          complemento: clientes.complemento,
+          bairro: clientes.bairro,
+          municipio: clientes.municipio,
+          uf: clientes.uf,
+          cep: clientes.cep,
         },
       })
       .from(itensFolhaPagamento)
@@ -676,6 +691,7 @@ export class RhService {
       empresa: {
         razaoSocial: row.empresa?.razaoSocial ?? '',
         cnpj: row.empresa?.cnpj ?? '',
+        endereco: this.buildEndereco(row.empresa),
       },
       competencia: row.folha?.competencia ?? '',
       periodoInicio: row.folha?.periodoInicio ?? '',
@@ -706,6 +722,41 @@ export class RhService {
       },
       rubricas: row.item.rubricas ?? [],
     }));
+  }
+
+  // ─── Build formatted address from empresa fields ───
+  private buildEndereco(empresa: {
+    logradouro?: string | null;
+    numero?: string | null;
+    complemento?: string | null;
+    bairro?: string | null;
+    municipio?: string | null;
+    uf?: string | null;
+    cep?: string | null;
+  } | null): string {
+    if (!empresa) return '';
+    const parts: string[] = [];
+
+    // Logradouro, Nº complemento
+    const rua = [empresa.logradouro, empresa.numero ? `Nº ${empresa.numero}` : null, empresa.complemento]
+      .filter(Boolean)
+      .join(', ');
+    if (rua) parts.push(rua);
+
+    // Bairro
+    if (empresa.bairro) parts.push(empresa.bairro);
+
+    // Município - UF
+    const cidadeUf = [empresa.municipio, empresa.uf].filter(Boolean).join(' - ');
+    if (cidadeUf) parts.push(cidadeUf);
+
+    // CEP
+    if (empresa.cep) {
+      const cepFormatted = empresa.cep.replace(/^(\d{5})(\d{3})$/, '$1-$2');
+      parts.push(`CEP ${cepFormatted}`);
+    }
+
+    return parts.join(', ');
   }
 
   // ─── Get folha owner (for client access check) ───

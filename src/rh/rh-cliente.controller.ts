@@ -34,7 +34,7 @@ export class RhClienteController {
   constructor(
     private readonly rhService: RhService,
     private readonly clientesService: ClientesService,
-  ) {}
+  ) { }
 
   @Get('folhas')
   @ApiOperation({ summary: 'Listar folhas do cliente autenticado' })
@@ -102,6 +102,28 @@ export class RhClienteController {
     const pagination = parsePaginationParams(query);
     const result = await this.rhService.listItensFolha(folhaId, pagination);
     return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('folhas/:folhaId/recibos')
+  @ApiOperation({ summary: 'Todos os recibos de uma folha do cliente' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Recibos da folha.' })
+  @ApiResponse({ status: 403, description: 'Acesso negado.' })
+  @ApiResponse({ status: 404, description: 'Folha não encontrada.' })
+  async getAllRecibos(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) throw new NotFoundException('Cliente não encontrado.');
+
+    const ownerClienteId = await this.rhService.getFolhaClienteId(folhaId);
+    if (!ownerClienteId) throw new NotFoundException('Folha não encontrada.');
+    if (ownerClienteId !== client.id)
+      throw new ForbiddenException('Acesso negado.');
+
+    const recibos = await this.rhService.getAllRecibosByFolha(folhaId);
+    return { recibos };
   }
 
   @Get('funcionarios')
