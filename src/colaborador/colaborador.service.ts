@@ -334,6 +334,13 @@ export class ColaboradorService {
         empresa: {
           razaoSocial: clientes.razaoSocial,
           cnpj: clientes.cnpj,
+          logradouro: clientes.logradouro,
+          numero: clientes.numero,
+          complemento: clientes.complemento,
+          bairro: clientes.bairro,
+          municipio: clientes.municipio,
+          uf: clientes.uf,
+          cep: clientes.cep,
         },
       })
       .from(itensFolhaPagamento)
@@ -361,6 +368,7 @@ export class ColaboradorService {
       empresa: {
         razaoSocial: row.empresa.razaoSocial,
         cnpj: row.empresa.cnpj,
+        endereco: this.buildEndereco(row.empresa),
       },
       competencia: row.folha.competencia,
       periodoInicio: row.folha.periodoInicio,
@@ -391,6 +399,46 @@ export class ColaboradorService {
       },
       rubricas: row.item.rubricas ?? [],
     };
+  }
+
+  // ─── Build formatted address from empresa fields ───
+
+  private buildEndereco(
+    empresa: {
+      logradouro?: string | null;
+      numero?: string | null;
+      complemento?: string | null;
+      bairro?: string | null;
+      municipio?: string | null;
+      uf?: string | null;
+      cep?: string | null;
+    } | null,
+  ): string {
+    if (!empresa) return '';
+    const parts: string[] = [];
+
+    const rua = [
+      empresa.logradouro,
+      empresa.numero ? `Nº ${empresa.numero}` : null,
+      empresa.complemento,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    if (rua) parts.push(rua);
+
+    if (empresa.bairro) parts.push(empresa.bairro);
+
+    const cidadeUf = [empresa.municipio, empresa.uf]
+      .filter(Boolean)
+      .join(' - ');
+    if (cidadeUf) parts.push(cidadeUf);
+
+    if (empresa.cep) {
+      const cepFormatted = empresa.cep.replace(/^(\d{5})(\d{3})$/, '$1-$2');
+      parts.push(`CEP ${cepFormatted}`);
+    }
+
+    return parts.join(', ');
   }
 
   // ─── Password hashing (same approach as AuthService) ───
