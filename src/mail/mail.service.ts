@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppLogger } from '../common/logger.service';
 import { OBLIGATION_TYPE_LABELS, type ObligationType } from '../common/types';
+import { MailLayoutService } from './mail-layout.service';
 
 interface SendEmailParams {
   to: string | string[];
@@ -24,6 +25,7 @@ export class MailService {
   constructor(
     private configService: ConfigService,
     private logger: AppLogger,
+    private layout: MailLayoutService,
   ) {
     this.apiToken = this.configService.get<string>('MAILTRAP_API_TOKEN');
     this.senderEmail =
@@ -67,7 +69,7 @@ export class MailService {
       to: recipients,
       subject: `${documentLabel} disponível · Período ${period}`,
       text: `Olá, ${clientName}\n\nUma nova guia de pagamento está disponível na sua área de cliente.\n\nDocumento: ${documentLabel}\nCompetência: ${period}\nVencimento: ${formattedDueDate}${valorText}${parcelaText}\n\nAcesse o portal para baixar: ${this.portalUrl}/cliente\n\nAviso: Nunca enviamos documentos em anexo por e-mail.\n\n—\nKontabb · Contabilidade Borges`,
-      html: this.buildHtml({
+      html: this.buildDocumentNotificationHtml({
         clientName,
         documentLabel,
         period,
@@ -77,40 +79,7 @@ export class MailService {
       }),
     };
 
-    try {
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        this.logger.error(
-          'mailtrap_request_failed',
-          new Error(`MAILTRAP_HTTP_${response.status}`),
-          {
-            operation: 'document_notification',
-            result: 'failed',
-          },
-        );
-        return false;
-      }
-
-      this.logger.info('mailtrap_request_completed', {
-        operation: 'document_notification',
-        result: 'success',
-      });
-      return true;
-    } catch (error) {
-      this.logger.error('mailtrap_request_failed', error, {
-        operation: 'document_notification',
-        result: 'failed',
-      });
-      return false;
-    }
+    return this.sendEmail(payload, 'document_notification');
   }
 
   /**
@@ -133,24 +102,77 @@ export class MailService {
     const esc = (s: string) =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+    const bodyContent = `
+      <p style="font-size:20px;font-weight:700;color:#0B1F3A;">Redefinição de Senha</p>
+      <p style="color:#5F6B7A;line-height:1.6;">Recebemos uma solicitação para redefinir sua senha no Kontabb. Clique no botão abaixo para criar uma nova senha:</p>
+      <p style="text-align:center;margin:32px 0;">
+        <a href="${esc(resetLink)}" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Redefinir Senha</a>
+      </p>
+      <p style="color:#8896A6;font-size:13px;">Este link expira em 1 hora. Se você não solicitou essa alteração, ignore este e-mail.</p>
+    `;
+
     const payload = {
       from: { email: this.senderEmail, name: this.senderName },
       to: [{ email: to }],
       subject: 'Redefinição de Senha — Kontabb',
       text: `Olá,\n\nRecebemos uma solicitação para redefinir sua senha no Kontabb.\n\nClique no link abaixo para criar uma nova senha:\n${resetLink}\n\nEste link expira em 1 hora.\n\nSe você não solicitou essa alteração, ignore este e-mail.\n\n—\nKontabb · Contabilidade Borges`,
-      html: `<!DOCTYPE html><html lang="pt-BR"><body style="margin:0;padding:0;background:#f5f7fa;font-family:Arial,sans-serif;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;"><tr><td align="center">
-      <table width="100%" style="max-width:580px;">
-        <tr><td style="background:#fff;border-radius:16px;border:1px solid #e8ecf2;padding:40px 36px;">
-          <p style="font-size:20px;font-weight:700;color:#0B1F3A;">Redefinição de Senha</p>
-          <p style="color:#5F6B7A;line-height:1.6;">Recebemos uma solicitação para redefinir sua senha no Kontabb. Clique no botão abaixo para criar uma nova senha:</p>
-          <p style="text-align:center;margin:32px 0;"><a href="${esc(resetLink)}" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Redefinir Senha</a></p>
-          <p style="color:#8896A6;font-size:13px;">Este link expira em 1 hora. Se você não solicitou essa alteração, ignore este e-mail.</p>
-        </td></tr>
-      </table>
-      </td></tr></table></body></html>`,
+      html: this.layout.wrap(bodyContent),
     };
 
+    return this.sendEmail(payload, 'password_reset');
+  }
+
+  /**
+   * Send notification when a payroll document (folha de pagamento) is uploaded via the RH module.
+   */
+  async sendFolhaPagamentoNotificationEmail(params: {
+    to: string | string[];
+    clientName: string;
+    competencia: string;
+    totalFuncionarios: number;
+    totalLiquido: string;
+  }): Promise<boolean> {
+    const { to, clientName, competencia, totalFuncionarios, totalLiquido } =
+      params;
+
+    if (!this.apiToken) {
+      this.logger.warn('mailtrap_not_configured', {
+        operation: 'folha_pagamento_notification',
+        result: 'skipped',
+      });
+      return false;
+    }
+
+    const recipients = Array.isArray(to)
+      ? to.map((email) => ({ email }))
+      : [{ email: to }];
+
+    if (recipients.length === 0) return false;
+
+    const payload = {
+      from: { email: this.senderEmail, name: this.senderName },
+      to: recipients,
+      subject: `Folha de Pagamento disponível · Competência ${competencia}`,
+      text: `Olá, ${clientName}\n\nSua folha de pagamento referente à competência ${competencia} está disponível na área de RH do portal.\n\nResumo:\n• Competência: ${competencia}\n• Total de funcionários: ${totalFuncionarios}\n• Total líquido: R$ ${this.formatCurrency(totalLiquido)}\n\nAcesse o portal para consultar: ${this.portalUrl}/cliente\n\nAviso: Nunca enviamos documentos em anexo por e-mail.\n\n—\nKontabb · Contabilidade Borges`,
+      html: this.buildFolhaPagamentoHtml({
+        clientName,
+        competencia,
+        totalFuncionarios,
+        totalLiquido,
+      }),
+    };
+
+    return this.sendEmail(payload, 'folha_pagamento_notification');
+  }
+
+  // ──────────────────────────────────────────────
+  // Private helpers
+  // ──────────────────────────────────────────────
+
+  private async sendEmail(
+    payload: Record<string, unknown>,
+    operation: string,
+  ): Promise<boolean> {
     try {
       const response = await fetch(this.apiUrl, {
         method: 'POST',
@@ -165,22 +187,19 @@ export class MailService {
         this.logger.error(
           'mailtrap_request_failed',
           new Error(`MAILTRAP_HTTP_${response.status}`),
-          {
-            operation: 'password_reset',
-            result: 'failed',
-          },
+          { operation, result: 'failed' },
         );
         return false;
       }
 
       this.logger.info('mailtrap_request_completed', {
-        operation: 'password_reset',
+        operation,
         result: 'success',
       });
       return true;
     } catch (error) {
       this.logger.error('mailtrap_request_failed', error, {
-        operation: 'password_reset',
+        operation,
         result: 'failed',
       });
       return false;
@@ -198,7 +217,19 @@ export class MailService {
     }
   }
 
-  private buildHtml(params: {
+  /**
+   * Formats a numeric string as BRL currency: "12345.67" → "12.345,67"
+   */
+  private formatCurrency(value: string): string {
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    return num.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  private buildDocumentNotificationHtml(params: {
     clientName: string;
     documentLabel: string;
     period: string;
@@ -225,24 +256,52 @@ export class MailService {
         </td></tr>`
       : '';
 
-    return `<!DOCTYPE html><html lang="pt-BR"><body style="margin:0;padding:0;background:#f5f7fa;font-family:Arial,sans-serif;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;"><tr><td align="center">
-      <table width="100%" style="max-width:580px;">
-        <tr><td style="background:#fff;border-radius:16px;border:1px solid #e8ecf2;padding:40px 36px;">
-          <p style="font-size:20px;font-weight:700;color:#0B1F3A;">Olá, ${esc(clientName)}</p>
-          <p style="color:#5F6B7A;">Uma nova guia de pagamento está disponível.</p>
-          <table width="100%" style="background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;margin:20px 0;"><tr><td style="padding:24px;">
-            <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Documento</span><br>
-            <span style="font-size:16px;font-weight:700;color:#0B1F3A;">${esc(documentLabel)}</span>
-            <table width="100%" style="margin-top:12px;"><tr>
-              <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Competência</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(period)}</span></td>
-              <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Vencimento</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(formattedDueDate)}</span></td>
-            </tr></table>
-            ${valorRow}
-          </td></tr></table>
-          <p style="text-align:center;"><a href="${esc(this.portalUrl)}/cliente" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar Portal</a></p>
-        </td></tr>
-      </table>
-      </td></tr></table></body></html>`;
+    const bodyContent = `
+      <p style="font-size:20px;font-weight:700;color:#0B1F3A;">Olá, ${esc(clientName)}</p>
+      <p style="color:#5F6B7A;">Uma nova guia de pagamento está disponível.</p>
+      <table width="100%" style="background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;margin:20px 0;"><tr><td style="padding:24px;">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Documento</span><br>
+        <span style="font-size:16px;font-weight:700;color:#0B1F3A;">${esc(documentLabel)}</span>
+        <table width="100%" style="margin-top:12px;"><tr>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Competência</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(period)}</span></td>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Vencimento</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(formattedDueDate)}</span></td>
+        </tr></table>
+        ${valorRow}
+      </td></tr></table>
+      <p style="text-align:center;">
+        <a href="${esc(this.portalUrl)}/cliente" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar Portal</a>
+      </p>
+    `;
+
+    return this.layout.wrap(bodyContent);
+  }
+
+  private buildFolhaPagamentoHtml(params: {
+    clientName: string;
+    competencia: string;
+    totalFuncionarios: number;
+    totalLiquido: string;
+  }): string {
+    const { clientName, competencia, totalFuncionarios, totalLiquido } = params;
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const bodyContent = `
+      <p style="font-size:20px;font-weight:700;color:#0B1F3A;">Olá, ${esc(clientName)}</p>
+      <p style="color:#5F6B7A;line-height:1.6;">Sua folha de pagamento está disponível para consulta na área de RH do portal.</p>
+      <table width="100%" style="background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;margin:20px 0;"><tr><td style="padding:24px;">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Folha de Pagamento</span><br>
+        <span style="font-size:16px;font-weight:700;color:#0B1F3A;">Competência ${esc(competencia)}</span>
+        <table width="100%" style="margin-top:16px;"><tr>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Funcionários</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${totalFuncionarios}</span></td>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Total Líquido</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">R$ ${esc(this.formatCurrency(totalLiquido))}</span></td>
+        </tr></table>
+      </td></tr></table>
+      <p style="text-align:center;">
+        <a href="${esc(this.portalUrl)}/cliente" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar Portal</a>
+      </p>
+    `;
+
+    return this.layout.wrap(bodyContent);
   }
 }
