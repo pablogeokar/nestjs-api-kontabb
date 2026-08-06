@@ -9,118 +9,125 @@ import type { PaginationParams } from '../common/types';
 import { AuthService } from '../auth/auth.service';
 
 export interface StoredAddress {
-    postalCode: string;
-    street: string;
-    number: string;
-    complement: string;
-    district: string;
-    city: string;
-    state: string;
+  postalCode: string;
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+  state: string;
 }
 
 export interface StoredCnae {
-    code: string;
-    description: string;
+  code: string;
+  description: string;
 }
 
 @Injectable()
 export class ClientesService {
-    constructor(
-        private readonly database: DatabaseService,
-        private readonly logger: AppLogger,
-        private readonly storageCleanup: StorageCleanupService,
-        private readonly authService: AuthService,
-    ) { }
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly logger: AppLogger,
+    private readonly storageCleanup: StorageCleanupService,
+    private readonly authService: AuthService,
+  ) {}
 
-    async listClients(input: { search: string; pagination: PaginationParams }) {
-        const searchDigits = input.search.replace(/\D/g, '');
-        const where = input.search
-            ? or(
-                ilike(clientes.razaoSocial, `%${input.search}%`),
-                ilike(clientes.cnpj, `%${searchDigits}%`),
-                ilike(clientes.cpf, `%${searchDigits}%`),
-            )
-            : undefined;
+  async listClients(input: { search: string; pagination: PaginationParams }) {
+    const searchDigits = input.search.replace(/\D/g, '');
+    const where = input.search
+      ? or(
+          ilike(clientes.razaoSocial, `%${input.search}%`),
+          ilike(clientes.cnpj, `%${searchDigits}%`),
+          ilike(clientes.cpf, `%${searchDigits}%`),
+        )
+      : undefined;
 
-        const [countResult, rows] = await Promise.all([
-            this.database.db.select({ count: sql<number>`count(*)` }).from(clientes).where(where),
-            this.database.db
-                .select({
-                    id: clientes.id,
-                    tipoPessoa: clientes.tipoPessoa,
-                    cnpj: clientes.cnpj,
-                    cpf: clientes.cpf,
-                    companyName: clientes.razaoSocial,
-                    emails: clientes.emails,
-                    cep: clientes.cep,
-                    logradouro: clientes.logradouro,
-                    numero: clientes.numero,
-                    complemento: clientes.complemento,
-                    bairro: clientes.bairro,
-                    municipio: clientes.municipio,
-                    uf: clientes.uf,
-                    cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
-                    cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
-                    cnaesSecundarios: clientes.cnaesSecundarios,
-                    isFirstLogin: clientes.primeiroLogin,
-                    authUserId: clientes.userId,
-                    createdAt: clientes.criadoEm,
-                })
-                .from(clientes)
-                .where(where)
-                .orderBy(asc(clientes.razaoSocial))
-                .limit(input.pagination.limit)
-                .offset(input.pagination.offset),
-        ]);
+    const [countResult, rows] = await Promise.all([
+      this.database.db
+        .select({ count: sql<number>`count(*)` })
+        .from(clientes)
+        .where(where),
+      this.database.db
+        .select({
+          id: clientes.id,
+          tipoPessoa: clientes.tipoPessoa,
+          cnpj: clientes.cnpj,
+          cpf: clientes.cpf,
+          companyName: clientes.razaoSocial,
+          emails: clientes.emails,
+          cep: clientes.cep,
+          logradouro: clientes.logradouro,
+          numero: clientes.numero,
+          complemento: clientes.complemento,
+          bairro: clientes.bairro,
+          municipio: clientes.municipio,
+          uf: clientes.uf,
+          cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
+          cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
+          cnaesSecundarios: clientes.cnaesSecundarios,
+          isFirstLogin: clientes.primeiroLogin,
+          authUserId: clientes.userId,
+          createdAt: clientes.criadoEm,
+        })
+        .from(clientes)
+        .where(where)
+        .orderBy(asc(clientes.razaoSocial))
+        .limit(input.pagination.limit)
+        .offset(input.pagination.offset),
+    ]);
 
-        return {
-            total: Number(countResult[0]?.count ?? 0),
-            data: rows.map((client) => ({
-                id: client.id,
-                tipo_pessoa: client.tipoPessoa,
-                cnpj: client.cnpj,
-                cpf: client.cpf,
-                company_name: client.companyName,
-                emails: client.emails ?? [],
-                address: this.mapAddress(client),
-                primary_activity: client.cnaePrincipalCodigo
-                    ? {
-                        code: client.cnaePrincipalCodigo,
-                        description: client.cnaePrincipalDescricao ?? '',
-                    }
-                    : null,
-                secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
-                is_first_login: client.isFirstLogin,
-                auth_user_id: client.authUserId,
-                created_at: client.createdAt.toISOString(),
-            })),
-        };
-    }
+    return {
+      total: Number(countResult[0]?.count ?? 0),
+      data: rows.map((client) => ({
+        id: client.id,
+        tipo_pessoa: client.tipoPessoa,
+        cnpj: client.cnpj,
+        cpf: client.cpf,
+        company_name: client.companyName,
+        emails: client.emails ?? [],
+        address: this.mapAddress(client),
+        primary_activity: client.cnaePrincipalCodigo
+          ? {
+              code: client.cnaePrincipalCodigo,
+              description: client.cnaePrincipalDescricao ?? '',
+            }
+          : null,
+        secondary_activities: this.normalizeStoredCnaes(
+          client.cnaesSecundarios,
+        ),
+        is_first_login: client.isFirstLogin,
+        auth_user_id: client.authUserId,
+        created_at: client.createdAt.toISOString(),
+      })),
+    };
+  }
 
-    async registerClient(input: {
-        requestId?: string;
-        actorUserId: string;
-        tipoPessoa: 'PF' | 'PJ';
-        companyName: string;
-        cnpj: string;
-        cpf: string;
-        emails: string[];
-        address?: StoredAddress;
-        primaryActivity?: StoredCnae | null;
-        secondaryActivities?: StoredCnae[];
-    }) {
-        const authIdentifier = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
-        const authEmail = `${authIdentifier}@kontabb.local`;
-        const hashedPassword = await this.authService.hashPassword('123456');
-        const authUserId = crypto.randomUUID();
+  async registerClient(input: {
+    requestId?: string;
+    actorUserId: string;
+    tipoPessoa: 'PF' | 'PJ';
+    companyName: string;
+    cnpj: string;
+    cpf: string;
+    emails: string[];
+    address?: StoredAddress;
+    primaryActivity?: StoredCnae | null;
+    secondaryActivities?: StoredCnae[];
+  }) {
+    const authIdentifier = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
+    const authEmail = `${authIdentifier}@kontabb.local`;
+    const hashedPassword = await this.authService.hashPassword('123456');
+    const authUserId = crypto.randomUUID();
 
-        try {
-            // Create auth user + account directly (matching better-auth structure)
-            const emails = this.textArray(input.emails);
-            const cnpjValue = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
-            const cpfValue = input.tipoPessoa === 'PF' ? input.cpf : null;
-            const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
-            const result = await this.database.db.execute(sql`
+    try {
+      // Create auth user + account directly (matching better-auth structure)
+      const emails = this.textArray(input.emails);
+      const cnpjValue = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
+      const cpfValue = input.tipoPessoa === 'PF' ? input.cpf : null;
+      const secondaryActivities = JSON.stringify(
+        input.secondaryActivities ?? [],
+      );
+      const result = await this.database.db.execute(sql`
         WITH inserted_user AS (
           INSERT INTO "user" (id, name, email, email_verified, role, created_at, updated_at)
           VALUES (${authUserId}, ${input.companyName}, ${authEmail}, false, 'CLIENTE', now(), now())
@@ -172,37 +179,39 @@ export class ClientesService {
         SELECT id::text AS client_id FROM inserted_client
       `);
 
-            const clientId = resultRows<{ client_id: string }>(result)[0]?.client_id;
-            if (!clientId) throw new Error('CLIENT_INSERT_FAILED');
-            return { ok: true as const, clientId };
-        } catch (error: any) {
-            this.logger.error('client_creation_failed', error, {
-                requestId: input.requestId,
-                userId: input.actorUserId,
-                operation: 'client_creation',
-            });
-            if (this.isUniqueViolation(error)) {
-                return { ok: false as const, code: 'DUPLICATE' };
-            }
-            return { ok: false as const, code: 'DATABASE_FAILED' };
-        }
+      const clientId = resultRows<{ client_id: string }>(result)[0]?.client_id;
+      if (!clientId) throw new Error('CLIENT_INSERT_FAILED');
+      return { ok: true as const, clientId };
+    } catch (error: any) {
+      this.logger.error('client_creation_failed', error, {
+        requestId: input.requestId,
+        userId: input.actorUserId,
+        operation: 'client_creation',
+      });
+      if (this.isUniqueViolation(error)) {
+        return { ok: false as const, code: 'DUPLICATE' };
+      }
+      return { ok: false as const, code: 'DATABASE_FAILED' };
     }
+  }
 
-    async updateClient(input: {
-        clientId: string;
-        actorUserId: string;
-        companyName?: string;
-        emails?: string[];
-        address?: StoredAddress;
-        primaryActivity?: StoredCnae | null;
-        secondaryActivities?: StoredCnae[];
-    }) {
-        const emails = input.emails ? this.textArray(input.emails) : sql`NULL::text[]`;
-        const hasAddress = input.address !== undefined;
-        const hasPrimaryActivity = input.primaryActivity !== undefined;
-        const hasSecondaryActivities = input.secondaryActivities !== undefined;
-        const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
-        const result = await this.database.db.execute(sql`
+  async updateClient(input: {
+    clientId: string;
+    actorUserId: string;
+    companyName?: string;
+    emails?: string[];
+    address?: StoredAddress;
+    primaryActivity?: StoredCnae | null;
+    secondaryActivities?: StoredCnae[];
+  }) {
+    const emails = input.emails
+      ? this.textArray(input.emails)
+      : sql`NULL::text[]`;
+    const hasAddress = input.address !== undefined;
+    const hasPrimaryActivity = input.primaryActivity !== undefined;
+    const hasSecondaryActivities = input.secondaryActivities !== undefined;
+    const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
+    const result = await this.database.db.execute(sql`
       WITH updated_client AS (
         UPDATE clientes
         SET
@@ -229,11 +238,15 @@ export class ClientesService {
       )
       SELECT EXISTS (SELECT 1 FROM updated_client) AS updated
     `);
-        return Boolean(resultRows<{ updated: boolean }>(result)[0]?.updated);
-    }
+    return Boolean(resultRows<{ updated: boolean }>(result)[0]?.updated);
+  }
 
-    async deleteClient(input: { requestId?: string; clientId: string; actorUserId: string }) {
-        const result = await this.database.db.execute(sql`
+  async deleteClient(input: {
+    requestId?: string;
+    clientId: string;
+    actorUserId: string;
+  }) {
+    const result = await this.database.db.execute(sql`
       WITH target_client AS MATERIALIZED (
         SELECT id, user_id, razao_social FROM clientes WHERE id = ${input.clientId}::uuid FOR UPDATE
       ),
@@ -272,176 +285,212 @@ export class ClientesService {
         COALESCE((SELECT array_agg(id::text) FROM cleanup_jobs), ARRAY[]::text[]) AS job_ids
     `);
 
-        const row = resultRows<{ deleted: boolean; job_ids: string[] | null }>(result)[0];
-        if (!row?.deleted) return { deleted: false, cleanupPending: 0 };
+    const row = resultRows<{ deleted: boolean; job_ids: string[] | null }>(
+      result,
+    )[0];
+    if (!row?.deleted) return { deleted: false, cleanupPending: 0 };
 
-        const cleanup = await this.storageCleanup.processJobs(row.job_ids ?? [], {
-            requestId: input.requestId,
-            userId: input.actorUserId,
-            trigger: 'deletion',
-        });
-        return { deleted: true, cleanupPending: cleanup.failed };
+    const cleanup = await this.storageCleanup.processJobs(row.job_ids ?? [], {
+      requestId: input.requestId,
+      userId: input.actorUserId,
+      trigger: 'deletion',
+    });
+    return { deleted: true, cleanupPending: cleanup.failed };
+  }
+
+  async getClientForUser(userId: string) {
+    const result = await this.database.db
+      .select({
+        id: clientes.id,
+        companyName: clientes.razaoSocial,
+        cnpj: clientes.cnpj,
+        primeiroLogin: clientes.primeiroLogin,
+      })
+      .from(clientes)
+      .where(eq(clientes.userId, userId))
+      .limit(1);
+    return result[0];
+  }
+
+  /**
+   * Returns the primeiroLogin flag for a client user.
+   * Used by auth endpoints to inform the frontend about first-login state.
+   */
+  async isFirstLogin(userId: string): Promise<boolean> {
+    const result = await this.database.db
+      .select({ primeiroLogin: clientes.primeiroLogin })
+      .from(clientes)
+      .where(eq(clientes.userId, userId))
+      .limit(1);
+    return result[0]?.primeiroLogin ?? false;
+  }
+
+  async getClientSummary(clientId: string) {
+    const result = await this.database.db
+      .select({
+        id: clientes.id,
+        tipoPessoa: clientes.tipoPessoa,
+        cnpj: clientes.cnpj,
+        cpf: clientes.cpf,
+        razaoSocial: clientes.razaoSocial,
+        cep: clientes.cep,
+        logradouro: clientes.logradouro,
+        numero: clientes.numero,
+        complemento: clientes.complemento,
+        bairro: clientes.bairro,
+        municipio: clientes.municipio,
+        uf: clientes.uf,
+        cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
+        cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
+        cnaesSecundarios: clientes.cnaesSecundarios,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, clientId))
+      .limit(1);
+    const client = result[0];
+    if (!client) return undefined;
+    return {
+      id: client.id,
+      tipo_pessoa: client.tipoPessoa,
+      cnpj: client.cnpj,
+      cpf: client.cpf,
+      company_name: client.razaoSocial,
+      address: this.mapAddress(client),
+      primary_activity: client.cnaePrincipalCodigo
+        ? {
+            code: client.cnaePrincipalCodigo,
+            description: client.cnaePrincipalDescricao ?? '',
+          }
+        : null,
+      secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
+    };
+  }
+
+  async findClientForUpload(identifier: string) {
+    if (
+      identifier.length !== 14 &&
+      identifier.length !== 11 &&
+      identifier.length !== 8
+    ) {
+      return undefined;
     }
+    const where =
+      identifier.length === 11
+        ? eq(clientes.cpf, identifier)
+        : identifier.length === 14
+          ? eq(clientes.cnpj, identifier)
+          : like(clientes.cnpj, `${identifier}%`);
+    const result = await this.database.db
+      .select({
+        id: clientes.id,
+        cnpj: clientes.cnpj,
+        razaoSocial: clientes.razaoSocial,
+        emails: clientes.emails,
+      })
+      .from(clientes)
+      .where(where)
+      .limit(1);
+    return result[0];
+  }
 
-    async getClientForUser(userId: string) {
-        const result = await this.database.db
-            .select({
-                id: clientes.id,
-                companyName: clientes.razaoSocial,
-                cnpj: clientes.cnpj,
-                primeiroLogin: clientes.primeiroLogin,
-            })
+  async findRegisteredCnpjs(cnpjs: string[]) {
+    const fullCnpjs = cnpjs.filter((c) => c.length === 14);
+    const rootCnpjs = cnpjs.filter((c) => c.length === 8);
+    const fullRows = (
+      fullCnpjs.length
+        ? await this.database.db
+            .select({ cnpj: clientes.cnpj })
             .from(clientes)
-            .where(eq(clientes.userId, userId))
-            .limit(1);
-        return result[0];
-    }
-
-    async getClientSummary(clientId: string) {
+            .where(inArray(clientes.cnpj, fullCnpjs))
+        : []
+    ) as Array<{ cnpj: string }>;
+    const rootRows = await Promise.all(
+      rootCnpjs.map(async (root) => {
         const result = await this.database.db
-            .select({
-                id: clientes.id,
-                tipoPessoa: clientes.tipoPessoa,
-                cnpj: clientes.cnpj,
-                cpf: clientes.cpf,
-                razaoSocial: clientes.razaoSocial,
-                cep: clientes.cep,
-                logradouro: clientes.logradouro,
-                numero: clientes.numero,
-                complemento: clientes.complemento,
-                bairro: clientes.bairro,
-                municipio: clientes.municipio,
-                uf: clientes.uf,
-                cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
-                cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
-                cnaesSecundarios: clientes.cnaesSecundarios,
-            })
-            .from(clientes)
-            .where(eq(clientes.id, clientId))
-            .limit(1);
-        const client = result[0];
-        if (!client) return undefined;
-        return {
-            id: client.id,
-            tipo_pessoa: client.tipoPessoa,
-            cnpj: client.cnpj,
-            cpf: client.cpf,
-            company_name: client.razaoSocial,
-            address: this.mapAddress(client),
-            primary_activity: client.cnaePrincipalCodigo
-                ? {
-                    code: client.cnaePrincipalCodigo,
-                    description: client.cnaePrincipalDescricao ?? '',
-                }
-                : null,
-            secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
-        };
-    }
+          .select({ cnpj: clientes.cnpj })
+          .from(clientes)
+          .where(like(clientes.cnpj, `${root}%`))
+          .limit(1);
+        return result[0] ? root : null;
+      }),
+    );
+    return new Set([
+      ...fullRows.map((r) => r.cnpj),
+      ...rootRows.filter((r): r is string => Boolean(r)),
+    ]);
+  }
 
-    async findClientForUpload(identifier: string) {
-        if (
-            identifier.length !== 14 &&
-            identifier.length !== 11 &&
-            identifier.length !== 8
-        ) {
-            return undefined;
-        }
-        const where =
-            identifier.length === 11
-                ? eq(clientes.cpf, identifier)
-                : identifier.length === 14
-                    ? eq(clientes.cnpj, identifier)
-                    : like(clientes.cnpj, `${identifier}%`);
-        const result = await this.database.db
-            .select({ id: clientes.id, cnpj: clientes.cnpj, razaoSocial: clientes.razaoSocial, emails: clientes.emails })
-            .from(clientes)
-            .where(where)
-            .limit(1);
-        return result[0];
-    }
+  private textArray(values: string[]) {
+    if (!values.length) return sql`ARRAY[]::text[]`;
+    return sql`ARRAY[${sql.join(
+      values.map((v) => sql`${v}`),
+      sql`, `,
+    )}]::text[]`;
+  }
 
-    async findRegisteredCnpjs(cnpjs: string[]) {
-        const fullCnpjs = cnpjs.filter((c) => c.length === 14);
-        const rootCnpjs = cnpjs.filter((c) => c.length === 8);
-        const fullRows = (fullCnpjs.length
-            ? await this.database.db
-                .select({ cnpj: clientes.cnpj })
-                .from(clientes)
-                .where(inArray(clientes.cnpj, fullCnpjs))
-            : []) as Array<{ cnpj: string }>;
-        const rootRows = await Promise.all(
-            rootCnpjs.map(async (root) => {
-                const result = await this.database.db
-                    .select({ cnpj: clientes.cnpj })
-                    .from(clientes)
-                    .where(like(clientes.cnpj, `${root}%`))
-                    .limit(1);
-                return result[0] ? root : null;
-            }),
-        );
-        return new Set([
-            ...fullRows.map((r) => r.cnpj),
-            ...rootRows.filter((r): r is string => Boolean(r)),
-        ]);
-    }
+  private nullableText(value: string | undefined) {
+    const normalized = value?.trim();
+    return normalized ? normalized : null;
+  }
 
-    private textArray(values: string[]) {
-        if (!values.length) return sql`ARRAY[]::text[]`;
-        return sql`ARRAY[${sql.join(values.map((v) => sql`${v}`), sql`, `)}]::text[]`;
-    }
+  private mapAddress(client: {
+    cep: string | null;
+    logradouro: string | null;
+    numero: string | null;
+    complemento: string | null;
+    bairro: string | null;
+    municipio: string | null;
+    uf: string | null;
+  }) {
+    const hasAddress = [
+      client.cep,
+      client.logradouro,
+      client.numero,
+      client.complemento,
+      client.bairro,
+      client.municipio,
+      client.uf,
+    ].some(Boolean);
+    if (!hasAddress) return null;
+    return {
+      postal_code: client.cep ?? '',
+      street: client.logradouro ?? '',
+      number: client.numero ?? '',
+      complement: client.complemento ?? '',
+      district: client.bairro ?? '',
+      city: client.municipio ?? '',
+      state: client.uf ?? '',
+    };
+  }
 
-    private nullableText(value: string | undefined) {
-        const normalized = value?.trim();
-        return normalized ? normalized : null;
-    }
+  private normalizeStoredCnaes(value: unknown): StoredCnae[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as { code?: unknown; description?: unknown };
+      if (
+        typeof candidate.code !== 'string' ||
+        !/^\d{7}$/.test(candidate.code)
+      ) {
+        return [];
+      }
+      return [
+        {
+          code: candidate.code,
+          description:
+            typeof candidate.description === 'string'
+              ? candidate.description
+              : '',
+        },
+      ];
+    });
+  }
 
-    private mapAddress(client: {
-        cep: string | null;
-        logradouro: string | null;
-        numero: string | null;
-        complemento: string | null;
-        bairro: string | null;
-        municipio: string | null;
-        uf: string | null;
-    }) {
-        const hasAddress = [
-            client.cep,
-            client.logradouro,
-            client.numero,
-            client.complemento,
-            client.bairro,
-            client.municipio,
-            client.uf,
-        ].some(Boolean);
-        if (!hasAddress) return null;
-        return {
-            postal_code: client.cep ?? '',
-            street: client.logradouro ?? '',
-            number: client.numero ?? '',
-            complement: client.complemento ?? '',
-            district: client.bairro ?? '',
-            city: client.municipio ?? '',
-            state: client.uf ?? '',
-        };
-    }
-
-    private normalizeStoredCnaes(value: unknown): StoredCnae[] {
-        if (!Array.isArray(value)) return [];
-        return value.flatMap((item) => {
-            if (!item || typeof item !== 'object') return [];
-            const candidate = item as { code?: unknown; description?: unknown };
-            if (typeof candidate.code !== 'string' || !/^\d{7}$/.test(candidate.code)) {
-                return [];
-            }
-            return [{
-                code: candidate.code,
-                description: typeof candidate.description === 'string' ? candidate.description : '',
-            }];
-        });
-    }
-
-    private isUniqueViolation(error: unknown) {
-        const candidate = error as { code?: string; cause?: { code?: string } } | null;
-        return candidate?.code === '23505' || candidate?.cause?.code === '23505';
-    }
+  private isUniqueViolation(error: unknown) {
+    const candidate = error as {
+      code?: string;
+      cause?: { code?: string };
+    } | null;
+    return candidate?.code === '23505' || candidate?.cause?.code === '23505';
+  }
 }

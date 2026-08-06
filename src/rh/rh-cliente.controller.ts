@@ -19,6 +19,7 @@ import {
 import { RhService } from './rh.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { RequirePasswordChangedGuard } from '../auth/require-password-changed.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   parsePaginationParams,
@@ -29,12 +30,12 @@ import type { CurrentUser as CurrentUserType } from '../common/types';
 @ApiTags('RH (Cliente)')
 @ApiBearerAuth('session-token')
 @Controller('rh')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RequirePasswordChangedGuard)
 export class RhClienteController {
   constructor(
     private readonly rhService: RhService,
     private readonly clientesService: ClientesService,
-  ) { }
+  ) {}
 
   @Get('folhas')
   @ApiOperation({ summary: 'Listar folhas do cliente autenticado' })

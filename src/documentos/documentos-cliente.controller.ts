@@ -15,6 +15,7 @@ import {
 import { DocumentosService } from './documentos.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { RequirePasswordChangedGuard } from '../auth/require-password-changed.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   parsePaginationParams,
@@ -25,7 +26,7 @@ import type { CurrentUser as CurrentUserType } from '../common/types';
 @ApiTags('Documentos (Cliente)')
 @ApiBearerAuth('session-token')
 @Controller('cliente/documentos')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RequirePasswordChangedGuard)
 export class DocumentosClienteController {
   constructor(
     private readonly documentosService: DocumentosService,

@@ -29,6 +29,7 @@ import type { CurrentUser as CurrentUserType } from '../common/types';
 import { RateLimitService } from '../common/rate-limit.service';
 import { AppLogger } from '../common/logger.service';
 import { MailService } from '../mail/mail.service';
+import { ClientesService } from '../clientes/clientes.service';
 
 @ApiTags('Autenticação')
 @Controller('auth')
@@ -44,6 +45,7 @@ export class AuthController {
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
     private readonly mailService: MailService,
+    private readonly clientesService: ClientesService,
   ) {
     this.secret = this.configService.getOrThrow<string>('BETTER_AUTH_SECRET');
     this.isProduction =
@@ -122,12 +124,19 @@ export class AuthController {
       role: result.role,
     });
 
+    // Include primeiroLogin flag for CLIENTE users
+    const primeiroLogin =
+      result.role === 'CLIENTE'
+        ? await this.clientesService.isFirstLogin(result.id)
+        : undefined;
+
     return {
       user: {
         id: result.id,
         name: result.name,
         email: result.email,
         role: result.role,
+        ...(primeiroLogin !== undefined && { primeiroLogin }),
       },
       session: {
         token: sessionToken,
@@ -176,6 +185,12 @@ export class AuthController {
       return { session: null, user: null };
     }
 
+    // Include primeiroLogin flag for CLIENTE users
+    const primeiroLogin =
+      user.role === 'CLIENTE'
+        ? await this.clientesService.isFirstLogin(user.id)
+        : undefined;
+
     return {
       session: { active: true },
       user: {
@@ -183,6 +198,7 @@ export class AuthController {
         name: user.name,
         email: user.email,
         role: user.role,
+        ...(primeiroLogin !== undefined && { primeiroLogin }),
       },
     };
   }

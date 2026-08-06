@@ -54,7 +54,15 @@ export class ClienteController {
   @ApiResponse({
     status: 200,
     description: 'Senha alterada com sucesso.',
-    schema: { properties: { success: { type: 'boolean' } } },
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        primeiroLogin: {
+          type: 'boolean',
+          description: 'Sempre false após sucesso',
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 400,
@@ -104,6 +112,6 @@ export class ClienteController {
       );
     }
 
-    return { success: true };
+    return { success: true, primeiroLogin: false };
   }
 }
