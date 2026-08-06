@@ -5,6 +5,7 @@
 
 export type TipoDocumento =
   | 'DAS'
+  | 'DAS-COMPL'
   | 'DAS-PARCSN'
   | 'DAS-PGFN'
   | 'PGFN-SISPAR'
@@ -124,6 +125,7 @@ function detectTipo(text: string): TipoDocumento {
       return 'DAS-PGFN';
     if (/DAS\s+de\s+PARCSN|N[uú]mero\s+do\s+Parcelamento/i.test(text))
       return 'DAS-PARCSN';
+    if (/DAS\s+complementar/i.test(text)) return 'DAS-COMPL';
     return 'DAS';
   }
   if (/PGFN[-\s]?SISPAR/i.test(text)) return 'PGFN-SISPAR';

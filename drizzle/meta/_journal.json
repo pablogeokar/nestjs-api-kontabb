@@ -29,6 +29,13 @@
       "when": 1785758885061,
       "tag": "0003_sudden_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785945841000,
+      "tag": "0004_das_complementar",
+      "breakpoints": true
     }
   ]
 }
