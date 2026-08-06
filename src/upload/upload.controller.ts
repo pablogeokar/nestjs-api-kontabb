@@ -198,49 +198,44 @@ export class UploadController {
       throw new BadRequestException('Nenhum arquivo enviado.');
     }
 
-    const results: Array<{
-      fileName: string;
-      cnpj: string | null;
-      registered: boolean;
-    }> = [];
     const cnpjSet = new Set<string>();
 
-    for (const file of files) {
-      if (file.mimetype !== 'application/pdf') {
-        results.push({
-          fileName: file.originalname,
-          cnpj: null,
-          registered: false,
-        });
-        continue;
-      }
-      try {
-        const bytes = new Uint8Array(file.buffer);
-        if (!hasValidFileSignature(bytes, file.mimetype)) {
-          results.push({
+    const results = await Promise.all(
+      files.map(async (file) => {
+        if (file.mimetype !== 'application/pdf') {
+          return {
             fileName: file.originalname,
-            cnpj: null,
+            cnpj: null as string | null,
             registered: false,
-          });
-          continue;
+          };
         }
-        const text = await extractPdfText(Buffer.from(file.buffer));
-        const dados = extractDadosFiscais(text);
-        const rawCnpj = dados.cnpj ? dados.cnpj.replace(/\D/g, '') : null;
-        results.push({
-          fileName: file.originalname,
-          cnpj: rawCnpj,
-          registered: false,
-        });
-        if (rawCnpj) cnpjSet.add(rawCnpj);
-      } catch {
-        results.push({
-          fileName: file.originalname,
-          cnpj: null,
-          registered: false,
-        });
-      }
-    }
+        try {
+          const bytes = new Uint8Array(file.buffer);
+          if (!hasValidFileSignature(bytes, file.mimetype)) {
+            return {
+              fileName: file.originalname,
+              cnpj: null as string | null,
+              registered: false,
+            };
+          }
+          const text = await extractPdfText(Buffer.from(file.buffer));
+          const dados = extractDadosFiscais(text);
+          const rawCnpj = dados.cnpj ? dados.cnpj.replace(/\D/g, '') : null;
+          if (rawCnpj) cnpjSet.add(rawCnpj);
+          return {
+            fileName: file.originalname,
+            cnpj: rawCnpj,
+            registered: false,
+          };
+        } catch {
+          return {
+            fileName: file.originalname,
+            cnpj: null as string | null,
+            registered: false,
+          };
+        }
+      }),
+    );
 
     const cnpjArray = Array.from(cnpjSet);
     const registeredCnpjs =
