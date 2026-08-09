@@ -7,6 +7,8 @@ import {
   folhasPagamento,
   funcionariosRh,
   itensFolhaPagamento,
+  user,
+  visualizacoesFolhas,
 } from '../database/schema';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import { AppLogger } from '../common/logger.service';
@@ -210,6 +212,19 @@ export class RhService {
             razaoSocial: clientes.razaoSocial,
             cnpj: clientes.cnpj,
           },
+          visualizado:
+            sql<boolean>`EXISTS (SELECT 1 FROM visualizacoes_folhas WHERE visualizacoes_folhas.folha_id = ${folhasPagamento.id})`.as(
+              'visualizado',
+            ),
+          primeiraVisualizacao: sql<
+            string | null
+          >`(SELECT MIN(visualizado_em) FROM visualizacoes_folhas WHERE visualizacoes_folhas.folha_id = ${folhasPagamento.id})`.as(
+            'primeira_visualizacao',
+          ),
+          totalVisualizacoes:
+            sql<number>`(SELECT COUNT(*) FROM visualizacoes_folhas WHERE visualizacoes_folhas.folha_id = ${folhasPagamento.id})`.as(
+              'total_visualizacoes',
+            ),
         })
         .from(folhasPagamento)
         .leftJoin(clientes, eq(folhasPagamento.clienteId, clientes.id))
@@ -235,8 +250,40 @@ export class RhService {
         cliente: r.cliente
           ? { razaoSocial: r.cliente.razaoSocial, cnpj: r.cliente.cnpj }
           : null,
+        visualizado: r.visualizado ?? false,
+        primeiraVisualizacao: r.primeiraVisualizacao ?? null,
+        totalVisualizacoes: Number(r.totalVisualizacoes ?? 0),
       })),
     };
+  }
+
+  // ─── Record folha view (when client generates recibos) ───
+  async recordFolhaView(folhaId: string, userId: string) {
+    await this.database.db
+      .insert(visualizacoesFolhas)
+      .values({ folhaId, userId });
+  }
+
+  // ─── List folha views (admin) ───
+  async listFolhaVisualizacoes(folhaId: string) {
+    const rows = await this.database.db
+      .select({
+        id: visualizacoesFolhas.id,
+        viewedAt: visualizacoesFolhas.visualizadoEm,
+        viewer: { id: user.id, name: user.name, email: user.email },
+      })
+      .from(visualizacoesFolhas)
+      .leftJoin(user, eq(visualizacoesFolhas.userId, user.id))
+      .where(eq(visualizacoesFolhas.folhaId, folhaId))
+      .orderBy(desc(visualizacoesFolhas.visualizadoEm));
+
+    return rows.map((view) => ({
+      id: view.id,
+      viewedAt: view.viewedAt.toISOString(),
+      viewer: view.viewer
+        ? { id: view.viewer.id, name: view.viewer.name, email: view.viewer.email }
+        : null,
+    }));
   }
 
   // ─── Get folha detail ───

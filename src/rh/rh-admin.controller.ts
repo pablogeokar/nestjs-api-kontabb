@@ -38,7 +38,7 @@ export class RhAdminController {
     private readonly rhService: RhService,
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   @Get('folhas')
   @ApiOperation({ summary: 'Listar todas as folhas de pagamento' })
@@ -213,6 +213,16 @@ export class RhAdminController {
     if (!folha) throw new NotFoundException('Folha não encontrada.');
     const recibos = await this.rhService.getAllRecibosByFolha(folhaId);
     return { recibos };
+  }
+
+  @Get('folhas/:folhaId/visualizacoes')
+  @ApiOperation({ summary: 'Histórico de visualizações de uma folha' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Lista de visualizações.' })
+  async listFolhaVisualizacoes(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+  ) {
+    return this.rhService.listFolhaVisualizacoes(folhaId);
   }
 
   @Get('dashboard')
