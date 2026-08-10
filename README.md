@@ -154,15 +154,17 @@ possui driver, ORM, schema, migrations, seeds ou credenciais de banco.
 - configuração de migration: `drizzle.config.ts`;
 - preflight e backfill operacionais: `scripts/`.
 
-O cadastro estruturado de endereço e CNAEs requer
-`drizzle/0002_alteracao_de_cliente.sql`, que deve ser aplicada antes da versão da
-API que lê ou grava esses campos.
+Novos ambientes recebem todo o schema por uma única baseline gerada do schema
+Drizzle atual: `drizzle/0000_baseline_kontabb.sql`. Essa baseline é destinada a
+bancos novos; ela não deve ser aplicada sobre o banco antigo. O procedimento de
+recriação, restore e validação está documentado em `docs/database-rebuild.md`.
 
 Para desenvolvimento local, suba o PostgreSQL e aplique as migrations:
 
 ```bash
 docker compose up -d
 pnpm db:migrate
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 pnpm db:check
 ```
 
