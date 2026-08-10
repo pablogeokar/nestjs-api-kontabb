@@ -3,7 +3,6 @@ import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import {
   clientes,
-  eventosAuditoria,
   folhasPagamento,
   funcionariosRh,
   itensFolhaPagamento,
@@ -22,7 +21,7 @@ export class RhService {
     private readonly database: DatabaseService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   // ─── Process payroll upload ───
   async processarFolhaPagamento(input: {
@@ -35,108 +34,165 @@ export class RhService {
   }): Promise<{ ok: boolean; folhaId?: string; code?: string }> {
     const { dados, clienteId, r2Key, fileName, actorUserId } = input;
 
-    try {
-      // 1. Insert folha_pagamento (no longer inserting into documentos table)
-      const folhaId = crypto.randomUUID();
-      await this.database.db.insert(folhasPagamento).values({
-        id: folhaId,
+    const codigos = dados.funcionarios.map((func) => func.codigoFuncionario);
+    if (
+      dados.totalFuncionarios !== dados.funcionarios.length ||
+      new Set(codigos).size !== codigos.length
+    ) {
+      this.logger.warn('rh_folha_inconsistent_employee_count', {
+        requestId: input.requestId,
         clienteId,
-        arquivoKey: r2Key,
-        arquivoNome: fileName,
-        competencia: dados.competencia,
-        periodoInicio: dados.periodoInicio,
-        periodoFim: dados.periodoFim,
-        totalBruto: String(dados.totalBruto),
-        totalDescontos: String(dados.totalDescontos),
-        totalLiquido: String(dados.totalLiquido),
-        totalFuncionarios: dados.totalFuncionarios,
-        totalInss: String(dados.totalInss),
-        totalFgts: String(dados.totalFgts),
-        totalIrrf: String(dados.totalIrrf),
-        totalSalarioFamilia: String(dados.totalSalarioFamilia),
-        uploadadoPor: actorUserId,
+        totalInformado: dados.totalFuncionarios,
+        totalExtraido: dados.funcionarios.length,
       });
+      return { ok: false, code: 'DADOS_INCONSISTENTES' };
+    }
 
-      // 2. Upsert funcionarios and insert itens
-      for (const func of dados.funcionarios) {
-        // Upsert funcionario
-        const existingFunc = await this.database.db
-          .select({ id: funcionariosRh.id })
-          .from(funcionariosRh)
-          .where(
-            and(
-              eq(funcionariosRh.clienteId, clienteId),
-              eq(funcionariosRh.codigoFuncionario, func.codigoFuncionario),
-            ),
-          )
-          .limit(1);
-
-        let funcionarioId: string;
-
-        if (existingFunc[0]) {
-          funcionarioId = existingFunc[0].id;
-          await this.database.db
-            .update(funcionariosRh)
-            .set({
-              nomeCompleto: func.nomeCompleto,
-              cargo: func.cargo,
-              dataAdmissao: func.dataAdmissao
-                ? this.parseDataAdmissao(func.dataAdmissao)
-                : undefined,
-              atualizadoEm: new Date(),
-            })
-            .where(eq(funcionariosRh.id, funcionarioId));
-        } else {
-          funcionarioId = crypto.randomUUID();
-          await this.database.db.insert(funcionariosRh).values({
-            id: funcionarioId,
-            clienteId,
-            codigoFuncionario: func.codigoFuncionario,
-            nomeCompleto: func.nomeCompleto,
-            cargo: func.cargo,
-            dataAdmissao: func.dataAdmissao
-              ? this.parseDataAdmissao(func.dataAdmissao)
-              : null,
-          });
-        }
-
-        // Insert item
-        await this.database.db.insert(itensFolhaPagamento).values({
-          folhaId,
-          funcionarioId,
-          clienteId,
-          salarioBase: String(func.salarioBase),
-          totalProventos: String(func.totalProventos),
-          totalDescontos: String(func.totalDescontos),
-          salarioLiquido: String(func.salarioLiquido),
-          baseInss: func.baseInss != null ? String(func.baseInss) : null,
-          aliquotaInss:
-            func.aliquotaInss != null ? String(func.aliquotaInss) : null,
-          valorInss: func.valorInss != null ? String(func.valorInss) : null,
-          baseFgts: func.baseFgts != null ? String(func.baseFgts) : null,
-          valorFgts: func.valorFgts != null ? String(func.valorFgts) : null,
-          baseIrrf: func.baseIrrf != null ? String(func.baseIrrf) : null,
-          valorIrrf: func.valorIrrf != null ? String(func.valorIrrf) : null,
+    try {
+      const folhaId = crypto.randomUUID();
+      const funcionariosPayload = JSON.stringify(
+        dados.funcionarios.map((func) => ({
+          codigo_funcionario: func.codigoFuncionario,
+          nome_completo: func.nomeCompleto,
+          data_admissao: func.dataAdmissao
+            ? this.parseDataAdmissao(func.dataAdmissao)
+            : null,
+          cargo: func.cargo,
+          salario_base: func.salarioBase,
+          total_proventos: func.totalProventos,
+          total_descontos: func.totalDescontos,
+          salario_liquido: func.salarioLiquido,
+          base_inss: func.baseInss,
+          aliquota_inss: func.aliquotaInss,
+          valor_inss: func.valorInss,
+          base_fgts: func.baseFgts,
+          valor_fgts: func.valorFgts,
+          base_irrf: func.baseIrrf,
+          valor_irrf: func.valorIrrf,
           referencia: func.referencia,
-          codigoFolha: func.codigoFolha,
-          dependentesIr: func.dependentesIr,
-          dependentesSf: func.dependentesSf,
+          codigo_folha: func.codigoFolha,
+          dependentes_ir: func.dependentesIr,
+          dependentes_sf: func.dependentesSf,
           rubricas: func.rubricas,
-        });
-      }
+        })),
+      );
 
-      // 3. Audit event
-      await this.database.db.insert(eventosAuditoria).values({
-        atorUserId: actorUserId,
-        acao: 'FOLHA_PAGAMENTO_UPLOADADA',
-        entidadeTipo: 'FOLHA_PAGAMENTO',
-        entidadeId: folhaId,
-        dados: {
-          clienteId,
-          competencia: dados.competencia,
-          totalFuncionarios: dados.totalFuncionarios,
-        },
-      });
+      // Uma unica instrucao SQL mantem folha, funcionarios, itens e auditoria
+      // atomicos inclusive no driver HTTP do Neon, que nao oferece transacoes
+      // interativas.
+      const result = await this.database.db.execute(sql`
+        WITH input_funcionarios AS MATERIALIZED (
+          SELECT *
+          FROM jsonb_to_recordset(${funcionariosPayload}::jsonb) AS f(
+            codigo_funcionario text,
+            nome_completo text,
+            data_admissao date,
+            cargo text,
+            salario_base numeric,
+            total_proventos numeric,
+            total_descontos numeric,
+            salario_liquido numeric,
+            base_inss numeric,
+            aliquota_inss numeric,
+            valor_inss numeric,
+            base_fgts numeric,
+            valor_fgts numeric,
+            base_irrf numeric,
+            valor_irrf numeric,
+            referencia text,
+            codigo_folha text,
+            dependentes_ir integer,
+            dependentes_sf integer,
+            rubricas jsonb
+          )
+        ),
+        inserted_folha AS (
+          INSERT INTO folhas_pagamento (
+            id, cliente_id, arquivo_key, arquivo_nome, competencia,
+            periodo_inicio, periodo_fim, total_bruto, total_descontos,
+            total_liquido, total_funcionarios, total_inss, total_fgts,
+            total_irrf, total_salario_familia, uploadado_por
+          ) VALUES (
+            ${folhaId}::uuid, ${clienteId}::uuid, ${r2Key}, ${fileName},
+            ${dados.competencia}, ${dados.periodoInicio}::date,
+            ${dados.periodoFim}::date, ${dados.totalBruto}::numeric,
+            ${dados.totalDescontos}::numeric, ${dados.totalLiquido}::numeric,
+            ${dados.totalFuncionarios}, ${dados.totalInss}::numeric,
+            ${dados.totalFgts}::numeric, ${dados.totalIrrf}::numeric,
+            ${dados.totalSalarioFamilia}::numeric, ${actorUserId}
+          )
+          RETURNING id, cliente_id
+        ),
+        upserted_funcionarios AS (
+          INSERT INTO funcionarios_rh (
+            id, cliente_id, codigo_funcionario, nome_completo,
+            data_admissao, cargo
+          )
+          SELECT
+            gen_random_uuid(), folha.cliente_id, f.codigo_funcionario,
+            f.nome_completo, f.data_admissao, f.cargo
+          FROM input_funcionarios f
+          CROSS JOIN inserted_folha folha
+          ON CONFLICT (cliente_id, codigo_funcionario) DO UPDATE SET
+            nome_completo = EXCLUDED.nome_completo,
+            data_admissao = COALESCE(
+              EXCLUDED.data_admissao,
+              funcionarios_rh.data_admissao
+            ),
+            cargo = EXCLUDED.cargo,
+            atualizado_em = now()
+          RETURNING id, cliente_id, codigo_funcionario
+        ),
+        inserted_itens AS (
+          INSERT INTO itens_folha_pagamento (
+            folha_id, funcionario_id, cliente_id, salario_base,
+            total_proventos, total_descontos, salario_liquido, base_inss,
+            aliquota_inss, valor_inss, base_fgts, valor_fgts, base_irrf,
+            valor_irrf, referencia, codigo_folha, dependentes_ir,
+            dependentes_sf, rubricas
+          )
+          SELECT
+            folha.id, funcionario.id, folha.cliente_id, f.salario_base,
+            f.total_proventos, f.total_descontos, f.salario_liquido,
+            f.base_inss, f.aliquota_inss, f.valor_inss, f.base_fgts,
+            f.valor_fgts, f.base_irrf, f.valor_irrf, f.referencia,
+            f.codigo_folha, f.dependentes_ir, f.dependentes_sf, f.rubricas
+          FROM input_funcionarios f
+          JOIN upserted_funcionarios funcionario
+            ON funcionario.codigo_funcionario = f.codigo_funcionario
+          CROSS JOIN inserted_folha folha
+          RETURNING id
+        ),
+        audit_event AS (
+          INSERT INTO eventos_auditoria (
+            ator_user_id, acao, entidade_tipo, entidade_id, dados
+          )
+          SELECT
+            ${actorUserId}, 'FOLHA_PAGAMENTO_UPLOADADA', 'FOLHA_PAGAMENTO',
+            folha.id::text,
+            jsonb_build_object(
+              'clienteId', folha.cliente_id::text,
+              'competencia', ${dados.competencia}::text,
+              'totalFuncionarios', ${dados.totalFuncionarios}::integer
+            )
+          FROM inserted_folha folha
+          RETURNING id
+        )
+        SELECT
+          EXISTS (SELECT 1 FROM inserted_folha) AS inserted,
+          (SELECT count(*)::integer FROM inserted_itens) AS item_count
+      `);
+
+      const persisted = resultRows<{
+        inserted: boolean;
+        item_count: number;
+      }>(result)[0];
+      if (
+        !persisted?.inserted ||
+        Number(persisted.item_count) !== dados.totalFuncionarios
+      ) {
+        throw new Error('FOLHA_INSERT_INCOMPLETE');
+      }
 
       return { ok: true, folhaId };
     } catch (error) {
@@ -281,7 +337,11 @@ export class RhService {
       id: view.id,
       viewedAt: view.viewedAt.toISOString(),
       viewer: view.viewer
-        ? { id: view.viewer.id, name: view.viewer.name, email: view.viewer.email }
+        ? {
+            id: view.viewer.id,
+            name: view.viewer.name,
+            email: view.viewer.email,
+          }
         : null,
     }));
   }
@@ -379,11 +439,11 @@ export class RhService {
         salarioLiquido: Number(r.salarioLiquido),
         funcionario: r.funcionario
           ? {
-            id: r.funcionario.id,
-            codigoFuncionario: r.funcionario.codigoFuncionario,
-            nomeCompleto: r.funcionario.nomeCompleto,
-            cargo: r.funcionario.cargo,
-          }
+              id: r.funcionario.id,
+              codigoFuncionario: r.funcionario.codigoFuncionario,
+              nomeCompleto: r.funcionario.nomeCompleto,
+              cargo: r.funcionario.cargo,
+            }
           : null,
       })),
     };
@@ -772,20 +832,26 @@ export class RhService {
   }
 
   // ─── Build formatted address from empresa fields ───
-  private buildEndereco(empresa: {
-    logradouro?: string | null;
-    numero?: string | null;
-    complemento?: string | null;
-    bairro?: string | null;
-    municipio?: string | null;
-    uf?: string | null;
-    cep?: string | null;
-  } | null): string {
+  private buildEndereco(
+    empresa: {
+      logradouro?: string | null;
+      numero?: string | null;
+      complemento?: string | null;
+      bairro?: string | null;
+      municipio?: string | null;
+      uf?: string | null;
+      cep?: string | null;
+    } | null,
+  ): string {
     if (!empresa) return '';
     const parts: string[] = [];
 
     // Logradouro, Nº complemento
-    const rua = [empresa.logradouro, empresa.numero ? `Nº ${empresa.numero}` : null, empresa.complemento]
+    const rua = [
+      empresa.logradouro,
+      empresa.numero ? `Nº ${empresa.numero}` : null,
+      empresa.complemento,
+    ]
       .filter(Boolean)
       .join(', ');
     if (rua) parts.push(rua);
@@ -794,7 +860,9 @@ export class RhService {
     if (empresa.bairro) parts.push(empresa.bairro);
 
     // Município - UF
-    const cidadeUf = [empresa.municipio, empresa.uf].filter(Boolean).join(' - ');
+    const cidadeUf = [empresa.municipio, empresa.uf]
+      .filter(Boolean)
+      .join(' - ');
     if (cidadeUf) parts.push(cidadeUf);
 
     // CEP

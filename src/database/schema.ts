@@ -12,6 +12,8 @@ import {
   bigint,
   index,
   uniqueIndex,
+  unique,
+  foreignKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -52,32 +54,52 @@ export const session = pgTable('session', {
     .references(() => user.id, { onDelete: 'cascade' }),
 });
 
-export const account = pgTable('account', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  providerId: text('provider_id').notNull(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  idToken: text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at'),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
-  scope: text('scope'),
-  password: text('password'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const account = pgTable(
+  'account',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at'),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_account_provider_account').on(
+      table.providerId,
+      table.accountId,
+    ),
+    uniqueIndex('uidx_account_user_provider').on(
+      table.userId,
+      table.providerId,
+    ),
+  ],
+);
 
-export const verification = pgTable('verification', {
-  id: text('id').primaryKey(),
-  identifier: text('identifier').notNull(),
-  value: text('value').notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-});
+export const verification = pgTable(
+  'verification',
+  {
+    id: text('id').primaryKey(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_verification_identifier').on(table.identifier),
+    uniqueIndex('uidx_verification_value').on(table.value),
+  ],
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tabelas da aplicação
@@ -128,6 +150,10 @@ export const clientes = pgTable(
       'chk_clientes_cnaes_secundarios',
       sql`jsonb_typeof(${table.cnaesSecundarios}) = 'array'`,
     ),
+    check(
+      'chk_clientes_documento_por_tipo',
+      sql`(${table.tipoPessoa} = 'PJ' AND ${table.cnpj} ~ '^[0-9]{14}$' AND ${table.cpf} IS NULL) OR (${table.tipoPessoa} = 'PF' AND ${table.cnpj} ~ '^[0-9]{11}$' AND ${table.cpf} = ${table.cnpj})`,
+    ),
   ],
 );
 
@@ -143,7 +169,7 @@ export const documentos = pgTable(
     vencimento: date('vencimento'),
     valor: numeric('valor', { precision: 12, scale: 2 }),
     arquivoKey: text('arquivo_key').notNull(),
-    arquivoNome: text('arquivo_nome').notNull().default(''),
+    arquivoNome: text('arquivo_nome').notNull(),
     status: text('status').notNull().default('PENDENTE'),
     pagoEm: timestamp('pago_em'),
     pagamentoConfirmadoPor: text('pagamento_confirmado_por').references(
@@ -167,6 +193,9 @@ export const documentos = pgTable(
     index('idx_documentos_pagamento_confirmado_por').on(
       table.pagamentoConfirmadoPor,
     ),
+    unique('uq_documentos_identidade')
+      .on(table.clienteId, table.tipo, table.periodo, table.numeroParcelamento)
+      .nullsNotDistinct(),
     check(
       'chk_documentos_tipo',
       sql`${table.tipo} IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')`,
@@ -179,6 +208,27 @@ export const documentos = pgTable(
       'chk_documentos_email_status',
       sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')`,
     ),
+    check(
+      'chk_documentos_periodo',
+      sql`${table.periodo} ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'`,
+    ),
+    check('chk_documentos_arquivo_key', sql`btrim(${table.arquivoKey}) <> ''`),
+    check(
+      'chk_documentos_arquivo_nome',
+      sql`btrim(${table.arquivoNome}) <> ''`,
+    ),
+    check(
+      'chk_documentos_valor',
+      sql`${table.valor} IS NULL OR ${table.valor} >= 0`,
+    ),
+    check(
+      'chk_documentos_pagamento',
+      sql`(${table.status} = 'PENDENTE' AND ${table.pagoEm} IS NULL) OR (${table.status} = 'PAGO' AND ${table.pagoEm} IS NOT NULL)`,
+    ),
+    check(
+      'chk_documentos_numero_parcelamento',
+      sql`${table.numeroParcelamento} IS NULL OR btrim(${table.numeroParcelamento}) <> ''`,
+    ),
   ],
 );
 
@@ -189,9 +239,9 @@ export const visualizacoesDocumentos = pgTable(
     documentoId: uuid('documento_id')
       .notNull()
       .references(() => documentos.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     visualizadoEm: timestamp('visualizado_em').notNull().defaultNow(),
   },
   (table) => [
@@ -223,6 +273,15 @@ export const storageCleanupJobs = pgTable(
       'chk_storage_cleanup_status',
       sql`${table.status} IN ('PENDENTE', 'PROCESSANDO', 'FALHOU', 'CONCLUIDO')`,
     ),
+    check(
+      'chk_storage_cleanup_object_key',
+      sql`btrim(${table.objectKey}) <> ''`,
+    ),
+    check('chk_storage_cleanup_tentativas', sql`${table.tentativas} >= 0`),
+    check(
+      'chk_storage_cleanup_conclusao',
+      sql`(${table.status} = 'CONCLUIDO' AND ${table.concluidoEm} IS NOT NULL) OR (${table.status} <> 'CONCLUIDO' AND ${table.concluidoEm} IS NULL)`,
+    ),
   ],
 );
 
@@ -252,11 +311,18 @@ export const eventosAuditoria = pgTable(
   ],
 );
 
-export const appRateLimits = pgTable('app_rate_limits', {
-  key: text('key').primaryKey(),
-  count: integer('count').notNull(),
-  resetAt: bigint('reset_at', { mode: 'number' }).notNull(),
-});
+export const appRateLimits = pgTable(
+  'app_rate_limits',
+  {
+    key: text('key').primaryKey(),
+    count: integer('count').notNull(),
+    resetAt: bigint('reset_at', { mode: 'number' }).notNull(),
+  },
+  (table) => [
+    check('chk_app_rate_limits_count', sql`${table.count} >= 0`),
+    check('chk_app_rate_limits_reset_at', sql`${table.resetAt} > 0`),
+  ],
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Módulo RH — Folha de Pagamento
@@ -272,8 +338,8 @@ export const folhasPagamento = pgTable(
     documentoId: uuid('documento_id').references(() => documentos.id, {
       onDelete: 'set null',
     }),
-    arquivoKey: text('arquivo_key'),
-    arquivoNome: text('arquivo_nome'),
+    arquivoKey: text('arquivo_key').notNull(),
+    arquivoNome: text('arquivo_nome').notNull(),
     competencia: text('competencia').notNull(),
     periodoInicio: date('periodo_inicio').notNull(),
     periodoFim: date('periodo_fim').notNull(),
@@ -313,8 +379,23 @@ export const folhasPagamento = pgTable(
       table.clienteId,
       table.competencia,
     ),
+    unique('uq_folhas_id_cliente').on(table.id, table.clienteId),
     index('idx_folhas_cliente_id').on(table.clienteId),
     index('idx_folhas_competencia').on(table.competencia),
+    check(
+      'chk_folhas_competencia',
+      sql`${table.competencia} ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'`,
+    ),
+    check(
+      'chk_folhas_periodo',
+      sql`${table.periodoInicio} <= ${table.periodoFim}`,
+    ),
+    check(
+      'chk_folhas_totais',
+      sql`${table.totalBruto} >= 0 AND ${table.totalDescontos} >= 0 AND ${table.totalLiquido} >= 0 AND ${table.totalFuncionarios} >= 0 AND ${table.totalInss} >= 0 AND ${table.totalFgts} >= 0 AND ${table.totalIrrf} >= 0 AND ${table.totalSalarioFamilia} >= 0`,
+    ),
+    check('chk_folhas_arquivo_key', sql`btrim(${table.arquivoKey}) <> ''`),
+    check('chk_folhas_arquivo_nome', sql`btrim(${table.arquivoNome}) <> ''`),
   ],
 );
 
@@ -342,7 +423,17 @@ export const funcionariosRh = pgTable(
       table.clienteId,
       table.codigoFuncionario,
     ),
+    unique('uq_funcionarios_id_cliente').on(table.id, table.clienteId),
     index('idx_funcionarios_cliente_id').on(table.clienteId),
+    check(
+      'chk_funcionarios_codigo',
+      sql`btrim(${table.codigoFuncionario}) <> ''`,
+    ),
+    check('chk_funcionarios_nome', sql`btrim(${table.nomeCompleto}) <> ''`),
+    check(
+      'chk_funcionarios_cpf',
+      sql`${table.cpf} IS NULL OR ${table.cpf} ~ '^[0-9]{11}$'`,
+    ),
   ],
 );
 
@@ -353,9 +444,9 @@ export const visualizacoesFolhas = pgTable(
     folhaId: uuid('folha_id')
       .notNull()
       .references(() => folhasPagamento.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     visualizadoEm: timestamp('visualizado_em').notNull().defaultNow(),
   },
   (table) => [
@@ -423,5 +514,20 @@ export const itensFolhaPagamento = pgTable(
     index('idx_itens_folha_id').on(table.folhaId),
     index('idx_itens_funcionario_id').on(table.funcionarioId),
     index('idx_itens_cliente_id').on(table.clienteId),
+    foreignKey({
+      name: 'fk_itens_folha_cliente',
+      columns: [table.folhaId, table.clienteId],
+      foreignColumns: [folhasPagamento.id, folhasPagamento.clienteId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'fk_itens_funcionario_cliente',
+      columns: [table.funcionarioId, table.clienteId],
+      foreignColumns: [funcionariosRh.id, funcionariosRh.clienteId],
+    }).onDelete('cascade'),
+    check(
+      'chk_itens_dependentes',
+      sql`COALESCE(${table.dependentesIr}, 0) >= 0 AND COALESCE(${table.dependentesSf}, 0) >= 0`,
+    ),
+    check('chk_itens_rubricas', sql`jsonb_typeof(${table.rubricas}) = 'array'`),
   ],
 );
