@@ -5,43 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1785154615821,
-      "tag": "0000_common_robin_chapel",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1785470400000,
-      "tag": "0001_folhas_arquivo_columns",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1785556800000,
-      "tag": "0002_alteracao_de_cliente",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1785758885061,
-      "tag": "0003_sudden_micromax",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1785945841000,
-      "tag": "0004_das_complementar",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1786406400000,
-      "tag": "0005_visualizacoes_folhas",
+      "when": 1786392687204,
+      "tag": "0000_lean_blockbuster",
       "breakpoints": true
     }
   ]

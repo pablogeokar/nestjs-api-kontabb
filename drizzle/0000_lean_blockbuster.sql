@@ -27,12 +27,26 @@ CREATE TABLE "clientes" (
 	"cpf" text,
 	"razao_social" text NOT NULL,
 	"emails" text[] DEFAULT '{}' NOT NULL,
+	"cep" text,
+	"logradouro" text,
+	"numero" text,
+	"complemento" text,
+	"bairro" text,
+	"municipio" text,
+	"uf" text,
+	"cnae_principal_codigo" text,
+	"cnae_principal_descricao" text,
+	"cnaes_secundarios" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"primeiro_login" boolean DEFAULT true NOT NULL,
 	"user_id" text,
 	"criado_em" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "clientes_cnpj_unique" UNIQUE("cnpj"),
 	CONSTRAINT "clientes_cpf_unique" UNIQUE("cpf"),
-	CONSTRAINT "chk_clientes_tipo_pessoa" CHECK ("clientes"."tipo_pessoa" IN ('PF', 'PJ'))
+	CONSTRAINT "chk_clientes_tipo_pessoa" CHECK ("clientes"."tipo_pessoa" IN ('PF', 'PJ')),
+	CONSTRAINT "chk_clientes_cep" CHECK ("clientes"."cep" IS NULL OR "clientes"."cep" ~ '^[0-9]{8}$'),
+	CONSTRAINT "chk_clientes_uf" CHECK ("clientes"."uf" IS NULL OR "clientes"."uf" ~ '^[A-Z]{2}$'),
+	CONSTRAINT "chk_clientes_cnae_principal" CHECK ("clientes"."cnae_principal_codigo" IS NULL OR "clientes"."cnae_principal_codigo" ~ '^[0-9]{7}$'),
+	CONSTRAINT "chk_clientes_cnaes_secundarios" CHECK (jsonb_typeof("clientes"."cnaes_secundarios") = 'array')
 );
 --> statement-breakpoint
 CREATE TABLE "documentos" (
@@ -53,7 +67,7 @@ CREATE TABLE "documentos" (
 	"email_erro" text,
 	"numero_parcelamento" text,
 	"criado_em" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "chk_documentos_tipo" CHECK ("documentos"."tipo" IN ('FGTS', 'DARF', 'DAS', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')),
+	CONSTRAINT "chk_documentos_tipo" CHECK ("documentos"."tipo" IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')),
 	CONSTRAINT "chk_documentos_status" CHECK ("documentos"."status" IN ('PENDENTE', 'PAGO')),
 	CONSTRAINT "chk_documentos_email_status" CHECK ("documentos"."email_status" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL'))
 );
@@ -72,6 +86,8 @@ CREATE TABLE "folhas_pagamento" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"cliente_id" uuid NOT NULL,
 	"documento_id" uuid,
+	"arquivo_key" text,
+	"arquivo_nome" text,
 	"competencia" text NOT NULL,
 	"periodo_inicio" date NOT NULL,
 	"periodo_fim" date NOT NULL,
@@ -98,6 +114,8 @@ CREATE TABLE "funcionarios_rh" (
 	"cargo" text,
 	"departamento" text,
 	"ativo" boolean DEFAULT true NOT NULL,
+	"senha_hash" text,
+	"primeiro_acesso" boolean DEFAULT true NOT NULL,
 	"criado_em" timestamp DEFAULT now() NOT NULL,
 	"atualizado_em" timestamp DEFAULT now() NOT NULL
 );
@@ -182,6 +200,13 @@ CREATE TABLE "visualizacoes_documentos" (
 	"visualizado_em" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "visualizacoes_folhas" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"folha_id" uuid NOT NULL,
+	"user_id" text NOT NULL,
+	"visualizado_em" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "clientes" ADD CONSTRAINT "clientes_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "documentos" ADD CONSTRAINT "documentos_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -197,6 +222,8 @@ ALTER TABLE "itens_folha_pagamento" ADD CONSTRAINT "itens_folha_pagamento_client
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "visualizacoes_documentos" ADD CONSTRAINT "visualizacoes_documentos_documento_id_documentos_id_fk" FOREIGN KEY ("documento_id") REFERENCES "public"."documentos"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "visualizacoes_documentos" ADD CONSTRAINT "visualizacoes_documentos_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "visualizacoes_folhas" ADD CONSTRAINT "visualizacoes_folhas_folha_id_folhas_pagamento_id_fk" FOREIGN KEY ("folha_id") REFERENCES "public"."folhas_pagamento"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "visualizacoes_folhas" ADD CONSTRAINT "visualizacoes_folhas_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_clientes_user_id" ON "clientes" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_documentos_cliente_id" ON "documentos" USING btree ("cliente_id");--> statement-breakpoint
 CREATE INDEX "idx_documentos_tipo" ON "documentos" USING btree ("tipo");--> statement-breakpoint
@@ -216,4 +243,6 @@ CREATE INDEX "idx_itens_funcionario_id" ON "itens_folha_pagamento" USING btree (
 CREATE INDEX "idx_itens_cliente_id" ON "itens_folha_pagamento" USING btree ("cliente_id");--> statement-breakpoint
 CREATE INDEX "idx_storage_cleanup_status_criado_em" ON "storage_cleanup_jobs" USING btree ("status","criado_em");--> statement-breakpoint
 CREATE INDEX "idx_visualizacoes_documento" ON "visualizacoes_documentos" USING btree ("documento_id");--> statement-breakpoint
-CREATE INDEX "idx_visualizacoes_user" ON "visualizacoes_documentos" USING btree ("user_id");
+CREATE INDEX "idx_visualizacoes_user" ON "visualizacoes_documentos" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_visualizacoes_folha" ON "visualizacoes_folhas" USING btree ("folha_id");--> statement-breakpoint
+CREATE INDEX "idx_visualizacoes_folha_user" ON "visualizacoes_folhas" USING btree ("user_id");
