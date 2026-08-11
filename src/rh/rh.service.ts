@@ -9,6 +9,7 @@ import {
   user,
   visualizacoesFolhas,
 } from '../database/schema';
+import { StorageService } from '../storage/storage.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import { AppLogger } from '../common/logger.service';
 import { resultRows } from '../common/db-result';
@@ -19,6 +20,7 @@ import type { PaginationParams } from '../common/types';
 export class RhService {
   constructor(
     private readonly database: DatabaseService,
+    private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly logger: AppLogger,
   ) {}
@@ -516,6 +518,7 @@ export class RhService {
         empresa: {
           razaoSocial: clientes.razaoSocial,
           cnpj: clientes.cnpj,
+          logoKey: clientes.logoKey,
           logradouro: clientes.logradouro,
           numero: clientes.numero,
           complemento: clientes.complemento,
@@ -541,11 +544,20 @@ export class RhService {
     const row = rows[0];
     if (!row) return null;
 
+    let logoUrl: string | null = null;
+    try {
+      const logoKey = row.empresa?.logoKey ?? null;
+      logoUrl = logoKey ? await this.storage.getSignedUrl(logoKey) : null;
+    } catch {
+      // non-critical — continue without logo
+    }
+
     return {
       empresa: {
         razaoSocial: row.empresa?.razaoSocial ?? '',
         cnpj: row.empresa?.cnpj ?? '',
         endereco: this.buildEndereco(row.empresa),
+        logoUrl,
       },
       competencia: row.folha?.competencia ?? '',
       periodoInicio: row.folha?.periodoInicio ?? '',
@@ -772,6 +784,7 @@ export class RhService {
         empresa: {
           razaoSocial: clientes.razaoSocial,
           cnpj: clientes.cnpj,
+          logoKey: clientes.logoKey,
           logradouro: clientes.logradouro,
           numero: clientes.numero,
           complemento: clientes.complemento,
@@ -794,11 +807,21 @@ export class RhService {
       .where(eq(itensFolhaPagamento.folhaId, folhaId))
       .orderBy(funcionariosRh.nomeCompleto);
 
+    // Generate logo URL once (all rows share the same client)
+    let logoUrl: string | null = null;
+    try {
+      const logoKey = rows[0]?.empresa?.logoKey ?? null;
+      logoUrl = logoKey ? await this.storage.getSignedUrl(logoKey) : null;
+    } catch {
+      // non-critical — continue without logo
+    }
+
     return rows.map((row) => ({
       empresa: {
         razaoSocial: row.empresa?.razaoSocial ?? '',
         cnpj: row.empresa?.cnpj ?? '',
         endereco: this.buildEndereco(row.empresa),
+        logoUrl,
       },
       competencia: row.folha?.competencia ?? '',
       periodoInicio: row.folha?.periodoInicio ?? '',

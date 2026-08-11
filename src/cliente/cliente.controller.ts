@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   HttpCode,
   HttpStatus,
   Patch,
@@ -16,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ClienteService } from './cliente.service';
+import { ClientesService } from '../clientes/clientes.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { CurrentUser as CurrentUserType } from '../common/types';
@@ -28,8 +30,37 @@ import { RateLimitService } from '../common/rate-limit.service';
 export class ClienteController {
   constructor(
     private readonly clienteService: ClienteService,
+    private readonly clientesService: ClientesService,
     private readonly rateLimit: RateLimitService,
   ) {}
+
+  @Get('logo')
+  @ApiOperation({
+    summary: 'Obter logo do cliente',
+    description:
+      "Retorna a URL assinada da logo do cliente autenticado. Utilizada como marca d'água nos recibos e nas telas do sistema.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'URL da logo (pode ser null se não cadastrada).',
+    schema: {
+      properties: {
+        logo_url: { type: 'string', nullable: true },
+      },
+    },
+  })
+  @ApiResponse({ status: 403, description: 'Sem permissão — apenas clientes.' })
+  async getLogo(@CurrentUser() currentUser: CurrentUserType) {
+    if (currentUser.role !== 'CLIENTE') {
+      throw new ForbiddenException('Sem permissão.');
+    }
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) {
+      throw new BadRequestException('Cliente não encontrado.');
+    }
+    const logoUrl = await this.clientesService.getLogoUrl(client.id);
+    return { logo_url: logoUrl };
+  }
 
   @Patch('first-login')
   @HttpCode(HttpStatus.OK)

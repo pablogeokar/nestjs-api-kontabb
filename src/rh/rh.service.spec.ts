@@ -50,6 +50,7 @@ describe('RhService', () => {
     const service = new RhService(
       { db: { execute } } as never,
       {} as never,
+      {} as never,
       { warn } as never,
     );
     const dados = makeDados();
@@ -75,6 +76,7 @@ describe('RhService', () => {
     const execute = jest.fn();
     const service = new RhService(
       { db: { execute } } as never,
+      {} as never,
       {} as never,
       { warn: jest.fn() } as never,
     );

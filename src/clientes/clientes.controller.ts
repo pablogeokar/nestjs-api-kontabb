@@ -15,10 +15,15 @@ import {
   Post,
   Query,
   ServiceUnavailableException,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -49,6 +54,11 @@ import {
   isValidCnpj,
 } from './cnpj-lookup.service';
 import { RateLimitService } from '../common/rate-limit.service';
+import {
+  hasValidFileSignature,
+  extensionForMime,
+  type AllowedUploadType,
+} from '../common/file-validation';
 
 @ApiTags('Clientes (Admin)')
 @ApiBearerAuth('session-token')
@@ -368,6 +378,117 @@ export class ClientesController {
       message: 'Cliente excluído com sucesso.',
       cleanupPending: result.cleanupPending,
     };
+  }
+
+  @Post(':id/logo')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Upload de logo do cliente',
+    description:
+      "Faz upload da logo do cliente (JPEG, PNG ou WebP, máx 2MB). A logo será utilizada como marca d'água nos recibos de salário.",
+  })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'ID do cliente',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Imagem da logo (JPEG, PNG ou WebP, máx 2MB)',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Logo enviada com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Arquivo inválido.' })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  async uploadLogo(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Nenhum arquivo enviado.');
+    }
+
+    const allowedImageTypes: AllowedUploadType[] = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ];
+    if (!allowedImageTypes.includes(file.mimetype as AllowedUploadType)) {
+      throw new BadRequestException(
+        'Formato não suportado. Envie JPEG, PNG ou WebP.',
+      );
+    }
+
+    const bytes = new Uint8Array(file.buffer);
+    if (!hasValidFileSignature(bytes, file.mimetype)) {
+      throw new BadRequestException(
+        'Conteúdo do arquivo não corresponde ao formato declarado.',
+      );
+    }
+
+    const extension = extensionForMime(file.mimetype as AllowedUploadType);
+    const result = await this.clientesService.uploadLogo({
+      clientId: id,
+      actorUserId: currentUser.id,
+      bytes: Buffer.from(file.buffer),
+      mimeType: file.mimetype,
+      extension,
+    });
+
+    if (!result.ok) {
+      if (result.code === 'NOT_FOUND') {
+        throw new NotFoundException('Cliente não encontrado.');
+      }
+      throw new InternalServerErrorException('Falha ao enviar logo.');
+    }
+
+    return { success: true, logo_url: result.logoUrl };
+  }
+
+  @Delete(':id/logo')
+  @ApiOperation({
+    summary: 'Remover logo do cliente',
+    description: 'Remove a logo do cliente do storage.',
+  })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'ID do cliente',
+  })
+  @ApiResponse({ status: 200, description: 'Logo removida com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  async deleteLogo(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const result = await this.clientesService.deleteLogo({
+      clientId: id,
+      actorUserId: currentUser.id,
+    });
+
+    if (!result.ok) {
+      if (result.code === 'NOT_FOUND') {
+        throw new NotFoundException('Cliente não encontrado.');
+      }
+      throw new InternalServerErrorException('Falha ao remover logo.');
+    }
+
+    return { success: true };
   }
 
   private normalizeEmails(
