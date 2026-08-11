@@ -20,6 +20,7 @@ import {
   ColaboradorSessionService,
   type ColaboradorTokenPayload,
 } from './colaborador-session.service';
+import { ClientesService } from '../clientes/clientes.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import { AppLogger } from '../common/logger.service';
 import { parsePaginationParams } from '../common/pagination';
@@ -30,6 +31,7 @@ export class ColaboradorController {
   constructor(
     private readonly colaboradorService: ColaboradorService,
     private readonly sessionService: ColaboradorSessionService,
+    private readonly clientesService: ClientesService,
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
   ) {}
@@ -133,6 +135,19 @@ export class ColaboradorController {
         primeiroAcesso: payload.primeiroAcesso,
       },
     };
+  }
+
+  @Get('logo')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Obter logo da empresa do colaborador' })
+  async getLogo(@Req() req: Request) {
+    const payload = this.sessionService.extractFromRequest(req);
+    if (!payload) {
+      throw new UnauthorizedException('Não autorizado.');
+    }
+
+    const logoUrl = await this.clientesService.getLogoUrl(payload.clienteId);
+    return { logo_url: logoUrl };
   }
 
   @Post('auth/trocar-senha')

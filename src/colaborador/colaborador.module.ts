@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ColaboradorController } from './colaborador.controller';
 import { ColaboradorService } from './colaborador.service';
 import { ColaboradorSessionService } from './colaborador-session.service';
+import { ClientesModule } from '../clientes/clientes.module';
 
 @Module({
+  imports: [ClientesModule],
   controllers: [ColaboradorController],
   providers: [ColaboradorService, ColaboradorSessionService],
   exports: [ColaboradorService],
