@@ -127,6 +127,7 @@ export const clientes = pgTable(
       .$type<Array<{ code: string; description: string }>>()
       .notNull()
       .default([]),
+    logoKey: text('logo_key'),
     primeiroLogin: boolean('primeiro_login').notNull().default(true),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),

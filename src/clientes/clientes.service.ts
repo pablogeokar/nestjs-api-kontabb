@@ -4,6 +4,7 @@ import { DatabaseService } from '../database/database.service';
 import { clientes } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
+import { StorageService } from '../storage/storage.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import type { PaginationParams } from '../common/types';
 import { AuthService } from '../auth/auth.service';
@@ -28,6 +29,7 @@ export class ClientesService {
   constructor(
     private readonly database: DatabaseService,
     private readonly logger: AppLogger,
+    private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
   ) {}
@@ -65,6 +67,7 @@ export class ClientesService {
           cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
           cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
           cnaesSecundarios: clientes.cnaesSecundarios,
+          logoKey: clientes.logoKey,
           isFirstLogin: clientes.primeiroLogin,
           authUserId: clientes.userId,
           createdAt: clientes.criadoEm,
@@ -76,9 +79,8 @@ export class ClientesService {
         .offset(input.pagination.offset),
     ]);
 
-    return {
-      total: Number(countResult[0]?.count ?? 0),
-      data: rows.map((client) => ({
+    const data = await Promise.all(
+      rows.map(async (client) => ({
         id: client.id,
         tipo_pessoa: client.tipoPessoa,
         cnpj: client.cnpj,
@@ -95,10 +97,18 @@ export class ClientesService {
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
         ),
+        logo_url: client.logoKey
+          ? await this.storage.getSignedUrl(client.logoKey)
+          : null,
         is_first_login: client.isFirstLogin,
         auth_user_id: client.authUserId,
         created_at: client.createdAt.toISOString(),
       })),
+    );
+
+    return {
+      total: Number(countResult[0]?.count ?? 0),
+      data,
     };
   }
 
@@ -343,6 +353,7 @@ export class ClientesService {
         cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
         cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
         cnaesSecundarios: clientes.cnaesSecundarios,
+        logoKey: clientes.logoKey,
       })
       .from(clientes)
       .where(eq(clientes.id, clientId))
@@ -363,6 +374,9 @@ export class ClientesService {
           }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
+      logo_url: client.logoKey
+        ? await this.storage.getSignedUrl(client.logoKey)
+        : null,
     };
   }
 
@@ -418,6 +432,96 @@ export class ClientesService {
       ...fullRows.map((r) => r.cnpj),
       ...rootRows.filter((r): r is string => Boolean(r)),
     ]);
+  }
+
+  async uploadLogo(input: {
+    clientId: string;
+    actorUserId: string;
+    bytes: Buffer;
+    mimeType: string;
+    extension: string;
+  }): Promise<{ ok: true; logoUrl: string } | { ok: false; code: string }> {
+    // Check client exists and get current logo_key
+    const existing = await this.database.db
+      .select({ id: clientes.id, logoKey: clientes.logoKey })
+      .from(clientes)
+      .where(eq(clientes.id, input.clientId))
+      .limit(1);
+    if (!existing[0]) return { ok: false, code: 'NOT_FOUND' };
+
+    const oldLogoKey = existing[0].logoKey;
+    const newKey = this.storage.logoObjectKey({
+      clientId: input.clientId,
+      extension: input.extension,
+    });
+
+    try {
+      await this.storage.upload(newKey, input.bytes, input.mimeType);
+
+      await this.database.db
+        .update(clientes)
+        .set({ logoKey: newKey })
+        .where(eq(clientes.id, input.clientId));
+
+      // Clean up old logo if key changed (e.g., different extension)
+      if (oldLogoKey && oldLogoKey !== newKey) {
+        try {
+          await this.storage.delete(oldLogoKey);
+        } catch {
+          // non-critical, old file will be orphaned
+        }
+      }
+
+      const logoUrl = await this.storage.getSignedUrl(newKey);
+      return { ok: true, logoUrl };
+    } catch (error) {
+      this.logger.error('logo_upload_failed', error, {
+        userId: input.actorUserId,
+        entityType: 'CLIENTE',
+        entityId: input.clientId,
+        operation: 'logo_upload',
+      });
+      return { ok: false, code: 'STORAGE_FAILED' };
+    }
+  }
+
+  async deleteLogo(input: {
+    clientId: string;
+    actorUserId: string;
+  }): Promise<{ ok: true } | { ok: false; code: string }> {
+    const existing = await this.database.db
+      .select({ id: clientes.id, logoKey: clientes.logoKey })
+      .from(clientes)
+      .where(eq(clientes.id, input.clientId))
+      .limit(1);
+    if (!existing[0]) return { ok: false, code: 'NOT_FOUND' };
+    if (!existing[0].logoKey) return { ok: true }; // no logo to delete
+
+    const logoKey = existing[0].logoKey;
+
+    await this.database.db
+      .update(clientes)
+      .set({ logoKey: null })
+      .where(eq(clientes.id, input.clientId));
+
+    try {
+      await this.storage.delete(logoKey);
+    } catch {
+      // non-critical
+    }
+
+    return { ok: true };
+  }
+
+  async getLogoUrl(clientId: string): Promise<string | null> {
+    const result = await this.database.db
+      .select({ logoKey: clientes.logoKey })
+      .from(clientes)
+      .where(eq(clientes.id, clientId))
+      .limit(1);
+    const logoKey = result[0]?.logoKey;
+    if (!logoKey) return null;
+    return this.storage.getSignedUrl(logoKey);
   }
 
   private textArray(values: string[]) {
