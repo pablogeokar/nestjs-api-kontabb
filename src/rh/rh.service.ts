@@ -518,6 +518,7 @@ export class RhService {
         empresa: {
           razaoSocial: clientes.razaoSocial,
           cnpj: clientes.cnpj,
+          logoKey: clientes.logoKey,
           logradouro: clientes.logradouro,
           numero: clientes.numero,
           complemento: clientes.complemento,
@@ -543,11 +544,20 @@ export class RhService {
     const row = rows[0];
     if (!row) return null;
 
+    let logoUrl: string | null = null;
+    try {
+      const logoKey = row.empresa?.logoKey ?? null;
+      logoUrl = logoKey ? await this.storage.getSignedUrl(logoKey) : null;
+    } catch {
+      // non-critical — continue without logo
+    }
+
     return {
       empresa: {
         razaoSocial: row.empresa?.razaoSocial ?? '',
         cnpj: row.empresa?.cnpj ?? '',
         endereco: this.buildEndereco(row.empresa),
+        logoUrl,
       },
       competencia: row.folha?.competencia ?? '',
       periodoInicio: row.folha?.periodoInicio ?? '',
@@ -798,8 +808,13 @@ export class RhService {
       .orderBy(funcionariosRh.nomeCompleto);
 
     // Generate logo URL once (all rows share the same client)
-    const logoKey = rows[0]?.empresa?.logoKey ?? null;
-    const logoUrl = logoKey ? await this.storage.getSignedUrl(logoKey) : null;
+    let logoUrl: string | null = null;
+    try {
+      const logoKey = rows[0]?.empresa?.logoKey ?? null;
+      logoUrl = logoKey ? await this.storage.getSignedUrl(logoKey) : null;
+    } catch {
+      // non-critical — continue without logo
+    }
 
     return rows.map((row) => ({
       empresa: {
