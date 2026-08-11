@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
+import { StorageService } from '../storage/storage.service';
 import {
   clientes,
   folhasPagamento,
@@ -24,7 +25,10 @@ export interface ColaboradorSession {
 
 @Injectable()
 export class ColaboradorService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly storage: StorageService,
+  ) {}
 
   /**
    * Authenticate an employee by CNPJ + employee code + password.
@@ -334,6 +338,7 @@ export class ColaboradorService {
         empresa: {
           razaoSocial: clientes.razaoSocial,
           cnpj: clientes.cnpj,
+          logoKey: clientes.logoKey,
           logradouro: clientes.logradouro,
           numero: clientes.numero,
           complemento: clientes.complemento,
@@ -364,11 +369,16 @@ export class ColaboradorService {
     const row = rows[0];
     if (!row) return null;
 
+    const logoUrl = row.empresa.logoKey
+      ? await this.storage.getSignedUrl(row.empresa.logoKey)
+      : null;
+
     return {
       empresa: {
         razaoSocial: row.empresa.razaoSocial,
         cnpj: row.empresa.cnpj,
         endereco: this.buildEndereco(row.empresa),
+        logoUrl,
       },
       competencia: row.folha.competencia,
       periodoInicio: row.folha.periodoInicio,
