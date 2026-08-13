@@ -318,92 +318,108 @@ export class CertificadoService {
   }
 
   /**
-   * Extrai metadados do certificado PFX/P12.
-   * Usa tls.createSecureContext para parsear o PFX e extrair o X.509.
+   * Extrai metadados do certificado PFX/P12 usando node-forge.
    */
   private extractPfxMetadata(
     pfxBuffer: Buffer,
     passphrase: string,
   ): CertificadoMetadata {
-    const tls = require('tls') as typeof import('tls');
-    const crypto = require('crypto') as typeof import('crypto');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const forge = require('node-forge');
 
-    // Validar que o PFX pode ser lido com a senha fornecida
-    let secureContext: any;
+    // Converter buffer para DER string (binary) que forge espera
+    const derString = pfxBuffer.toString('binary');
+
+    let p12Asn1: any;
+    let p12: any;
     try {
-      secureContext = tls.createSecureContext({
-        pfx: pfxBuffer,
-        passphrase: passphrase,
-      });
+      p12Asn1 = forge.asn1.fromDer(derString);
+      p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, passphrase);
     } catch (error: any) {
       if (
-        error.message.includes('mac verify failure') ||
-        error.message.includes('bad decrypt')
+        error.message?.includes('Invalid password') ||
+        error.message?.includes('PKCS#12 MAC could not be verified') ||
+        error.message?.includes('bad decrypt')
       ) {
         throw new Error('Senha do certificado incorreta.');
       }
-      throw new Error(`Falha ao ler o certificado PFX: ${error.message}`);
-    }
-
-    // Extrair o certificado X.509 do contexto
-    const ctx = secureContext.context;
-    let cert: InstanceType<typeof crypto.X509Certificate>;
-
-    try {
-      const certDer = ctx.getCertificate();
-      if (certDer) {
-        cert = new crypto.X509Certificate(certDer);
-      } else {
-        throw new Error('Certificado não encontrado no PFX');
-      }
-    } catch {
       throw new Error(
-        'Não foi possível extrair o certificado do arquivo PFX. ' +
-          'Verifique se é um certificado A1 válido (.pfx/.p12).',
+        `Falha ao ler o certificado PFX: ${error.message || 'formato inválido'}`,
       );
     }
 
-    // Extrair CNPJ do Subject (certificados brasileiros A1)
+    // Extrair certificados do PFX (bag type: cert)
+    const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
+    const certs = certBags[forge.pki.oids.certBag];
+
+    if (!certs || certs.length === 0) {
+      throw new Error('Nenhum certificado encontrado no arquivo PFX.');
+    }
+
+    // Pegar o certificado principal (primeiro, que geralmente é o do titular)
+    const certBag = certs[0];
+    const cert = certBag.cert;
+
+    if (!cert) {
+      throw new Error('Certificado inválido no arquivo PFX.');
+    }
+
+    // Extrair campos do subject
     const subject = cert.subject;
     let cnpj = '';
     let razaoSocial = '';
 
-    // CN típico: "EMPRESA LTDA:12345678000195"
-    const cnMatch = subject.match(/CN=([^,\n]+)/);
-    if (cnMatch) {
-      const cn = cnMatch[1];
+    // Buscar no CN (Common Name)
+    const cnAttr = subject.getField('CN');
+    if (cnAttr) {
+      const cn = cnAttr.value as string;
+      // Formato típico ICP-Brasil: "RAZAO SOCIAL:12345678000195"
       const cnpjMatch = cn.match(/(\d{14})/);
       if (cnpjMatch) {
         cnpj = cnpjMatch[1];
       }
+      // Extrair razão social (parte antes do ":" ou dos dígitos finais)
       razaoSocial = cn.replace(/[:\d]+$/, '').trim();
       if (!razaoSocial) razaoSocial = cn.split(':')[0].trim();
     }
 
-    // Tentar serialNumber no subject
+    // Buscar no campo serialNumber do subject (OID 2.5.4.5)
     if (!cnpj) {
-      const serialMatch = subject.match(
-        /(?:serialNumber|OID\.2\.16\.76\.1\.3\.3)\s*=\s*(\d{14})/,
-      );
-      if (serialMatch) {
-        cnpj = serialMatch[1];
+      const serialAttr =
+        subject.getField('2.5.4.5') || subject.getField('serialNumber');
+      if (serialAttr) {
+        const serial = serialAttr.value as string;
+        const match = serial.match(/(\d{14})/);
+        if (match) cnpj = match[1];
       }
     }
 
-    // Tentar qualquer sequência de 14 dígitos no subject
+    // Buscar nas extensões (subjectAltName / otherName com OID 2.16.76.1.3.3)
     if (!cnpj) {
-      const allDigits = subject.match(/\d{14}/);
-      if (allDigits) {
-        cnpj = allDigits[0];
+      const extensions = cert.extensions || [];
+      for (const ext of extensions) {
+        if (ext.name === 'subjectAltName' && ext.altNames) {
+          for (const altName of ext.altNames) {
+            // otherName com OID ICP-Brasil para CNPJ
+            const value = altName.value || altName.utf8 || '';
+            const match = String(value).match(/(\d{14})/);
+            if (match) {
+              cnpj = match[1];
+              break;
+            }
+          }
+        }
+        if (cnpj) break;
       }
     }
 
-    // Tentar no subjectAltName
-    if (!cnpj && cert.subjectAltName) {
-      const sanDigits = cert.subjectAltName.match(/\d{14}/);
-      if (sanDigits) {
-        cnpj = sanDigits[0];
-      }
+    // Última tentativa: varrer todo o subject como string
+    if (!cnpj) {
+      const subjectStr = subject.attributes
+        .map((a: any) => String(a.value))
+        .join(' ');
+      const match = subjectStr.match(/(\d{14})/);
+      if (match) cnpj = match[1];
     }
 
     if (!cnpj) {
@@ -413,16 +429,25 @@ export class CertificadoService {
       );
     }
 
-    const emissor = cert.issuer.match(/CN=([^,\n]+)/)?.[1] ?? cert.issuer;
-    const thumbprint = cert.fingerprint256.replace(/:/g, '').toLowerCase();
+    // Extrair emissor
+    const issuerCn = cert.issuer.getField('CN');
+    const emissor = issuerCn ? (issuerCn.value as string) : 'N/A';
+
+    // Thumbprint (SHA-256 do DER do certificado)
+    const certDer = forge.asn1
+      .toDer(forge.pki.certificateToAsn1(cert))
+      .getBytes();
+    const md = forge.md.sha256.create();
+    md.update(certDer);
+    const thumbprint = md.digest().toHex();
 
     return {
       cnpj,
       razaoSocial: razaoSocial || 'N/A',
       emissor,
       thumbprint,
-      validadeInicio: new Date(cert.validFrom),
-      validadeFim: new Date(cert.validTo),
+      validadeInicio: cert.validity.notBefore,
+      validadeFim: cert.validity.notAfter,
     };
   }
 }
