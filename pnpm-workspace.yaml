@@ -2,6 +2,6 @@ allowBuilds:
   '@scarf/scarf': true
   bcrypt: true
   esbuild: true
-  libxmljs2: set this to true or false
+  libxmljs2: true
   unrs-resolver: false
-  xsd-schema-validator: set this to true or false
+  xsd-schema-validator: true
