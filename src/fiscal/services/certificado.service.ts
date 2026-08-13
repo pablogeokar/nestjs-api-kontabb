@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { eq, and, sql, inArray } from 'drizzle-orm';
-import { X509Certificate } from 'crypto';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { AppLogger } from '../../common/logger.service';
@@ -320,46 +319,97 @@ export class CertificadoService {
 
   /**
    * Extrai metadados do certificado PFX/P12.
+   * Usa tls.createSecureContext para parsear o PFX e extrair o X.509.
    */
   private extractPfxMetadata(
     pfxBuffer: Buffer,
     passphrase: string,
   ): CertificadoMetadata {
-    // Node.js native crypto para ler o certificado X.509 do PFX
-    const cert = new X509Certificate(pfxBuffer);
+    const tls = require('tls') as typeof import('tls');
+    const crypto = require('crypto') as typeof import('crypto');
 
-    // Extrair CNPJ do Subject (comum em certificados brasileiros)
-    // Formato do subject: CN=NOME:12345678000195, OU=...
+    // Validar que o PFX pode ser lido com a senha fornecida
+    let secureContext: any;
+    try {
+      secureContext = tls.createSecureContext({
+        pfx: pfxBuffer,
+        passphrase: passphrase,
+      });
+    } catch (error: any) {
+      if (
+        error.message.includes('mac verify failure') ||
+        error.message.includes('bad decrypt')
+      ) {
+        throw new Error('Senha do certificado incorreta.');
+      }
+      throw new Error(`Falha ao ler o certificado PFX: ${error.message}`);
+    }
+
+    // Extrair o certificado X.509 do contexto
+    const ctx = secureContext.context;
+    let cert: InstanceType<typeof crypto.X509Certificate>;
+
+    try {
+      const certDer = ctx.getCertificate();
+      if (certDer) {
+        cert = new crypto.X509Certificate(certDer);
+      } else {
+        throw new Error('Certificado não encontrado no PFX');
+      }
+    } catch {
+      throw new Error(
+        'Não foi possível extrair o certificado do arquivo PFX. ' +
+          'Verifique se é um certificado A1 válido (.pfx/.p12).',
+      );
+    }
+
+    // Extrair CNPJ do Subject (certificados brasileiros A1)
     const subject = cert.subject;
     let cnpj = '';
     let razaoSocial = '';
 
-    // Tentar extrair CNPJ do campo CN ou do subject completo
+    // CN típico: "EMPRESA LTDA:12345678000195"
     const cnMatch = subject.match(/CN=([^,\n]+)/);
     if (cnMatch) {
       const cn = cnMatch[1];
-      // CNPJ pode estar após ":" ou no final do CN
       const cnpjMatch = cn.match(/(\d{14})/);
       if (cnpjMatch) {
         cnpj = cnpjMatch[1];
       }
-      // Razão social é a parte antes do ":"
-      razaoSocial = cn.split(':')[0].trim();
+      razaoSocial = cn.replace(/[:\d]+$/, '').trim();
+      if (!razaoSocial) razaoSocial = cn.split(':')[0].trim();
     }
 
+    // Tentar serialNumber no subject
     if (!cnpj) {
-      // Tentar extrair do campo serialNumber ou do subject alternativo
       const serialMatch = subject.match(
-        /(?:serialNumber|2\.16\.76\.1\.3\.3)=(\d{14})/,
+        /(?:serialNumber|OID\.2\.16\.76\.1\.3\.3)\s*=\s*(\d{14})/,
       );
       if (serialMatch) {
         cnpj = serialMatch[1];
       }
     }
 
+    // Tentar qualquer sequência de 14 dígitos no subject
+    if (!cnpj) {
+      const allDigits = subject.match(/\d{14}/);
+      if (allDigits) {
+        cnpj = allDigits[0];
+      }
+    }
+
+    // Tentar no subjectAltName
+    if (!cnpj && cert.subjectAltName) {
+      const sanDigits = cert.subjectAltName.match(/\d{14}/);
+      if (sanDigits) {
+        cnpj = sanDigits[0];
+      }
+    }
+
     if (!cnpj) {
       throw new Error(
-        'Não foi possível extrair o CNPJ do certificado digital.',
+        'Não foi possível extrair o CNPJ do certificado digital. ' +
+          'Verifique se é um certificado e-CNPJ ou e-PJ válido.',
       );
     }
 
