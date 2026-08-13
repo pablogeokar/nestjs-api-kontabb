@@ -12,6 +12,7 @@ import { UploadModule } from './upload/upload.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { ClienteModule } from './cliente/cliente.module';
 import { RhModule } from './rh/rh.module';
+import { FiscalModule } from './fiscal/fiscal.module';
 import { ColaboradorModule } from './colaborador/colaborador.module';
 import { HealthController } from './health/health.controller';
 import { SetupController } from './health/setup.controller';
@@ -33,6 +34,7 @@ import { StorageAdminController } from './storage/storage.controller';
     UsuariosModule,
     ClienteModule,
     RhModule,
+    FiscalModule,
     ColaboradorModule,
   ],
   controllers: [

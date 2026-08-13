@@ -1,0 +1,289 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { AuthGuard } from '../../auth/auth.guard';
+import { CurrentUser } from '../../auth/current-user.decorator';
+import {
+  parsePaginationParams,
+  buildPaginatedResponse,
+} from '../../common/pagination';
+import type { CurrentUser as CurrentUserType } from '../../common/types';
+import { ClientesService } from '../../clientes/clientes.service';
+import { CertificadoService } from '../services/certificado.service';
+import { DistribuicaoDfeService } from '../services/distribuicao-dfe.service';
+import { DanfeService } from '../services/danfe.service';
+import { NfeWizardService } from '../services/nfewizard.service';
+import { UploadCertificadoClienteDto } from '../dto/upload-certificado.dto';
+import { ManifestarDocumentoDto } from '../dto/manifestar-documento.dto';
+import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
+
+@ApiTags('Fiscal (Cliente)')
+@ApiBearerAuth('session-token')
+@Controller('fiscal')
+@UseGuards(AuthGuard)
+export class ClienteFiscalController {
+  constructor(
+    private readonly clientesService: ClientesService,
+    private readonly certificadoService: CertificadoService,
+    private readonly distribuicaoService: DistribuicaoDfeService,
+    private readonly danfeService: DanfeService,
+    private readonly nfeWizardService: NfeWizardService,
+  ) {}
+
+  // ─── Certificado Digital ──────────────────────────────────────────────────
+
+  @Post('certificado/upload')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('arquivo'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload do certificado digital A1 da empresa',
+    description:
+      'Envia o certificado A1 (.pfx/.p12) da empresa logada. Valida o CNPJ contra o cadastro.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        arquivo: { type: 'string', format: 'binary' },
+        senha: { type: 'string' },
+      },
+      required: ['arquivo', 'senha'],
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Certificado cadastrado com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Certificado inválido ou CNPJ não confere.' })
+  async uploadCertificado(
+    @UploadedFile() arquivo: Express.Multer.File,
+    @Body() body: UploadCertificadoClienteDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    if (!arquivo) {
+      throw new BadRequestException(
+        'Arquivo do certificado (.pfx/.p12) é obrigatório.',
+      );
+    }
+
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+    }
+
+    const result = await this.certificadoService.uploadCertificado({
+      clienteId: cliente.id,
+      pfxBuffer: arquivo.buffer,
+      senha: body.senha,
+      uploadadoPor: user.id,
+    });
+
+    return {
+      success: true,
+      message: 'Certificado digital cadastrado com sucesso.',
+      data: result,
+    };
+  }
+
+  @Get('certificado')
+  @ApiOperation({
+    summary: 'Status do certificado digital',
+    description:
+      'Retorna o status e a validade do certificado digital da empresa logada.',
+  })
+  @ApiResponse({ status: 200, description: 'Status do certificado.' })
+  async getCertificadoStatus(@CurrentUser() user: CurrentUserType) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+    }
+
+    const status = await this.certificadoService.getCertificadoStatus(
+      cliente.id,
+    );
+    return { data: status };
+  }
+
+  // ─── Documentos Fiscais ───────────────────────────────────────────────────
+
+  @Get('documentos')
+  @ApiOperation({
+    summary: 'Listar documentos fiscais da empresa',
+    description:
+      'Retorna lista paginada dos documentos fiscais pertencentes ao cliente logado.',
+  })
+  @ApiResponse({ status: 200, description: 'Lista paginada de documentos.' })
+  async listDocumentos(
+    @Query() query: QueryDocumentosFiscaisDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+    }
+
+    const pagination = parsePaginationParams(query);
+    const result = await this.distribuicaoService.listDocumentosFiscais({
+      clienteId: cliente.id,
+      tipoDocumento: query.tipoDocumento,
+      situacao: query.situacao,
+      manifestacaoStatus: query.manifestacaoStatus,
+      dataInicio: query.dataInicio ? new Date(query.dataInicio) : undefined,
+      dataFim: query.dataFim ? new Date(query.dataFim) : undefined,
+      search: query.search?.trim(),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('documentos/:id/download-xml')
+  @ApiOperation({
+    summary: 'Download do XML de um documento fiscal',
+    description: 'Retorna URL assinada para download do XML original.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'URL assinada para download.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async downloadXml(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+    }
+
+    const url = await this.distribuicaoService.getXmlDownloadUrl(
+      id,
+      cliente.id,
+    );
+    if (!url) throw new NotFoundException('Documento fiscal não encontrado.');
+    return { url };
+  }
+
+  @Get('documentos/:id/danfe')
+  @ApiOperation({
+    summary: 'Visualizar DANFE (PDF)',
+    description: 'Retorna URL ou gera a DANFE em PDF do documento fiscal.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'URL da DANFE em PDF.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async getDanfe(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+    }
+
+    const result = await this.danfeService.getDanfePdf(id, cliente.id);
+    if ('url' in result) {
+      return { url: result.url };
+    }
+    return { message: 'DANFE gerada com sucesso.' };
+  }
+
+  // ─── Manifestação do Destinatário ─────────────────────────────────────────
+
+  @Post('documentos/:id/manifestar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Manifestar documento fiscal',
+    description:
+      'Envia evento de manifestação do destinatário à SEFAZ (Ciência, Confirmação, Desconhecimento, Não Realizada).',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Manifestação enviada com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Dados inválidos ou justificativa ausente.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async manifestarDocumento(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: ManifestarDocumentoDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+    }
+
+    // Validar justificativa para eventos que exigem
+    if (
+      (body.tipoEvento === '210220' || body.tipoEvento === '210240') &&
+      (!body.justificativa || body.justificativa.length < 15)
+    ) {
+      throw new BadRequestException(
+        'Justificativa é obrigatória (mín. 15 caracteres) para Desconhecimento e Operação não Realizada.',
+      );
+    }
+
+    // Buscar documento e verificar pertence ao cliente
+    const docUrl = await this.distribuicaoService.getXmlDownloadUrl(
+      id,
+      cliente.id,
+    );
+    if (!docUrl) {
+      throw new NotFoundException('Documento fiscal não encontrado.');
+    }
+
+    // Enviar manifestação à SEFAZ
+    const resultado = await this.nfeWizardService.enviarManifestacao({
+      clienteId: cliente.id,
+      cnpj: cliente.cnpj,
+      uf: 'SP', // TODO: obter UF do cadastro do cliente
+      chaveAcesso: '', // será preenchido pelo serviço
+      tipoEvento: body.tipoEvento,
+      justificativa: body.justificativa,
+    });
+
+    // Mapear tipo de evento para registro
+    const tipoEventoMap: Record<string, string> = {
+      '210210': 'MANIFESTACAO_CIENCIA',
+      '210200': 'MANIFESTACAO_CONFIRMACAO',
+      '210220': 'MANIFESTACAO_DESCONHECIMENTO',
+      '210240': 'MANIFESTACAO_NAO_REALIZADA',
+    };
+
+    // Registrar evento no banco
+    await this.distribuicaoService.registrarManifestacao({
+      documentoId: id,
+      tipoEvento: tipoEventoMap[body.tipoEvento],
+      codigoEvento: body.tipoEvento,
+      protocolo: resultado?.protocolo || resultado?.nProt,
+      statusSefaz: parseInt(resultado?.cStat || '0', 10),
+      motivoSefaz: resultado?.xMotivo,
+    });
+
+    return {
+      success: true,
+      message: 'Manifestação enviada com sucesso à SEFAZ.',
+      data: {
+        protocolo: resultado?.protocolo || resultado?.nProt,
+        status_sefaz: resultado?.cStat,
+        motivo: resultado?.xMotivo,
+      },
+    };
+  }
+}

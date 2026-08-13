@@ -15,6 +15,13 @@
       "when": 1786481527000,
       "tag": "0001_add_clientes_logo_key",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786621364143,
+      "tag": "0002_wealthy_energizer",
+      "breakpoints": true
     }
   ]
 }
