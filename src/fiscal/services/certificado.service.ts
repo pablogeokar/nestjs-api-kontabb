@@ -9,10 +9,7 @@ import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { AppLogger } from '../../common/logger.service';
 import { CryptoUtil } from '../../common/crypto.util';
-import {
-  certificadosDigitais,
-  clientes,
-} from '../../database/schema';
+import { certificadosDigitais, clientes } from '../../database/schema';
 
 export interface CertificadoMetadata {
   cnpj: string;
@@ -124,7 +121,7 @@ export class CertificadoService {
     const status = diasParaExpirar <= 30 ? 'PRESTES_A_EXPIRAR' : 'ATIVO';
 
     // 10. Gravar no banco
-    const [record] = await this.database.db
+    await this.database.db
       .insert(certificadosDigitais)
       .values({
         id: certId,
@@ -140,10 +137,10 @@ export class CertificadoService {
         status,
         uploadadoPor: input.uploadadoPor,
       })
-      .returning({ id: certificadosDigitais.id });
+      .returning();
 
     return {
-      id: record.id,
+      id: certId,
       status,
       validadeFim: metadata.validadeFim.toISOString(),
       diasParaExpirar,

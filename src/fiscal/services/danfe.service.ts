@@ -70,7 +70,7 @@ export class DanfeService {
 
       // Salvar no R2
       const danfeKey = doc[0].xmlKey.replace('.xml', '.pdf');
-      await this.storage.upload(pdfBuffer, danfeKey as any, 'application/pdf');
+      await this.storage.upload(danfeKey, pdfBuffer, 'application/pdf');
 
       // Atualizar registro no banco
       await this.database.db
@@ -95,21 +95,27 @@ export class DanfeService {
     tipoDocumento: string,
   ): Promise<Buffer> {
     try {
-      const { Danfe } = await import('@nfewizard/danfe');
+      const { NFeGerarDanfe } = await import('@nfewizard/danfe');
 
-      const danfe = new Danfe(xmlContent);
-      const pdfBytes = await (danfe as any).generate();
+      const danfe = new NFeGerarDanfe({
+        data: xmlContent,
+        chave: '',
+      } as any);
+      const result = await danfe.generatePDF();
 
-      return Buffer.isBuffer(pdfBytes)
-        ? pdfBytes
-        : Buffer.from(pdfBytes);
-    } catch (error: any) {
-      this.logger.warn(
-        `@nfewizard/danfe falhou, tentando fallback: ${error.message}`,
-      );
-      // Fallback: retornar um PDF mínimo indicando indisponibilidade
+      if (!result.success) {
+        throw new Error(result.message || 'Falha ao gerar DANFE');
+      }
+
+      // NFeGerarDanfe usa pdfkit internamente e grava em disco por padrão.
+      // Para uso em buffer direto, a lib precisa de adaptação.
       throw new Error(
-        'Geração de DANFE indisponível. Verifique se a dependência @nfewizard/danfe está instalada corretamente.',
+        'Geração de DANFE em memória requer configuração de outputPath.',
+      );
+    } catch (error: any) {
+      this.logger.warn(`@nfewizard/danfe: ${error.message}`);
+      throw new Error(
+        'Geração de DANFE indisponível no momento. Use o download do XML.',
       );
     }
   }

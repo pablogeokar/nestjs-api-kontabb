@@ -31,19 +31,30 @@ export class NfeWizardService {
     const { NFeWizard } = await import('nfewizard-io');
 
     const ambiente =
-      this.configService.get<string>('SEFAZ_AMBIENTE') === 'PRODUCAO'
-        ? '1'
-        : '2';
+      this.configService.get<string>('SEFAZ_AMBIENTE') === 'PRODUCAO' ? 1 : 2;
 
-    const wizard = new NFeWizard({
-      dfe: {
-        UF: uf,
-        CPFCNPJ: '',
-        tpAmb: ambiente as '1' | '2',
-      },
-      certificado: {
-        pfx: certData.buffer.toString('base64'),
-        senha: certData.senha,
+    const wizard = new NFeWizard();
+    await wizard.NFE_LoadEnvironment({
+      config: {
+        dfe: {
+          UF: uf,
+          CPFCNPJ: '',
+          pathCertificado: certData.buffer,
+          senhaCertificado: certData.senha,
+          baixarXMLDistribuicao: false,
+          armazenarXMLAutorizacao: false,
+          armazenarXMLConsulta: false,
+          armazenarXMLRetorno: false,
+          armazenarRetornoEmJSON: false,
+        },
+        nfe: {
+          ambiente,
+          versaoDF: '4.00',
+        },
+        lib: {
+          useOpenSSL: false,
+          useForSchemaValidation: 'validateSchemaJsBased',
+        },
       },
     });
 
@@ -72,11 +83,12 @@ export class NfeWizardService {
         `Consultando DistribuicaoDFe para CNPJ ${input.cnpj} a partir do NSU ${ultNSU}`,
       );
 
-      const resposta = await (wizard as any).distribuicaoDFe({
+      const resposta = await wizard.NFE_DistribuicaoDFePorUltNSU({
+        cUFAutor: this.getCodigoUF(input.uf),
+        CNPJ: input.cnpj,
         distNSU: {
           ultNSU,
         },
-        CNPJ: input.cnpj,
       });
 
       return resposta;
@@ -110,11 +122,12 @@ export class NfeWizardService {
         `Consultando DistribuicaoCTe para CNPJ ${input.cnpj} a partir do NSU ${ultNSU}`,
       );
 
-      const resposta = await (wizard as any).distribuicaoCTe({
+      const resposta = await (wizard as any).CTE_DistribuicaoDFePorUltNSU({
+        cUFAutor: this.getCodigoUF(input.uf),
+        CNPJ: input.cnpj,
         distNSU: {
           ultNSU,
         },
-        CNPJ: input.cnpj,
       });
 
       return resposta;
@@ -149,13 +162,28 @@ export class NfeWizardService {
         `Enviando manifestação ${input.tipoEvento} para chave ${input.chaveAcesso}`,
       );
 
-      const evento = await (wizard as any).manifestacaoDestinatario({
-        chNFe: input.chaveAcesso,
-        CNPJ: input.cnpj,
-        tpEvento: input.tipoEvento,
-        nSeqEvento: (input.sequencia ?? 1).toString(),
-        xJust: input.justificativa,
-      });
+      const evento = await (wizard as any).NFE_CienciaDaOperacao({
+        idLote: Date.now(),
+        evento: [
+          {
+            cOrgao: this.getCodigoUF(input.uf),
+            tpAmb:
+              this.configService.get<string>('SEFAZ_AMBIENTE') === 'PRODUCAO'
+                ? 1
+                : 2,
+            CNPJ: input.cnpj,
+            chNFe: input.chaveAcesso,
+            dhEvento: new Date().toISOString(),
+            tpEvento: input.tipoEvento as any,
+            nSeqEvento: input.sequencia ?? 1,
+            verEvento: '1.00',
+            detEvento: {
+              descEvento: this.getDescEvento(input.tipoEvento),
+              ...(input.justificativa ? { xJust: input.justificativa } : {}),
+            },
+          },
+        ],
+      } as any);
 
       return evento;
     } catch (error: any) {
@@ -182,11 +210,12 @@ export class NfeWizardService {
         input.uf,
       );
 
-      const resposta = await (wizard as any).distribuicaoDFe({
+      const resposta = await wizard.NFE_DistribuicaoDFePorChave({
+        cUFAutor: this.getCodigoUF(input.uf),
+        CNPJ: input.cnpj,
         consChNFe: {
           chNFe: input.chaveAcesso,
         },
-        CNPJ: input.cnpj,
       });
 
       return resposta;
@@ -197,5 +226,50 @@ export class NfeWizardService {
       );
       throw error;
     }
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private getCodigoUF(uf: string): number {
+    const codigos: Record<string, number> = {
+      AC: 12,
+      AL: 27,
+      AM: 13,
+      AP: 16,
+      BA: 29,
+      CE: 23,
+      DF: 53,
+      ES: 32,
+      GO: 52,
+      MA: 21,
+      MG: 31,
+      MS: 50,
+      MT: 51,
+      PA: 15,
+      PB: 25,
+      PE: 26,
+      PI: 22,
+      PR: 41,
+      RJ: 33,
+      RN: 24,
+      RO: 11,
+      RR: 14,
+      RS: 43,
+      SC: 42,
+      SE: 28,
+      SP: 35,
+      TO: 17,
+    };
+    return codigos[uf] ?? 91; // 91 = Ambiente Nacional
+  }
+
+  private getDescEvento(tipoEvento: string): string {
+    const descricoes: Record<string, string> = {
+      '210210': 'Ciencia da Operacao',
+      '210200': 'Confirmacao da Operacao',
+      '210220': 'Desconhecimento da Operacao',
+      '210240': 'Operacao nao Realizada',
+    };
+    return descricoes[tipoEvento] ?? '';
   }
 }
