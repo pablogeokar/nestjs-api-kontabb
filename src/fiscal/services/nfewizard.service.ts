@@ -102,7 +102,7 @@ export class NfeWizardService {
   }
 
   /**
-   * Consulta Distribuição de CT-e na SEFAZ.
+   * Consulta Distribuição de CT-e na SEFAZ usando @nfewizard/cte.
    */
   async consultarDistribuicaoCTe(input: {
     clienteId: string;
@@ -110,11 +110,45 @@ export class NfeWizardService {
     uf: string;
     ultimoNsu: number;
   }) {
-    try {
-      const wizard = await this.getClientWizardInstance(
-        input.clienteId,
-        input.uf,
+    const certData = await this.certificadoService.getDecryptedCertificate(
+      input.clienteId,
+    );
+    if (!certData) {
+      throw new Error(
+        `Nenhum certificado digital A1 ativo para o cliente ${input.clienteId}`,
       );
+    }
+
+    try {
+      const { CTEWizard } = await import('@nfewizard/cte');
+
+      const ambiente =
+        this.configService.get<string>('SEFAZ_AMBIENTE') === 'PRODUCAO' ? 1 : 2;
+
+      const cteWizard = new CTEWizard();
+      await (cteWizard as any).NFE_LoadEnvironment({
+        config: {
+          dfe: {
+            UF: input.uf,
+            CPFCNPJ: input.cnpj,
+            pathCertificado: certData.buffer,
+            senhaCertificado: certData.senha,
+            baixarXMLDistribuicao: false,
+            armazenarXMLAutorizacao: false,
+            armazenarXMLConsulta: false,
+            armazenarXMLRetorno: false,
+            armazenarRetornoEmJSON: false,
+          },
+          nfe: {
+            ambiente,
+            versaoDF: '4.00',
+          },
+          lib: {
+            useOpenSSL: false,
+            useForSchemaValidation: 'validateSchemaJsBased',
+          },
+        },
+      });
 
       const ultNSU = input.ultimoNsu.toString().padStart(15, '0');
 
@@ -122,7 +156,7 @@ export class NfeWizardService {
         `Consultando DistribuicaoCTe para CNPJ ${input.cnpj} a partir do NSU ${ultNSU}`,
       );
 
-      const resposta = await (wizard as any).CTE_DistribuicaoDFePorUltNSU({
+      const resposta = await (cteWizard as any).CTE_DistribuicaoDFePorUltNSU({
         cUFAutor: this.getCodigoUF(input.uf),
         CNPJ: input.cnpj,
         distNSU: {
