@@ -76,8 +76,14 @@ export class AdminFiscalController {
       required: ['arquivo', 'clienteId', 'senha'],
     },
   })
-  @ApiResponse({ status: 201, description: 'Certificado cadastrado com sucesso.' })
-  @ApiResponse({ status: 400, description: 'Certificado inválido ou dados inconsistentes.' })
+  @ApiResponse({
+    status: 201,
+    description: 'Certificado cadastrado com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Certificado inválido ou dados inconsistentes.',
+  })
   async uploadCertificado(
     @UploadedFile() arquivo: Express.Multer.File,
     @Body() body: UploadCertificadoDto,
@@ -89,10 +95,7 @@ export class AdminFiscalController {
       );
     }
 
-    const allowedMimes = [
-      'application/x-pkcs12',
-      'application/octet-stream',
-    ];
+    const allowedMimes = ['application/x-pkcs12', 'application/octet-stream'];
     if (!allowedMimes.includes(arquivo.mimetype)) {
       throw new BadRequestException(
         'Tipo de arquivo inválido. Envie um arquivo .pfx ou .p12.',
@@ -117,11 +120,12 @@ export class AdminFiscalController {
   @ApiOperation({
     summary: 'Listar certificados digitais',
     description:
-      'Retorna todos os certificados cadastrados com informações de status e validade.',
+      'Retorna todos os certificados cadastrados com informações de status e validade. Opcionalmente filtra por clienteId.',
   })
   @ApiResponse({ status: 200, description: 'Lista de certificados.' })
-  async listCertificados() {
-    const certificados = await this.certificadoService.listCertificados();
+  async listCertificados(@Query('clienteId') clienteId?: string) {
+    const certificados =
+      await this.certificadoService.listCertificados(clienteId);
     return { data: certificados };
   }
 
@@ -182,7 +186,10 @@ export class AdminFiscalController {
     description:
       'Retorna lista paginada de todos os documentos fiscais com suporte a filtros avançados.',
   })
-  @ApiResponse({ status: 200, description: 'Lista paginada de documentos fiscais.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de documentos fiscais.',
+  })
   async listDocumentos(@Query() query: QueryDocumentosFiscaisDto) {
     const pagination = parsePaginationParams(query);
     const result = await this.distribuicaoService.listDocumentosFiscais({
@@ -222,9 +229,7 @@ export class AdminFiscalController {
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, description: 'URL da DANFE em PDF.' })
   @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
-  async getDanfe(
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ) {
+  async getDanfe(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     const result = await this.danfeService.getDanfePdf(id);
     if ('url' in result) {
       return { url: result.url };
