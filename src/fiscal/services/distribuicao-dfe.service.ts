@@ -133,6 +133,30 @@ export class DistribuicaoDfeService {
       this.logger.error(
         `Erro na consulta SEFAZ para ${cnpj}: ${error.message}`,
       );
+
+      // Se for erro de validação de schema XSD, apenas pular (não bloquear)
+      const isSchemaError =
+        error.message?.includes('Validação do XML') ||
+        error.message?.includes('No matching global declaration') ||
+        error.message?.includes('SchemaValidat');
+
+      if (isSchemaError) {
+        this.logger.warn(
+          `Validação de schema falhou para ${cnpj}/${tipoDocumento} — pulando. ` +
+            `Isso geralmente indica XSD desatualizado na lib.`,
+        );
+        await this.atualizarControleNsu(control.id, {
+          statusSefaz: 998,
+          motivoSefaz: `Schema validation error: ${error.message?.substring(0, 200)}`,
+          proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
+        });
+        return {
+          status: 'SCHEMA_ERROR',
+          message: `Erro de validação de schema XSD para ${tipoDocumento}. Consulta será retentada posteriormente.`,
+          documentosProcessados: 0,
+        };
+      }
+
       // Agendar próxima consulta para daqui 30 minutos em caso de erro
       await this.atualizarControleNsu(control.id, {
         statusSefaz: 999,
@@ -254,9 +278,7 @@ export class DistribuicaoDfeService {
       conditions.push(eq(documentosFiscais.clienteId, input.clienteId));
     }
     if (input.tipoDocumento) {
-      conditions.push(
-        eq(documentosFiscais.tipoDocumento, input.tipoDocumento),
-      );
+      conditions.push(eq(documentosFiscais.tipoDocumento, input.tipoDocumento));
     }
     if (input.situacao) {
       conditions.push(eq(documentosFiscais.situacao, input.situacao));
@@ -428,11 +450,7 @@ export class DistribuicaoDfeService {
    */
   async getDashboardStats(clienteId?: string) {
     const mesAtual = new Date();
-    const inicioMes = new Date(
-      mesAtual.getFullYear(),
-      mesAtual.getMonth(),
-      1,
-    );
+    const inicioMes = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1);
 
     const conditions: any[] = [
       sql`${documentosFiscais.criadoEm} >= ${inicioMes}`,
@@ -506,9 +524,7 @@ export class DistribuicaoDfeService {
       .limit(1);
 
     if (existing[0]) {
-      this.logger.debug(
-        `Documento ${parsed.chaveAcesso} já existe, pulando.`,
-      );
+      this.logger.debug(`Documento ${parsed.chaveAcesso} já existe, pulando.`);
       return;
     }
 
@@ -584,7 +600,11 @@ export class DistribuicaoDfeService {
     if (schema.includes('resNFe') || xml.includes('<resNFe')) {
       situacao = 'RESUMIDA';
       tipoDocumento = 'NFE';
-    } else if (schema.includes('procCTe') || xml.includes('<procCTe') || xml.includes('<CTe')) {
+    } else if (
+      schema.includes('procCTe') ||
+      xml.includes('<procCTe') ||
+      xml.includes('<CTe')
+    ) {
       tipoDocumento = 'CTE';
     } else if (xml.includes('mod>65') || xml.includes('<mod>65</mod>')) {
       tipoDocumento = 'NFCE';
@@ -692,8 +712,12 @@ export class DistribuicaoDfeService {
       .set({
         ...(data.ultimoNsu !== undefined && { ultimoNsu: data.ultimoNsu }),
         ...(data.maxNsu !== undefined && { maxNsu: data.maxNsu }),
-        ...(data.statusSefaz !== undefined && { statusSefaz: data.statusSefaz }),
-        ...(data.motivoSefaz !== undefined && { motivoSefaz: data.motivoSefaz }),
+        ...(data.statusSefaz !== undefined && {
+          statusSefaz: data.statusSefaz,
+        }),
+        ...(data.motivoSefaz !== undefined && {
+          motivoSefaz: data.motivoSefaz,
+        }),
         ...(data.proximaConsultaEm !== undefined && {
           proximaConsultaEm: data.proximaConsultaEm,
         }),
@@ -744,11 +768,7 @@ export class DistribuicaoDfeService {
 
   private extractMotivo(resposta: any): string {
     try {
-      return (
-        resposta?.retDistDFeInt?.xMotivo ||
-        resposta?.xMotivo ||
-        ''
-      );
+      return resposta?.retDistDFeInt?.xMotivo || resposta?.xMotivo || '';
     } catch {
       return '';
     }
