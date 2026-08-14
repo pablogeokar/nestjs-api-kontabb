@@ -157,6 +157,28 @@ export class DistribuicaoDfeService {
         };
       }
 
+      // Consumo Indevido (cStat 656) — SEFAZ pede para aguardar 1 hora
+      const isConsumoIndevido =
+        error.message?.includes('Consumo Indevido') ||
+        error.message?.includes('656');
+
+      if (isConsumoIndevido) {
+        this.logger.warn(
+          `Consumo Indevido para ${cnpj}/${tipoDocumento} — aguardando 1 hora.`,
+        );
+        await this.atualizarControleNsu(control.id, {
+          statusSefaz: 656,
+          motivoSefaz: 'Consumo Indevido - aguardar 1 hora',
+          proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
+        });
+        return {
+          status: 'CONSUMO_INDEVIDO',
+          message:
+            'SEFAZ rejeitou por Consumo Indevido. Próxima tentativa em 1 hora.',
+          documentosProcessados: 0,
+        };
+      }
+
       // Agendar próxima consulta para daqui 30 minutos em caso de erro
       await this.atualizarControleNsu(control.id, {
         statusSefaz: 999,
@@ -242,7 +264,15 @@ export class DistribuicaoDfeService {
     for (const { clienteId } of clientesAtivos) {
       try {
         const nfe = await this.sincronizarCliente(clienteId, 'NFE');
-        const cte = await this.sincronizarCliente(clienteId, 'CTE');
+        let cte: any = {
+          status: 'SKIP',
+          message: 'CTe desabilitado temporariamente (bug XSD na lib)',
+        };
+        try {
+          cte = await this.sincronizarCliente(clienteId, 'CTE');
+        } catch (cteError: any) {
+          cte = { status: 'ERRO', message: cteError.message };
+        }
         resultados.push({ clienteId, nfe, cte });
       } catch (error: any) {
         this.logger.error(
