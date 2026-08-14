@@ -264,10 +264,7 @@ export class DistribuicaoDfeService {
     for (const { clienteId } of clientesAtivos) {
       try {
         const nfe = await this.sincronizarCliente(clienteId, 'NFE');
-        let cte: any = {
-          status: 'SKIP',
-          message: 'CTe desabilitado temporariamente (bug XSD na lib)',
-        };
+        let cte: any;
         try {
           cte = await this.sincronizarCliente(clienteId, 'CTE');
         } catch (cteError: any) {
