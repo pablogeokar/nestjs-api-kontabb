@@ -3,10 +3,15 @@ import { eq, and } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { documentosFiscais } from '../../database/schema';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import * as crypto from 'crypto';
 
 /**
  * Serviço responsável por gerar e servir DANFEs (PDF) a partir do XML fiscal.
- * Utiliza @nfewizard/danfe para renderização.
+ * Utiliza @nfewizard/danfe para renderização de NF-e e NFC-e.
+ * CT-e (DACTE) não é suportado pela lib atualmente — retorna URL do XML.
  */
 @Injectable()
 export class DanfeService {
@@ -53,15 +58,21 @@ export class DanfeService {
       return { url };
     }
 
+    // CT-e (DACTE) não suportado pela lib @nfewizard/danfe
+    if (doc[0].tipoDocumento === 'CTE') {
+      throw new Error(
+        'Geração de DACTE (CT-e) não disponível. Use o download do XML.',
+      );
+    }
+
     // Gerar DANFE a partir do XML
     try {
       const xmlBuffer = await this.storage.download(doc[0].xmlKey);
       const xmlContent = xmlBuffer.toString('utf-8');
 
-      // Gerar PDF usando @nfewizard/danfe
       const pdfBuffer = await this.generateDanfePdf(
         xmlContent,
-        doc[0].tipoDocumento,
+        doc[0].chaveAcesso,
       );
 
       // Salvar no R2
@@ -74,45 +85,61 @@ export class DanfeService {
         .set({ danfeKey, atualizadoEm: new Date() })
         .where(eq(documentosFiscais.id, doc[0].id));
 
-      return { buffer: pdfBuffer, contentType: 'application/pdf' };
+      // Retornar URL assinada do PDF recém-gerado
+      const url = await this.storage.getSignedUrl(danfeKey, 600);
+      return { url };
     } catch (error: any) {
       this.logger.error(
         `Erro ao gerar DANFE para ${doc[0].chaveAcesso}: ${error.message}`,
         error.stack,
       );
       throw new Error(
-        'Não foi possível gerar a DANFE. Tente novamente mais tarde.',
+        error.message || 'Não foi possível gerar a DANFE. Tente novamente.',
       );
     }
   }
 
   private async generateDanfePdf(
     xmlContent: string,
-    tipoDocumento: string,
+    chaveAcesso: string,
   ): Promise<Buffer> {
-    try {
-      const { NFeGerarDanfe } = await import('@nfewizard/danfe');
+    // @nfewizard/danfe requer outputPath (grava em disco via PDFKit pipe)
+    // Usamos um arquivo temporário e lemos o resultado
+    const tmpDir = os.tmpdir();
+    const tmpFile = path.join(
+      tmpDir,
+      `danfe_${crypto.randomBytes(8).toString('hex')}.pdf`,
+    );
 
-      const danfe = new NFeGerarDanfe({
+    try {
+      const { NFE_GerarDanfe } = await import('@nfewizard/danfe');
+
+      const result = await NFE_GerarDanfe({
         data: xmlContent,
-        chave: '',
-      } as any);
-      const result = await danfe.generatePDF();
+        chave: chaveAcesso,
+        outputPath: tmpFile,
+      });
 
       if (!result.success) {
-        throw new Error(result.message || 'Falha ao gerar DANFE');
+        throw new Error(result.message || 'Falha na geração do PDF da DANFE');
       }
 
-      // NFeGerarDanfe usa pdfkit internamente e grava em disco por padrão.
-      // Para uso em buffer direto, a lib precisa de adaptação.
-      throw new Error(
-        'Geração de DANFE em memória requer configuração de outputPath.',
-      );
-    } catch (error: any) {
-      this.logger.warn(`@nfewizard/danfe: ${error.message}`);
-      throw new Error(
-        'Geração de DANFE indisponível no momento. Use o download do XML.',
-      );
+      // Ler o PDF gerado do disco
+      if (!fs.existsSync(tmpFile)) {
+        throw new Error('Arquivo PDF não foi gerado pela lib');
+      }
+
+      const pdfBuffer = fs.readFileSync(tmpFile);
+      return pdfBuffer;
+    } finally {
+      // Limpar arquivo temporário
+      try {
+        if (fs.existsSync(tmpFile)) {
+          fs.unlinkSync(tmpFile);
+        }
+      } catch {
+        // Ignorar erro de cleanup
+      }
     }
   }
 }

@@ -74,8 +74,14 @@ export class ClienteFiscalController {
       required: ['arquivo', 'senha'],
     },
   })
-  @ApiResponse({ status: 201, description: 'Certificado cadastrado com sucesso.' })
-  @ApiResponse({ status: 400, description: 'Certificado inválido ou CNPJ não confere.' })
+  @ApiResponse({
+    status: 201,
+    description: 'Certificado cadastrado com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Certificado inválido ou CNPJ não confere.',
+  })
   async uploadCertificado(
     @UploadedFile() arquivo: Express.Multer.File,
     @Body() body: UploadCertificadoClienteDto,
@@ -89,7 +95,9 @@ export class ClienteFiscalController {
 
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) {
-      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
     }
 
     const result = await this.certificadoService.uploadCertificado({
@@ -116,7 +124,9 @@ export class ClienteFiscalController {
   async getCertificadoStatus(@CurrentUser() user: CurrentUserType) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) {
-      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
     }
 
     const status = await this.certificadoService.getCertificadoStatus(
@@ -140,7 +150,9 @@ export class ClienteFiscalController {
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) {
-      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
     }
 
     const pagination = parsePaginationParams(query);
@@ -171,7 +183,9 @@ export class ClienteFiscalController {
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) {
-      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
     }
 
     const url = await this.distribuicaoService.getXmlDownloadUrl(
@@ -196,14 +210,16 @@ export class ClienteFiscalController {
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) {
-      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
     }
 
     const result = await this.danfeService.getDanfePdf(id, cliente.id);
     if ('url' in result) {
       return { url: result.url };
     }
-    return { message: 'DANFE gerada com sucesso.' };
+    return { url: null, message: 'DANFE gerada mas URL não disponível.' };
   }
 
   // ─── Manifestação do Destinatário ─────────────────────────────────────────
@@ -216,8 +232,14 @@ export class ClienteFiscalController {
       'Envia evento de manifestação do destinatário à SEFAZ (Ciência, Confirmação, Desconhecimento, Não Realizada).',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'Manifestação enviada com sucesso.' })
-  @ApiResponse({ status: 400, description: 'Dados inválidos ou justificativa ausente.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Manifestação enviada com sucesso.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Dados inválidos ou justificativa ausente.',
+  })
   @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
   async manifestarDocumento(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -226,7 +248,9 @@ export class ClienteFiscalController {
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) {
-      throw new NotFoundException('Empresa não encontrada para o usuário logado.');
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
     }
 
     // Validar justificativa para eventos que exigem

@@ -234,8 +234,7 @@ export class AdminFiscalController {
     if ('url' in result) {
       return { url: result.url };
     }
-    // Para stream direto, seria necessário usar @Res(), mas simplificamos com URL
-    return { message: 'DANFE gerada com sucesso.' };
+    return { url: null, message: 'DANFE gerada mas URL não disponível.' };
   }
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
