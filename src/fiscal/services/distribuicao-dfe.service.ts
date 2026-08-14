@@ -193,6 +193,23 @@ export class DistribuicaoDfeService {
     const ultNSU = this.extractUltNSU(resposta);
     const maxNSU = this.extractMaxNSU(resposta);
 
+    this.logger.log(
+      `SEFAZ response for ${cnpj}/${tipoDocumento}: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}, ` +
+        `keys=${JSON.stringify(Object.keys(resposta || {}))}`,
+    );
+
+    // Debug: log structure to understand where docZips live
+    if (resposta) {
+      const docZips = this.extractDocZips(resposta);
+      this.logger.log(
+        `extractDocZips result: ${docZips.length} docs. ` +
+          `retDistDFeInt keys: ${JSON.stringify(Object.keys(resposta?.retDistDFeInt || {}))}` +
+          (resposta?.retDistDFeInt?.loteDistDFeInt
+            ? `, loteDistDFeInt keys: ${JSON.stringify(Object.keys(resposta.retDistDFeInt.loteDistDFeInt || {}))}`
+            : ', loteDistDFeInt: NOT FOUND'),
+      );
+    }
+
     // Atualizar controle de NSU
     let proximaConsulta: Date | null = null;
 
@@ -592,9 +609,22 @@ export class DistribuicaoDfeService {
     docZip: any,
     tipoDocumentoDefault: 'NFE' | 'CTE',
   ): ParsedDocumento | null {
-    const nsu = parseInt(docZip.NSU || docZip['@_NSU'] || '0', 10);
-    const schema = docZip.schema || docZip['@_schema'] || '';
-    const zipContent = docZip['$'] || docZip.docZip || docZip['#text'] || '';
+    // xml2js retorna: { $: { NSU: '...', schema: '...' }, _: 'base64gzip...' }
+    // Outras libs podem retornar: { NSU: '...', schema: '...', '#text': '...' }
+    const attrs = docZip?.$ || docZip;
+    const nsu = parseInt(
+      attrs?.NSU || attrs?.['@_NSU'] || docZip?.NSU || '0',
+      10,
+    );
+    const schema = attrs?.schema || attrs?.['@_schema'] || docZip?.schema || '';
+
+    // O conteúdo base64+gzip pode estar em _ (xml2js), $value, #text, ou no próprio valor
+    const zipContent =
+      docZip?._ ||
+      docZip?.['$value'] ||
+      docZip?.['#text'] ||
+      docZip?.docZip ||
+      (typeof docZip === 'string' ? docZip : '');
 
     if (!zipContent) return null;
 
@@ -757,9 +787,9 @@ export class DistribuicaoDfeService {
   private extractCStat(resposta: any): number {
     try {
       const stat =
+        resposta?.data?.retDistDFeInt?.cStat ||
         resposta?.retDistDFeInt?.cStat ||
         resposta?.cStat ||
-        resposta?.retDistDFeInt?.['cStat'] ||
         0;
       return parseInt(String(stat), 10) || 0;
     } catch {
@@ -770,9 +800,9 @@ export class DistribuicaoDfeService {
   private extractUltNSU(resposta: any): number {
     try {
       const nsu =
+        resposta?.data?.retDistDFeInt?.ultNSU ||
         resposta?.retDistDFeInt?.ultNSU ||
         resposta?.ultNSU ||
-        resposta?.retDistDFeInt?.['ultNSU'] ||
         '0';
       return parseInt(String(nsu), 10) || 0;
     } catch {
@@ -783,9 +813,9 @@ export class DistribuicaoDfeService {
   private extractMaxNSU(resposta: any): number {
     try {
       const nsu =
+        resposta?.data?.retDistDFeInt?.maxNSU ||
         resposta?.retDistDFeInt?.maxNSU ||
         resposta?.maxNSU ||
-        resposta?.retDistDFeInt?.['maxNSU'] ||
         '0';
       return parseInt(String(nsu), 10) || 0;
     } catch {
@@ -795,7 +825,12 @@ export class DistribuicaoDfeService {
 
   private extractMotivo(resposta: any): string {
     try {
-      return resposta?.retDistDFeInt?.xMotivo || resposta?.xMotivo || '';
+      return (
+        resposta?.xMotivo ||
+        resposta?.data?.retDistDFeInt?.xMotivo ||
+        resposta?.retDistDFeInt?.xMotivo ||
+        ''
+      );
     } catch {
       return '';
     }
@@ -803,11 +838,19 @@ export class DistribuicaoDfeService {
 
   private extractDocZips(resposta: any): any[] {
     try {
+      // A lib nfewizard-io retorna { data: { retDistDFeInt: { loteDistDFeInt: { docZip: [...] } } } }
+      // xml2js pode retornar arrays aninhados, ex: docZip: [{ $: { NSU: '...' }, _: 'base64...' }]
+      const retDist =
+        resposta?.data?.retDistDFeInt || resposta?.retDistDFeInt || {};
+
       const lote =
-        resposta?.retDistDFeInt?.loteDistDFeInt?.docZip ||
-        resposta?.loteDistDFeInt?.docZip ||
+        retDist?.loteDistDFeInt?.docZip ||
+        retDist?.loteDistDFeInt?.[0]?.docZip ||
         [];
-      return Array.isArray(lote) ? lote : lote ? [lote] : [];
+
+      // xml2js pode retornar a propriedade como array
+      const docZips = Array.isArray(lote) ? lote : lote ? [lote] : [];
+      return docZips;
     } catch {
       return [];
     }
