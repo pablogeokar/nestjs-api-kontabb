@@ -55,12 +55,8 @@ export class DanfeService {
 
     // Gerar DANFE a partir do XML
     try {
-      const xmlUrl = await this.storage.getSignedUrl(doc[0].xmlKey, 60);
-      const xmlResponse = await fetch(xmlUrl);
-      if (!xmlResponse.ok) {
-        throw new Error('Falha ao baixar XML do R2');
-      }
-      const xmlContent = await xmlResponse.text();
+      const xmlBuffer = await this.storage.download(doc[0].xmlKey);
+      const xmlContent = xmlBuffer.toString('utf-8');
 
       // Gerar PDF usando @nfewizard/danfe
       const pdfBuffer = await this.generateDanfePdf(

@@ -56,6 +56,26 @@ export class StorageService {
     return getSignedUrl(this.r2, command, { expiresIn });
   }
 
+  /**
+   * Download direto do objeto via SDK (sem presigned URL).
+   * Mais rápido para uso interno — evita round-trip pela internet pública.
+   */
+  async download(key: string): Promise<Buffer> {
+    const response = await this.r2.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const stream = response.Body;
+    if (!stream) {
+      throw new Error(`Objeto não encontrado no R2: ${key}`);
+    }
+    // @aws-sdk v3 retorna um Readable stream ou Blob
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
+
   documentObjectKey(input: {
     cnpj: string;
     period: string;

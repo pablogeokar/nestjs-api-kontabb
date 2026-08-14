@@ -168,16 +168,10 @@ export class CertificadoService {
 
     if (!cert[0]) return null;
 
-    // Baixar o arquivo criptografado do R2
-    const signedUrl = await this.storage.getSignedUrl(cert[0].arquivoKey, 60);
-    const response = await fetch(signedUrl);
-    if (!response.ok) {
-      throw new Error(
-        `Falha ao baixar certificado do R2: ${response.statusText}`,
-      );
-    }
+    // Baixar o arquivo criptografado diretamente do R2 via SDK (sem presigned URL)
+    const encryptedBuffer = await this.storage.download(cert[0].arquivoKey);
 
-    const encryptedJson = JSON.parse(await response.text()) as {
+    const encryptedJson = JSON.parse(encryptedBuffer.toString('utf-8')) as {
       encryptedData: string;
       iv: string;
       authTag: string;
