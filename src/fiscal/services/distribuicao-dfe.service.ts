@@ -27,6 +27,7 @@ export interface FiscalSyncResult {
   documentosRecebidos?: number;
   documentosProcessados: number;
   documentosIgnorados?: number;
+  documentosComFalha?: number;
 }
 
 export function isFiscalSyncFailure(result: FiscalSyncResult) {
@@ -216,12 +217,15 @@ export class DistribuicaoDfeService {
     const docZips = extractDfeDocZips(resposta);
     let documentosProcessados = 0;
     let documentosIgnorados = 0;
+    let documentosComFalha = 0;
+    let ultimoNsuSeguro = control.ultimoNsu;
 
-    for (const docZip of docZips) {
+    for (const docZip of [...docZips].sort((a, b) => a.nsu - b.nsu)) {
       try {
         const parsed = parseDfeDocZip(docZip, tipoDocumento);
         if (!parsed) {
           documentosIgnorados++;
+          ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
           this.logger.debug(
             `docZip ignorado: consulta=${tipoDocumento}, NSU=${docZip.nsu}, schema=${docZip.schema || 'desconhecido'}`,
           );
@@ -231,31 +235,44 @@ export class DistribuicaoDfeService {
         if (await this.salvarDocumento(clienteId, cnpj, parsed)) {
           documentosProcessados += 1;
         }
-      } catch (error: any) {
-        documentosIgnorados++;
-        this.logger.warn(
-          `Erro ao processar docZip NSU ${docZip.nsu}: ${error.message}`,
+        ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+      } catch (error: unknown) {
+        documentosComFalha += 1;
+        this.logger.error(
+          `Falha ao persistir docZip NSU ${docZip.nsu}: ${this.getRootCauseMessage(error)}`,
         );
+        break;
       }
     }
 
     // 7. Atualizar controle de NSU final
+    const houveFalha = documentosComFalha > 0;
     await this.atualizarControleNsu(control.id, {
-      ultimoNsu: ultNSU > control.ultimoNsu ? ultNSU : control.ultimoNsu,
+      ultimoNsu: houveFalha
+        ? ultimoNsuSeguro
+        : ultNSU > control.ultimoNsu
+          ? ultNSU
+          : control.ultimoNsu,
       maxNsu: maxNSU > control.maxNsu ? maxNSU : control.maxNsu,
-      statusSefaz: cStat,
-      motivoSefaz: metadata.motivo,
-      proximaConsultaEm: proximaConsulta,
+      statusSefaz: houveFalha ? 999 : cStat,
+      motivoSefaz: houveFalha
+        ? 'Falha ao persistir documento fiscal. A consulta será retomada do último NSU seguro.'
+        : metadata.motivo,
+      proximaConsultaEm: houveFalha ? null : proximaConsulta,
     });
 
     return {
-      status: 'OK',
+      status: houveFalha ? 'ERRO' : 'OK',
+      message: houveFalha
+        ? 'Um documento fiscal não pôde ser persistido. A próxima consulta retomará do último NSU seguro.'
+        : undefined,
       cStat,
-      ultimoNsu: ultNSU,
+      ultimoNsu: houveFalha ? ultimoNsuSeguro : ultNSU,
       maxNsu: maxNSU,
       documentosRecebidos: docZips.length,
       documentosProcessados,
       documentosIgnorados,
+      documentosComFalha,
     };
   }
 
@@ -692,29 +709,44 @@ export class DistribuicaoDfeService {
       xmlKey,
     };
 
-    await this.database.db
-      .insert(documentosFiscais)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [documentosFiscais.clienteId, documentosFiscais.chaveAcesso],
-        set: {
-          nsu: parsed.nsu,
-          tipoDocumento: parsed.tipoDocumento,
-          modelo: parsed.modelo,
-          serie: parsed.serie,
-          numeroDocumento: parsed.numeroDocumento,
-          emitenteCnpjCpf: parsed.emitenteCnpjCpf,
-          emitenteRazaoSocial: parsed.emitenteRazaoSocial,
-          destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
-          destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
-          dataEmissao: parsed.dataEmissao,
-          valorTotal: parsed.valorTotal,
-          situacao: parsed.situacao,
-          xmlKey,
-          danfeKey: null,
-          atualizadoEm: new Date(),
-        },
-      });
+    try {
+      await this.database.db
+        .insert(documentosFiscais)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [documentosFiscais.clienteId, documentosFiscais.chaveAcesso],
+          set: {
+            nsu: parsed.nsu,
+            tipoDocumento: parsed.tipoDocumento,
+            modelo: parsed.modelo,
+            serie: parsed.serie,
+            numeroDocumento: parsed.numeroDocumento,
+            emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+            emitenteRazaoSocial: parsed.emitenteRazaoSocial,
+            destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
+            destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
+            dataEmissao: parsed.dataEmissao,
+            valorTotal: parsed.valorTotal,
+            situacao: parsed.situacao,
+            xmlKey,
+            danfeKey: null,
+            atualizadoEm: new Date(),
+          },
+        });
+    } catch (error: unknown) {
+      // O upload externo nao participa da transacao do banco. Se o registro
+      // ainda nao existia, removemos o objeto para nao deixar XML orfao.
+      if (!existing[0]) {
+        try {
+          await this.storage.delete(xmlKey);
+        } catch (cleanupError: unknown) {
+          this.logger.warn(
+            `XML fiscal orfao nao removido (${xmlKey}): ${this.getRootCauseMessage(cleanupError)}`,
+          );
+        }
+      }
+      throw error;
+    }
 
     if (existing[0]?.xmlKey && existing[0].xmlKey !== xmlKey) {
       try {
@@ -759,6 +791,22 @@ export class DistribuicaoDfeService {
         atualizadoEm: new Date(),
       })
       .where(eq(controleNsu.id, controlId));
+  }
+
+  private getRootCauseMessage(error: unknown) {
+    let current: unknown = error;
+    let message = 'erro desconhecido';
+
+    for (let depth = 0; depth < 5 && current; depth += 1) {
+      if (current instanceof Error) {
+        message = current.message;
+        current = (current as Error & { cause?: unknown }).cause;
+        continue;
+      }
+      break;
+    }
+
+    return message;
   }
 
   private getMotivoSefazPublico(status: number | null, motivo: string | null) {
