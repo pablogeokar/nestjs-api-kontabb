@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -13,14 +12,13 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { DacteService } from './dacte.service';
 
 const PDF_WRITE_TIMEOUT_MS = 10_000;
 const PDF_POLL_INTERVAL_MS = 25;
 
 /**
- * Serviço responsável por gerar e servir DANFEs (PDF) a partir do XML fiscal.
- * Utiliza @nfewizard/danfe para renderização de NF-e e NFC-e.
- * CT-e (DACTE) não é suportado pela lib atualmente — retorna URL do XML.
+ * Gera e serve DANFE (NF-e/NFC-e) e DACTE (CT-e) a partir do XML fiscal.
  */
 @Injectable()
 export class DanfeService {
@@ -29,6 +27,7 @@ export class DanfeService {
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
+    private readonly dacteService: DacteService,
   ) {}
 
   /**
@@ -67,23 +66,19 @@ export class DanfeService {
       return { url };
     }
 
-    // CT-e (DACTE) não suportado pela lib @nfewizard/danfe
-    if (doc[0].tipoDocumento === 'CTE') {
-      throw new BadRequestException(
-        'Geração de DACTE (CT-e) não disponível. Use o download do XML.',
-      );
-    }
-
-    // Gerar DANFE a partir do XML
+    // Gerar o documento auxiliar correspondente a partir do XML autorizado.
     try {
       const xmlBuffer = await this.storage.download(doc[0].xmlKey);
       const xmlContent = xmlBuffer.toString('utf-8');
 
-      const pdfBuffer = await this.generateDanfePdf(
-        xmlContent,
-        doc[0].chaveAcesso,
-        doc[0].tipoDocumento,
-      );
+      const pdfBuffer =
+        doc[0].tipoDocumento === 'CTE'
+          ? await this.dacteService.generatePdf(xmlContent)
+          : await this.generateDanfePdf(
+              xmlContent,
+              doc[0].chaveAcesso,
+              doc[0].tipoDocumento,
+            );
 
       // Salvar no R2
       const danfeKey = doc[0].xmlKey.replace('.xml', '.pdf');
@@ -102,11 +97,11 @@ export class DanfeService {
       const message =
         error instanceof Error ? error.message : 'erro desconhecido';
       this.logger.error(
-        `Erro ao gerar DANFE para ${doc[0].chaveAcesso}: ${message}`,
+        `Erro ao gerar documento auxiliar para ${doc[0].chaveAcesso}: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
       throw new ServiceUnavailableException(
-        'Não foi possível gerar a DANFE. Tente novamente.',
+        'Não foi possível gerar o PDF do documento fiscal. Tente novamente.',
       );
     }
   }

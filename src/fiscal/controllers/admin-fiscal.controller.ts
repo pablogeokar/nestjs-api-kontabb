@@ -244,11 +244,14 @@ export class AdminFiscalController {
 
   @Get('documentos/:id/danfe')
   @ApiOperation({
-    summary: 'Visualizar DANFE (PDF)',
-    description: 'Retorna URL ou gera a DANFE em PDF do documento fiscal.',
+    summary: 'Visualizar documento auxiliar (PDF)',
+    description: 'Retorna URL ou gera DANFE/DACTE em PDF.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'URL da DANFE em PDF.' })
+  @ApiResponse({
+    status: 200,
+    description: 'URL do documento auxiliar em PDF.',
+  })
   @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
   async getDanfe(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     const result = await this.danfeService.getDanfePdf(id);

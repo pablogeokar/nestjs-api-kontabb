@@ -9,6 +9,7 @@ import { NfeWizardService } from './services/nfewizard.service';
 import { DistribuicaoDfeService } from './services/distribuicao-dfe.service';
 import { DanfeService } from './services/danfe.service';
 import { FiscalCronService } from './services/fiscal-cron.service';
+import { DacteService } from './services/dacte.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -17,13 +18,10 @@ import { FiscalCronService } from './services/fiscal-cron.service';
     CertificadoService,
     NfeWizardService,
     DistribuicaoDfeService,
+    DacteService,
     DanfeService,
     FiscalCronService,
   ],
-  exports: [
-    CertificadoService,
-    DistribuicaoDfeService,
-    FiscalCronService,
-  ],
+  exports: [CertificadoService, DistribuicaoDfeService, FiscalCronService],
 })
 export class FiscalModule {}
