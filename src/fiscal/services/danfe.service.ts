@@ -1,12 +1,21 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { eq, and } from 'drizzle-orm';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { eq, and, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { documentosFiscais } from '../../database/schema';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import * as crypto from 'crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+
+const PDF_WRITE_TIMEOUT_MS = 10_000;
+const PDF_POLL_INTERVAL_MS = 25;
 
 /**
  * Serviço responsável por gerar e servir DANFEs (PDF) a partir do XML fiscal.
@@ -31,7 +40,7 @@ export class DanfeService {
     documentoId: string,
     clienteId?: string,
   ): Promise<{ url: string } | { buffer: Buffer; contentType: string }> {
-    const conditions: any[] = [eq(documentosFiscais.id, documentoId)];
+    const conditions: SQL[] = [eq(documentosFiscais.id, documentoId)];
     if (clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, clienteId));
     }
@@ -60,7 +69,7 @@ export class DanfeService {
 
     // CT-e (DACTE) não suportado pela lib @nfewizard/danfe
     if (doc[0].tipoDocumento === 'CTE') {
-      throw new Error(
+      throw new BadRequestException(
         'Geração de DACTE (CT-e) não disponível. Use o download do XML.',
       );
     }
@@ -73,6 +82,7 @@ export class DanfeService {
       const pdfBuffer = await this.generateDanfePdf(
         xmlContent,
         doc[0].chaveAcesso,
+        doc[0].tipoDocumento,
       );
 
       // Salvar no R2
@@ -88,13 +98,15 @@ export class DanfeService {
       // Retornar URL assinada do PDF recém-gerado
       const url = await this.storage.getSignedUrl(danfeKey, 600);
       return { url };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'erro desconhecido';
       this.logger.error(
-        `Erro ao gerar DANFE para ${doc[0].chaveAcesso}: ${error.message}`,
-        error.stack,
+        `Erro ao gerar DANFE para ${doc[0].chaveAcesso}: ${message}`,
+        error instanceof Error ? error.stack : undefined,
       );
-      throw new Error(
-        error.message || 'Não foi possível gerar a DANFE. Tente novamente.',
+      throw new ServiceUnavailableException(
+        'Não foi possível gerar a DANFE. Tente novamente.',
       );
     }
   }
@@ -102,44 +114,71 @@ export class DanfeService {
   private async generateDanfePdf(
     xmlContent: string,
     chaveAcesso: string,
+    tipoDocumento: string,
   ): Promise<Buffer> {
-    // @nfewizard/danfe requer outputPath (grava em disco via PDFKit pipe)
-    // Usamos um arquivo temporário e lemos o resultado
-    const tmpDir = os.tmpdir();
-    const tmpFile = path.join(
-      tmpDir,
-      `danfe_${crypto.randomBytes(8).toString('hex')}.pdf`,
-    );
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'kontabb-danfe-'));
+    const temporaryFile = join(temporaryDirectory, 'documento.pdf');
 
     try {
-      const { NFE_GerarDanfe } = await import('@nfewizard/danfe');
+      const { NFCE_GerarDanfe, NFE_GerarDanfe } =
+        await import('@nfewizard/danfe');
+      const gerarDanfe =
+        tipoDocumento === 'NFCE' ? NFCE_GerarDanfe : NFE_GerarDanfe;
 
-      const result = await NFE_GerarDanfe({
+      const result = await gerarDanfe({
         data: xmlContent,
         chave: chaveAcesso,
-        outputPath: tmpFile,
+        outputPath: temporaryFile,
       });
 
       if (!result.success) {
         throw new Error(result.message || 'Falha na geração do PDF da DANFE');
       }
 
-      // Ler o PDF gerado do disco
-      if (!fs.existsSync(tmpFile)) {
-        throw new Error('Arquivo PDF não foi gerado pela lib');
-      }
-
-      const pdfBuffer = fs.readFileSync(tmpFile);
-      return pdfBuffer;
+      // A versao atual da biblioteca resolve antes de o stream do PDFKit
+      // terminar. Aguardamos o cabecalho e o marcador final do PDF.
+      return await this.waitForCompletePdf(temporaryFile);
     } finally {
-      // Limpar arquivo temporário
       try {
-        if (fs.existsSync(tmpFile)) {
-          fs.unlinkSync(tmpFile);
-        }
-      } catch {
-        // Ignorar erro de cleanup
+        await rm(temporaryDirectory, { recursive: true, force: true });
+      } catch (cleanupError: unknown) {
+        const message =
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : 'erro desconhecido';
+        this.logger.warn(
+          `Diretorio temporario da DANFE nao removido: ${message}`,
+        );
       }
     }
+  }
+
+  private async waitForCompletePdf(filePath: string): Promise<Buffer> {
+    const deadline = Date.now() + PDF_WRITE_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      try {
+        const pdf = await readFile(filePath);
+        if (this.isCompletePdf(pdf)) return pdf;
+      } catch (error: unknown) {
+        const errorCode =
+          error && typeof error === 'object' && 'code' in error
+            ? error.code
+            : undefined;
+        if (errorCode !== 'ENOENT') {
+          throw error;
+        }
+      }
+      await delay(PDF_POLL_INTERVAL_MS);
+    }
+
+    throw new Error('A geração do PDF excedeu o tempo limite.');
+  }
+
+  private isCompletePdf(pdf: Buffer) {
+    if (pdf.length < 8 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
+      return false;
+    }
+    return pdf.subarray(Math.max(0, pdf.length - 1_024)).includes('%%EOF');
   }
 }
