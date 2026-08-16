@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, and, sql, asc, desc, ilike, or, inArray } from 'drizzle-orm';
-import { gunzipSync } from 'zlib';
+import { eq, and, sql, desc, ilike, or, inArray } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { NfeWizardService } from './nfewizard.service';
+import {
+  extractDfeDocZips,
+  extractDfeResponseMetadata,
+  parseDfeDocZip,
+  type ParsedDocumentoFiscal,
+} from './dfe-document.parser';
 import {
   controleNsu,
   documentosFiscais,
@@ -12,23 +17,6 @@ import {
   clientes,
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
-
-interface ParsedDocumento {
-  chaveAcesso: string;
-  nsu: number;
-  tipoDocumento: 'NFE' | 'CTE' | 'NFCE';
-  modelo: string;
-  serie: string;
-  numeroDocumento: string;
-  emitenteCnpjCpf: string;
-  emitenteRazaoSocial: string;
-  destinatarioCnpjCpf: string;
-  destinatarioRazaoSocial: string;
-  dataEmissao: Date;
-  valorTotal: string;
-  situacao: 'AUTORIZADA' | 'CANCELADA' | 'DENEGADA' | 'RESUMIDA';
-  xmlContent: string;
-}
 
 @Injectable()
 export class DistribuicaoDfeService {
@@ -112,7 +100,7 @@ export class DistribuicaoDfeService {
     }
 
     // 4. Consultar SEFAZ
-    let resposta: any;
+    let resposta: unknown;
     try {
       if (tipoDocumento === 'NFE') {
         resposta = await this.nfeWizard.consultarDistribuicaoDFe({
@@ -189,26 +177,12 @@ export class DistribuicaoDfeService {
     }
 
     // 5. Processar resposta da SEFAZ
-    const cStat = this.extractCStat(resposta);
-    const ultNSU = this.extractUltNSU(resposta);
-    const maxNSU = this.extractMaxNSU(resposta);
+    const metadata = extractDfeResponseMetadata(resposta);
+    const { cStat, ultimoNsu: ultNSU, maxNsu: maxNSU } = metadata;
 
     this.logger.log(
-      `SEFAZ response for ${cnpj}/${tipoDocumento}: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}, ` +
-        `keys=${JSON.stringify(Object.keys(resposta || {}))}`,
+      `SEFAZ response for ${cnpj}/${tipoDocumento}: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}`,
     );
-
-    // Debug: log structure to understand where docZips live
-    if (resposta) {
-      const docZips = this.extractDocZips(resposta);
-      this.logger.log(
-        `extractDocZips result: ${docZips.length} docs. ` +
-          `retDistDFeInt keys: ${JSON.stringify(Object.keys(resposta?.retDistDFeInt || {}))}` +
-          (resposta?.retDistDFeInt?.loteDistDFeInt
-            ? `, loteDistDFeInt keys: ${JSON.stringify(Object.keys(resposta.retDistDFeInt.loteDistDFeInt || {}))}`
-            : ', loteDistDFeInt: NOT FOUND'),
-      );
-    }
 
     // Atualizar controle de NSU
     let proximaConsulta: Date | null = null;
@@ -224,19 +198,28 @@ export class DistribuicaoDfeService {
     }
 
     // 6. Processar documentos retornados
-    const docZips = this.extractDocZips(resposta);
+    const docZips = extractDfeDocZips(resposta);
     let documentosProcessados = 0;
+    let documentosIgnorados = 0;
 
     for (const docZip of docZips) {
       try {
-        const parsed = this.processDocZip(docZip, tipoDocumento);
-        if (parsed) {
-          await this.salvarDocumento(clienteId, cnpj, parsed);
-          documentosProcessados++;
+        const parsed = parseDfeDocZip(docZip, tipoDocumento);
+        if (!parsed) {
+          documentosIgnorados++;
+          this.logger.debug(
+            `docZip ignorado: consulta=${tipoDocumento}, NSU=${docZip.nsu}, schema=${docZip.schema || 'desconhecido'}`,
+          );
+          continue;
+        }
+
+        if (await this.salvarDocumento(clienteId, cnpj, parsed)) {
+          documentosProcessados += 1;
         }
       } catch (error: any) {
+        documentosIgnorados++;
         this.logger.warn(
-          `Erro ao processar docZip NSU ${docZip.NSU}: ${error.message}`,
+          `Erro ao processar docZip NSU ${docZip.nsu}: ${error.message}`,
         );
       }
     }
@@ -246,7 +229,7 @@ export class DistribuicaoDfeService {
       ultimoNsu: ultNSU > control.ultimoNsu ? ultNSU : control.ultimoNsu,
       maxNsu: maxNSU > control.maxNsu ? maxNSU : control.maxNsu,
       statusSefaz: cStat,
-      motivoSefaz: this.extractMotivo(resposta),
+      motivoSefaz: metadata.motivo,
       proximaConsultaEm: proximaConsulta,
     });
 
@@ -255,7 +238,9 @@ export class DistribuicaoDfeService {
       cStat,
       ultimoNsu: ultNSU,
       maxNsu: maxNSU,
+      documentosRecebidos: docZips.length,
       documentosProcessados,
+      documentosIgnorados,
     };
   }
 
@@ -558,18 +543,32 @@ export class DistribuicaoDfeService {
   private async salvarDocumento(
     clienteId: string,
     cnpj: string,
-    parsed: ParsedDocumento,
-  ) {
-    // Verificar se já existe
+    parsed: ParsedDocumentoFiscal,
+  ): Promise<boolean> {
+    // Um resumo/evento salvo por uma versao anterior deve ser substituido
+    // quando o XML fiscal completo chegar para o mesmo cliente.
     const existing = await this.database.db
-      .select({ id: documentosFiscais.id })
+      .select({
+        id: documentosFiscais.id,
+        nsu: documentosFiscais.nsu,
+        situacao: documentosFiscais.situacao,
+        xmlKey: documentosFiscais.xmlKey,
+      })
       .from(documentosFiscais)
-      .where(eq(documentosFiscais.chaveAcesso, parsed.chaveAcesso))
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          eq(documentosFiscais.chaveAcesso, parsed.chaveAcesso),
+        ),
+      )
       .limit(1);
 
-    if (existing[0]) {
+    if (
+      existing[0]?.nsu === parsed.nsu &&
+      existing[0]?.situacao !== 'RESUMIDA'
+    ) {
       this.logger.debug(`Documento ${parsed.chaveAcesso} já existe, pulando.`);
-      return;
+      return false;
     }
 
     // Upload XML ao R2
@@ -585,8 +584,7 @@ export class DistribuicaoDfeService {
       'application/xml',
     );
 
-    // Inserir no banco
-    await this.database.db.insert(documentosFiscais).values({
+    const values = {
       clienteId,
       chaveAcesso: parsed.chaveAcesso,
       nsu: parsed.nsu,
@@ -602,156 +600,45 @@ export class DistribuicaoDfeService {
       valorTotal: parsed.valorTotal,
       situacao: parsed.situacao,
       xmlKey,
-    });
-  }
-
-  private processDocZip(
-    docZip: any,
-    tipoDocumentoDefault: 'NFE' | 'CTE',
-  ): ParsedDocumento | null {
-    // xml2js retorna: { $: { NSU: '...', schema: '...' }, _: 'base64gzip...' }
-    // Outras libs podem retornar: { NSU: '...', schema: '...', '#text': '...' }
-    const attrs = docZip?.$ || docZip;
-    const nsu = parseInt(
-      attrs?.NSU || attrs?.['@_NSU'] || docZip?.NSU || '0',
-      10,
-    );
-    const schema = attrs?.schema || attrs?.['@_schema'] || docZip?.schema || '';
-
-    // O conteúdo base64+gzip pode estar em _ (xml2js), $value, #text, ou no próprio valor
-    const zipContent =
-      docZip?._ ||
-      docZip?.['$value'] ||
-      docZip?.['#text'] ||
-      docZip?.docZip ||
-      (typeof docZip === 'string' ? docZip : '');
-
-    if (!zipContent) return null;
-
-    // Descompactar gzip
-    let xmlContent: string;
-    try {
-      const compressed = Buffer.from(zipContent, 'base64');
-      const decompressed = gunzipSync(compressed);
-      xmlContent = decompressed.toString('utf-8');
-    } catch {
-      // Pode já estar descompactado (base64 -> utf-8)
-      xmlContent = Buffer.from(zipContent, 'base64').toString('utf-8');
-    }
-
-    // Parse do XML para extrair dados
-    return this.parseXmlContent(xmlContent, nsu, tipoDocumentoDefault, schema);
-  }
-
-  private parseXmlContent(
-    xml: string,
-    nsu: number,
-    tipoDocumentoDefault: 'NFE' | 'CTE',
-    schema: string,
-  ): ParsedDocumento | null {
-    // Determinar tipo de documento pelo schema ou conteúdo
-    let tipoDocumento: 'NFE' | 'CTE' | 'NFCE' = tipoDocumentoDefault;
-    let situacao: 'AUTORIZADA' | 'CANCELADA' | 'DENEGADA' | 'RESUMIDA' =
-      'AUTORIZADA';
-
-    if (schema.includes('resNFe') || xml.includes('<resNFe')) {
-      situacao = 'RESUMIDA';
-      tipoDocumento = 'NFE';
-    } else if (
-      schema.includes('procCTe') ||
-      xml.includes('<procCTe') ||
-      xml.includes('<CTe')
-    ) {
-      tipoDocumento = 'CTE';
-    } else if (xml.includes('mod>65') || xml.includes('<mod>65</mod>')) {
-      tipoDocumento = 'NFCE';
-    }
-
-    // Extrair chave de acesso (44 dígitos)
-    const chaveMatch =
-      xml.match(/<chNFe>(\d{44})<\/chNFe>/) ||
-      xml.match(/<chCTe>(\d{44})<\/chCTe>/) ||
-      xml.match(/Id="NFe(\d{44})"/) ||
-      xml.match(/Id="CTe(\d{44})"/);
-
-    if (!chaveMatch) return null;
-    const chaveAcesso = chaveMatch[1];
-
-    // Extrair modelo da chave (posições 20-21)
-    const modelo = chaveAcesso.substring(20, 22);
-    if (modelo === '65') tipoDocumento = 'NFCE';
-
-    // Extrair série e número
-    const serie = xml.match(/<serie>(\d+)<\/serie>/)?.[1] ?? '';
-    const numero =
-      xml.match(/<nNF>(\d+)<\/nNF>/)?.[1] ||
-      xml.match(/<nCT>(\d+)<\/nCT>/)?.[1] ||
-      '';
-
-    // Extrair emitente
-    const emitenteCnpj =
-      xml.match(/<emit>[\s\S]*?<CNPJ>(\d+)<\/CNPJ>/)?.[1] ||
-      xml.match(/<emit>[\s\S]*?<CPF>(\d+)<\/CPF>/)?.[1] ||
-      xml.match(/<CNPJ>(\d+)<\/CNPJ>/)?.[1] ||
-      '';
-    const emitenteRazao =
-      xml.match(/<emit>[\s\S]*?<xNome>([^<]+)<\/xNome>/)?.[1] ||
-      xml.match(/<xNome>([^<]+)<\/xNome>/)?.[1] ||
-      '';
-
-    // Extrair destinatário
-    const destMatch = xml.match(/<dest>([\s\S]*?)<\/dest>/);
-    let destCnpj = '';
-    let destRazao = '';
-    if (destMatch) {
-      destCnpj =
-        destMatch[1].match(/<CNPJ>(\d+)<\/CNPJ>/)?.[1] ||
-        destMatch[1].match(/<CPF>(\d+)<\/CPF>/)?.[1] ||
-        '';
-      destRazao = destMatch[1].match(/<xNome>([^<]+)<\/xNome>/)?.[1] || '';
-    }
-
-    // Extrair data de emissão
-    const dataStr =
-      xml.match(/<dhEmi>([^<]+)<\/dhEmi>/)?.[1] ||
-      xml.match(/<dEmi>([^<]+)<\/dEmi>/)?.[1] ||
-      '';
-    const dataEmissao = dataStr ? new Date(dataStr) : new Date();
-
-    // Extrair valor total
-    const valorStr =
-      xml.match(/<vNF>([^<]+)<\/vNF>/)?.[1] ||
-      xml.match(/<vTPrest>([^<]+)<\/vTPrest>/)?.[1] ||
-      xml.match(/<vProd>([^<]+)<\/vProd>/)?.[1] ||
-      '0';
-
-    // Verificar cancelamento
-    if (
-      xml.includes('<cStat>101</cStat>') ||
-      xml.includes('<cStat>135</cStat>')
-    ) {
-      situacao = 'CANCELADA';
-    }
-    if (xml.includes('<cStat>110</cStat>')) {
-      situacao = 'DENEGADA';
-    }
-
-    return {
-      chaveAcesso,
-      nsu,
-      tipoDocumento,
-      modelo,
-      serie,
-      numeroDocumento: numero,
-      emitenteCnpjCpf: emitenteCnpj,
-      emitenteRazaoSocial: emitenteRazao,
-      destinatarioCnpjCpf: destCnpj,
-      destinatarioRazaoSocial: destRazao,
-      dataEmissao,
-      valorTotal: valorStr,
-      situacao,
-      xmlContent: xml,
     };
+
+    await this.database.db
+      .insert(documentosFiscais)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [documentosFiscais.clienteId, documentosFiscais.chaveAcesso],
+        set: {
+          nsu: parsed.nsu,
+          tipoDocumento: parsed.tipoDocumento,
+          modelo: parsed.modelo,
+          serie: parsed.serie,
+          numeroDocumento: parsed.numeroDocumento,
+          emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+          emitenteRazaoSocial: parsed.emitenteRazaoSocial,
+          destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
+          destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
+          dataEmissao: parsed.dataEmissao,
+          valorTotal: parsed.valorTotal,
+          situacao: parsed.situacao,
+          xmlKey,
+          danfeKey: null,
+          atualizadoEm: new Date(),
+        },
+      });
+
+    if (existing[0]?.xmlKey && existing[0].xmlKey !== xmlKey) {
+      try {
+        await this.storage.delete(existing[0].xmlKey);
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'erro desconhecido';
+        this.logger.warn(
+          `XML fiscal antigo nao removido (${existing[0].xmlKey}): ${message}`,
+        );
+      }
+    }
+
+    return true;
   }
 
   private async atualizarControleNsu(
@@ -782,77 +669,5 @@ export class DistribuicaoDfeService {
         atualizadoEm: new Date(),
       })
       .where(eq(controleNsu.id, controlId));
-  }
-
-  private extractCStat(resposta: any): number {
-    try {
-      const stat =
-        resposta?.data?.retDistDFeInt?.cStat ||
-        resposta?.retDistDFeInt?.cStat ||
-        resposta?.cStat ||
-        0;
-      return parseInt(String(stat), 10) || 0;
-    } catch {
-      return 0;
-    }
-  }
-
-  private extractUltNSU(resposta: any): number {
-    try {
-      const nsu =
-        resposta?.data?.retDistDFeInt?.ultNSU ||
-        resposta?.retDistDFeInt?.ultNSU ||
-        resposta?.ultNSU ||
-        '0';
-      return parseInt(String(nsu), 10) || 0;
-    } catch {
-      return 0;
-    }
-  }
-
-  private extractMaxNSU(resposta: any): number {
-    try {
-      const nsu =
-        resposta?.data?.retDistDFeInt?.maxNSU ||
-        resposta?.retDistDFeInt?.maxNSU ||
-        resposta?.maxNSU ||
-        '0';
-      return parseInt(String(nsu), 10) || 0;
-    } catch {
-      return 0;
-    }
-  }
-
-  private extractMotivo(resposta: any): string {
-    try {
-      return (
-        resposta?.xMotivo ||
-        resposta?.data?.retDistDFeInt?.xMotivo ||
-        resposta?.retDistDFeInt?.xMotivo ||
-        ''
-      );
-    } catch {
-      return '';
-    }
-  }
-
-  private extractDocZips(resposta: any): any[] {
-    try {
-      // A lib nfewizard-io retorna { data: { retDistDFeInt: { loteDistDFeInt: { docZip: [...] } } } }
-      // xml2js pode retornar arrays aninhados, ex: docZip: [{ $: { NSU: '...' }, _: 'base64...' }]
-      const retDist =
-        resposta?.data?.retDistDFeInt || resposta?.retDistDFeInt || {};
-
-      const lote =
-        retDist?.loteDistDFeInt?.docZip ||
-        retDist?.loteDistDFeInt?.[0]?.docZip ||
-        [];
-
-      // xml2js pode retornar a propriedade como array
-      const docZips = Array.isArray(lote) ? lote : lote ? [lote] : [];
-      return docZips;
-    } catch {
-      return [];
-    }
   }
 }

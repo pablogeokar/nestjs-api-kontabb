@@ -22,6 +22,13 @@
       "when": 1786621364143,
       "tag": "0002_wealthy_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786889943120,
+      "tag": "0003_fat_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

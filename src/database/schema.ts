@@ -623,7 +623,7 @@ export const documentosFiscais = pgTable(
     clienteId: uuid('cliente_id')
       .notNull()
       .references(() => clientes.id, { onDelete: 'cascade' }),
-    chaveAcesso: text('chave_acesso').notNull().unique(),
+    chaveAcesso: text('chave_acesso').notNull(),
     nsu: bigint('nsu', { mode: 'number' }).notNull(),
     tipoDocumento: text('tipo_documento').notNull(),
     modelo: text('modelo').notNull(),
@@ -645,7 +645,10 @@ export const documentosFiscais = pgTable(
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('uidx_docs_fiscais_chave').on(table.chaveAcesso),
+    uniqueIndex('uidx_docs_fiscais_cliente_chave').on(
+      table.clienteId,
+      table.chaveAcesso,
+    ),
     index('idx_docs_fiscais_cliente_id').on(table.clienteId),
     index('idx_docs_fiscais_tipo').on(table.tipoDocumento),
     index('idx_docs_fiscais_data_emissao').on(table.dataEmissao),
@@ -660,6 +663,10 @@ export const documentosFiscais = pgTable(
     check(
       'chk_docs_fiscais_modelo',
       sql`${table.modelo} IN ('55', '57', '65')`,
+    ),
+    check(
+      'chk_docs_fiscais_tipo_modelo',
+      sql`(${table.tipoDocumento} = 'NFE' AND ${table.modelo} = '55') OR (${table.tipoDocumento} = 'CTE' AND ${table.modelo} = '57') OR (${table.tipoDocumento} = 'NFCE' AND ${table.modelo} = '65')`,
     ),
     check(
       'chk_docs_fiscais_situacao',

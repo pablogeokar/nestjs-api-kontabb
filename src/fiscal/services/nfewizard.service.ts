@@ -18,7 +18,11 @@ export class NfeWizardService {
   /**
    * Instancia o NFeWizard configurado com o certificado A1 do cliente.
    */
-  async getClientWizardInstance(clienteId: string, uf: string = 'SP') {
+  async getClientWizardInstance(
+    clienteId: string,
+    uf: string = 'SP',
+    cnpj: string = '',
+  ) {
     const certData =
       await this.certificadoService.getDecryptedCertificate(clienteId);
     if (!certData) {
@@ -38,7 +42,7 @@ export class NfeWizardService {
       config: {
         dfe: {
           UF: uf,
-          CPFCNPJ: '',
+          CPFCNPJ: cnpj,
           pathCertificado: certData.buffer,
           senhaCertificado: certData.senha,
           baixarXMLDistribuicao: false,
@@ -75,6 +79,7 @@ export class NfeWizardService {
       const wizard = await this.getClientWizardInstance(
         input.clienteId,
         input.uf,
+        input.cnpj,
       );
 
       const ultNSU = input.ultimoNsu.toString().padStart(15, '0');
@@ -190,6 +195,7 @@ export class NfeWizardService {
       const wizard = await this.getClientWizardInstance(
         input.clienteId,
         input.uf,
+        input.cnpj,
       );
 
       this.logger.log(
@@ -242,6 +248,7 @@ export class NfeWizardService {
       const wizard = await this.getClientWizardInstance(
         input.clienteId,
         input.uf,
+        input.cnpj,
       );
 
       const resposta = await wizard.NFE_DistribuicaoDFePorChave({
