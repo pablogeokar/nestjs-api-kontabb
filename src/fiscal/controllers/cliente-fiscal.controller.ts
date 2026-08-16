@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  ServiceUnavailableException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -24,6 +25,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../../auth/auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 import {
@@ -35,10 +37,15 @@ import { ClientesService } from '../../clientes/clientes.service';
 import { CertificadoService } from '../services/certificado.service';
 import { DistribuicaoDfeService } from '../services/distribuicao-dfe.service';
 import { DanfeService } from '../services/danfe.service';
-import { NfeWizardService } from '../services/nfewizard.service';
+import {
+  type ManifestacaoSefazResult,
+  ManifestacaoSefazRejectedError,
+  NfeWizardService,
+} from '../services/nfewizard.service';
 import { UploadCertificadoClienteDto } from '../dto/upload-certificado.dto';
 import { ManifestarDocumentoDto } from '../dto/manifestar-documento.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
+import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
 
 @ApiTags('Fiscal (Cliente)')
 @ApiBearerAuth('session-token')
@@ -51,6 +58,7 @@ export class ClienteFiscalController {
     private readonly distribuicaoService: DistribuicaoDfeService,
     private readonly danfeService: DanfeService,
     private readonly nfeWizardService: NfeWizardService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
@@ -135,6 +143,31 @@ export class ClienteFiscalController {
     return { data: status };
   }
 
+  @Get('status')
+  @ApiOperation({
+    summary: 'Estado da sincronização fiscal da empresa',
+    description:
+      'Retorna ambiente, última consulta e próxima consulta da empresa logada.',
+  })
+  async getStatusSincronizacao(@CurrentUser() user: CurrentUserType) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
+    }
+
+    const controles = await this.distribuicaoService.getStatusSincronizacao(
+      cliente.id,
+    );
+    return {
+      data: {
+        ambiente: this.configService.get<string>('SEFAZ_AMBIENTE'),
+        controles,
+      },
+    };
+  }
+
   // ─── Documentos Fiscais ───────────────────────────────────────────────────
 
   @Get('documentos')
@@ -161,8 +194,8 @@ export class ClienteFiscalController {
       tipoDocumento: query.tipoDocumento,
       situacao: query.situacao,
       manifestacaoStatus: query.manifestacaoStatus,
-      dataInicio: query.dataInicio ? new Date(query.dataInicio) : undefined,
-      dataFim: query.dataFim ? new Date(query.dataFim) : undefined,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
       search: query.search?.trim(),
       pagination,
     });
@@ -263,24 +296,44 @@ export class ClienteFiscalController {
       );
     }
 
-    // Buscar documento e verificar pertence ao cliente
-    const docUrl = await this.distribuicaoService.getXmlDownloadUrl(
-      id,
-      cliente.id,
-    );
-    if (!docUrl) {
+    const documento =
+      await this.distribuicaoService.getDocumentoParaManifestacao(
+        id,
+        cliente.id,
+      );
+    if (!documento) {
       throw new NotFoundException('Documento fiscal não encontrado.');
+    }
+    if (documento.tipoDocumento !== 'NFE' || documento.modelo !== '55') {
+      throw new BadRequestException(
+        'A manifestação do destinatário está disponível somente para NF-e modelo 55.',
+      );
+    }
+    if (!cliente.uf || !/^[A-Z]{2}$/.test(cliente.uf)) {
+      throw new BadRequestException(
+        'Informe uma UF válida no cadastro da empresa antes de manifestar a NF-e.',
+      );
     }
 
     // Enviar manifestação à SEFAZ
-    const resultado = await this.nfeWizardService.enviarManifestacao({
-      clienteId: cliente.id,
-      cnpj: cliente.cnpj,
-      uf: 'SP', // TODO: obter UF do cadastro do cliente
-      chaveAcesso: '', // será preenchido pelo serviço
-      tipoEvento: body.tipoEvento,
-      justificativa: body.justificativa,
-    });
+    let resultado: ManifestacaoSefazResult;
+    try {
+      resultado = await this.nfeWizardService.enviarManifestacao({
+        clienteId: cliente.id,
+        cnpj: cliente.cnpj,
+        uf: cliente.uf,
+        chaveAcesso: documento.chaveAcesso,
+        tipoEvento: body.tipoEvento,
+        justificativa: body.justificativa,
+      });
+    } catch (error: unknown) {
+      if (error instanceof ManifestacaoSefazRejectedError) {
+        throw new BadRequestException(error.message);
+      }
+      throw new ServiceUnavailableException(
+        'Não foi possível enviar a manifestação à SEFAZ. Verifique o certificado e tente novamente.',
+      );
+    }
 
     // Mapear tipo de evento para registro
     const tipoEventoMap: Record<string, string> = {
@@ -295,18 +348,18 @@ export class ClienteFiscalController {
       documentoId: id,
       tipoEvento: tipoEventoMap[body.tipoEvento],
       codigoEvento: body.tipoEvento,
-      protocolo: resultado?.protocolo || resultado?.nProt,
-      statusSefaz: parseInt(resultado?.cStat || '0', 10),
-      motivoSefaz: resultado?.xMotivo,
+      protocolo: resultado.protocolo,
+      statusSefaz: resultado.status,
+      motivoSefaz: resultado.motivo,
     });
 
     return {
       success: true,
       message: 'Manifestação enviada com sucesso à SEFAZ.',
       data: {
-        protocolo: resultado?.protocolo || resultado?.nProt,
-        status_sefaz: resultado?.cStat,
-        motivo: resultado?.xMotivo,
+        protocolo: resultado.protocolo,
+        status_sefaz: resultado.status,
+        motivo: resultado.motivo,
       },
     };
   }

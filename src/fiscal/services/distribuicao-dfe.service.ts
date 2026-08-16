@@ -18,6 +18,21 @@ import {
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
 
+export interface FiscalSyncResult {
+  status: 'OK' | 'ADIADO' | 'SCHEMA_ERROR' | 'CONSUMO_INDEVIDO' | 'ERRO';
+  message?: string;
+  cStat?: number;
+  ultimoNsu?: number;
+  maxNsu?: number;
+  documentosRecebidos?: number;
+  documentosProcessados: number;
+  documentosIgnorados?: number;
+}
+
+export function isFiscalSyncFailure(result: FiscalSyncResult) {
+  return result.status === 'ERRO' || result.status === 'SCHEMA_ERROR';
+}
+
 @Injectable()
 export class DistribuicaoDfeService {
   private readonly logger = new Logger(DistribuicaoDfeService.name);
@@ -35,7 +50,7 @@ export class DistribuicaoDfeService {
   async sincronizarCliente(
     clienteId: string,
     tipoDocumento: 'NFE' | 'CTE' = 'NFE',
-  ) {
+  ): Promise<FiscalSyncResult> {
     // 1. Buscar dados do cliente e certificado
     const clienteData = await this.database.db
       .select({
@@ -259,18 +274,22 @@ export class DistribuicaoDfeService {
 
     const resultados: Array<{
       clienteId: string;
-      nfe: any;
-      cte: any;
+      nfe: FiscalSyncResult;
+      cte: FiscalSyncResult;
     }> = [];
 
     for (const { clienteId } of clientesAtivos) {
       try {
         const nfe = await this.sincronizarCliente(clienteId, 'NFE');
-        let cte: any;
+        let cte: FiscalSyncResult;
         try {
           cte = await this.sincronizarCliente(clienteId, 'CTE');
-        } catch (cteError: any) {
-          cte = { status: 'ERRO', message: cteError.message };
+        } catch {
+          cte = {
+            status: 'ERRO',
+            message: 'Não foi possível concluir a consulta de CT-e à SEFAZ.',
+            documentosProcessados: 0,
+          };
         }
         resultados.push({ clienteId, nfe, cte });
       } catch (error: any) {
@@ -279,8 +298,16 @@ export class DistribuicaoDfeService {
         );
         resultados.push({
           clienteId,
-          nfe: { status: 'ERRO', message: error.message },
-          cte: { status: 'ERRO', message: error.message },
+          nfe: {
+            status: 'ERRO',
+            message: 'Não foi possível concluir a consulta de NF-e à SEFAZ.',
+            documentosProcessados: 0,
+          },
+          cte: {
+            status: 'ERRO',
+            message: 'Não foi possível concluir a consulta de CT-e à SEFAZ.',
+            documentosProcessados: 0,
+          },
         });
       }
     }
@@ -414,6 +441,69 @@ export class DistribuicaoDfeService {
 
     if (!doc[0]) return null;
     return this.storage.getSignedUrl(doc[0].xmlKey, 600);
+  }
+
+  /**
+   * Retorna somente os campos necessários para validar uma manifestação.
+   * O filtro por cliente evita que um usuário manifeste documento de outra empresa.
+   */
+  async getDocumentoParaManifestacao(documentoId: string, clienteId: string) {
+    const rows = await this.database.db
+      .select({
+        id: documentosFiscais.id,
+        chaveAcesso: documentosFiscais.chaveAcesso,
+        tipoDocumento: documentosFiscais.tipoDocumento,
+        modelo: documentosFiscais.modelo,
+        manifestacaoStatus: documentosFiscais.manifestacaoStatus,
+      })
+      .from(documentosFiscais)
+      .where(
+        and(
+          eq(documentosFiscais.id, documentoId),
+          eq(documentosFiscais.clienteId, clienteId),
+        ),
+      )
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
+  /** Retorna o estado operacional das consultas à SEFAZ sem expor credenciais. */
+  async getStatusSincronizacao(clienteId?: string) {
+    const conditions = clienteId ? [eq(controleNsu.clienteId, clienteId)] : [];
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const rows = await this.database.db
+      .select({
+        clienteId: controleNsu.clienteId,
+        razaoSocial: clientes.razaoSocial,
+        tipoDocumento: controleNsu.tipoDocumento,
+        ultimoNsu: controleNsu.ultimoNsu,
+        maxNsu: controleNsu.maxNsu,
+        statusSefaz: controleNsu.statusSefaz,
+        motivoSefaz: controleNsu.motivoSefaz,
+        ultimaConsultaEm: controleNsu.ultimaConsultaEm,
+        proximaConsultaEm: controleNsu.proximaConsultaEm,
+      })
+      .from(controleNsu)
+      .innerJoin(clientes, eq(clientes.id, controleNsu.clienteId))
+      .where(where)
+      .orderBy(desc(controleNsu.ultimaConsultaEm));
+
+    return rows.map((row) => ({
+      cliente_id: row.clienteId,
+      razao_social: row.razaoSocial,
+      tipo_documento: row.tipoDocumento,
+      ultimo_nsu: row.ultimoNsu,
+      max_nsu: row.maxNsu,
+      status_sefaz: row.statusSefaz,
+      motivo_sefaz: this.getMotivoSefazPublico(
+        row.statusSefaz,
+        row.motivoSefaz,
+      ),
+      ultima_consulta_em: row.ultimaConsultaEm?.toISOString() ?? null,
+      proxima_consulta_em: row.proximaConsultaEm?.toISOString() ?? null,
+    }));
   }
 
   /**
@@ -669,5 +759,15 @@ export class DistribuicaoDfeService {
         atualizadoEm: new Date(),
       })
       .where(eq(controleNsu.id, controlId));
+  }
+
+  private getMotivoSefazPublico(status: number | null, motivo: string | null) {
+    if (status === 998) {
+      return 'Falha temporária na validação do retorno da SEFAZ.';
+    }
+    if (status === 999) {
+      return 'Falha temporária na comunicação com a SEFAZ.';
+    }
+    return motivo;
   }
 }

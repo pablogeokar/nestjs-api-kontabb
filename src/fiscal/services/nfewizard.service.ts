@@ -2,6 +2,53 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CertificadoService } from './certificado.service';
 
+export interface ManifestacaoSefazResult {
+  status: number;
+  motivo: string;
+  protocolo?: string;
+}
+
+export class ManifestacaoSefazRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ManifestacaoSefazRejectedError';
+  }
+}
+
+export function extractManifestacaoSefazResult(
+  value: unknown,
+): ManifestacaoSefazResult | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const result = extractManifestacaoSefazResult(item);
+      if (result) return result;
+    }
+    return null;
+  }
+
+  if (!value || typeof value !== 'object') return null;
+
+  const record = value as Record<string, unknown>;
+  const info = record.infEvento;
+  if (info && typeof info === 'object') {
+    const event = info as Record<string, unknown>;
+    const status = Number(event.cStat);
+    if (Number.isFinite(status)) {
+      return {
+        status,
+        motivo: typeof event.xMotivo === 'string' ? event.xMotivo : '',
+        protocolo: typeof event.nProt === 'string' ? event.nProt : undefined,
+      };
+    }
+  }
+
+  for (const nested of Object.values(record)) {
+    const result = extractManifestacaoSefazResult(nested);
+    if (result) return result;
+  }
+  return null;
+}
+
 /**
  * Abstrai a integração com a biblioteca nfewizard-io para chamadas
  * aos WebServices da SEFAZ com o certificado do cliente.
@@ -190,7 +237,7 @@ export class NfeWizardService {
     tipoEvento: '210210' | '210200' | '210220' | '210240';
     sequencia?: number;
     justificativa?: string;
-  }) {
+  }): Promise<ManifestacaoSefazResult> {
     try {
       const wizard = await this.getClientWizardInstance(
         input.clienteId,
@@ -202,7 +249,7 @@ export class NfeWizardService {
         `Enviando manifestação ${input.tipoEvento} para chave ${input.chaveAcesso}`,
       );
 
-      const evento = await (wizard as any).NFE_CienciaDaOperacao({
+      const payload = {
         idLote: Date.now(),
         evento: [
           {
@@ -223,9 +270,28 @@ export class NfeWizardService {
             },
           },
         ],
-      } as any);
+      } as any;
 
-      return evento;
+      const methods: Record<string, string> = {
+        '210210': 'NFE_CienciaDaOperacao',
+        '210200': 'NFE_ConfirmacaoDaOperacao',
+        '210220': 'NFE_DesconhecimentoDaOperacao',
+        '210240': 'NFE_OperacaoNaoRealizada',
+      };
+      const method = methods[input.tipoEvento];
+      const rawResult = await (wizard as any)[method](payload);
+      const result = extractManifestacaoSefazResult(rawResult);
+
+      if (!result) {
+        throw new Error('A SEFAZ retornou uma resposta de evento inválida.');
+      }
+      if (result.status !== 135 && result.status !== 136) {
+        throw new ManifestacaoSefazRejectedError(
+          `A SEFAZ rejeitou a manifestação (${result.status}): ${result.motivo || 'motivo não informado'}`,
+        );
+      }
+
+      return result;
     } catch (error: any) {
       this.logger.error(
         `Erro ao enviar manifestação: ${error.message}`,

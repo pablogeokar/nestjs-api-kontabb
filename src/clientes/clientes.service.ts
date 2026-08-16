@@ -314,6 +314,7 @@ export class ClientesService {
         id: clientes.id,
         companyName: clientes.razaoSocial,
         cnpj: clientes.cnpj,
+        uf: clientes.uf,
         primeiroLogin: clientes.primeiroLogin,
       })
       .from(clientes)

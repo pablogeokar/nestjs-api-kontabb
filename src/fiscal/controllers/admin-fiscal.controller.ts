@@ -24,6 +24,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../../auth/auth.guard';
 import { StaffOnly } from '../../auth/roles.decorator';
 import { CurrentUser } from '../../auth/current-user.decorator';
@@ -34,11 +35,17 @@ import {
 } from '../../common/pagination';
 import type { CurrentUser as CurrentUserType } from '../../common/types';
 import { CertificadoService } from '../services/certificado.service';
-import { DistribuicaoDfeService } from '../services/distribuicao-dfe.service';
+import {
+  DistribuicaoDfeService,
+  isFiscalSyncFailure,
+  type FiscalSyncResult,
+} from '../services/distribuicao-dfe.service';
 import { DanfeService } from '../services/danfe.service';
 import { FiscalCronService } from '../services/fiscal-cron.service';
 import { UploadCertificadoDto } from '../dto/upload-certificado.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
+import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
+import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
 
 @ApiTags('Fiscal (Admin)')
 @ApiBearerAuth('session-token')
@@ -52,6 +59,7 @@ export class AdminFiscalController {
     private readonly danfeService: DanfeService,
     private readonly cronService: FiscalCronService,
     private readonly logger: AppLogger,
+    private readonly configService: ConfigService,
   ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
@@ -153,7 +161,7 @@ export class AdminFiscalController {
   })
   @ApiResponse({ status: 200, description: 'Sincronização executada.' })
   async sincronizar(
-    @Body() body: { clienteId?: string },
+    @Body() body: SincronizarFiscalDto,
     @CurrentUser() user: CurrentUserType,
   ) {
     this.logger.info('fiscal_sync_manual_triggered', {
@@ -163,19 +171,32 @@ export class AdminFiscalController {
     });
 
     if (body.clienteId) {
-      const nfe = await this.distribuicaoService.sincronizarCliente(
-        body.clienteId,
-        'NFE',
-      );
-      const cte = await this.distribuicaoService.sincronizarCliente(
-        body.clienteId,
-        'CTE',
-      );
-      return { success: true, data: { nfe, cte } };
+      const nfe = await this.sincronizarTipoSeguro(body.clienteId, 'NFE');
+      const cte = await this.sincronizarTipoSeguro(body.clienteId, 'CTE');
+      return {
+        success: !isFiscalSyncFailure(nfe) && !isFiscalSyncFailure(cte),
+        data: { nfe, cte },
+      };
     }
 
     const resultado = await this.cronService.executarSincronizacao();
     return { success: resultado.success, data: resultado };
+  }
+
+  @Get('status')
+  @ApiOperation({
+    summary: 'Estado operacional da sincronização fiscal',
+    description:
+      'Retorna ambiente, última consulta, próxima consulta e status da SEFAZ sem expor credenciais.',
+  })
+  async getStatusSincronizacao() {
+    const controles = await this.distribuicaoService.getStatusSincronizacao();
+    return {
+      data: {
+        ambiente: this.configService.get<string>('SEFAZ_AMBIENTE'),
+        controles,
+      },
+    };
   }
 
   // ─── Documentos Fiscais ───────────────────────────────────────────────────
@@ -197,8 +218,8 @@ export class AdminFiscalController {
       tipoDocumento: query.tipoDocumento,
       situacao: query.situacao,
       manifestacaoStatus: query.manifestacaoStatus,
-      dataInicio: query.dataInicio ? new Date(query.dataInicio) : undefined,
-      dataFim: query.dataFim ? new Date(query.dataFim) : undefined,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
       search: query.search?.trim(),
       pagination,
     });
@@ -249,5 +270,23 @@ export class AdminFiscalController {
   async getDashboard() {
     const stats = await this.distribuicaoService.getDashboardStats();
     return { data: stats };
+  }
+
+  private async sincronizarTipoSeguro(
+    clienteId: string,
+    tipoDocumento: 'NFE' | 'CTE',
+  ): Promise<FiscalSyncResult> {
+    try {
+      return await this.distribuicaoService.sincronizarCliente(
+        clienteId,
+        tipoDocumento,
+      );
+    } catch {
+      return {
+        status: 'ERRO',
+        message: `Não foi possível concluir a consulta de ${tipoDocumento === 'NFE' ? 'NF-e' : 'CT-e'} à SEFAZ.`,
+        documentosProcessados: 0,
+      };
+    }
   }
 }

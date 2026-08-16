@@ -1,5 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, IsIn } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class QueryDocumentosFiscaisDto {
   @ApiPropertyOptional({ description: 'Número da página', example: '1' })
@@ -61,7 +68,7 @@ export class QueryDocumentosFiscaisDto {
     example: '2025-01-01',
   })
   @IsOptional()
-  @IsString()
+  @IsDateString({ strict: true })
   dataInicio?: string;
 
   @ApiPropertyOptional({
@@ -69,15 +76,15 @@ export class QueryDocumentosFiscaisDto {
     example: '2025-12-31',
   })
   @IsOptional()
-  @IsString()
+  @IsDateString({ strict: true })
   dataFim?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Busca por chave de acesso, razão social ou CNPJ do emitente',
+    description: 'Busca por chave de acesso, razão social ou CNPJ do emitente',
     example: '12345678000190',
   })
   @IsOptional()
   @IsString()
+  @MaxLength(120)
   search?: string;
 }

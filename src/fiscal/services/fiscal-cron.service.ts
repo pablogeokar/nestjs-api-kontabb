@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DistribuicaoDfeService } from './distribuicao-dfe.service';
+import {
+  DistribuicaoDfeService,
+  isFiscalSyncFailure,
+} from './distribuicao-dfe.service';
 import { CertificadoService } from './certificado.service';
 
 /**
@@ -44,6 +47,13 @@ export class FiscalCronService {
             : 0;
         return acc + nfeDocs + cteDocs;
       }, 0);
+      const falhas = resultados.reduce(
+        (acc, result) =>
+          acc +
+          Number(isFiscalSyncFailure(result.nfe)) +
+          Number(isFiscalSyncFailure(result.cte)),
+        0,
+      );
 
       this.logger.log(
         `Sincronização concluída em ${duracao}s. ` +
@@ -52,23 +62,24 @@ export class FiscalCronService {
       );
 
       return {
-        success: true,
+        success: falhas === 0,
         duracao_segundos: parseFloat(duracao),
         clientes_processados: resultados.length,
         documentos_novos: totalDocs,
+        consultas_com_falha: falhas,
         detalhes: resultados,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Erro interno desconhecido';
       this.logger.error(
-        `Erro na sincronização fiscal: ${error.message}`,
-        error.stack,
+        `Erro na sincronização fiscal: ${message}`,
+        error instanceof Error ? error.stack : undefined,
       );
       return {
         success: false,
-        error: error.message,
-        duracao_segundos: parseFloat(
-          ((Date.now() - inicio) / 1000).toFixed(1),
-        ),
+        error: 'Não foi possível concluir a sincronização fiscal.',
+        duracao_segundos: parseFloat(((Date.now() - inicio) / 1000).toFixed(1)),
       };
     }
   }
