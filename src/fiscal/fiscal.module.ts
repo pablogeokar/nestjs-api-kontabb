@@ -10,6 +10,7 @@ import { DistribuicaoDfeService } from './services/distribuicao-dfe.service';
 import { DanfeService } from './services/danfe.service';
 import { FiscalCronService } from './services/fiscal-cron.service';
 import { DacteService } from './services/dacte.service';
+import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -21,6 +22,7 @@ import { DacteService } from './services/dacte.service';
     DacteService,
     DanfeService,
     FiscalCronService,
+    ImportacaoXmlFiscalService,
   ],
   exports: [CertificadoService, DistribuicaoDfeService, FiscalCronService],
 })

@@ -1,4 +1,5 @@
 import { gunzipSync } from 'node:zlib';
+import { XMLValidator } from 'fast-xml-parser';
 
 export type TipoConsultaDfe = 'NFE' | 'CTE';
 
@@ -29,8 +30,14 @@ export interface ParsedDocumentoFiscal {
   dataEmissao: Date;
   valorTotal: string;
   situacao: 'AUTORIZADA' | 'CANCELADA' | 'DENEGADA';
+  participantesCnpjCpf: string[];
   xmlContent: string;
 }
+
+export type ManualFiscalXmlParseResult =
+  | { status: 'DOCUMENTO'; documento: ParsedDocumentoFiscal }
+  | { status: 'IGNORADO'; motivo: string }
+  | { status: 'INVALIDO'; motivo: string };
 
 const MAX_DOCZIP_BASE64_LENGTH = 15 * 1024 * 1024;
 const MAX_XML_LENGTH = 10 * 1024 * 1024;
@@ -121,6 +128,73 @@ export function parseDfeDocZip(
   if (!xml) return null;
 
   return parseFiscalXml(xml, docZip.nsu, tipoConsulta);
+}
+
+/**
+ * Classifica um XML enviado manualmente sem depender do envelope docZip.
+ * Eventos, resumos e modelos fora do escopo fiscal do sistema são ignorados.
+ */
+export function parseManualFiscalXml(xml: string): ManualFiscalXmlParseResult {
+  const normalized = xml.replace(/^\uFEFF/, '').trim();
+  if (!normalized || normalized.length > MAX_XML_LENGTH) {
+    return {
+      status: 'INVALIDO',
+      motivo: 'O conteúdo XML está vazio ou excede o limite de 10 MB.',
+    };
+  }
+  if (/<!DOCTYPE\b|<!ENTITY\b/i.test(normalized)) {
+    return {
+      status: 'INVALIDO',
+      motivo: 'XML com declaração DTD ou entidade externa não é aceito.',
+    };
+  }
+
+  const validation = XMLValidator.validate(normalized, {
+    allowBooleanAttributes: false,
+  });
+  if (validation !== true) {
+    return {
+      status: 'INVALIDO',
+      motivo: 'O arquivo não contém um XML bem-formado.',
+    };
+  }
+
+  if (hasElement(normalized, 'nfeProc')) {
+    const documento = parseFiscalXml(normalized, 0, 'NFE');
+    return documento
+      ? { status: 'DOCUMENTO', documento }
+      : {
+          status: 'INVALIDO',
+          motivo:
+            'O XML processado de NF-e/NFC-e possui dados fiscais, protocolo ou chave de acesso inválidos.',
+        };
+  }
+
+  if (hasElement(normalized, 'cteProc')) {
+    const infCte = extractElement(normalized, 'infCte');
+    const modelo = infCte ? extractTagValue(infCte.content, 'mod') : '';
+    if (modelo && modelo !== '57') {
+      return {
+        status: 'IGNORADO',
+        motivo: `Documento modelo ${modelo} fora do escopo de CT-e modelo 57.`,
+      };
+    }
+
+    const documento = parseFiscalXml(normalized, 0, 'CTE');
+    return documento
+      ? { status: 'DOCUMENTO', documento }
+      : {
+          status: 'INVALIDO',
+          motivo:
+            'O XML processado de CT-e possui dados fiscais, protocolo ou chave de acesso inválidos.',
+        };
+  }
+
+  return {
+    status: 'IGNORADO',
+    motivo:
+      'XML descartado por não ser um documento processado de NF-e, NFC-e ou CT-e.',
+  };
 }
 
 function extractDocZipsFromXml(rawXml: string): DfeDocZip[] {
@@ -283,6 +357,9 @@ function parseFiscalXml(
   const protocolStatus = protocolElement
     ? extractTagValue(protocolElement, 'cStat')
     : '';
+  if (!['100', '110', '150', '301', '302'].includes(protocolStatus)) {
+    return null;
+  }
 
   let situacao: ParsedDocumentoFiscal['situacao'] = 'AUTORIZADA';
   if (['110', '301', '302'].includes(protocolStatus)) {
@@ -303,6 +380,10 @@ function parseFiscalXml(
     dataEmissao,
     valorTotal,
     situacao,
+    participantesCnpjCpf: extractParticipantTaxIds(
+      infElement.content,
+      tipoConsulta,
+    ),
     xmlContent: xml,
   };
 }
@@ -336,6 +417,22 @@ function extractTaxId(xml: string): string {
 
   const cpf = extractTagValue(xml, 'CPF');
   return /^\d{11}$/.test(cpf) ? cpf : '';
+}
+
+function extractParticipantTaxIds(
+  fiscalInfo: string,
+  tipoConsulta: TipoConsultaDfe,
+): string[] {
+  const participantTags =
+    tipoConsulta === 'NFE'
+      ? ['emit', 'dest']
+      : ['emit', 'rem', 'dest', 'exped', 'receb', 'toma4'];
+  const ids = participantTags
+    .map((tag) => extractElement(fiscalInfo, tag)?.content ?? '')
+    .map(extractTaxId)
+    .filter(Boolean);
+
+  return [...new Set(ids)];
 }
 
 function readElementId(openingTag: string, prefix: string): string {

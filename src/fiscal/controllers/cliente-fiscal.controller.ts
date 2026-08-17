@@ -12,10 +12,11 @@ import {
   Query,
   ServiceUnavailableException,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -28,6 +29,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../../auth/auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
+import { AppLogger } from '../../common/logger.service';
+import { RateLimitService } from '../../common/rate-limit.service';
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -37,6 +40,7 @@ import { ClientesService } from '../../clientes/clientes.service';
 import { CertificadoService } from '../services/certificado.service';
 import { DistribuicaoDfeService } from '../services/distribuicao-dfe.service';
 import { DanfeService } from '../services/danfe.service';
+import { ImportacaoXmlFiscalService } from '../services/importacao-xml-fiscal.service';
 import {
   type ManifestacaoSefazResult,
   ManifestacaoSefazRejectedError,
@@ -59,6 +63,9 @@ export class ClienteFiscalController {
     private readonly danfeService: DanfeService,
     private readonly nfeWizardService: NfeWizardService,
     private readonly configService: ConfigService,
+    private readonly importacaoXmlService: ImportacaoXmlFiscalService,
+    private readonly rateLimit: RateLimitService,
+    private readonly logger: AppLogger,
   ) {}
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
@@ -169,6 +176,80 @@ export class ClienteFiscalController {
   }
 
   // ─── Documentos Fiscais ───────────────────────────────────────────────────
+
+  @Post('documentos/importar-xml')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('files', 20, { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Importar XMLs fiscais manualmente',
+    description:
+      'Identifica e importa até 20 XMLs processados de NF-e, NFC-e e CT-e pertencentes à empresa logada. Eventos, resumos e modelos fora do escopo são ignorados.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['files'],
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Arquivos XML (máx. 20, 10 MB cada)',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Resultado da importação em lote.' })
+  @ApiResponse({ status: 400, description: 'Nenhum arquivo enviado.' })
+  async importarXmls(
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    if (!files?.length) {
+      throw new BadRequestException('Selecione ao menos um arquivo XML.');
+    }
+
+    await this.rateLimit.consume({
+      key: `fiscal-xml-import:${user.id}`,
+      limit: 10,
+      windowMs: 60_000,
+    });
+
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
+    }
+
+    const requestId = this.logger.generateRequestId();
+    const result = await this.importacaoXmlService.importar({
+      files,
+      actorUserId: user.id,
+      requestId,
+      clienteId: cliente.id,
+    });
+    this.logger.info('fiscal_xml_import_completed', {
+      requestId,
+      userId: user.id,
+      clienteId: cliente.id,
+      operation: 'importar_xml_fiscal',
+      result: result.erros > 0 ? 'PARTIAL_OR_FAILED' : 'SUCCESS',
+      totalArquivos: result.total_arquivos,
+      importados: result.importados,
+      duplicados: result.duplicados,
+      ignorados: result.ignorados,
+      erros: result.erros,
+    });
+
+    return {
+      success: result.erros === 0,
+      partial: result.importados > 0 && result.erros > 0,
+      data: result,
+    };
+  }
 
   @Get('documentos')
   @ApiOperation({

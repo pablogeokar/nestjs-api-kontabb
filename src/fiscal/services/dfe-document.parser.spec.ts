@@ -3,6 +3,7 @@ import {
   extractDfeDocZips,
   extractDfeResponseMetadata,
   parseDfeDocZip,
+  parseManualFiscalXml,
   type DfeDocZip,
 } from './dfe-document.parser';
 
@@ -76,6 +77,10 @@ describe('DF-e document parser', () => {
       situacao: 'AUTORIZADA',
     });
     expect(parsed?.dataEmissao.toISOString()).toBe('2024-08-15T13:45:00.000Z');
+    expect(parsed?.participantesCnpjCpf).toEqual([
+      '12345678000195',
+      '98765432000110',
+    ]);
   });
 
   it('classifica nfeProc modelo 65 como NFC-e e permite consumidor anonimo', () => {
@@ -149,6 +154,44 @@ describe('DF-e document parser', () => {
     const xml = buildNfeProc('55').replace('<mod>55</mod>', '<mod>65</mod>');
 
     expect(parseDfeDocZip(docZip(xml, 'procNFe'), 'NFE')).toBeNull();
+  });
+
+  it.each([
+    ['NF-e', buildNfeProc('55'), 'NFE'],
+    ['NFC-e', buildNfeProc('65', false), 'NFCE'],
+    ['CT-e', buildCteProc('57'), 'CTE'],
+  ])('identifica %s em upload manual', (_label, xml, tipoDocumento) => {
+    const result = parseManualFiscalXml(xml);
+
+    expect(result.status).toBe('DOCUMENTO');
+    if (result.status === 'DOCUMENTO') {
+      expect(result.documento.tipoDocumento).toBe(tipoDocumento);
+      expect(result.documento.nsu).toBe(0);
+    }
+  });
+
+  it.each([
+    '<procEventoNFe><evento><infEvento><chNFe>1</chNFe></infEvento></evento></procEventoNFe>',
+    '<resCTe><chCTe>1</chCTe></resCTe>',
+    buildCteProc('67'),
+  ])('ignora XML sem documento fiscal aproveitavel', (xml) => {
+    expect(parseManualFiscalXml(xml).status).toBe('IGNORADO');
+  });
+
+  it('rejeita XML malformado, DTD e documento sem protocolo autorizado', () => {
+    expect(parseManualFiscalXml('<nfeProc><NFe></nfeProc>').status).toBe(
+      'INVALIDO',
+    );
+    expect(
+      parseManualFiscalXml(
+        '<!DOCTYPE nfeProc [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><nfeProc />',
+      ).status,
+    ).toBe('INVALIDO');
+    expect(
+      parseManualFiscalXml(
+        buildNfeProc('55').replace('<cStat>100</cStat>', '<cStat>999</cStat>'),
+      ).status,
+    ).toBe('INVALIDO');
   });
 });
 

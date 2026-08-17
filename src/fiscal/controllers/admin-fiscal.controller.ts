@@ -11,10 +11,11 @@ import {
   Post,
   Query,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -29,6 +30,7 @@ import { AuthGuard } from '../../auth/auth.guard';
 import { StaffOnly } from '../../auth/roles.decorator';
 import { CurrentUser } from '../../auth/current-user.decorator';
 import { AppLogger } from '../../common/logger.service';
+import { RateLimitService } from '../../common/rate-limit.service';
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -42,6 +44,7 @@ import {
 } from '../services/distribuicao-dfe.service';
 import { DanfeService } from '../services/danfe.service';
 import { FiscalCronService } from '../services/fiscal-cron.service';
+import { ImportacaoXmlFiscalService } from '../services/importacao-xml-fiscal.service';
 import { UploadCertificadoDto } from '../dto/upload-certificado.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
@@ -60,6 +63,8 @@ export class AdminFiscalController {
     private readonly cronService: FiscalCronService,
     private readonly logger: AppLogger,
     private readonly configService: ConfigService,
+    private readonly importacaoXmlService: ImportacaoXmlFiscalService,
+    private readonly rateLimit: RateLimitService,
   ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
@@ -200,6 +205,71 @@ export class AdminFiscalController {
   }
 
   // ─── Documentos Fiscais ───────────────────────────────────────────────────
+
+  @Post('documentos/importar-xml')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('files', 20, { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Importar XMLs fiscais manualmente',
+    description:
+      'Identifica NF-e, NFC-e e CT-e processados e associa cada XML aos clientes cadastrados encontrados entre seus participantes. XMLs sem utilidade para o sistema são ignorados.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['files'],
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Arquivos XML (máx. 20, 10 MB cada)',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Resultado da importação em lote.' })
+  @ApiResponse({ status: 400, description: 'Nenhum arquivo enviado.' })
+  async importarXmls(
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    if (!files?.length) {
+      throw new BadRequestException('Selecione ao menos um arquivo XML.');
+    }
+
+    await this.rateLimit.consume({
+      key: `fiscal-xml-import:${user.id}`,
+      limit: 10,
+      windowMs: 60_000,
+    });
+
+    const requestId = this.logger.generateRequestId();
+    const result = await this.importacaoXmlService.importar({
+      files,
+      actorUserId: user.id,
+      requestId,
+    });
+    this.logger.info('fiscal_xml_import_completed', {
+      requestId,
+      userId: user.id,
+      operation: 'importar_xml_fiscal',
+      result: result.erros > 0 ? 'PARTIAL_OR_FAILED' : 'SUCCESS',
+      totalArquivos: result.total_arquivos,
+      importados: result.importados,
+      duplicados: result.duplicados,
+      ignorados: result.ignorados,
+      erros: result.erros,
+    });
+
+    return {
+      success: result.erros === 0,
+      partial: result.importados > 0 && result.erros > 0,
+      data: result,
+    };
+  }
 
   @Get('documentos')
   @ApiOperation({
