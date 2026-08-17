@@ -158,8 +158,8 @@ export const clientes = pgTable(
   ],
 );
 
-export const documentos = pgTable(
-  'documentos',
+export const guias = pgTable(
+  'guias',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     clienteId: uuid('cliente_id')
@@ -187,67 +187,67 @@ export const documentos = pgTable(
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
   },
   (table) => [
-    index('idx_documentos_cliente_id').on(table.clienteId),
-    index('idx_documentos_tipo').on(table.tipo),
-    index('idx_documentos_periodo').on(table.periodo),
-    index('idx_documentos_status').on(table.status),
-    index('idx_documentos_pagamento_confirmado_por').on(
+    index('idx_guias_cliente_id').on(table.clienteId),
+    index('idx_guias_tipo').on(table.tipo),
+    index('idx_guias_periodo').on(table.periodo),
+    index('idx_guias_status').on(table.status),
+    index('idx_guias_pagamento_confirmado_por').on(
       table.pagamentoConfirmadoPor,
     ),
-    unique('uq_documentos_identidade')
+    unique('uq_guias_identidade')
       .on(table.clienteId, table.tipo, table.periodo, table.numeroParcelamento)
       .nullsNotDistinct(),
     check(
-      'chk_documentos_tipo',
+      'chk_guias_tipo',
       sql`${table.tipo} IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')`,
     ),
     check(
-      'chk_documentos_status',
+      'chk_guias_status',
       sql`${table.status} IN ('PENDENTE', 'PAGO')`,
     ),
     check(
-      'chk_documentos_email_status',
+      'chk_guias_email_status',
       sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')`,
     ),
     check(
-      'chk_documentos_periodo',
+      'chk_guias_periodo',
       sql`${table.periodo} ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'`,
     ),
-    check('chk_documentos_arquivo_key', sql`btrim(${table.arquivoKey}) <> ''`),
+    check('chk_guias_arquivo_key', sql`btrim(${table.arquivoKey}) <> ''`),
     check(
-      'chk_documentos_arquivo_nome',
+      'chk_guias_arquivo_nome',
       sql`btrim(${table.arquivoNome}) <> ''`,
     ),
     check(
-      'chk_documentos_valor',
+      'chk_guias_valor',
       sql`${table.valor} IS NULL OR ${table.valor} >= 0`,
     ),
     check(
-      'chk_documentos_pagamento',
+      'chk_guias_pagamento',
       sql`(${table.status} = 'PENDENTE' AND ${table.pagoEm} IS NULL) OR (${table.status} = 'PAGO' AND ${table.pagoEm} IS NOT NULL)`,
     ),
     check(
-      'chk_documentos_numero_parcelamento',
+      'chk_guias_numero_parcelamento',
       sql`${table.numeroParcelamento} IS NULL OR btrim(${table.numeroParcelamento}) <> ''`,
     ),
   ],
 );
 
-export const visualizacoesDocumentos = pgTable(
-  'visualizacoes_documentos',
+export const visualizacoesGuias = pgTable(
+  'visualizacoes_guias',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    documentoId: uuid('documento_id')
+    guiaId: uuid('guia_id')
       .notNull()
-      .references(() => documentos.id, { onDelete: 'cascade' }),
+      .references(() => guias.id, { onDelete: 'cascade' }),
     userId: text('user_id').references(() => user.id, {
       onDelete: 'set null',
     }),
     visualizadoEm: timestamp('visualizado_em').notNull().defaultNow(),
   },
   (table) => [
-    index('idx_visualizacoes_documento').on(table.documentoId),
-    index('idx_visualizacoes_user').on(table.userId),
+    index('idx_visualizacoes_guia').on(table.guiaId),
+    index('idx_visualizacoes_guia_user').on(table.userId),
   ],
 );
 
@@ -336,7 +336,7 @@ export const folhasPagamento = pgTable(
     clienteId: uuid('cliente_id')
       .notNull()
       .references(() => clientes.id, { onDelete: 'cascade' }),
-    documentoId: uuid('documento_id').references(() => documentos.id, {
+    guiaId: uuid('documento_id').references(() => guias.id, {
       onDelete: 'set null',
     }),
     arquivoKey: text('arquivo_key').notNull(),

@@ -7,7 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { MailModule } from './mail/mail.module';
 import { ClientesModule } from './clientes/clientes.module';
-import { DocumentosModule } from './documentos/documentos.module';
+import { GuiasModule } from './guias/guias.module';
 import { UploadModule } from './upload/upload.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { ClienteModule } from './cliente/cliente.module';
@@ -29,7 +29,7 @@ import { StorageAdminController } from './storage/storage.controller';
     StorageModule,
     MailModule,
     ClientesModule,
-    DocumentosModule,
+    GuiasModule,
     UploadModule,
     UsuariosModule,
     ClienteModule,
@@ -45,4 +45,4 @@ import { StorageAdminController } from './storage/storage.controller';
     StorageAdminController,
   ],
 })
-export class AppModule {}
+export class AppModule { }

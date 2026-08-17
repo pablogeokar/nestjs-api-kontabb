@@ -32,16 +32,16 @@ export class ClientesService {
     private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
-  ) {}
+  ) { }
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
     const searchDigits = input.search.replace(/\D/g, '');
     const where = input.search
       ? or(
-          ilike(clientes.razaoSocial, `%${input.search}%`),
-          ilike(clientes.cnpj, `%${searchDigits}%`),
-          ilike(clientes.cpf, `%${searchDigits}%`),
-        )
+        ilike(clientes.razaoSocial, `%${input.search}%`),
+        ilike(clientes.cnpj, `%${searchDigits}%`),
+        ilike(clientes.cpf, `%${searchDigits}%`),
+      )
       : undefined;
 
     const [countResult, rows] = await Promise.all([
@@ -90,9 +90,9 @@ export class ClientesService {
         address: this.mapAddress(client),
         primary_activity: client.cnaePrincipalCodigo
           ? {
-              code: client.cnaePrincipalCodigo,
-              description: client.cnaePrincipalDescricao ?? '',
-            }
+            code: client.cnaePrincipalCodigo,
+            description: client.cnaePrincipalDescricao ?? '',
+          }
           : null,
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
@@ -262,7 +262,7 @@ export class ClientesService {
       ),
       target_files AS MATERIALIZED (
         SELECT d.id, d.arquivo_key, d.comprovante_key
-        FROM documentos d INNER JOIN target_client c ON c.id = d.cliente_id
+        FROM guias d INNER JOIN target_client c ON c.id = d.cliente_id
       ),
       deleted_client AS (
         DELETE FROM clientes c USING target_client target WHERE c.id = target.id
@@ -370,9 +370,9 @@ export class ClientesService {
       address: this.mapAddress(client),
       primary_activity: client.cnaePrincipalCodigo
         ? {
-            code: client.cnaePrincipalCodigo,
-            description: client.cnaePrincipalDescricao ?? '',
-          }
+          code: client.cnaePrincipalCodigo,
+          description: client.cnaePrincipalDescricao ?? '',
+        }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
       logo_url: client.logoKey
@@ -414,9 +414,9 @@ export class ClientesService {
     const fullRows = (
       fullCnpjs.length
         ? await this.database.db
-            .select({ cnpj: clientes.cnpj })
-            .from(clientes)
-            .where(inArray(clientes.cnpj, fullCnpjs))
+          .select({ cnpj: clientes.cnpj })
+          .from(clientes)
+          .where(inArray(clientes.cnpj, fullCnpjs))
         : []
     ) as Array<{ cnpj: string }>;
     const rootRows = await Promise.all(

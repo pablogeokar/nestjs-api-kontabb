@@ -213,7 +213,7 @@ export class ClienteFiscalController {
 
     await this.rateLimit.consume({
       key: `fiscal-xml-import:${user.id}`,
-      limit: 10,
+      limit: 60,
       windowMs: 60_000,
     });
 

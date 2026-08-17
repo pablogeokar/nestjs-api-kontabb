@@ -1,7 +1,11 @@
 # Importação manual de XML fiscal
 
-O módulo fiscal aceita lotes manuais de até 20 arquivos, com limite de 10 MB
-por XML, pelos endpoints autenticados:
+A interface do módulo fiscal permite selecionar todos os XMLs de uma única vez,
+inclusive centenas de arquivos. O navegador divide a seleção em lotes internos
+de até 20 arquivos e os envia sequencialmente, consolidando o progresso e o
+resultado sem exigir ação adicional do usuário. Cada XML possui limite de 10 MB.
+
+Os lotes internos são enviados pelos endpoints autenticados:
 
 - `POST /api/admin/fiscal/documentos/importar-xml`: disponível para staff e
   associa cada documento aos clientes cadastrados encontrados entre seus
@@ -9,7 +13,9 @@ por XML, pelos endpoints autenticados:
 - `POST /api/fiscal/documentos/importar-xml`: disponível para cliente e aceita
   somente documentos dos quais o CNPJ/CPF da empresa logada participa.
 
-O corpo usa `multipart/form-data`, com os arquivos no campo `files`.
+O corpo usa `multipart/form-data`, com os arquivos no campo `files`. O limite de
+20 itens existe somente por requisição para controlar memória e tempo de
+processamento da API; não é um limite da operação apresentada ao usuário.
 
 ## Classificação
 
