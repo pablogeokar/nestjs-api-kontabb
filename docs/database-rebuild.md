@@ -52,7 +52,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 Todas as consultas devem retornar zero linhas. Confirme também que
 `drizzle.__drizzle_migrations` contém exatamente uma migration.
 
-7. Faça smoke tests de login, listagem/download de documentos, pagamento,
+7. Faça smoke tests de login, listagem/download de guias, pagamento,
    upload e recibos de folha. Somente depois atualize a `DATABASE_URL` do deploy.
 
 ## Rollback
