@@ -1,4 +1,0 @@
-ALTER TABLE "documentos_fiscais" DROP CONSTRAINT "documentos_fiscais_chave_acesso_unique";--> statement-breakpoint
-DROP INDEX "uidx_docs_fiscais_chave";--> statement-breakpoint
-CREATE UNIQUE INDEX "uidx_docs_fiscais_cliente_chave" ON "documentos_fiscais" USING btree ("cliente_id","chave_acesso");--> statement-breakpoint
-ALTER TABLE "documentos_fiscais" ADD CONSTRAINT "chk_docs_fiscais_tipo_modelo" CHECK (("documentos_fiscais"."tipo_documento" = 'NFE' AND "documentos_fiscais"."modelo" = '55') OR ("documentos_fiscais"."tipo_documento" = 'CTE' AND "documentos_fiscais"."modelo" = '57') OR ("documentos_fiscais"."tipo_documento" = 'NFCE' AND "documentos_fiscais"."modelo" = '65'));

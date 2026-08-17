@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1786395126999,
-      "tag": "0000_baseline_kontabb",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1786481527000,
-      "tag": "0001_add_clientes_logo_key",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1786621364143,
-      "tag": "0002_wealthy_energizer",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1786889943120,
-      "tag": "0003_fat_ghost_rider",
+      "when": 1786965224065,
+      "tag": "0000_initial_base",
       "breakpoints": true
     }
   ]

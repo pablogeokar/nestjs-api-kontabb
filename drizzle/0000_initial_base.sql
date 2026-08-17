@@ -22,6 +22,27 @@ CREATE TABLE "app_rate_limits" (
 	CONSTRAINT "chk_app_rate_limits_reset_at" CHECK ("app_rate_limits"."reset_at" > 0)
 );
 --> statement-breakpoint
+CREATE TABLE "certificados_digitais" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"cliente_id" uuid NOT NULL,
+	"cnpj" text NOT NULL,
+	"razao_social" text NOT NULL,
+	"arquivo_key" text NOT NULL,
+	"senha_criptografada" text NOT NULL,
+	"thumbprint" text,
+	"emissor" text,
+	"validade_inicio" timestamp NOT NULL,
+	"validade_fim" timestamp NOT NULL,
+	"status" text DEFAULT 'ATIVO' NOT NULL,
+	"uploadado_por" text,
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	"atualizado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_certificados_status" CHECK ("certificados_digitais"."status" IN ('ATIVO', 'EXPIRADO', 'PRESTES_A_EXPIRAR', 'REVOGADO')),
+	CONSTRAINT "chk_certificados_cnpj" CHECK ("certificados_digitais"."cnpj" ~ '^[0-9]{14}$'),
+	CONSTRAINT "chk_certificados_validade" CHECK ("certificados_digitais"."validade_inicio" < "certificados_digitais"."validade_fim"),
+	CONSTRAINT "chk_certificados_arquivo_key" CHECK (btrim("certificados_digitais"."arquivo_key") <> '')
+);
+--> statement-breakpoint
 CREATE TABLE "clientes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tipo_pessoa" text DEFAULT 'PJ' NOT NULL,
@@ -39,6 +60,7 @@ CREATE TABLE "clientes" (
 	"cnae_principal_codigo" text,
 	"cnae_principal_descricao" text,
 	"cnaes_secundarios" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"logo_key" text,
 	"primeiro_login" boolean DEFAULT true NOT NULL,
 	"user_id" text,
 	"criado_em" timestamp DEFAULT now() NOT NULL,
@@ -52,34 +74,53 @@ CREATE TABLE "clientes" (
 	CONSTRAINT "chk_clientes_documento_por_tipo" CHECK (("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."cnpj" ~ '^[0-9]{14}$' AND "clientes"."cpf" IS NULL) OR ("clientes"."tipo_pessoa" = 'PF' AND "clientes"."cnpj" ~ '^[0-9]{11}$' AND "clientes"."cpf" = "clientes"."cnpj"))
 );
 --> statement-breakpoint
-CREATE TABLE "documentos" (
+CREATE TABLE "controle_nsu" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"cliente_id" uuid NOT NULL,
-	"tipo" text NOT NULL,
-	"periodo" text NOT NULL,
-	"vencimento" date,
-	"valor" numeric(12, 2),
-	"arquivo_key" text NOT NULL,
-	"arquivo_nome" text NOT NULL,
-	"status" text DEFAULT 'PENDENTE' NOT NULL,
-	"pago_em" timestamp,
-	"pagamento_confirmado_por" text,
-	"observacao_pagamento" text,
-	"comprovante_key" text,
-	"email_status" text DEFAULT 'NAO_ENVIADO' NOT NULL,
-	"email_erro" text,
-	"numero_parcelamento" text,
+	"cnpj" text NOT NULL,
+	"tipo_documento" text NOT NULL,
+	"ultimo_nsu" bigint DEFAULT 0 NOT NULL,
+	"max_nsu" bigint DEFAULT 0 NOT NULL,
+	"status_sefaz" integer,
+	"motivo_sefaz" text,
+	"ultima_consulta_em" timestamp,
+	"proxima_consulta_em" timestamp,
 	"criado_em" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "uq_documentos_identidade" UNIQUE NULLS NOT DISTINCT("cliente_id","tipo","periodo","numero_parcelamento"),
-	CONSTRAINT "chk_documentos_tipo" CHECK ("documentos"."tipo" IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')),
-	CONSTRAINT "chk_documentos_status" CHECK ("documentos"."status" IN ('PENDENTE', 'PAGO')),
-	CONSTRAINT "chk_documentos_email_status" CHECK ("documentos"."email_status" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')),
-	CONSTRAINT "chk_documentos_periodo" CHECK ("documentos"."periodo" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'),
-	CONSTRAINT "chk_documentos_arquivo_key" CHECK (btrim("documentos"."arquivo_key") <> ''),
-	CONSTRAINT "chk_documentos_arquivo_nome" CHECK (btrim("documentos"."arquivo_nome") <> ''),
-	CONSTRAINT "chk_documentos_valor" CHECK ("documentos"."valor" IS NULL OR "documentos"."valor" >= 0),
-	CONSTRAINT "chk_documentos_pagamento" CHECK (("documentos"."status" = 'PENDENTE' AND "documentos"."pago_em" IS NULL) OR ("documentos"."status" = 'PAGO' AND "documentos"."pago_em" IS NOT NULL)),
-	CONSTRAINT "chk_documentos_numero_parcelamento" CHECK ("documentos"."numero_parcelamento" IS NULL OR btrim("documentos"."numero_parcelamento") <> '')
+	"atualizado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_controle_nsu_tipo" CHECK ("controle_nsu"."tipo_documento" IN ('NFE', 'CTE')),
+	CONSTRAINT "chk_controle_nsu_ultimo" CHECK ("controle_nsu"."ultimo_nsu" >= 0),
+	CONSTRAINT "chk_controle_nsu_max" CHECK ("controle_nsu"."max_nsu" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "documentos_fiscais" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"cliente_id" uuid NOT NULL,
+	"chave_acesso" text NOT NULL,
+	"nsu" bigint NOT NULL,
+	"tipo_documento" text NOT NULL,
+	"modelo" text NOT NULL,
+	"serie" text,
+	"numero_documento" text NOT NULL,
+	"emitente_cnpj_cpf" text NOT NULL,
+	"emitente_razao_social" text,
+	"destinatario_cnpj_cpf" text NOT NULL,
+	"destinatario_razao_social" text,
+	"data_emissao" timestamp NOT NULL,
+	"valor_total" numeric(14, 2) NOT NULL,
+	"situacao" text DEFAULT 'AUTORIZADA' NOT NULL,
+	"manifestacao_status" text DEFAULT 'SEM_MANIFESTACAO' NOT NULL,
+	"xml_key" text NOT NULL,
+	"danfe_key" text,
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	"atualizado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_docs_fiscais_chave" CHECK (length("documentos_fiscais"."chave_acesso") = 44),
+	CONSTRAINT "chk_docs_fiscais_tipo" CHECK ("documentos_fiscais"."tipo_documento" IN ('NFE', 'CTE', 'NFCE')),
+	CONSTRAINT "chk_docs_fiscais_modelo" CHECK ("documentos_fiscais"."modelo" IN ('55', '57', '65')),
+	CONSTRAINT "chk_docs_fiscais_tipo_modelo" CHECK (("documentos_fiscais"."tipo_documento" = 'NFE' AND "documentos_fiscais"."modelo" = '55') OR ("documentos_fiscais"."tipo_documento" = 'CTE' AND "documentos_fiscais"."modelo" = '57') OR ("documentos_fiscais"."tipo_documento" = 'NFCE' AND "documentos_fiscais"."modelo" = '65')),
+	CONSTRAINT "chk_docs_fiscais_situacao" CHECK ("documentos_fiscais"."situacao" IN ('AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA')),
+	CONSTRAINT "chk_docs_fiscais_manifestacao" CHECK ("documentos_fiscais"."manifestacao_status" IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')),
+	CONSTRAINT "chk_docs_fiscais_valor" CHECK ("documentos_fiscais"."valor_total" >= 0),
+	CONSTRAINT "chk_docs_fiscais_xml_key" CHECK (btrim("documentos_fiscais"."xml_key") <> '')
 );
 --> statement-breakpoint
 CREATE TABLE "eventos_auditoria" (
@@ -90,6 +131,23 @@ CREATE TABLE "eventos_auditoria" (
 	"entidade_id" text NOT NULL,
 	"dados" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"criado_em" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "eventos_fiscais" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"documento_fiscal_id" uuid NOT NULL,
+	"tipo_evento" text NOT NULL,
+	"codigo_evento" text NOT NULL,
+	"sequencia_evento" integer DEFAULT 1 NOT NULL,
+	"descricao" text,
+	"protocolo" text,
+	"status_sefaz" integer,
+	"motivo_sefaz" text,
+	"data_evento" timestamp DEFAULT now() NOT NULL,
+	"xml_evento_key" text,
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_eventos_fiscais_tipo" CHECK ("eventos_fiscais"."tipo_evento" IN ('MANIFESTACAO_CIENCIA', 'MANIFESTACAO_CONFIRMACAO', 'MANIFESTACAO_DESCONHECIMENTO', 'MANIFESTACAO_NAO_REALIZADA', 'CANCELAMENTO', 'CCE')),
+	CONSTRAINT "chk_eventos_fiscais_sequencia" CHECK ("eventos_fiscais"."sequencia_evento" >= 1)
 );
 --> statement-breakpoint
 CREATE TABLE "folhas_pagamento" (
@@ -138,6 +196,36 @@ CREATE TABLE "funcionarios_rh" (
 	CONSTRAINT "chk_funcionarios_codigo" CHECK (btrim("funcionarios_rh"."codigo_funcionario") <> ''),
 	CONSTRAINT "chk_funcionarios_nome" CHECK (btrim("funcionarios_rh"."nome_completo") <> ''),
 	CONSTRAINT "chk_funcionarios_cpf" CHECK ("funcionarios_rh"."cpf" IS NULL OR "funcionarios_rh"."cpf" ~ '^[0-9]{11}$')
+);
+--> statement-breakpoint
+CREATE TABLE "guias" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"cliente_id" uuid NOT NULL,
+	"tipo" text NOT NULL,
+	"periodo" text NOT NULL,
+	"vencimento" date,
+	"valor" numeric(12, 2),
+	"arquivo_key" text NOT NULL,
+	"arquivo_nome" text NOT NULL,
+	"status" text DEFAULT 'PENDENTE' NOT NULL,
+	"pago_em" timestamp,
+	"pagamento_confirmado_por" text,
+	"observacao_pagamento" text,
+	"comprovante_key" text,
+	"email_status" text DEFAULT 'NAO_ENVIADO' NOT NULL,
+	"email_erro" text,
+	"numero_parcelamento" text,
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "uq_guias_identidade" UNIQUE NULLS NOT DISTINCT("cliente_id","tipo","periodo","numero_parcelamento"),
+	CONSTRAINT "chk_guias_tipo" CHECK ("guias"."tipo" IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')),
+	CONSTRAINT "chk_guias_status" CHECK ("guias"."status" IN ('PENDENTE', 'PAGO')),
+	CONSTRAINT "chk_guias_email_status" CHECK ("guias"."email_status" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')),
+	CONSTRAINT "chk_guias_periodo" CHECK ("guias"."periodo" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'),
+	CONSTRAINT "chk_guias_arquivo_key" CHECK (btrim("guias"."arquivo_key") <> ''),
+	CONSTRAINT "chk_guias_arquivo_nome" CHECK (btrim("guias"."arquivo_nome") <> ''),
+	CONSTRAINT "chk_guias_valor" CHECK ("guias"."valor" IS NULL OR "guias"."valor" >= 0),
+	CONSTRAINT "chk_guias_pagamento" CHECK (("guias"."status" = 'PENDENTE' AND "guias"."pago_em" IS NULL) OR ("guias"."status" = 'PAGO' AND "guias"."pago_em" IS NOT NULL)),
+	CONSTRAINT "chk_guias_numero_parcelamento" CHECK ("guias"."numero_parcelamento" IS NULL OR btrim("guias"."numero_parcelamento") <> '')
 );
 --> statement-breakpoint
 CREATE TABLE "itens_folha_pagamento" (
@@ -218,13 +306,6 @@ CREATE TABLE "verification" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "visualizacoes_documentos" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"documento_id" uuid NOT NULL,
-	"user_id" text,
-	"visualizado_em" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "visualizacoes_folhas" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"folha_id" uuid NOT NULL,
@@ -232,40 +313,69 @@ CREATE TABLE "visualizacoes_folhas" (
 	"visualizado_em" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "visualizacoes_guias" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"guia_id" uuid NOT NULL,
+	"user_id" text,
+	"visualizado_em" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "certificados_digitais" ADD CONSTRAINT "certificados_digitais_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "certificados_digitais" ADD CONSTRAINT "certificados_digitais_uploadado_por_user_id_fk" FOREIGN KEY ("uploadado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "clientes" ADD CONSTRAINT "clientes_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "documentos" ADD CONSTRAINT "documentos_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "documentos" ADD CONSTRAINT "documentos_pagamento_confirmado_por_user_id_fk" FOREIGN KEY ("pagamento_confirmado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "controle_nsu" ADD CONSTRAINT "controle_nsu_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documentos_fiscais" ADD CONSTRAINT "documentos_fiscais_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "eventos_auditoria" ADD CONSTRAINT "eventos_auditoria_ator_user_id_user_id_fk" FOREIGN KEY ("ator_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "eventos_fiscais" ADD CONSTRAINT "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "folhas_pagamento" ADD CONSTRAINT "folhas_pagamento_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "folhas_pagamento" ADD CONSTRAINT "folhas_pagamento_documento_id_documentos_id_fk" FOREIGN KEY ("documento_id") REFERENCES "public"."documentos"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "folhas_pagamento" ADD CONSTRAINT "folhas_pagamento_documento_id_guias_id_fk" FOREIGN KEY ("documento_id") REFERENCES "public"."guias"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "folhas_pagamento" ADD CONSTRAINT "folhas_pagamento_uploadado_por_user_id_fk" FOREIGN KEY ("uploadado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "funcionarios_rh" ADD CONSTRAINT "funcionarios_rh_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "guias" ADD CONSTRAINT "guias_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "guias" ADD CONSTRAINT "guias_pagamento_confirmado_por_user_id_fk" FOREIGN KEY ("pagamento_confirmado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "itens_folha_pagamento" ADD CONSTRAINT "itens_folha_pagamento_folha_id_folhas_pagamento_id_fk" FOREIGN KEY ("folha_id") REFERENCES "public"."folhas_pagamento"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "itens_folha_pagamento" ADD CONSTRAINT "itens_folha_pagamento_funcionario_id_funcionarios_rh_id_fk" FOREIGN KEY ("funcionario_id") REFERENCES "public"."funcionarios_rh"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "itens_folha_pagamento" ADD CONSTRAINT "itens_folha_pagamento_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "itens_folha_pagamento" ADD CONSTRAINT "fk_itens_folha_cliente" FOREIGN KEY ("folha_id","cliente_id") REFERENCES "public"."folhas_pagamento"("id","cliente_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "itens_folha_pagamento" ADD CONSTRAINT "fk_itens_funcionario_cliente" FOREIGN KEY ("funcionario_id","cliente_id") REFERENCES "public"."funcionarios_rh"("id","cliente_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "visualizacoes_documentos" ADD CONSTRAINT "visualizacoes_documentos_documento_id_documentos_id_fk" FOREIGN KEY ("documento_id") REFERENCES "public"."documentos"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "visualizacoes_documentos" ADD CONSTRAINT "visualizacoes_documentos_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "visualizacoes_folhas" ADD CONSTRAINT "visualizacoes_folhas_folha_id_folhas_pagamento_id_fk" FOREIGN KEY ("folha_id") REFERENCES "public"."folhas_pagamento"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "visualizacoes_folhas" ADD CONSTRAINT "visualizacoes_folhas_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "visualizacoes_guias" ADD CONSTRAINT "visualizacoes_guias_guia_id_guias_id_fk" FOREIGN KEY ("guia_id") REFERENCES "public"."guias"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "visualizacoes_guias" ADD CONSTRAINT "visualizacoes_guias_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_account_provider_account" ON "account" USING btree ("provider_id","account_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_account_user_provider" ON "account" USING btree ("user_id","provider_id");--> statement-breakpoint
+CREATE INDEX "idx_certificados_cliente_id" ON "certificados_digitais" USING btree ("cliente_id");--> statement-breakpoint
+CREATE INDEX "idx_certificados_cnpj" ON "certificados_digitais" USING btree ("cnpj");--> statement-breakpoint
+CREATE INDEX "idx_certificados_status" ON "certificados_digitais" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_certificados_validade_fim" ON "certificados_digitais" USING btree ("validade_fim");--> statement-breakpoint
+CREATE UNIQUE INDEX "uidx_certificados_cliente_ativo" ON "certificados_digitais" USING btree ("cliente_id") WHERE status IN ('ATIVO', 'PRESTES_A_EXPIRAR');--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_clientes_user_id" ON "clientes" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "idx_documentos_cliente_id" ON "documentos" USING btree ("cliente_id");--> statement-breakpoint
-CREATE INDEX "idx_documentos_tipo" ON "documentos" USING btree ("tipo");--> statement-breakpoint
-CREATE INDEX "idx_documentos_periodo" ON "documentos" USING btree ("periodo");--> statement-breakpoint
-CREATE INDEX "idx_documentos_status" ON "documentos" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_documentos_pagamento_confirmado_por" ON "documentos" USING btree ("pagamento_confirmado_por");--> statement-breakpoint
+CREATE UNIQUE INDEX "uidx_controle_nsu_cliente_tipo" ON "controle_nsu" USING btree ("cliente_id","tipo_documento");--> statement-breakpoint
+CREATE INDEX "idx_controle_nsu_cliente_id" ON "controle_nsu" USING btree ("cliente_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "uidx_docs_fiscais_cliente_chave" ON "documentos_fiscais" USING btree ("cliente_id","chave_acesso");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_cliente_id" ON "documentos_fiscais" USING btree ("cliente_id");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_tipo" ON "documentos_fiscais" USING btree ("tipo_documento");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_data_emissao" ON "documentos_fiscais" USING btree ("data_emissao");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_nsu" ON "documentos_fiscais" USING btree ("nsu");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_destinatario" ON "documentos_fiscais" USING btree ("destinatario_cnpj_cpf");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_emitente" ON "documentos_fiscais" USING btree ("emitente_cnpj_cpf");--> statement-breakpoint
 CREATE INDEX "idx_eventos_auditoria_entidade" ON "eventos_auditoria" USING btree ("entidade_tipo","entidade_id","criado_em");--> statement-breakpoint
 CREATE INDEX "idx_eventos_auditoria_ator" ON "eventos_auditoria" USING btree ("ator_user_id","criado_em");--> statement-breakpoint
+CREATE INDEX "idx_eventos_fiscais_doc" ON "eventos_fiscais" USING btree ("documento_fiscal_id");--> statement-breakpoint
+CREATE INDEX "idx_eventos_fiscais_tipo" ON "eventos_fiscais" USING btree ("tipo_evento");--> statement-breakpoint
+CREATE INDEX "idx_eventos_fiscais_data" ON "eventos_fiscais" USING btree ("data_evento");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_folhas_cliente_competencia" ON "folhas_pagamento" USING btree ("cliente_id","competencia");--> statement-breakpoint
 CREATE INDEX "idx_folhas_cliente_id" ON "folhas_pagamento" USING btree ("cliente_id");--> statement-breakpoint
 CREATE INDEX "idx_folhas_competencia" ON "folhas_pagamento" USING btree ("competencia");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_funcionarios_cliente_codigo" ON "funcionarios_rh" USING btree ("cliente_id","codigo_funcionario");--> statement-breakpoint
 CREATE INDEX "idx_funcionarios_cliente_id" ON "funcionarios_rh" USING btree ("cliente_id");--> statement-breakpoint
+CREATE INDEX "idx_guias_cliente_id" ON "guias" USING btree ("cliente_id");--> statement-breakpoint
+CREATE INDEX "idx_guias_tipo" ON "guias" USING btree ("tipo");--> statement-breakpoint
+CREATE INDEX "idx_guias_periodo" ON "guias" USING btree ("periodo");--> statement-breakpoint
+CREATE INDEX "idx_guias_status" ON "guias" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_guias_pagamento_confirmado_por" ON "guias" USING btree ("pagamento_confirmado_por");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_itens_folha_funcionario" ON "itens_folha_pagamento" USING btree ("folha_id","funcionario_id");--> statement-breakpoint
 CREATE INDEX "idx_itens_folha_id" ON "itens_folha_pagamento" USING btree ("folha_id");--> statement-breakpoint
 CREATE INDEX "idx_itens_funcionario_id" ON "itens_folha_pagamento" USING btree ("funcionario_id");--> statement-breakpoint
@@ -273,7 +383,7 @@ CREATE INDEX "idx_itens_cliente_id" ON "itens_folha_pagamento" USING btree ("cli
 CREATE INDEX "idx_storage_cleanup_status_criado_em" ON "storage_cleanup_jobs" USING btree ("status","criado_em");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_verification_identifier" ON "verification" USING btree ("identifier");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_verification_value" ON "verification" USING btree ("value");--> statement-breakpoint
-CREATE INDEX "idx_visualizacoes_documento" ON "visualizacoes_documentos" USING btree ("documento_id");--> statement-breakpoint
-CREATE INDEX "idx_visualizacoes_user" ON "visualizacoes_documentos" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_visualizacoes_folha" ON "visualizacoes_folhas" USING btree ("folha_id");--> statement-breakpoint
-CREATE INDEX "idx_visualizacoes_folha_user" ON "visualizacoes_folhas" USING btree ("user_id");
+CREATE INDEX "idx_visualizacoes_folha_user" ON "visualizacoes_folhas" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_visualizacoes_guia" ON "visualizacoes_guias" USING btree ("guia_id");--> statement-breakpoint
+CREATE INDEX "idx_visualizacoes_guia_user" ON "visualizacoes_guias" USING btree ("user_id");
