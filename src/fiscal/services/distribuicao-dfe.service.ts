@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, and, sql, desc, ilike, or, inArray } from 'drizzle-orm';
+import { eq, and, sql, desc, asc, ilike, or, inArray } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { NfeWizardService } from './nfewizard.service';
@@ -330,6 +330,35 @@ export class DistribuicaoDfeService {
     }
 
     return resultados;
+  }
+
+  /**
+   * Lista as empresas que possuem documentos fiscais importados.
+   * O resumo é usado pelo painel administrativo para manter a listagem
+   * explicitamente separada por cliente, sem depender da página atual.
+   */
+  async listClientesComDocumentosFiscais() {
+    const rows = await this.database.db
+      .select({
+        id: clientes.id,
+        razaoSocial: clientes.razaoSocial,
+        cnpj: clientes.cnpj,
+        totalDocumentos: sql<number>`count(${documentosFiscais.id})`,
+      })
+      .from(clientes)
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.clienteId, clientes.id),
+      )
+      .groupBy(clientes.id, clientes.razaoSocial, clientes.cnpj)
+      .orderBy(asc(clientes.razaoSocial));
+
+    return rows.map((row) => ({
+      id: row.id,
+      razao_social: row.razaoSocial,
+      cnpj: row.cnpj,
+      total_documentos: Number(row.totalDocumentos),
+    }));
   }
 
   /**

@@ -271,6 +271,22 @@ export class AdminFiscalController {
     };
   }
 
+  @Get('documentos/clientes')
+  @ApiOperation({
+    summary: 'Listar clientes com documentos fiscais',
+    description:
+      'Retorna as empresas que possuem documentos fiscais e o total de documentos de cada uma.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resumo de documentos fiscais por cliente.',
+  })
+  async listClientesComDocumentos() {
+    const clientes =
+      await this.distribuicaoService.listClientesComDocumentosFiscais();
+    return { data: clientes };
+  }
+
   @Get('documentos')
   @ApiOperation({
     summary: 'Listar documentos fiscais',
