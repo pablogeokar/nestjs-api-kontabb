@@ -32,16 +32,16 @@ export class ClientesService {
     private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
-  ) { }
+  ) {}
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
     const searchDigits = input.search.replace(/\D/g, '');
     const where = input.search
       ? or(
-        ilike(clientes.razaoSocial, `%${input.search}%`),
-        ilike(clientes.cnpj, `%${searchDigits}%`),
-        ilike(clientes.cpf, `%${searchDigits}%`),
-      )
+          ilike(clientes.razaoSocial, `%${input.search}%`),
+          ilike(clientes.cnpj, `%${searchDigits}%`),
+          ilike(clientes.cpf, `%${searchDigits}%`),
+        )
       : undefined;
 
     const [countResult, rows] = await Promise.all([
@@ -90,9 +90,9 @@ export class ClientesService {
         address: this.mapAddress(client),
         primary_activity: client.cnaePrincipalCodigo
           ? {
-            code: client.cnaePrincipalCodigo,
-            description: client.cnaePrincipalDescricao ?? '',
-          }
+              code: client.cnaePrincipalCodigo,
+              description: client.cnaePrincipalDescricao ?? '',
+            }
           : null,
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
@@ -324,6 +324,22 @@ export class ClientesService {
   }
 
   /**
+   * Returns the first real email from the clientes.emails array for a given user.
+   * Used by the password-reset flow to resolve a deliverable address
+   * when the auth email is a non-routable @kontabb.local placeholder.
+   */
+  async getClientEmailByUserId(userId: string): Promise<string | null> {
+    const result = await this.database.db
+      .select({ emails: clientes.emails })
+      .from(clientes)
+      .where(eq(clientes.userId, userId))
+      .limit(1);
+
+    const emails = result[0]?.emails;
+    return emails && emails.length > 0 ? emails[0] : null;
+  }
+
+  /**
    * Returns the primeiroLogin flag for a client user.
    * Used by auth endpoints to inform the frontend about first-login state.
    */
@@ -370,9 +386,9 @@ export class ClientesService {
       address: this.mapAddress(client),
       primary_activity: client.cnaePrincipalCodigo
         ? {
-          code: client.cnaePrincipalCodigo,
-          description: client.cnaePrincipalDescricao ?? '',
-        }
+            code: client.cnaePrincipalCodigo,
+            description: client.cnaePrincipalDescricao ?? '',
+          }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
       logo_url: client.logoKey
@@ -414,9 +430,9 @@ export class ClientesService {
     const fullRows = (
       fullCnpjs.length
         ? await this.database.db
-          .select({ cnpj: clientes.cnpj })
-          .from(clientes)
-          .where(inArray(clientes.cnpj, fullCnpjs))
+            .select({ cnpj: clientes.cnpj })
+            .from(clientes)
+            .where(inArray(clientes.cnpj, fullCnpjs))
         : []
     ) as Array<{ cnpj: string }>;
     const rootRows = await Promise.all(
