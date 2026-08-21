@@ -129,6 +129,20 @@ WHERE COALESCE(dependentes_ir, 0) < 0
    OR COALESCE(dependentes_sf, 0) < 0
    OR jsonb_typeof(rubricas) <> 'array';
 
+-- Modulo fiscal
+SELECT cliente_id, chave_acesso, count(*) AS quantidade
+FROM documentos_fiscais
+GROUP BY cliente_id, chave_acesso
+HAVING count(*) > 1;
+
+SELECT id, tipo_documento, modelo, chave_acesso
+FROM documentos_fiscais
+WHERE NOT (
+  (tipo_documento = 'NFE' AND modelo = '55')
+  OR (tipo_documento = 'CTE' AND modelo = '57')
+  OR (tipo_documento = 'NFCE' AND modelo = '65')
+);
+
 -- Jobs operacionais
 SELECT id, object_key, status, tentativas, concluido_em
 FROM storage_cleanup_jobs

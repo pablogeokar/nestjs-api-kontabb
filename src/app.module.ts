@@ -7,11 +7,12 @@ import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { MailModule } from './mail/mail.module';
 import { ClientesModule } from './clientes/clientes.module';
-import { DocumentosModule } from './documentos/documentos.module';
+import { GuiasModule } from './guias/guias.module';
 import { UploadModule } from './upload/upload.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { ClienteModule } from './cliente/cliente.module';
 import { RhModule } from './rh/rh.module';
+import { FiscalModule } from './fiscal/fiscal.module';
 import { ColaboradorModule } from './colaborador/colaborador.module';
 import { HealthController } from './health/health.controller';
 import { SetupController } from './health/setup.controller';
@@ -28,11 +29,12 @@ import { StorageAdminController } from './storage/storage.controller';
     StorageModule,
     MailModule,
     ClientesModule,
-    DocumentosModule,
+    GuiasModule,
     UploadModule,
     UsuariosModule,
     ClienteModule,
     RhModule,
+    FiscalModule,
     ColaboradorModule,
   ],
   controllers: [
@@ -43,4 +45,4 @@ import { StorageAdminController } from './storage/storage.controller';
     StorageAdminController,
   ],
 })
-export class AppModule {}
+export class AppModule { }

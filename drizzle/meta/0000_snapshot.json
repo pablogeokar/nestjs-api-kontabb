@@ -1,5 +1,5 @@
 {
-  "id": "3f82e64c-6c60-4aee-ba32-2283750b2c9b",
+  "id": "7105cf4f-00a2-495b-9691-9cc00510b9be",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -194,6 +194,228 @@
       },
       "isRLSEnabled": false
     },
+    "public.certificados_digitais": {
+      "name": "certificados_digitais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "razao_social": {
+          "name": "razao_social",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "senha_criptografada": {
+          "name": "senha_criptografada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thumbprint": {
+          "name": "thumbprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emissor": {
+          "name": "emissor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "validade_inicio": {
+          "name": "validade_inicio",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "validade_fim": {
+          "name": "validade_fim",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ATIVO'"
+        },
+        "uploadado_por": {
+          "name": "uploadado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_certificados_cliente_id": {
+          "name": "idx_certificados_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_certificados_cnpj": {
+          "name": "idx_certificados_cnpj",
+          "columns": [
+            {
+              "expression": "cnpj",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_certificados_status": {
+          "name": "idx_certificados_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_certificados_validade_fim": {
+          "name": "idx_certificados_validade_fim",
+          "columns": [
+            {
+              "expression": "validade_fim",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_certificados_cliente_ativo": {
+          "name": "uidx_certificados_cliente_ativo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status IN ('ATIVO', 'PRESTES_A_EXPIRAR')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "certificados_digitais_cliente_id_clientes_id_fk": {
+          "name": "certificados_digitais_cliente_id_clientes_id_fk",
+          "tableFrom": "certificados_digitais",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "certificados_digitais_uploadado_por_user_id_fk": {
+          "name": "certificados_digitais_uploadado_por_user_id_fk",
+          "tableFrom": "certificados_digitais",
+          "tableTo": "user",
+          "columnsFrom": [
+            "uploadado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_certificados_status": {
+          "name": "chk_certificados_status",
+          "value": "\"certificados_digitais\".\"status\" IN ('ATIVO', 'EXPIRADO', 'PRESTES_A_EXPIRAR', 'REVOGADO')"
+        },
+        "chk_certificados_cnpj": {
+          "name": "chk_certificados_cnpj",
+          "value": "\"certificados_digitais\".\"cnpj\" ~ '^[0-9]{14}$'"
+        },
+        "chk_certificados_validade": {
+          "name": "chk_certificados_validade",
+          "value": "\"certificados_digitais\".\"validade_inicio\" < \"certificados_digitais\".\"validade_fim\""
+        },
+        "chk_certificados_arquivo_key": {
+          "name": "chk_certificados_arquivo_key",
+          "value": "btrim(\"certificados_digitais\".\"arquivo_key\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.clientes": {
       "name": "clientes",
       "schema": "",
@@ -298,6 +520,12 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "logo_key": {
+          "name": "logo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "primeiro_login": {
           "name": "primeiro_login",
           "type": "boolean",
@@ -397,8 +625,8 @@
       },
       "isRLSEnabled": false
     },
-    "public.documentos": {
-      "name": "documentos",
+    "public.controle_nsu": {
+      "name": "controle_nsu",
       "schema": "",
       "columns": {
         "id": {
@@ -414,88 +642,254 @@
           "primaryKey": false,
           "notNull": true
         },
-        "tipo": {
-          "name": "tipo",
+        "cnpj": {
+          "name": "cnpj",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "periodo": {
-          "name": "periodo",
+        "tipo_documento": {
+          "name": "tipo_documento",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "vencimento": {
-          "name": "vencimento",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "valor": {
-          "name": "valor",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "arquivo_key": {
-          "name": "arquivo_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "arquivo_nome": {
-          "name": "arquivo_nome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
+        "ultimo_nsu": {
+          "name": "ultimo_nsu",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true,
-          "default": "'PENDENTE'"
+          "default": 0
         },
-        "pago_em": {
-          "name": "pago_em",
+        "max_nsu": {
+          "name": "max_nsu",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "status_sefaz": {
+          "name": "status_sefaz",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_sefaz": {
+          "name": "motivo_sefaz",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ultima_consulta_em": {
+          "name": "ultima_consulta_em",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
-        "pagamento_confirmado_por": {
-          "name": "pagamento_confirmado_por",
+        "proxima_consulta_em": {
+          "name": "proxima_consulta_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_controle_nsu_cliente_tipo": {
+          "name": "uidx_controle_nsu_cliente_tipo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tipo_documento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_controle_nsu_cliente_id": {
+          "name": "idx_controle_nsu_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "controle_nsu_cliente_id_clientes_id_fk": {
+          "name": "controle_nsu_cliente_id_clientes_id_fk",
+          "tableFrom": "controle_nsu",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_controle_nsu_tipo": {
+          "name": "chk_controle_nsu_tipo",
+          "value": "\"controle_nsu\".\"tipo_documento\" IN ('NFE', 'CTE')"
+        },
+        "chk_controle_nsu_ultimo": {
+          "name": "chk_controle_nsu_ultimo",
+          "value": "\"controle_nsu\".\"ultimo_nsu\" >= 0"
+        },
+        "chk_controle_nsu_max": {
+          "name": "chk_controle_nsu_max",
+          "value": "\"controle_nsu\".\"max_nsu\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.documentos_fiscais": {
+      "name": "documentos_fiscais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chave_acesso": {
+          "name": "chave_acesso",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nsu": {
+          "name": "nsu",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_documento": {
+          "name": "tipo_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "modelo": {
+          "name": "modelo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "serie": {
+          "name": "serie",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "observacao_pagamento": {
-          "name": "observacao_pagamento",
+        "numero_documento": {
+          "name": "numero_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emitente_cnpj_cpf": {
+          "name": "emitente_cnpj_cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emitente_razao_social": {
+          "name": "emitente_razao_social",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "comprovante_key": {
-          "name": "comprovante_key",
+        "destinatario_cnpj_cpf": {
+          "name": "destinatario_cnpj_cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "destinatario_razao_social": {
+          "name": "destinatario_razao_social",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "email_status": {
-          "name": "email_status",
+        "data_emissao": {
+          "name": "data_emissao",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_total": {
+          "name": "valor_total",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "situacao": {
+          "name": "situacao",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'NAO_ENVIADO'"
+          "default": "'AUTORIZADA'"
         },
-        "email_erro": {
-          "name": "email_erro",
+        "manifestacao_status": {
+          "name": "manifestacao_status",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'SEM_MANIFESTACAO'"
         },
-        "numero_parcelamento": {
-          "name": "numero_parcelamento",
+        "xml_key": {
+          "name": "xml_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "danfe_key": {
+          "name": "danfe_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -506,11 +900,39 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
-        "idx_documentos_cliente_id": {
-          "name": "idx_documentos_cliente_id",
+        "uidx_docs_fiscais_cliente_chave": {
+          "name": "uidx_docs_fiscais_cliente_chave",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "chave_acesso",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_cliente_id": {
+          "name": "idx_docs_fiscais_cliente_id",
           "columns": [
             {
               "expression": "cliente_id",
@@ -524,11 +946,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_documentos_tipo": {
-          "name": "idx_documentos_tipo",
+        "idx_docs_fiscais_tipo": {
+          "name": "idx_docs_fiscais_tipo",
           "columns": [
             {
-              "expression": "tipo",
+              "expression": "tipo_documento",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -539,11 +961,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_documentos_periodo": {
-          "name": "idx_documentos_periodo",
+        "idx_docs_fiscais_data_emissao": {
+          "name": "idx_docs_fiscais_data_emissao",
           "columns": [
             {
-              "expression": "periodo",
+              "expression": "data_emissao",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -554,11 +976,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_documentos_status": {
-          "name": "idx_documentos_status",
+        "idx_docs_fiscais_nsu": {
+          "name": "idx_docs_fiscais_nsu",
           "columns": [
             {
-              "expression": "status",
+              "expression": "nsu",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -569,11 +991,26 @@
           "method": "btree",
           "with": {}
         },
-        "idx_documentos_pagamento_confirmado_por": {
-          "name": "idx_documentos_pagamento_confirmado_por",
+        "idx_docs_fiscais_destinatario": {
+          "name": "idx_docs_fiscais_destinatario",
           "columns": [
             {
-              "expression": "pagamento_confirmado_por",
+              "expression": "destinatario_cnpj_cpf",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_emitente": {
+          "name": "idx_docs_fiscais_emitente",
+          "columns": [
+            {
+              "expression": "emitente_cnpj_cpf",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -586,9 +1023,9 @@
         }
       },
       "foreignKeys": {
-        "documentos_cliente_id_clientes_id_fk": {
-          "name": "documentos_cliente_id_clientes_id_fk",
-          "tableFrom": "documentos",
+        "documentos_fiscais_cliente_id_clientes_id_fk": {
+          "name": "documentos_fiscais_cliente_id_clientes_id_fk",
+          "tableFrom": "documentos_fiscais",
           "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
@@ -598,71 +1035,43 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "documentos_pagamento_confirmado_por_user_id_fk": {
-          "name": "documentos_pagamento_confirmado_por_user_id_fk",
-          "tableFrom": "documentos",
-          "tableTo": "user",
-          "columnsFrom": [
-            "pagamento_confirmado_por"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "uq_documentos_identidade": {
-          "name": "uq_documentos_identidade",
-          "nullsNotDistinct": true,
-          "columns": [
-            "cliente_id",
-            "tipo",
-            "periodo",
-            "numero_parcelamento"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "chk_documentos_tipo": {
-          "name": "chk_documentos_tipo",
-          "value": "\"documentos\".\"tipo\" IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')"
+        "chk_docs_fiscais_chave": {
+          "name": "chk_docs_fiscais_chave",
+          "value": "length(\"documentos_fiscais\".\"chave_acesso\") = 44"
         },
-        "chk_documentos_status": {
-          "name": "chk_documentos_status",
-          "value": "\"documentos\".\"status\" IN ('PENDENTE', 'PAGO')"
+        "chk_docs_fiscais_tipo": {
+          "name": "chk_docs_fiscais_tipo",
+          "value": "\"documentos_fiscais\".\"tipo_documento\" IN ('NFE', 'CTE', 'NFCE')"
         },
-        "chk_documentos_email_status": {
-          "name": "chk_documentos_email_status",
-          "value": "\"documentos\".\"email_status\" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')"
+        "chk_docs_fiscais_modelo": {
+          "name": "chk_docs_fiscais_modelo",
+          "value": "\"documentos_fiscais\".\"modelo\" IN ('55', '57', '65')"
         },
-        "chk_documentos_periodo": {
-          "name": "chk_documentos_periodo",
-          "value": "\"documentos\".\"periodo\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        "chk_docs_fiscais_tipo_modelo": {
+          "name": "chk_docs_fiscais_tipo_modelo",
+          "value": "(\"documentos_fiscais\".\"tipo_documento\" = 'NFE' AND \"documentos_fiscais\".\"modelo\" = '55') OR (\"documentos_fiscais\".\"tipo_documento\" = 'CTE' AND \"documentos_fiscais\".\"modelo\" = '57') OR (\"documentos_fiscais\".\"tipo_documento\" = 'NFCE' AND \"documentos_fiscais\".\"modelo\" = '65')"
         },
-        "chk_documentos_arquivo_key": {
-          "name": "chk_documentos_arquivo_key",
-          "value": "btrim(\"documentos\".\"arquivo_key\") <> ''"
+        "chk_docs_fiscais_situacao": {
+          "name": "chk_docs_fiscais_situacao",
+          "value": "\"documentos_fiscais\".\"situacao\" IN ('AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA')"
         },
-        "chk_documentos_arquivo_nome": {
-          "name": "chk_documentos_arquivo_nome",
-          "value": "btrim(\"documentos\".\"arquivo_nome\") <> ''"
+        "chk_docs_fiscais_manifestacao": {
+          "name": "chk_docs_fiscais_manifestacao",
+          "value": "\"documentos_fiscais\".\"manifestacao_status\" IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')"
         },
-        "chk_documentos_valor": {
-          "name": "chk_documentos_valor",
-          "value": "\"documentos\".\"valor\" IS NULL OR \"documentos\".\"valor\" >= 0"
+        "chk_docs_fiscais_valor": {
+          "name": "chk_docs_fiscais_valor",
+          "value": "\"documentos_fiscais\".\"valor_total\" >= 0"
         },
-        "chk_documentos_pagamento": {
-          "name": "chk_documentos_pagamento",
-          "value": "(\"documentos\".\"status\" = 'PENDENTE' AND \"documentos\".\"pago_em\" IS NULL) OR (\"documentos\".\"status\" = 'PAGO' AND \"documentos\".\"pago_em\" IS NOT NULL)"
-        },
-        "chk_documentos_numero_parcelamento": {
-          "name": "chk_documentos_numero_parcelamento",
-          "value": "\"documentos\".\"numero_parcelamento\" IS NULL OR btrim(\"documentos\".\"numero_parcelamento\") <> ''"
+        "chk_docs_fiscais_xml_key": {
+          "name": "chk_docs_fiscais_xml_key",
+          "value": "btrim(\"documentos_fiscais\".\"xml_key\") <> ''"
         }
       },
       "isRLSEnabled": false
@@ -786,6 +1195,164 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.eventos_fiscais": {
+      "name": "eventos_fiscais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "documento_fiscal_id": {
+          "name": "documento_fiscal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_evento": {
+          "name": "tipo_evento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_evento": {
+          "name": "codigo_evento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequencia_evento": {
+          "name": "sequencia_evento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "protocolo": {
+          "name": "protocolo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_sefaz": {
+          "name": "status_sefaz",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_sefaz": {
+          "name": "motivo_sefaz",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_evento": {
+          "name": "data_evento",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "xml_evento_key": {
+          "name": "xml_evento_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_eventos_fiscais_doc": {
+          "name": "idx_eventos_fiscais_doc",
+          "columns": [
+            {
+              "expression": "documento_fiscal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_eventos_fiscais_tipo": {
+          "name": "idx_eventos_fiscais_tipo",
+          "columns": [
+            {
+              "expression": "tipo_evento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_eventos_fiscais_data": {
+          "name": "idx_eventos_fiscais_data",
+          "columns": [
+            {
+              "expression": "data_evento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk": {
+          "name": "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk",
+          "tableFrom": "eventos_fiscais",
+          "tableTo": "documentos_fiscais",
+          "columnsFrom": [
+            "documento_fiscal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_eventos_fiscais_tipo": {
+          "name": "chk_eventos_fiscais_tipo",
+          "value": "\"eventos_fiscais\".\"tipo_evento\" IN ('MANIFESTACAO_CIENCIA', 'MANIFESTACAO_CONFIRMACAO', 'MANIFESTACAO_DESCONHECIMENTO', 'MANIFESTACAO_NAO_REALIZADA', 'CANCELAMENTO', 'CCE')"
+        },
+        "chk_eventos_fiscais_sequencia": {
+          "name": "chk_eventos_fiscais_sequencia",
+          "value": "\"eventos_fiscais\".\"sequencia_evento\" >= 1"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.folhas_pagamento": {
@@ -981,10 +1548,10 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "folhas_pagamento_documento_id_documentos_id_fk": {
-          "name": "folhas_pagamento_documento_id_documentos_id_fk",
+        "folhas_pagamento_documento_id_guias_id_fk": {
+          "name": "folhas_pagamento_documento_id_guias_id_fk",
           "tableFrom": "folhas_pagamento",
-          "tableTo": "documentos",
+          "tableTo": "guias",
           "columnsFrom": [
             "documento_id"
           ],
@@ -1209,6 +1776,276 @@
         "chk_funcionarios_cpf": {
           "name": "chk_funcionarios_cpf",
           "value": "\"funcionarios_rh\".\"cpf\" IS NULL OR \"funcionarios_rh\".\"cpf\" ~ '^[0-9]{11}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.guias": {
+      "name": "guias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "periodo": {
+          "name": "periodo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vencimento": {
+          "name": "vencimento",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor": {
+          "name": "valor",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "arquivo_nome": {
+          "name": "arquivo_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDENTE'"
+        },
+        "pago_em": {
+          "name": "pago_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pagamento_confirmado_por": {
+          "name": "pagamento_confirmado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observacao_pagamento": {
+          "name": "observacao_pagamento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "comprovante_key": {
+          "name": "comprovante_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email_status": {
+          "name": "email_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'NAO_ENVIADO'"
+        },
+        "email_erro": {
+          "name": "email_erro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero_parcelamento": {
+          "name": "numero_parcelamento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_guias_cliente_id": {
+          "name": "idx_guias_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_tipo": {
+          "name": "idx_guias_tipo",
+          "columns": [
+            {
+              "expression": "tipo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_periodo": {
+          "name": "idx_guias_periodo",
+          "columns": [
+            {
+              "expression": "periodo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_status": {
+          "name": "idx_guias_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_pagamento_confirmado_por": {
+          "name": "idx_guias_pagamento_confirmado_por",
+          "columns": [
+            {
+              "expression": "pagamento_confirmado_por",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "guias_cliente_id_clientes_id_fk": {
+          "name": "guias_cliente_id_clientes_id_fk",
+          "tableFrom": "guias",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "guias_pagamento_confirmado_por_user_id_fk": {
+          "name": "guias_pagamento_confirmado_por_user_id_fk",
+          "tableFrom": "guias",
+          "tableTo": "user",
+          "columnsFrom": [
+            "pagamento_confirmado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_guias_identidade": {
+          "name": "uq_guias_identidade",
+          "nullsNotDistinct": true,
+          "columns": [
+            "cliente_id",
+            "tipo",
+            "periodo",
+            "numero_parcelamento"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_guias_tipo": {
+          "name": "chk_guias_tipo",
+          "value": "\"guias\".\"tipo\" IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')"
+        },
+        "chk_guias_status": {
+          "name": "chk_guias_status",
+          "value": "\"guias\".\"status\" IN ('PENDENTE', 'PAGO')"
+        },
+        "chk_guias_email_status": {
+          "name": "chk_guias_email_status",
+          "value": "\"guias\".\"email_status\" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')"
+        },
+        "chk_guias_periodo": {
+          "name": "chk_guias_periodo",
+          "value": "\"guias\".\"periodo\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        },
+        "chk_guias_arquivo_key": {
+          "name": "chk_guias_arquivo_key",
+          "value": "btrim(\"guias\".\"arquivo_key\") <> ''"
+        },
+        "chk_guias_arquivo_nome": {
+          "name": "chk_guias_arquivo_nome",
+          "value": "btrim(\"guias\".\"arquivo_nome\") <> ''"
+        },
+        "chk_guias_valor": {
+          "name": "chk_guias_valor",
+          "value": "\"guias\".\"valor\" IS NULL OR \"guias\".\"valor\" >= 0"
+        },
+        "chk_guias_pagamento": {
+          "name": "chk_guias_pagamento",
+          "value": "(\"guias\".\"status\" = 'PENDENTE' AND \"guias\".\"pago_em\" IS NULL) OR (\"guias\".\"status\" = 'PAGO' AND \"guias\".\"pago_em\" IS NOT NULL)"
+        },
+        "chk_guias_numero_parcelamento": {
+          "name": "chk_guias_numero_parcelamento",
+          "value": "\"guias\".\"numero_parcelamento\" IS NULL OR btrim(\"guias\".\"numero_parcelamento\") <> ''"
         }
       },
       "isRLSEnabled": false
@@ -1873,103 +2710,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.visualizacoes_documentos": {
-      "name": "visualizacoes_documentos",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "documento_id": {
-          "name": "documento_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "visualizado_em": {
-          "name": "visualizado_em",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_visualizacoes_documento": {
-          "name": "idx_visualizacoes_documento",
-          "columns": [
-            {
-              "expression": "documento_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_visualizacoes_user": {
-          "name": "idx_visualizacoes_user",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "visualizacoes_documentos_documento_id_documentos_id_fk": {
-          "name": "visualizacoes_documentos_documento_id_documentos_id_fk",
-          "tableFrom": "visualizacoes_documentos",
-          "tableTo": "documentos",
-          "columnsFrom": [
-            "documento_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "visualizacoes_documentos_user_id_user_id_fk": {
-          "name": "visualizacoes_documentos_user_id_user_id_fk",
-          "tableFrom": "visualizacoes_documentos",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.visualizacoes_folhas": {
       "name": "visualizacoes_folhas",
       "schema": "",
@@ -2050,6 +2790,103 @@
         "visualizacoes_folhas_user_id_user_id_fk": {
           "name": "visualizacoes_folhas_user_id_user_id_fk",
           "tableFrom": "visualizacoes_folhas",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.visualizacoes_guias": {
+      "name": "visualizacoes_guias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "guia_id": {
+          "name": "guia_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visualizado_em": {
+          "name": "visualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_visualizacoes_guia": {
+          "name": "idx_visualizacoes_guia",
+          "columns": [
+            {
+              "expression": "guia_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visualizacoes_guia_user": {
+          "name": "idx_visualizacoes_guia_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "visualizacoes_guias_guia_id_guias_id_fk": {
+          "name": "visualizacoes_guias_guia_id_guias_id_fk",
+          "tableFrom": "visualizacoes_guias",
+          "tableTo": "guias",
+          "columnsFrom": [
+            "guia_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "visualizacoes_guias_user_id_user_id_fk": {
+          "name": "visualizacoes_guias_user_id_user_id_fk",
+          "tableFrom": "visualizacoes_guias",
           "tableTo": "user",
           "columnsFrom": [
             "user_id"

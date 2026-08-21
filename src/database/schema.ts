@@ -158,8 +158,8 @@ export const clientes = pgTable(
   ],
 );
 
-export const documentos = pgTable(
-  'documentos',
+export const guias = pgTable(
+  'guias',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     clienteId: uuid('cliente_id')
@@ -187,67 +187,67 @@ export const documentos = pgTable(
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
   },
   (table) => [
-    index('idx_documentos_cliente_id').on(table.clienteId),
-    index('idx_documentos_tipo').on(table.tipo),
-    index('idx_documentos_periodo').on(table.periodo),
-    index('idx_documentos_status').on(table.status),
-    index('idx_documentos_pagamento_confirmado_por').on(
+    index('idx_guias_cliente_id').on(table.clienteId),
+    index('idx_guias_tipo').on(table.tipo),
+    index('idx_guias_periodo').on(table.periodo),
+    index('idx_guias_status').on(table.status),
+    index('idx_guias_pagamento_confirmado_por').on(
       table.pagamentoConfirmadoPor,
     ),
-    unique('uq_documentos_identidade')
+    unique('uq_guias_identidade')
       .on(table.clienteId, table.tipo, table.periodo, table.numeroParcelamento)
       .nullsNotDistinct(),
     check(
-      'chk_documentos_tipo',
+      'chk_guias_tipo',
       sql`${table.tipo} IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')`,
     ),
     check(
-      'chk_documentos_status',
+      'chk_guias_status',
       sql`${table.status} IN ('PENDENTE', 'PAGO')`,
     ),
     check(
-      'chk_documentos_email_status',
+      'chk_guias_email_status',
       sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')`,
     ),
     check(
-      'chk_documentos_periodo',
+      'chk_guias_periodo',
       sql`${table.periodo} ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'`,
     ),
-    check('chk_documentos_arquivo_key', sql`btrim(${table.arquivoKey}) <> ''`),
+    check('chk_guias_arquivo_key', sql`btrim(${table.arquivoKey}) <> ''`),
     check(
-      'chk_documentos_arquivo_nome',
+      'chk_guias_arquivo_nome',
       sql`btrim(${table.arquivoNome}) <> ''`,
     ),
     check(
-      'chk_documentos_valor',
+      'chk_guias_valor',
       sql`${table.valor} IS NULL OR ${table.valor} >= 0`,
     ),
     check(
-      'chk_documentos_pagamento',
+      'chk_guias_pagamento',
       sql`(${table.status} = 'PENDENTE' AND ${table.pagoEm} IS NULL) OR (${table.status} = 'PAGO' AND ${table.pagoEm} IS NOT NULL)`,
     ),
     check(
-      'chk_documentos_numero_parcelamento',
+      'chk_guias_numero_parcelamento',
       sql`${table.numeroParcelamento} IS NULL OR btrim(${table.numeroParcelamento}) <> ''`,
     ),
   ],
 );
 
-export const visualizacoesDocumentos = pgTable(
-  'visualizacoes_documentos',
+export const visualizacoesGuias = pgTable(
+  'visualizacoes_guias',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    documentoId: uuid('documento_id')
+    guiaId: uuid('guia_id')
       .notNull()
-      .references(() => documentos.id, { onDelete: 'cascade' }),
+      .references(() => guias.id, { onDelete: 'cascade' }),
     userId: text('user_id').references(() => user.id, {
       onDelete: 'set null',
     }),
     visualizadoEm: timestamp('visualizado_em').notNull().defaultNow(),
   },
   (table) => [
-    index('idx_visualizacoes_documento').on(table.documentoId),
-    index('idx_visualizacoes_user').on(table.userId),
+    index('idx_visualizacoes_guia').on(table.guiaId),
+    index('idx_visualizacoes_guia_user').on(table.userId),
   ],
 );
 
@@ -336,7 +336,7 @@ export const folhasPagamento = pgTable(
     clienteId: uuid('cliente_id')
       .notNull()
       .references(() => clientes.id, { onDelete: 'cascade' }),
-    documentoId: uuid('documento_id').references(() => documentos.id, {
+    guiaId: uuid('documento_id').references(() => guias.id, {
       onDelete: 'set null',
     }),
     arquivoKey: text('arquivo_key').notNull(),
@@ -530,5 +530,183 @@ export const itensFolhaPagamento = pgTable(
       sql`COALESCE(${table.dependentesIr}, 0) >= 0 AND COALESCE(${table.dependentesSf}, 0) >= 0`,
     ),
     check('chk_itens_rubricas', sql`jsonb_typeof(${table.rubricas}) = 'array'`),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Módulo Fiscal — Certificados Digitais, NSU e Documentos Fiscais
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const certificadosDigitais = pgTable(
+  'certificados_digitais',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    cnpj: text('cnpj').notNull(),
+    razaoSocial: text('razao_social').notNull(),
+    arquivoKey: text('arquivo_key').notNull(),
+    senhaCriptografada: text('senha_criptografada').notNull(),
+    thumbprint: text('thumbprint'),
+    emissor: text('emissor'),
+    validadeInicio: timestamp('validade_inicio').notNull(),
+    validadeFim: timestamp('validade_fim').notNull(),
+    status: text('status').notNull().default('ATIVO'),
+    uploadadoPor: text('uploadado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_certificados_cliente_id').on(table.clienteId),
+    index('idx_certificados_cnpj').on(table.cnpj),
+    index('idx_certificados_status').on(table.status),
+    index('idx_certificados_validade_fim').on(table.validadeFim),
+    uniqueIndex('uidx_certificados_cliente_ativo')
+      .on(table.clienteId)
+      .where(sql`status IN ('ATIVO', 'PRESTES_A_EXPIRAR')`),
+    check(
+      'chk_certificados_status',
+      sql`${table.status} IN ('ATIVO', 'EXPIRADO', 'PRESTES_A_EXPIRAR', 'REVOGADO')`,
+    ),
+    check('chk_certificados_cnpj', sql`${table.cnpj} ~ '^[0-9]{14}$'`),
+    check(
+      'chk_certificados_validade',
+      sql`${table.validadeInicio} < ${table.validadeFim}`,
+    ),
+    check(
+      'chk_certificados_arquivo_key',
+      sql`btrim(${table.arquivoKey}) <> ''`,
+    ),
+  ],
+);
+
+export const controleNsu = pgTable(
+  'controle_nsu',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    cnpj: text('cnpj').notNull(),
+    tipoDocumento: text('tipo_documento').notNull(),
+    ultimoNsu: bigint('ultimo_nsu', { mode: 'number' }).notNull().default(0),
+    maxNsu: bigint('max_nsu', { mode: 'number' }).notNull().default(0),
+    statusSefaz: integer('status_sefaz'),
+    motivoSefaz: text('motivo_sefaz'),
+    ultimaConsultaEm: timestamp('ultima_consulta_em'),
+    proximaConsultaEm: timestamp('proxima_consulta_em'),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_controle_nsu_cliente_tipo').on(
+      table.clienteId,
+      table.tipoDocumento,
+    ),
+    index('idx_controle_nsu_cliente_id').on(table.clienteId),
+    check(
+      'chk_controle_nsu_tipo',
+      sql`${table.tipoDocumento} IN ('NFE', 'CTE')`,
+    ),
+    check('chk_controle_nsu_ultimo', sql`${table.ultimoNsu} >= 0`),
+    check('chk_controle_nsu_max', sql`${table.maxNsu} >= 0`),
+  ],
+);
+
+export const documentosFiscais = pgTable(
+  'documentos_fiscais',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    chaveAcesso: text('chave_acesso').notNull(),
+    nsu: bigint('nsu', { mode: 'number' }).notNull(),
+    tipoDocumento: text('tipo_documento').notNull(),
+    modelo: text('modelo').notNull(),
+    serie: text('serie'),
+    numeroDocumento: text('numero_documento').notNull(),
+    emitenteCnpjCpf: text('emitente_cnpj_cpf').notNull(),
+    emitenteRazaoSocial: text('emitente_razao_social'),
+    destinatarioCnpjCpf: text('destinatario_cnpj_cpf').notNull(),
+    destinatarioRazaoSocial: text('destinatario_razao_social'),
+    dataEmissao: timestamp('data_emissao').notNull(),
+    valorTotal: numeric('valor_total', { precision: 14, scale: 2 }).notNull(),
+    situacao: text('situacao').notNull().default('AUTORIZADA'),
+    manifestacaoStatus: text('manifestacao_status')
+      .notNull()
+      .default('SEM_MANIFESTACAO'),
+    xmlKey: text('xml_key').notNull(),
+    danfeKey: text('danfe_key'),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_docs_fiscais_cliente_chave').on(
+      table.clienteId,
+      table.chaveAcesso,
+    ),
+    index('idx_docs_fiscais_cliente_id').on(table.clienteId),
+    index('idx_docs_fiscais_tipo').on(table.tipoDocumento),
+    index('idx_docs_fiscais_data_emissao').on(table.dataEmissao),
+    index('idx_docs_fiscais_nsu').on(table.nsu),
+    index('idx_docs_fiscais_destinatario').on(table.destinatarioCnpjCpf),
+    index('idx_docs_fiscais_emitente').on(table.emitenteCnpjCpf),
+    check('chk_docs_fiscais_chave', sql`length(${table.chaveAcesso}) = 44`),
+    check(
+      'chk_docs_fiscais_tipo',
+      sql`${table.tipoDocumento} IN ('NFE', 'CTE', 'NFCE')`,
+    ),
+    check(
+      'chk_docs_fiscais_modelo',
+      sql`${table.modelo} IN ('55', '57', '65')`,
+    ),
+    check(
+      'chk_docs_fiscais_tipo_modelo',
+      sql`(${table.tipoDocumento} = 'NFE' AND ${table.modelo} = '55') OR (${table.tipoDocumento} = 'CTE' AND ${table.modelo} = '57') OR (${table.tipoDocumento} = 'NFCE' AND ${table.modelo} = '65')`,
+    ),
+    check(
+      'chk_docs_fiscais_situacao',
+      sql`${table.situacao} IN ('AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA')`,
+    ),
+    check(
+      'chk_docs_fiscais_manifestacao',
+      sql`${table.manifestacaoStatus} IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')`,
+    ),
+    check('chk_docs_fiscais_valor', sql`${table.valorTotal} >= 0`),
+    check('chk_docs_fiscais_xml_key', sql`btrim(${table.xmlKey}) <> ''`),
+  ],
+);
+
+export const eventosFiscais = pgTable(
+  'eventos_fiscais',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    documentoFiscalId: uuid('documento_fiscal_id')
+      .notNull()
+      .references(() => documentosFiscais.id, { onDelete: 'cascade' }),
+    tipoEvento: text('tipo_evento').notNull(),
+    codigoEvento: text('codigo_evento').notNull(),
+    sequenciaEvento: integer('sequencia_evento').notNull().default(1),
+    descricao: text('descricao'),
+    protocolo: text('protocolo'),
+    statusSefaz: integer('status_sefaz'),
+    motivoSefaz: text('motivo_sefaz'),
+    dataEvento: timestamp('data_evento').notNull().defaultNow(),
+    xmlEventoKey: text('xml_evento_key'),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_eventos_fiscais_doc').on(table.documentoFiscalId),
+    index('idx_eventos_fiscais_tipo').on(table.tipoEvento),
+    index('idx_eventos_fiscais_data').on(table.dataEvento),
+    check(
+      'chk_eventos_fiscais_tipo',
+      sql`${table.tipoEvento} IN ('MANIFESTACAO_CIENCIA', 'MANIFESTACAO_CONFIRMACAO', 'MANIFESTACAO_DESCONHECIMENTO', 'MANIFESTACAO_NAO_REALIZADA', 'CANCELAMENTO', 'CCE')`,
+    ),
+    check('chk_eventos_fiscais_sequencia', sql`${table.sequenciaEvento} >= 1`),
   ],
 );

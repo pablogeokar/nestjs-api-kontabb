@@ -222,10 +222,12 @@ export class AuthService {
 
   /**
    * Create a password reset token for the given email.
-   * Returns the token string if the user exists, null otherwise.
+   * Returns the token and userId if the user exists, null otherwise.
    * Token expires in 1 hour.
    */
-  async createPasswordResetToken(email: string): Promise<string | null> {
+  async createPasswordResetToken(
+    email: string,
+  ): Promise<{ token: string; userId: string } | null> {
     const [existingUser] = await this.database.db
       .select({ id: user.id })
       .from(user)
@@ -251,7 +253,7 @@ export class AuthService {
       expiresAt,
     });
 
-    return token;
+    return { token, userId: existingUser.id };
   }
 
   /**

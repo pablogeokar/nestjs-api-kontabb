@@ -18,7 +18,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { DocumentosService } from '../documentos/documentos.service';
+import { GuiasService } from '../guias/guias.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StaffOnly } from '../auth/roles.decorator';
@@ -56,11 +56,11 @@ function vencimentoToIso(v: string): string {
 @StaffOnly()
 export class UploadController {
   constructor(
-    private readonly documentosService: DocumentosService,
+    private readonly guiasService: GuiasService,
     private readonly clientesService: ClientesService,
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
-  ) {}
+  ) { }
 
   @Post()
   @HttpCode(HttpStatus.OK)
@@ -68,7 +68,7 @@ export class UploadController {
     FilesInterceptor('files', 20, { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
   @ApiOperation({
-    summary: 'Upload de documentos fiscais',
+    summary: 'Upload de guias fiscais',
     description:
       'Faz upload de até 20 PDFs por vez. Extrai automaticamente CNPJ/CPF, tipo, período e vencimento do conteúdo do PDF. Aceita parâmetros manuais para sobrescrever os dados extraídos.',
   })
@@ -350,7 +350,7 @@ export class UploadController {
       periodo ||
       `${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
 
-    const existing = await this.documentosService.findDuplicateDocument({
+    const existing = await this.guiasService.findDuplicateGuia({
       clientId: client.id,
       type: tipo,
       period: finalPeriod,
@@ -360,7 +360,7 @@ export class UploadController {
       return {
         fileName: file.originalname,
         success: false,
-        message: `Documento duplicado: já existe um ${tipo} para o período ${finalPeriod} deste cliente (enviado como "${existing.arquivoNome}").`,
+        message: `Guia duplicada: já existe um ${tipo} para o período ${finalPeriod} deste cliente (enviado como "${existing.arquivoNome}").`,
         cnpj: client.cnpj,
         period: finalPeriod,
         type: tipo,
@@ -374,7 +374,7 @@ export class UploadController {
       ? `${dados.parcelamento.parcela ?? '?'}/${dados.parcelamento.totalParcelas ?? '?'}`
       : null;
 
-    const upload = await this.documentosService.uploadDocument({
+    const upload = await this.guiasService.uploadGuia({
       requestId: ctx.requestId,
       actorUserId: ctx.actorUserId,
       client: {
@@ -397,10 +397,10 @@ export class UploadController {
     if (!upload.ok) {
       const message =
         upload.code === 'DUPLICATE'
-          ? `Documento duplicado: já existe um ${tipo} para o período ${finalPeriod}.`
+          ? `Guia duplicada: já existe um ${tipo} para o período ${finalPeriod}.`
           : upload.code === 'STORAGE_FAILED'
-            ? 'Falha ao armazenar o documento. Tente novamente.'
-            : 'Falha ao registrar o documento. Tente novamente.';
+            ? 'Falha ao armazenar a guia. Tente novamente.'
+            : 'Falha ao registrar a guia. Tente novamente.';
       return {
         fileName: file.originalname,
         success: false,
@@ -412,7 +412,7 @@ export class UploadController {
     return {
       fileName: file.originalname,
       success: true,
-      message: 'Documento processado com sucesso.',
+      message: 'Guia processada com sucesso.',
       cnpj: client.cnpj,
       period: finalPeriod,
       type: tipo,

@@ -71,23 +71,23 @@ pnpm start:prod
 | POST   | `/api/admin/clientes/batch`          | Criar clientes em lote            |
 | PATCH  | `/api/admin/clientes/:id`            | Atualizar cliente                 |
 | DELETE | `/api/admin/clientes/:id`            | Excluir cliente                   |
-| GET    | `/api/admin/clientes/:id/documentos` | Documentos do cliente             |
+| GET    | `/api/admin/clientes/:id/guias`      | Guias do cliente                  |
 
-### Admin — Documentos (Staff)
+### Admin — Guias (Staff)
 
-| Método | Rota                                      | Descrição                             |
-| ------ | ----------------------------------------- | ------------------------------------- |
-| GET    | `/api/admin/documentos`                   | Listar documentos (paginado, filtros) |
-| DELETE | `/api/admin/documentos/:id`               | Excluir documento                     |
-| POST   | `/api/admin/documentos/:id/notificar`     | Enviar notificação por e-mail         |
-| GET    | `/api/admin/documentos/:id/visualizacoes` | Histórico de visualizações            |
+| Método | Rota                                    | Descrição                        |
+| ------ | --------------------------------------- | -------------------------------- |
+| GET    | `/api/admin/guias`                      | Listar guias (paginado, filtros) |
+| DELETE | `/api/admin/guias/:id`                  | Excluir guia                     |
+| POST   | `/api/admin/guias/:id/notificar`        | Enviar notificação por e-mail    |
+| GET    | `/api/admin/guias/:id/visualizacoes`    | Histórico de visualizações       |
 
 ### Admin — Upload (Staff)
 
-| Método | Rota                         | Descrição                 |
-| ------ | ---------------------------- | ------------------------- |
-| POST   | `/api/admin/upload`          | Upload de PDFs (FormData) |
-| POST   | `/api/admin/upload/validate` | Pré-validação de PDFs     |
+| Método | Rota                         | Descrição                       |
+| ------ | ---------------------------- | ------------------------------- |
+| POST   | `/api/admin/upload`          | Upload de guias PDF (FormData)  |
+| POST   | `/api/admin/upload/validate` | Pré-validação de PDFs           |
 
 ### Admin — Usuários (Admin)
 
@@ -108,18 +108,18 @@ pnpm start:prod
 
 ### Cliente
 
-| Método | Rota                       | Descrição                  |
-| ------ | -------------------------- | -------------------------- |
-| GET    | `/api/cliente/documentos`  | Listar documentos próprios |
-| PATCH  | `/api/cliente/first-login` | Completar primeiro acesso  |
+| Método | Rota                       | Descrição                |
+| ------ | -------------------------- | ------------------------ |
+| GET    | `/api/cliente/guias`       | Listar guias próprias    |
+| PATCH  | `/api/cliente/first-login` | Completar primeiro acesso|
 
-### Documentos (Autenticado)
+### Guias (Autenticado)
 
-| Método | Rota                              | Descrição                         |
-| ------ | --------------------------------- | --------------------------------- |
-| GET    | `/api/documentos/:id`             | Obter URL assinada do arquivo     |
-| GET    | `/api/documentos/:id/comprovante` | Obter URL assinada do comprovante |
-| PATCH  | `/api/documentos/:id/pagar`       | Confirmar pagamento               |
+| Método | Rota                          | Descrição                         |
+| ------ | ----------------------------- | --------------------------------- |
+| GET    | `/api/guias/:id`              | Obter URL assinada do arquivo     |
+| GET    | `/api/guias/:id/comprovante`  | Obter URL assinada do comprovante |
+| PATCH  | `/api/guias/:id/pagar`        | Confirmar pagamento               |
 
 ## Autenticação
 
@@ -193,4 +193,4 @@ pnpm build
 ```
 
 Os testes unitários cobrem assinatura do cookie, nomes normal/seguro, Bearer,
-sessões inválidas, matriz de papéis e autorização do comprovante.
+sessões inválidas, matriz de papéis e autorização do comprovante de guia.

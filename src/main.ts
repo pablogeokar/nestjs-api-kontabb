@@ -41,7 +41,7 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Kontabb API')
     .setDescription(
-      'API do sistema Kontabb — gestão de obrigações fiscais, clientes e documentos contábeis.',
+      'API do sistema Kontabb — gestão de obrigações fiscais, clientes e guias contábeis.',
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -52,10 +52,10 @@ async function bootstrap() {
     .addTag('Dashboard', 'Dados do painel administrativo')
     .addTag('Clientes (Admin)', 'CRUD de clientes — acesso staff')
     .addTag('Cliente', 'Operações do próprio cliente autenticado')
-    .addTag('Documentos', 'Acesso a documentos e confirmação de pagamento')
-    .addTag('Documentos (Admin)', 'Gestão administrativa de documentos')
-    .addTag('Documentos (Cliente)', 'Listagem de documentos do cliente')
-    .addTag('Upload', 'Upload de documentos fiscais — acesso staff')
+    .addTag('Guias', 'Acesso a guias e confirmação de pagamento')
+    .addTag('Guias (Admin)', 'Gestão administrativa de guias')
+    .addTag('Guias (Cliente)', 'Listagem de guias do cliente')
+    .addTag('Upload', 'Upload de guias fiscais — acesso staff')
     .addTag('Usuários', 'CRUD de usuários do sistema — acesso admin')
     .addTag('Storage', 'Operações de limpeza de armazenamento — acesso admin')
     .addTag('Cron', 'Endpoints de rotinas automatizadas')

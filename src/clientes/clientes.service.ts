@@ -262,7 +262,7 @@ export class ClientesService {
       ),
       target_files AS MATERIALIZED (
         SELECT d.id, d.arquivo_key, d.comprovante_key
-        FROM documentos d INNER JOIN target_client c ON c.id = d.cliente_id
+        FROM guias d INNER JOIN target_client c ON c.id = d.cliente_id
       ),
       deleted_client AS (
         DELETE FROM clientes c USING target_client target WHERE c.id = target.id
@@ -314,12 +314,29 @@ export class ClientesService {
         id: clientes.id,
         companyName: clientes.razaoSocial,
         cnpj: clientes.cnpj,
+        uf: clientes.uf,
         primeiroLogin: clientes.primeiroLogin,
       })
       .from(clientes)
       .where(eq(clientes.userId, userId))
       .limit(1);
     return result[0];
+  }
+
+  /**
+   * Returns the first real email from the clientes.emails array for a given user.
+   * Used by the password-reset flow to resolve a deliverable address
+   * when the auth email is a non-routable @kontabb.local placeholder.
+   */
+  async getClientEmailByUserId(userId: string): Promise<string | null> {
+    const result = await this.database.db
+      .select({ emails: clientes.emails })
+      .from(clientes)
+      .where(eq(clientes.userId, userId))
+      .limit(1);
+
+    const emails = result[0]?.emails;
+    return emails && emails.length > 0 ? emails[0] : null;
   }
 
   /**

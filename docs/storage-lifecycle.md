@@ -1,9 +1,9 @@
-# Ciclo de vida de documentos e objetos no R2
+# Ciclo de vida de guias e objetos no R2
 
 ## Política técnica atual
 
 - A exclusão solicitada por um administrador é definitiva para os registros de
-  cliente ou documento no banco da aplicação.
+  cliente ou guia no banco da aplicação.
 - A alteração do PostgreSQL, a criação do evento de auditoria e o agendamento da
   limpeza do R2 acontecem em uma única operação atômica.
 - Os objetos do R2 são removidos somente depois da confirmação do banco. Falhas
@@ -52,5 +52,5 @@ automaticamente reivindicado. Investigue se o mesmo job acumular falhas.
 ## Decisão organizacional pendente
 
 Antes de configurar expurgo automático, o responsável jurídico/contábil deve
-definir prazos mínimos para documentos fiscais, eventos de auditoria e registros
-de visualização.
+definir prazos mínimos para guias de pagamento, documentos fiscais, eventos de
+auditoria e registros de visualização.

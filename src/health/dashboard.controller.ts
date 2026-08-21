@@ -7,7 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes, documentos } from '../database/schema';
+import { clientes, guias } from '../database/schema';
 import { AuthGuard } from '../auth/auth.guard';
 import { StaffOnly } from '../auth/roles.decorator';
 import { deriveDocumentStatus, getBahiaDate } from '../common/document-status';
@@ -18,13 +18,13 @@ import { deriveDocumentStatus, getBahiaDate } from '../common/document-status';
 @UseGuards(AuthGuard)
 @StaffOnly()
 export class DashboardController {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(private readonly database: DatabaseService) { }
 
   @Get()
   @ApiOperation({
     summary: 'Obter dados do dashboard',
     description:
-      'Retorna métricas resumidas: total de clientes, documentos, vencidos e uploads do mês, além dos 5 documentos mais recentes.',
+      'Retorna métricas resumidas: total de clientes, guias, vencidos e uploads do mês, além das 5 guias mais recentes.',
   })
   @ApiResponse({
     status: 200,
@@ -47,32 +47,32 @@ export class DashboardController {
       this.database.db.select({ count: sql<number>`count(*)` }).from(clientes),
       this.database.db
         .select({ count: sql<number>`count(*)` })
-        .from(documentos),
+        .from(guias),
       this.database.db
         .select({ count: sql<number>`count(*)` })
-        .from(documentos)
+        .from(guias)
         .where(
           and(
-            lt(documentos.vencimento, today),
-            eq(documentos.status, 'PENDENTE'),
+            lt(guias.vencimento, today),
+            eq(guias.status, 'PENDENTE'),
           ),
         ),
       this.database.db
         .select({ count: sql<number>`count(*)` })
-        .from(documentos)
-        .where(gte(documentos.criadoEm, firstDayOfMonth)),
+        .from(guias)
+        .where(gte(guias.criadoEm, firstDayOfMonth)),
       this.database.db
         .select({
-          id: documentos.id,
-          type: documentos.tipo,
-          period: documentos.periodo,
-          dueDate: documentos.vencimento,
-          status: documentos.status,
+          id: guias.id,
+          type: guias.tipo,
+          period: guias.periodo,
+          dueDate: guias.vencimento,
+          status: guias.status,
           companyName: clientes.razaoSocial,
         })
-        .from(documentos)
-        .leftJoin(clientes, eq(documentos.clienteId, clientes.id))
-        .orderBy(desc(documentos.criadoEm))
+        .from(guias)
+        .leftJoin(clientes, eq(guias.clienteId, clientes.id))
+        .orderBy(desc(guias.criadoEm))
         .limit(5),
     ]);
 

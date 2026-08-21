@@ -31,12 +31,12 @@ O rollback reabre o valor persistido `VENCIDO` e o recompõe pela mesma regra de
 data usada na aplicação:
 
 ```sql
-ALTER TABLE documentos DROP CONSTRAINT IF EXISTS chk_documentos_status;
-ALTER TABLE documentos
-  ADD CONSTRAINT chk_documentos_status
+ALTER TABLE guias DROP CONSTRAINT IF EXISTS chk_guias_status;
+ALTER TABLE guias
+  ADD CONSTRAINT chk_guias_status
   CHECK (status IN ('PENDENTE', 'VENCIDO', 'PAGO'));
 
-UPDATE documentos
+UPDATE guias
 SET status = 'VENCIDO'
 WHERE status = 'PENDENTE'
   AND vencimento < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bahia')::date;

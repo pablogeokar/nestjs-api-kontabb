@@ -307,13 +307,43 @@ export class AuthController {
     });
 
     // Generate token and send email (never reveal if user exists)
-    const token = await this.authService.createPasswordResetToken(email);
+    const result = await this.authService.createPasswordResetToken(email);
 
-    if (token) {
+    if (result) {
       const appUrl = this.configService.getOrThrow<string>('APP_URL');
-      const resetLink = `${appUrl}/redefinir-senha?token=${token}`;
-      await this.mailService.sendPasswordResetEmail({ to: email, resetLink });
-      this.logger.info('password_reset_requested', { email });
+      const resetLink = `${appUrl}/redefinir-senha?token=${result.token}`;
+
+      // For @kontabb.local users (CLIENTE role), resolve the real email
+      // from the clientes table instead of sending to the non-routable address.
+      let deliveryEmail = email;
+      if (email.endsWith('@kontabb.local')) {
+        const realEmail = await this.clientesService.getClientEmailByUserId(
+          result.userId,
+        );
+        if (realEmail) {
+          deliveryEmail = realEmail;
+        } else {
+          // No real email found — skip sending (cannot deliver)
+          this.logger.warn('password_reset_no_client_email', {
+            email,
+            userId: result.userId,
+          });
+          return {
+            success: true,
+            message:
+              'Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.',
+          };
+        }
+      }
+
+      await this.mailService.sendPasswordResetEmail({
+        to: deliveryEmail,
+        resetLink,
+      });
+      this.logger.info('password_reset_requested', {
+        email,
+        deliveryEmail,
+      });
     }
 
     return {

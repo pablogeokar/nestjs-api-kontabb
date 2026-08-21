@@ -6,8 +6,8 @@ import {
 import { Test } from '@nestjs/testing';
 import type { Server } from 'http';
 import request from 'supertest';
-import { DocumentosController } from './documentos.controller';
-import { DocumentosService } from './documentos.service';
+import { GuiasController } from './guias.controller';
+import { GuiasService } from './guias.service';
 import { AppLogger } from '../common/logger.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import type { CurrentUser } from '../common/types';
@@ -26,15 +26,15 @@ const STAFF: CurrentUser = {
     role: 'ADMIN',
 };
 
-describe('DocumentosController receipt URL', () => {
-    const getAccessibleDocument = jest.fn();
+describe('GuiasController receipt URL', () => {
+    const getAccessibleGuia = jest.fn();
     const getSignedUrl = jest.fn();
     const consume = jest.fn().mockResolvedValue(undefined);
-    const controller = new DocumentosController(
+    const controller = new GuiasController(
         {
-            getAccessibleDocument,
+            getAccessibleGuia,
             getSignedUrl,
-        } as unknown as DocumentosService,
+        } as unknown as GuiasService,
         { generateRequestId: jest.fn() } as unknown as AppLogger,
         { consume } as unknown as RateLimitService,
     );
@@ -45,8 +45,8 @@ describe('DocumentosController receipt URL', () => {
     });
 
     it('returns a short-lived signed URL for an authorized receipt', async () => {
-        getAccessibleDocument.mockResolvedValue({
-            document: { comprovanteKey: 'receipts/document/receipt.pdf' },
+        getAccessibleGuia.mockResolvedValue({
+            guia: { comprovanteKey: 'receipts/guia/receipt.pdf' },
             authorized: true,
         });
         getSignedUrl.mockResolvedValue('https://signed.example/receipt');
@@ -58,13 +58,13 @@ describe('DocumentosController receipt URL', () => {
             ),
         ).resolves.toEqual({ url: 'https://signed.example/receipt' });
         expect(getSignedUrl).toHaveBeenCalledWith(
-            'receipts/document/receipt.pdf',
+            'receipts/guia/receipt.pdf',
         );
     });
 
     it('allows staff to access an existing receipt', async () => {
-        getAccessibleDocument.mockResolvedValue({
-            document: { comprovanteKey: 'receipts/document/receipt.pdf' },
+        getAccessibleGuia.mockResolvedValue({
+            guia: { comprovanteKey: 'receipts/guia/receipt.pdf' },
             authorized: true,
         });
         getSignedUrl.mockResolvedValue('https://signed.example/receipt');
@@ -75,15 +75,15 @@ describe('DocumentosController receipt URL', () => {
                 STAFF,
             ),
         ).resolves.toEqual({ url: 'https://signed.example/receipt' });
-        expect(getAccessibleDocument).toHaveBeenCalledWith(
+        expect(getAccessibleGuia).toHaveBeenCalledWith(
             '5e207394-50e4-41d9-90c2-34f4f5f8e462',
             STAFF,
         );
     });
 
-    it('returns 404 when the document does not exist', async () => {
-        getAccessibleDocument.mockResolvedValue({
-            document: null,
+    it('returns 404 when the guia does not exist', async () => {
+        getAccessibleGuia.mockResolvedValue({
+            guia: null,
             authorized: false,
         });
 
@@ -95,9 +95,9 @@ describe('DocumentosController receipt URL', () => {
         ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('returns 403 for another client document', async () => {
-        getAccessibleDocument.mockResolvedValue({
-            document: { comprovanteKey: 'receipt.pdf' },
+    it('returns 403 for another client guia', async () => {
+        getAccessibleGuia.mockResolvedValue({
+            guia: { comprovanteKey: 'receipt.pdf' },
             authorized: false,
         });
 
@@ -109,9 +109,9 @@ describe('DocumentosController receipt URL', () => {
         ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('returns 404 when the document has no receipt', async () => {
-        getAccessibleDocument.mockResolvedValue({
-            document: { comprovanteKey: null },
+    it('returns 404 when the guia has no receipt', async () => {
+        getAccessibleGuia.mockResolvedValue({
+            guia: { comprovanteKey: null },
             authorized: true,
         });
 
@@ -124,17 +124,17 @@ describe('DocumentosController receipt URL', () => {
     });
 });
 
-describe('DocumentosController receipt route validation', () => {
+describe('GuiasController receipt route validation', () => {
     let app: INestApplication;
 
     beforeAll(async () => {
         const module = await Test.createTestingModule({
-            controllers: [DocumentosController],
+            controllers: [GuiasController],
             providers: [
                 {
-                    provide: DocumentosService,
+                    provide: GuiasService,
                     useValue: {
-                        getAccessibleDocument: jest.fn(),
+                        getAccessibleGuia: jest.fn(),
                         getSignedUrl: jest.fn(),
                     },
                 },
@@ -169,9 +169,9 @@ describe('DocumentosController receipt route validation', () => {
         await app.close();
     });
 
-    it('returns 400 for an invalid receipt document UUID', async () => {
+    it('returns 400 for an invalid receipt guia UUID', async () => {
         await request(app.getHttpServer() as Server)
-            .get('/documentos/not-a-uuid/comprovante')
+            .get('/guias/not-a-uuid/comprovante')
             .expect(400);
     });
 });
