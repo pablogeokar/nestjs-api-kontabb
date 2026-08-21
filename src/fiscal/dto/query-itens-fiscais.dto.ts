@@ -34,6 +34,16 @@ export class QueryItensFiscaisDto {
   @Matches(/^\d{4}$/)
   cfop?: string;
 
+  @ApiPropertyOptional({ description: 'CFOP original do XML', example: '5102' })
+  @IsOptional()
+  @Matches(/^\d{4}$/)
+  cfopXml?: string;
+
+  @ApiPropertyOptional({ enum: ['ENTRADA', 'SAIDA'] })
+  @IsOptional()
+  @Matches(/^(ENTRADA|SAIDA)$/)
+  tipoOperacao?: 'ENTRADA' | 'SAIDA';
+
   @ApiPropertyOptional({ description: 'CST/CSOSN exato', example: '00' })
   @IsOptional()
   @Matches(/^\d{2,4}$/)

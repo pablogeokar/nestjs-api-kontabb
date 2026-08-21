@@ -327,6 +327,8 @@ export class AdminFiscalController {
       clienteId: query.clienteId,
       documentoId: query.documentoId,
       cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
       cst: query.cst,
       cstIcms: query.cstIcms,
       csosnIcms: query.csosnIcms,
@@ -353,6 +355,8 @@ export class AdminFiscalController {
       documentoId: id,
       clienteId: query.clienteId,
       cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
       cst: query.cst,
       cstIcms: query.cstIcms,
       csosnIcms: query.csosnIcms,
@@ -375,6 +379,8 @@ export class AdminFiscalController {
         clienteId: query.clienteId,
         documentoId: query.documentoId,
         cfop: query.cfop,
+        cfopXml: query.cfopXml,
+        tipoOperacao: query.tipoOperacao,
         cst: query.cst,
         ncm: query.ncm,
         dataInicio: parseFiscalStartDate(query.dataInicio),
@@ -389,6 +395,8 @@ export class AdminFiscalController {
     return {
       data: await this.fiscalItensService.getProdutos0200({
         clienteId: query.clienteId,
+        cfopXml: query.cfopXml,
+        tipoOperacao: query.tipoOperacao,
         codigoProduto: query.codigoProduto,
         ncm: query.ncm,
         dataInicio: parseFiscalStartDate(query.dataInicio),
@@ -404,6 +412,25 @@ export class AdminFiscalController {
       data: await this.fiscalItensService.getResumoLivros({
         clienteId: query.clienteId,
         cfop: query.cfop,
+        cfopXml: query.cfopXml,
+        tipoOperacao: query.tipoOperacao,
+        cst: query.cst,
+        ncm: query.ncm,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
+  }
+
+  @Get('relatorios/apuracao-icms')
+  @ApiOperation({ summary: 'Consolidar créditos, débitos e saldo de ICMS' })
+  async getApuracaoIcms(@Query() query: QueryItensFiscaisDto) {
+    return {
+      data: await this.fiscalItensService.getApuracaoIcms({
+        clienteId: query.clienteId,
+        cfop: query.cfop,
+        cfopXml: query.cfopXml,
+        tipoOperacao: query.tipoOperacao,
         cst: query.cst,
         ncm: query.ncm,
         dataInicio: parseFiscalStartDate(query.dataInicio),

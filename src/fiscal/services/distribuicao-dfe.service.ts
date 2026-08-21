@@ -30,6 +30,7 @@ import {
   clientes,
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
+import { CfopService } from './cfop.service';
 
 export interface FiscalSyncResult {
   status: 'OK' | 'ADIADO' | 'SCHEMA_ERROR' | 'CONSUMO_INDEVIDO' | 'ERRO';
@@ -55,6 +56,7 @@ export class DistribuicaoDfeService {
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
     private readonly nfeWizard: NfeWizardService,
+    private readonly cfopService: CfopService,
   ) {}
 
   /**
@@ -445,6 +447,8 @@ export class DistribuicaoDfeService {
           valorTotal: documentosFiscais.valorTotal,
           situacao: documentosFiscais.situacao,
           manifestacaoStatus: documentosFiscais.manifestacaoStatus,
+          tipoOperacaoEscriturada: documentosFiscais.tipoOperacaoEscriturada,
+          tpNfXml: documentosFiscais.tpNfXml,
           criadoEm: documentosFiscais.criadoEm,
         })
         .from(documentosFiscais)
@@ -471,6 +475,8 @@ export class DistribuicaoDfeService {
       valor_total: row.valorTotal,
       situacao: row.situacao,
       manifestacao_status: row.manifestacaoStatus,
+      tipo_operacao_escriturada: row.tipoOperacaoEscriturada,
+      tp_nf_xml: row.tpNfXml,
       criado_em: row.criadoEm.toISOString(),
     }));
 
@@ -686,6 +692,13 @@ export class DistribuicaoDfeService {
     cnpj: string,
     parsed: ParsedDocumentoFiscal,
   ): Promise<boolean> {
+    const escrituracao = await this.cfopService.prepararItensEscrituracao({
+      clienteId,
+      clienteCnpjCpf: cnpj,
+      emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+      tpNfXml: parsed.tpNfXml,
+      itens: parsed.itens,
+    });
     // Um resumo/evento salvo por uma versao anterior deve ser substituido
     // quando o XML fiscal completo chegar para o mesmo cliente.
     const existing = await this.database.db
@@ -710,11 +723,23 @@ export class DistribuicaoDfeService {
     if (isDuplicate) {
       await this.database.db.transaction(async (tx) => {
         await tx
+          .update(documentosFiscais)
+          .set({
+            tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+            tpNfXml: parsed.tpNfXml,
+            atualizadoEm: new Date(),
+          })
+          .where(eq(documentosFiscais.id, existing[0].id));
+        await tx
           .delete(documentosFiscaisItens)
           .where(eq(documentosFiscaisItens.documentoFiscalId, existing[0].id));
-        for (let offset = 0; offset < parsed.itens.length; offset += 300) {
+        for (
+          let offset = 0;
+          offset < escrituracao.itens.length;
+          offset += 300
+        ) {
           await tx.insert(documentosFiscaisItens).values(
-            parsed.itens.slice(offset, offset + 300).map((item) => ({
+            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
               ...item,
               documentoFiscalId: existing[0].id,
               clienteId,
@@ -756,6 +781,8 @@ export class DistribuicaoDfeService {
       dataEmissao: parsed.dataEmissao,
       valorTotal: parsed.valorTotal,
       situacao: parsed.situacao,
+      tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+      tpNfXml: parsed.tpNfXml,
       xmlKey,
     };
 
@@ -782,6 +809,8 @@ export class DistribuicaoDfeService {
               dataEmissao: parsed.dataEmissao,
               valorTotal: parsed.valorTotal,
               situacao: parsed.situacao,
+              tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+              tpNfXml: parsed.tpNfXml,
               xmlKey,
               danfeKey: null,
               atualizadoEm: new Date(),
@@ -795,9 +824,13 @@ export class DistribuicaoDfeService {
           .where(
             eq(documentosFiscaisItens.documentoFiscalId, documentoFiscalId),
           );
-        for (let offset = 0; offset < parsed.itens.length; offset += 300) {
+        for (
+          let offset = 0;
+          offset < escrituracao.itens.length;
+          offset += 300
+        ) {
           await tx.insert(documentosFiscaisItens).values(
-            parsed.itens.slice(offset, offset + 300).map((item) => ({
+            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
               ...item,
               documentoFiscalId,
               clienteId,

@@ -578,6 +578,69 @@ export const certificadosDigitais = pgTable(
   ],
 );
 
+export const cfops = pgTable(
+  'cfops',
+  {
+    codigo: varchar('codigo', { length: 4 }).primaryKey(),
+    descricao: text('descricao').notNull(),
+    tipoOperacao: varchar('tipo_operacao', { length: 10 }).notNull(),
+    abrangencia: varchar('abrangencia', { length: 15 }).notNull(),
+    grupo: text('grupo'),
+    descricaoDetalhada: text('descricao_detalhada'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_cfops_tipo').on(table.tipoOperacao),
+    index('idx_cfops_abrangencia').on(table.abrangencia),
+    check('chk_cfops_codigo', sql`${table.codigo} ~ '^[123567][0-9]{3}$'`),
+    check('chk_cfops_tipo', sql`${table.tipoOperacao} IN ('ENTRADA', 'SAIDA')`),
+    check(
+      'chk_cfops_abrangencia',
+      sql`${table.abrangencia} IN ('ESTADUAL', 'INTERESTADUAL', 'EXTERIOR')`,
+    ),
+  ],
+);
+
+export const cfopEquivalencias = pgTable(
+  'cfop_equivalencias',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id').references(() => clientes.id, {
+      onDelete: 'cascade',
+    }),
+    cfopOrigem: varchar('cfop_origem', { length: 4 })
+      .notNull()
+      .references(() => cfops.codigo, { onDelete: 'cascade' }),
+    cfopDestino: varchar('cfop_destino', { length: 4 })
+      .notNull()
+      .references(() => cfops.codigo, { onDelete: 'cascade' }),
+    tipoOperacao: varchar('tipo_operacao', { length: 20 })
+      .notNull()
+      .default('SAIDA_PARA_ENTRADA'),
+    descricao: text('descricao'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('uidx_cfop_eq_cliente_origem')
+      .on(table.clienteId, table.cfopOrigem)
+      .nullsNotDistinct(),
+    index('idx_cfop_eq_origem').on(table.cfopOrigem),
+    index('idx_cfop_eq_cliente').on(table.clienteId),
+    check(
+      'chk_cfop_eq_tipo',
+      sql`${table.tipoOperacao} IN ('SAIDA_PARA_ENTRADA', 'ENTRADA_PARA_SAIDA')`,
+    ),
+    check(
+      'chk_cfop_eq_destino_diferente',
+      sql`${table.cfopOrigem} <> ${table.cfopDestino}`,
+    ),
+  ],
+);
+
 export const controleNsu = pgTable(
   'controle_nsu',
   {
@@ -634,6 +697,12 @@ export const documentosFiscais = pgTable(
     manifestacaoStatus: text('manifestacao_status')
       .notNull()
       .default('SEM_MANIFESTACAO'),
+    tipoOperacaoEscriturada: varchar('tipo_operacao_escriturada', {
+      length: 10,
+    })
+      .notNull()
+      .default('ENTRADA'),
+    tpNfXml: varchar('tp_nf_xml', { length: 1 }),
     xmlKey: text('xml_key').notNull(),
     danfeKey: text('danfe_key'),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
@@ -671,6 +740,14 @@ export const documentosFiscais = pgTable(
       'chk_docs_fiscais_manifestacao',
       sql`${table.manifestacaoStatus} IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')`,
     ),
+    check(
+      'chk_docs_fiscais_operacao_escriturada',
+      sql`${table.tipoOperacaoEscriturada} IN ('ENTRADA', 'SAIDA')`,
+    ),
+    check(
+      'chk_docs_fiscais_tp_nf_xml',
+      sql`${table.tpNfXml} IS NULL OR ${table.tpNfXml} IN ('0', '1')`,
+    ),
     check('chk_docs_fiscais_valor', sql`${table.valorTotal} >= 0`),
     check('chk_docs_fiscais_xml_key', sql`btrim(${table.xmlKey}) <> ''`),
   ],
@@ -696,7 +773,16 @@ export const documentosFiscaisItens = pgTable(
     indEscala: varchar('ind_escala', { length: 1 }),
     cnpjFabricante: varchar('cnpj_fabricante', { length: 14 }),
     codigoBeneficioFiscal: text('codigo_beneficio_fiscal'),
+    cfopXml: varchar('cfop_xml', { length: 4 }),
     cfop: varchar('cfop', { length: 4 }).notNull(),
+    tipoOperacaoEscriturada: varchar('tipo_operacao_escriturada', {
+      length: 10,
+    })
+      .notNull()
+      .default('ENTRADA'),
+    cfopRevisaoNecessaria: boolean('cfop_revisao_necessaria')
+      .notNull()
+      .default(false),
     unidadeComercial: varchar('unidade_comercial', { length: 10 }).notNull(),
     quantidadeComercial: numeric('quantidade_comercial', {
       precision: 15,
@@ -929,6 +1015,8 @@ export const documentosFiscaisItens = pgTable(
     ),
     index('idx_item_cliente_id').on(table.clienteId),
     index('idx_item_cfop').on(table.cfop),
+    index('idx_item_cfop_xml').on(table.cfopXml),
+    index('idx_item_operacao_escriturada').on(table.tipoOperacaoEscriturada),
     index('idx_item_cst_icms').on(table.cstIcms),
     index('idx_item_csosn_icms').on(table.csosnIcms),
     index('idx_item_cst_pis').on(table.cstPis),
@@ -945,6 +1033,14 @@ export const documentosFiscaisItens = pgTable(
       sql`${table.origemMercadoria} IS NULL OR ${table.origemMercadoria} ~ '^[0-8]$'`,
     ),
     check('chk_item_cfop', sql`${table.cfop} ~ '^[1-7][0-9]{3}$'`),
+    check(
+      'chk_item_cfop_xml',
+      sql`${table.cfopXml} IS NULL OR ${table.cfopXml} ~ '^[1-7][0-9]{3}$'`,
+    ),
+    check(
+      'chk_item_operacao_escriturada',
+      sql`${table.tipoOperacaoEscriturada} IN ('ENTRADA', 'SAIDA')`,
+    ),
   ],
 );
 

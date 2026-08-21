@@ -307,6 +307,8 @@ export class ClienteFiscalController {
       clienteId: cliente.id,
       documentoId: query.documentoId,
       cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
       cst: query.cst,
       cstIcms: query.cstIcms,
       csosnIcms: query.csosnIcms,
@@ -340,6 +342,8 @@ export class ClienteFiscalController {
       clienteId: cliente.id,
       documentoId: id,
       cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
       cst: query.cst,
       cstIcms: query.cstIcms,
       csosnIcms: query.csosnIcms,
@@ -366,6 +370,8 @@ export class ClienteFiscalController {
       clienteId: cliente.id,
       documentoId: query.documentoId,
       cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
       cst: query.cst,
       ncm: query.ncm,
       dataInicio: parseFiscalStartDate(query.dataInicio),
@@ -384,6 +390,8 @@ export class ClienteFiscalController {
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
     const data = await this.fiscalItensService.getProdutos0200({
       clienteId: cliente.id,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
       codigoProduto: query.codigoProduto,
       ncm: query.ncm,
       dataInicio: parseFiscalStartDate(query.dataInicio),
@@ -403,6 +411,29 @@ export class ClienteFiscalController {
     const data = await this.fiscalItensService.getResumoLivros({
       clienteId: cliente.id,
       cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
+      cst: query.cst,
+      ncm: query.ncm,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
+    return { data };
+  }
+
+  @Get('relatorios/apuracao-icms')
+  @ApiOperation({ summary: 'Consolidar créditos, débitos e saldo de ICMS' })
+  async getApuracaoIcms(
+    @Query() query: QueryItensFiscaisDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const data = await this.fiscalItensService.getApuracaoIcms({
+      clienteId: cliente.id,
+      cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
       cst: query.cst,
       ncm: query.ncm,
       dataInicio: parseFiscalStartDate(query.dataInicio),

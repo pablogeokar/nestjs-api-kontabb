@@ -34,6 +34,7 @@ describe('DistribuicaoDfeService', () => {
       { db: { select } } as never,
       {} as never,
       {} as never,
+      createCfopServiceMock() as never,
     );
 
     const result = await service.listClientesComDocumentosFiscais();
@@ -68,6 +69,11 @@ describe('DistribuicaoDfeService', () => {
     const itemValues = jest.fn().mockResolvedValue(undefined);
     const returning = jest.fn().mockResolvedValue([{ id: 'doc-1' }]);
     const tx = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
@@ -92,6 +98,7 @@ describe('DistribuicaoDfeService', () => {
       { db: { select, transaction } } as never,
       storage as never,
       {} as never,
+      createCfopServiceMock() as never,
     );
     const documento = parseDocumentWithItem();
 
@@ -103,7 +110,7 @@ describe('DistribuicaoDfeService', () => {
           parsed: ParsedDocumentoFiscal,
         ): Promise<boolean>;
       }
-    ).salvarDocumento('cliente-1', '12345678000195', documento);
+    ).salvarDocumento('cliente-1', '98765432000110', documento);
 
     expect(result).toBe(true);
     expect(transaction).toHaveBeenCalledTimes(1);
@@ -116,6 +123,9 @@ describe('DistribuicaoDfeService', () => {
         clienteId: 'cliente-1',
         numeroItem: 1,
         codigoProduto: 'PROD-1',
+        cfopXml: '5102',
+        cfop: '1102',
+        tipoOperacaoEscriturada: 'ENTRADA',
       }),
     ]);
   });
@@ -134,6 +144,7 @@ describe('DistribuicaoDfeService', () => {
       { db: { select } } as never,
       {} as never,
       {} as never,
+      createCfopServiceMock() as never,
     );
 
     await service.getDashboardStats();
@@ -150,7 +161,7 @@ function parseDocumentWithItem(): ParsedDocumentoFiscal {
   const parsed = parseManualFiscalXml(`
     <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
       <NFe><infNFe Id="NFe${chave}">
-        <ide><mod>55</mod><serie>1</serie><nNF>123</nNF><dhEmi>2024-08-15T10:45:00-03:00</dhEmi></ide>
+        <ide><mod>55</mod><serie>1</serie><nNF>123</nNF><dhEmi>2024-08-15T10:45:00-03:00</dhEmi><tpNF>1</tpNF></ide>
         <emit><CNPJ>12345678000195</CNPJ><xNome>Emitente</xNome></emit>
         <dest><CNPJ>98765432000110</CNPJ><xNome>Destinatário</xNome></dest>
         <det nItem="1"><prod>
@@ -168,6 +179,36 @@ function parseDocumentWithItem(): ParsedDocumentoFiscal {
     throw new Error('Fixture fiscal inválida');
   }
   return parsed.documento;
+}
+
+function createCfopServiceMock() {
+  return {
+    prepararItensEscrituracao: jest.fn(
+      (params: {
+        itens: Array<{ cfop: string }>;
+        emitenteCnpjCpf: string;
+        clienteCnpjCpf: string;
+      }) => {
+        const tipoOperacaoEscriturada =
+          params.emitenteCnpjCpf === params.clienteCnpjCpf
+            ? 'SAIDA'
+            : 'ENTRADA';
+        return Promise.resolve({
+          tipoOperacaoEscriturada,
+          itens: params.itens.map((item) => ({
+            ...item,
+            cfopXml: item.cfop,
+            cfop:
+              tipoOperacaoEscriturada === 'ENTRADA' && item.cfop[0] === '5'
+                ? `1${item.cfop.slice(1)}`
+                : item.cfop,
+            tipoOperacaoEscriturada,
+            cfopRevisaoNecessaria: false,
+          })),
+        });
+      },
+    ),
+  };
 }
 
 function buildAccessKey(modelo: string): string {

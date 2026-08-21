@@ -74,6 +74,7 @@ describe('DF-e document parser', () => {
       emitenteRazaoSocial: 'Empresa & Filhos',
       destinatarioCnpjCpf: '98765432000110',
       valorTotal: '150.75',
+      tpNfXml: '1',
       situacao: 'AUTORIZADA',
     });
     expect(parsed?.dataEmissao.toISOString()).toBe('2024-08-15T13:45:00.000Z');
@@ -95,6 +96,17 @@ describe('DF-e document parser', () => {
       destinatarioCnpjCpf: '',
       destinatarioRazaoSocial: '',
     });
+  });
+
+  it('preserva tpNF de entrada própria informado no XML', () => {
+    const result = parseManualFiscalXml(
+      buildNfeProc('55').replace('<tpNF>1</tpNF>', '<tpNF>0</tpNF>'),
+    );
+
+    expect(result.status).toBe('DOCUMENTO');
+    if (result.status === 'DOCUMENTO') {
+      expect(result.documento.tpNfXml).toBe('0');
+    }
   });
 
   it('aceita somente cteProc modelo 57 na distribuicao de CT-e', () => {
@@ -214,7 +226,7 @@ function buildNfeProc(modelo: '55' | '65', withDest = true): string {
       <NFe>
         <infNFe Id="NFe${chave}" versao="4.00">
           <ide>
-            <mod>${modelo}</mod><serie>1</serie><nNF>123</nNF>
+            <mod>${modelo}</mod><serie>1</serie><nNF>123</nNF><tpNF>1</tpNF>
             <dhEmi>2024-08-15T10:45:00-03:00</dhEmi>
           </ide>
           <emit><CNPJ>12345678000195</CNPJ><xNome>Empresa &amp; Filhos</xNome></emit>

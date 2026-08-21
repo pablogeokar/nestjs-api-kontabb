@@ -11,6 +11,8 @@ interface ItemFilters {
   clienteId?: string;
   documentoId?: string;
   cfop?: string;
+  cfopXml?: string;
+  tipoOperacao?: 'ENTRADA' | 'SAIDA';
   cst?: string;
   cstIcms?: string;
   csosnIcms?: string;
@@ -71,8 +73,12 @@ export class FiscalItensService {
 
     const rows = await this.database.db
       .select({
+        tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
         cst_icms_csosn: cst,
         cfop: documentosFiscaisItens.cfop,
+        cfops_xml: sql<
+          string[]
+        >`array_remove(array_agg(DISTINCT ${documentosFiscaisItens.cfopXml}), NULL)`,
         aliquota_icms: documentosFiscaisItens.aliquotaIcms,
         vl_opr: sql<string>`COALESCE(SUM(${operacao}), 0)`,
         vl_bc_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcms}), 0)`,
@@ -89,11 +95,13 @@ export class FiscalItensService {
       )
       .where(where)
       .groupBy(
+        documentosFiscaisItens.tipoOperacaoEscriturada,
         cst,
         documentosFiscaisItens.cfop,
         documentosFiscaisItens.aliquotaIcms,
       )
       .orderBy(
+        documentosFiscaisItens.tipoOperacaoEscriturada,
         documentosFiscaisItens.cfop,
         documentosFiscaisItens.aliquotaIcms,
       );
@@ -141,16 +149,18 @@ export class FiscalItensService {
 
   async getResumoLivros(input: ItemFilters) {
     const where = this.buildWhere(input);
-    const tipoOperacao = sql<string>`CASE SUBSTRING(${documentosFiscaisItens.cfop}, 1, 1) WHEN '1' THEN 'ENTRADA' WHEN '2' THEN 'ENTRADA' WHEN '3' THEN 'ENTRADA' ELSE 'SAIDA' END`;
+    const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
 
     return this.database.db
       .select({
-        tipo_operacao: tipoOperacao,
+        tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
         cfop: documentosFiscaisItens.cfop,
         aliquota_icms: documentosFiscaisItens.aliquotaIcms,
         valor_produtos: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBrutoProduto}), 0)`,
         base_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcms}), 0)`,
-        icms_creditado_debitado: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcms}), 0)`,
+        icms_creditado_debitado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' OR (${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido}) THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        credito_icms: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        debito_icms: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
         base_icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcmsSt}), 0)`,
         icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcmsSt}), 0)`,
         ipi: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIpi}), 0)`,
@@ -162,11 +172,38 @@ export class FiscalItensService {
       )
       .where(where)
       .groupBy(
-        tipoOperacao,
+        documentosFiscaisItens.tipoOperacaoEscriturada,
         documentosFiscaisItens.cfop,
         documentosFiscaisItens.aliquotaIcms,
       )
-      .orderBy(tipoOperacao, documentosFiscaisItens.cfop);
+      .orderBy(
+        documentosFiscaisItens.tipoOperacaoEscriturada,
+        documentosFiscaisItens.cfop,
+      );
+  }
+
+  async getApuracaoIcms(input: ItemFilters) {
+    const where = this.buildWhere(input);
+    const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
+    const rows = await this.database.db
+      .select({
+        total_creditos: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        total_debitos: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        saldo_apurado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN -COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+      })
+      .from(documentosFiscaisItens)
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
+      .where(where);
+    return (
+      rows[0] ?? {
+        total_creditos: '0',
+        total_debitos: '0',
+        saldo_apurado: '0',
+      }
+    );
   }
 
   private buildWhere(input: ItemFilters): SQL | undefined {
@@ -181,6 +218,14 @@ export class FiscalItensService {
     }
     if (input.cfop) {
       conditions.push(eq(documentosFiscaisItens.cfop, input.cfop));
+    }
+    if (input.cfopXml) {
+      conditions.push(eq(documentosFiscaisItens.cfopXml, input.cfopXml));
+    }
+    if (input.tipoOperacao) {
+      conditions.push(
+        eq(documentosFiscaisItens.tipoOperacaoEscriturada, input.tipoOperacao),
+      );
     }
     if (input.cst) {
       conditions.push(
@@ -236,6 +281,12 @@ export class FiscalItensService {
       chave_acesso: row.chaveAcesso,
       modelo: row.modelo,
       data_emissao: row.dataEmissao.toISOString(),
+      escrituracao: {
+        tipo_operacao: item.tipoOperacaoEscriturada,
+        cfop_xml: item.cfopXml,
+        cfop: item.cfop,
+        revisao_necessaria: item.cfopRevisaoNecessaria,
+      },
       produto: {
         codigo_produto: item.codigoProduto,
         codigo_ean: item.codigoEan,
@@ -246,6 +297,7 @@ export class FiscalItensService {
         ind_escala: item.indEscala,
         cnpj_fabricante: item.cnpjFabricante,
         codigo_beneficio_fiscal: item.codigoBeneficioFiscal,
+        cfop_xml: item.cfopXml,
         cfop: item.cfop,
         unidade_comercial: item.unidadeComercial,
         quantidade_comercial: item.quantidadeComercial,

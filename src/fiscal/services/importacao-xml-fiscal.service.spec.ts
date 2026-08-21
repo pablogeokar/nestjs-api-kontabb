@@ -22,6 +22,7 @@ describe('ImportacaoXmlFiscalService', () => {
       {} as never,
       storage as never,
       logger as never,
+      createCfopServiceMock() as never,
     );
   });
 
@@ -110,6 +111,11 @@ describe('ImportacaoXmlFiscalService', () => {
     });
     const itemValues = jest.fn().mockResolvedValue(undefined);
     const tx = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
       delete: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue(undefined),
       }),
@@ -122,6 +128,7 @@ describe('ImportacaoXmlFiscalService', () => {
       { db: { select, transaction } } as never,
       storage as never,
       logger as never,
+      createCfopServiceMock() as never,
     );
     const parsed = parseManualFiscalXml(buildNfeProc());
     if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');
@@ -154,6 +161,9 @@ describe('ImportacaoXmlFiscalService', () => {
         documentoFiscalId: 'doc-1',
         clienteId: 'cliente-1',
         numeroItem: 1,
+        cfopXml: '5102',
+        cfop: '5102',
+        tipoOperacaoEscriturada: 'SAIDA',
       }),
     ]);
     expect(storage.upload).not.toHaveBeenCalled();
@@ -178,7 +188,7 @@ function buildNfeProc() {
     <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
       <NFe>
         <infNFe Id="NFe${chave}" versao="4.00">
-          <ide><mod>55</mod><serie>1</serie><nNF>123</nNF><dhEmi>2024-08-15T10:45:00-03:00</dhEmi></ide>
+          <ide><mod>55</mod><serie>1</serie><nNF>123</nNF><dhEmi>2024-08-15T10:45:00-03:00</dhEmi><tpNF>1</tpNF></ide>
           <emit><CNPJ>12345678000195</CNPJ><xNome>Empresa Emitente</xNome></emit>
           <dest><CNPJ>98765432000110</CNPJ><xNome>Empresa Destinatária</xNome></dest>
           <det nItem="1"><prod>
@@ -192,6 +202,36 @@ function buildNfeProc() {
       </NFe>
       <protNFe><infProt><chNFe>${chave}</chNFe><cStat>100</cStat></infProt></protNFe>
     </nfeProc>`;
+}
+
+function createCfopServiceMock() {
+  return {
+    prepararItensEscrituracao: jest.fn(
+      (params: {
+        itens: Array<{ cfop: string }>;
+        emitenteCnpjCpf: string;
+        clienteCnpjCpf: string;
+      }) => {
+        const tipoOperacaoEscriturada =
+          params.emitenteCnpjCpf === params.clienteCnpjCpf
+            ? 'SAIDA'
+            : 'ENTRADA';
+        return Promise.resolve({
+          tipoOperacaoEscriturada,
+          itens: params.itens.map((item) => ({
+            ...item,
+            cfopXml: item.cfop,
+            cfop:
+              tipoOperacaoEscriturada === 'ENTRADA' && item.cfop[0] === '5'
+                ? `1${item.cfop.slice(1)}`
+                : item.cfop,
+            tipoOperacaoEscriturada,
+            cfopRevisaoNecessaria: false,
+          })),
+        });
+      },
+    ),
+  };
 }
 
 function buildAccessKey(modelo: string): string {
