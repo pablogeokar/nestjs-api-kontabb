@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, and, gte, inArray, lt, lte } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { AppLogger } from '../../common/logger.service';
@@ -294,7 +294,7 @@ export class CertificadoService {
       .where(
         and(
           inArray(certificadosDigitais.status, ['ATIVO', 'PRESTES_A_EXPIRAR']),
-          sql`${certificadosDigitais.validadeFim} < ${now}`,
+          lt(certificadosDigitais.validadeFim, now),
         ),
       );
 
@@ -305,8 +305,8 @@ export class CertificadoService {
       .where(
         and(
           eq(certificadosDigitais.status, 'ATIVO'),
-          sql`${certificadosDigitais.validadeFim} <= ${limiteAlerta}`,
-          sql`${certificadosDigitais.validadeFim} >= ${now}`,
+          lte(certificadosDigitais.validadeFim, limiteAlerta),
+          gte(certificadosDigitais.validadeFim, now),
         ),
       );
   }

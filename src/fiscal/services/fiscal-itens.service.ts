@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, or, sql, type SQL } from 'drizzle-orm';
 import type { PaginationParams } from '../../common/types';
 import { DatabaseService } from '../../database/database.service';
 import {
@@ -213,14 +213,10 @@ export class FiscalItensService {
       );
     }
     if (input.dataInicio) {
-      conditions.push(
-        sql`${documentosFiscais.dataEmissao} >= ${input.dataInicio}`,
-      );
+      conditions.push(gte(documentosFiscais.dataEmissao, input.dataInicio));
     }
     if (input.dataFim) {
-      conditions.push(
-        sql`${documentosFiscais.dataEmissao} <= ${input.dataFim}`,
-      );
+      conditions.push(lte(documentosFiscais.dataEmissao, input.dataFim));
     }
     return conditions.length > 0 ? and(...conditions) : undefined;
   }

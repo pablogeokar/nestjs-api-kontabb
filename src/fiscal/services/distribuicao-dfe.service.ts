@@ -8,6 +8,8 @@ import {
   ilike,
   or,
   inArray,
+  gte,
+  lte,
   type SQL,
 } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
@@ -401,14 +403,10 @@ export class DistribuicaoDfeService {
       );
     }
     if (input.dataInicio) {
-      conditions.push(
-        sql`${documentosFiscais.dataEmissao} >= ${input.dataInicio}`,
-      );
+      conditions.push(gte(documentosFiscais.dataEmissao, input.dataInicio));
     }
     if (input.dataFim) {
-      conditions.push(
-        sql`${documentosFiscais.dataEmissao} <= ${input.dataFim}`,
-      );
+      conditions.push(lte(documentosFiscais.dataEmissao, input.dataFim));
     }
     if (input.search) {
       const searchTerm = `%${input.search}%`;
@@ -626,9 +624,7 @@ export class DistribuicaoDfeService {
     const mesAtual = new Date();
     const inicioMes = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1);
 
-    const conditions: SQL[] = [
-      sql`${documentosFiscais.criadoEm} >= ${inicioMes}`,
-    ];
+    const conditions: SQL[] = [gte(documentosFiscais.criadoEm, inicioMes)];
     if (clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, clienteId));
     }

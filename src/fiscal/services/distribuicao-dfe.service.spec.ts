@@ -1,4 +1,6 @@
 import { DistribuicaoDfeService } from './distribuicao-dfe.service';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import {
   documentosFiscais,
   documentosFiscaisItens,
@@ -116,6 +118,30 @@ describe('DistribuicaoDfeService', () => {
         codigoProduto: 'PROD-1',
       }),
     ]);
+  });
+
+  it('serializa o início do mês como timestamp no dashboard', async () => {
+    const whereClauses: SQL[] = [];
+    const select = jest.fn().mockImplementation(() => ({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn((condition: SQL) => {
+          whereClauses.push(condition);
+          return Promise.resolve([{ count: '0', total: '0' }]);
+        }),
+      }),
+    }));
+    const service = new DistribuicaoDfeService(
+      { db: { select } } as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.getDashboardStats();
+
+    const dashboardQuery = new PgDialect().sqlToQuery(whereClauses[0]);
+    expect(dashboardQuery.params).toHaveLength(1);
+    expect(typeof dashboardQuery.params[0]).toBe('string');
+    expect(dashboardQuery.params[0]).toMatch(/^\d{4}-\d{2}-01T/);
   });
 });
 
