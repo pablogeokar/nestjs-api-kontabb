@@ -8,6 +8,13 @@
       "when": 1786965224065,
       "tag": "0000_initial_base",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787343930779,
+      "tag": "0001_persistencia_itens_fiscais",
+      "breakpoints": true
     }
   ]
 }

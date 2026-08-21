@@ -1,0 +1,362 @@
+import { Injectable } from '@nestjs/common';
+import { and, asc, desc, eq, or, sql, type SQL } from 'drizzle-orm';
+import type { PaginationParams } from '../../common/types';
+import { DatabaseService } from '../../database/database.service';
+import {
+  documentosFiscais,
+  documentosFiscaisItens,
+} from '../../database/schema';
+
+interface ItemFilters {
+  clienteId?: string;
+  documentoId?: string;
+  cfop?: string;
+  cst?: string;
+  cstIcms?: string;
+  csosnIcms?: string;
+  cstPis?: string;
+  cstCofins?: string;
+  ncm?: string;
+  codigoProduto?: string;
+  dataInicio?: Date;
+  dataFim?: Date;
+}
+
+@Injectable()
+export class FiscalItensService {
+  constructor(private readonly database: DatabaseService) {}
+
+  async listItens(input: ItemFilters & { pagination: PaginationParams }) {
+    const where = this.buildWhere(input);
+    const [countRows, rows] = await Promise.all([
+      this.database.db
+        .select({ count: sql<number>`count(*)` })
+        .from(documentosFiscaisItens)
+        .innerJoin(
+          documentosFiscais,
+          eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+        )
+        .where(where),
+      this.database.db
+        .select({
+          item: documentosFiscaisItens,
+          dataEmissao: documentosFiscais.dataEmissao,
+          chaveAcesso: documentosFiscais.chaveAcesso,
+          modelo: documentosFiscais.modelo,
+        })
+        .from(documentosFiscaisItens)
+        .innerJoin(
+          documentosFiscais,
+          eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+        )
+        .where(where)
+        .orderBy(
+          desc(documentosFiscais.dataEmissao),
+          asc(documentosFiscaisItens.numeroItem),
+        )
+        .limit(input.pagination.limit)
+        .offset(input.pagination.offset),
+    ]);
+
+    return {
+      total: Number(countRows[0]?.count ?? 0),
+      data: rows.map((row) => this.toItemResponse(row)),
+    };
+  }
+
+  async getC190(input: ItemFilters) {
+    const where = this.buildWhere(input);
+    const cst = sql<string>`COALESCE(${documentosFiscaisItens.cstIcms}, ${documentosFiscaisItens.csosnIcms}, '')`;
+    const operacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
+
+    const rows = await this.database.db
+      .select({
+        cst_icms_csosn: cst,
+        cfop: documentosFiscaisItens.cfop,
+        aliquota_icms: documentosFiscaisItens.aliquotaIcms,
+        vl_opr: sql<string>`COALESCE(SUM(${operacao}), 0)`,
+        vl_bc_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcms}), 0)`,
+        vl_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcms}), 0)`,
+        vl_bc_icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcmsSt}), 0)`,
+        vl_icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcmsSt}), 0)`,
+        vl_red_bc: sql<string>`COALESCE(SUM(GREATEST(COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0) - COALESCE(${documentosFiscaisItens.valorBcIcms}, 0), 0)), 0)`,
+        vl_ipi: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIpi}), 0)`,
+      })
+      .from(documentosFiscaisItens)
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
+      .where(where)
+      .groupBy(
+        cst,
+        documentosFiscaisItens.cfop,
+        documentosFiscaisItens.aliquotaIcms,
+      )
+      .orderBy(
+        documentosFiscaisItens.cfop,
+        documentosFiscaisItens.aliquotaIcms,
+      );
+
+    return rows;
+  }
+
+  async getProdutos0200(input: ItemFilters) {
+    const where = this.buildWhere(input);
+    const rows = await this.database.db
+      .selectDistinctOn(
+        [
+          documentosFiscaisItens.clienteId,
+          documentosFiscaisItens.codigoProduto,
+        ],
+        {
+          cliente_id: documentosFiscaisItens.clienteId,
+          codigo_produto: documentosFiscaisItens.codigoProduto,
+          descricao: documentosFiscaisItens.descricao,
+          ncm: documentosFiscaisItens.ncm,
+          cest: documentosFiscaisItens.cest,
+          unidade_padrao: documentosFiscaisItens.unidadeComercial,
+          codigo_ean: documentosFiscaisItens.codigoEan,
+          ultima_emissao: documentosFiscais.dataEmissao,
+        },
+      )
+      .from(documentosFiscaisItens)
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
+      .where(where)
+      .orderBy(
+        documentosFiscaisItens.clienteId,
+        documentosFiscaisItens.codigoProduto,
+        desc(documentosFiscais.dataEmissao),
+        desc(documentosFiscaisItens.criadoEm),
+      );
+
+    return rows.map((row) => ({
+      ...row,
+      ultima_emissao: row.ultima_emissao.toISOString(),
+    }));
+  }
+
+  async getResumoLivros(input: ItemFilters) {
+    const where = this.buildWhere(input);
+    const tipoOperacao = sql<string>`CASE SUBSTRING(${documentosFiscaisItens.cfop}, 1, 1) WHEN '1' THEN 'ENTRADA' WHEN '2' THEN 'ENTRADA' WHEN '3' THEN 'ENTRADA' ELSE 'SAIDA' END`;
+
+    return this.database.db
+      .select({
+        tipo_operacao: tipoOperacao,
+        cfop: documentosFiscaisItens.cfop,
+        aliquota_icms: documentosFiscaisItens.aliquotaIcms,
+        valor_produtos: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBrutoProduto}), 0)`,
+        base_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcms}), 0)`,
+        icms_creditado_debitado: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcms}), 0)`,
+        base_icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcmsSt}), 0)`,
+        icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcmsSt}), 0)`,
+        ipi: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIpi}), 0)`,
+      })
+      .from(documentosFiscaisItens)
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
+      .where(where)
+      .groupBy(
+        tipoOperacao,
+        documentosFiscaisItens.cfop,
+        documentosFiscaisItens.aliquotaIcms,
+      )
+      .orderBy(tipoOperacao, documentosFiscaisItens.cfop);
+  }
+
+  private buildWhere(input: ItemFilters): SQL | undefined {
+    const conditions: SQL[] = [];
+    if (input.clienteId) {
+      conditions.push(eq(documentosFiscaisItens.clienteId, input.clienteId));
+    }
+    if (input.documentoId) {
+      conditions.push(
+        eq(documentosFiscaisItens.documentoFiscalId, input.documentoId),
+      );
+    }
+    if (input.cfop) {
+      conditions.push(eq(documentosFiscaisItens.cfop, input.cfop));
+    }
+    if (input.cst) {
+      conditions.push(
+        or(
+          eq(documentosFiscaisItens.cstIcms, input.cst),
+          eq(documentosFiscaisItens.csosnIcms, input.cst),
+          eq(documentosFiscaisItens.cstPis, input.cst),
+          eq(documentosFiscaisItens.cstCofins, input.cst),
+        )!,
+      );
+    }
+    if (input.cstIcms) {
+      conditions.push(eq(documentosFiscaisItens.cstIcms, input.cstIcms));
+    }
+    if (input.csosnIcms) {
+      conditions.push(eq(documentosFiscaisItens.csosnIcms, input.csosnIcms));
+    }
+    if (input.cstPis) {
+      conditions.push(eq(documentosFiscaisItens.cstPis, input.cstPis));
+    }
+    if (input.cstCofins) {
+      conditions.push(eq(documentosFiscaisItens.cstCofins, input.cstCofins));
+    }
+    if (input.ncm) {
+      conditions.push(eq(documentosFiscaisItens.ncm, input.ncm));
+    }
+    if (input.codigoProduto) {
+      conditions.push(
+        eq(documentosFiscaisItens.codigoProduto, input.codigoProduto),
+      );
+    }
+    if (input.dataInicio) {
+      conditions.push(
+        sql`${documentosFiscais.dataEmissao} >= ${input.dataInicio}`,
+      );
+    }
+    if (input.dataFim) {
+      conditions.push(
+        sql`${documentosFiscais.dataEmissao} <= ${input.dataFim}`,
+      );
+    }
+    return conditions.length > 0 ? and(...conditions) : undefined;
+  }
+
+  private toItemResponse(row: {
+    item: typeof documentosFiscaisItens.$inferSelect;
+    dataEmissao: Date;
+    chaveAcesso: string;
+    modelo: string;
+  }) {
+    const item = row.item;
+    return {
+      id: item.id,
+      documento_fiscal_id: item.documentoFiscalId,
+      cliente_id: item.clienteId,
+      numero_item: item.numeroItem,
+      chave_acesso: row.chaveAcesso,
+      modelo: row.modelo,
+      data_emissao: row.dataEmissao.toISOString(),
+      produto: {
+        codigo_produto: item.codigoProduto,
+        codigo_ean: item.codigoEan,
+        descricao: item.descricao,
+        ncm: item.ncm,
+        nve: item.nve,
+        cest: item.cest,
+        ind_escala: item.indEscala,
+        cnpj_fabricante: item.cnpjFabricante,
+        codigo_beneficio_fiscal: item.codigoBeneficioFiscal,
+        cfop: item.cfop,
+        unidade_comercial: item.unidadeComercial,
+        quantidade_comercial: item.quantidadeComercial,
+        valor_unitario_comercial: item.valorUnitarioComercial,
+        valor_bruto_produto: item.valorBrutoProduto,
+        codigo_ean_tributavel: item.codigoEanTributavel,
+        unidade_tributavel: item.unidadeTributavel,
+        quantidade_tributavel: item.quantidadeTributavel,
+        valor_unitario_tributavel: item.valorUnitarioTributavel,
+        valor_frete: item.valorFrete,
+        valor_seguro: item.valorSeguro,
+        valor_desconto: item.valorDesconto,
+        valor_outras_despesas: item.valorOutrasDespesas,
+        ind_total: item.indTotal,
+        numero_pedido_compra: item.numeroPedidoCompra,
+        item_pedido_compra: item.itemPedidoCompra,
+        informacoes_adicionais: item.informacoesAdicionais,
+      },
+      icms: {
+        origem_mercadoria: item.origemMercadoria,
+        cst: item.cstIcms,
+        csosn: item.csosnIcms,
+        modalidade_bc: item.modalidadeBcIcms,
+        percentual_reducao_bc: item.percentualReducaoBcIcms,
+        valor_bc: item.valorBcIcms,
+        aliquota: item.aliquotaIcms,
+        valor: item.valorIcms,
+        modalidade_bc_st: item.modalidadeBcIcmsSt,
+        percentual_mva_st: item.percentualMvaSt,
+        percentual_reducao_bc_st: item.percentualReducaoBcIcmsSt,
+        valor_bc_st: item.valorBcIcmsSt,
+        aliquota_st: item.aliquotaIcmsSt,
+        valor_st: item.valorIcmsSt,
+        valor_bc_fcp: item.valorBcFcp,
+        aliquota_fcp: item.aliquotaFcp,
+        valor_fcp: item.valorFcp,
+        valor_bc_fcp_st: item.valorBcFcpSt,
+        aliquota_fcp_st: item.aliquotaFcpSt,
+        valor_fcp_st: item.valorFcpSt,
+        motivo_desoneracao: item.motivoDesoneracaoIcms,
+        valor_desonerado: item.valorIcmsDesonerado,
+        percentual_diferimento: item.percentualDiferimento,
+        valor_diferido: item.valorIcmsDiferido,
+        valor_operacao: item.valorIcmsOperacao,
+        aliquota_credito_sn: item.aliquotaCreditoSn,
+        valor_credito_sn: item.valorCreditoIcmsSn,
+        valor_bc_st_retido: item.valorBcIcmsStRetido,
+        aliquota_st_retido: item.aliquotaIcmsStRetido,
+        valor_st_retido: item.valorIcmsStRetido,
+      },
+      difal: {
+        valor_bc_uf_dest: item.valorBcIcmsUfDest,
+        valor_bc_fcp_uf_dest: item.valorBcFcpUfDest,
+        percentual_fcp_uf_dest: item.percentualFcpUfDest,
+        aliquota_icms_uf_dest: item.aliquotaIcmsUfDest,
+        aliquota_icms_interestadual: item.aliquotaIcmsInterestadual,
+        percentual_partilha: item.percentualProvisorioPartilha,
+        valor_fcp_uf_dest: item.valorFcpUfDest,
+        valor_icms_uf_dest: item.valorIcmsUfDest,
+        valor_icms_uf_remetente: item.valorIcmsUfRemetente,
+      },
+      ipi: {
+        cst: item.cstIpi,
+        classe_enquadramento: item.classeEnquadramentoIpi,
+        codigo_enquadramento: item.codigoEnquadramentoIpi,
+        cnpj_produtor: item.cnpjProdutorIpi,
+        valor_bc: item.valorBcIpi,
+        aliquota: item.aliquotaIpi,
+        quantidade_unidade: item.quantidadeUnidadeIpi,
+        valor_unidade: item.valorUnidadeIpi,
+        valor: item.valorIpi,
+      },
+      pis: {
+        cst: item.cstPis,
+        valor_bc: item.valorBcPis,
+        aliquota_percentual: item.aliquotaPisPercentual,
+        quantidade_bc: item.quantidadeBcPis,
+        aliquota_reais: item.aliquotaPisReais,
+        valor: item.valorPis,
+        st: {
+          valor_bc: item.valorBcPisSt,
+          aliquota_percentual: item.aliquotaPisStPercentual,
+          valor: item.valorPisSt,
+        },
+      },
+      cofins: {
+        cst: item.cstCofins,
+        valor_bc: item.valorBcCofins,
+        aliquota_percentual: item.aliquotaCofinsPercentual,
+        quantidade_bc: item.quantidadeBcCofins,
+        aliquota_reais: item.aliquotaCofinsReais,
+        valor: item.valorCofins,
+        st: {
+          valor_bc: item.valorBcCofinsSt,
+          aliquota_percentual: item.aliquotaCofinsStPercentual,
+          valor: item.valorCofinsSt,
+        },
+      },
+      totais: {
+        valor_bc_ii: item.valorBcIi,
+        valor_despesa_aduaneira: item.valorDespesaAduaneira,
+        valor_imposto_importacao: item.valorImpostoImportacao,
+        valor_iof: item.valorIof,
+        valor_tributos_aproximados: item.valorTributosAproximados,
+      },
+      criado_em: item.criadoEm.toISOString(),
+      atualizado_em: item.atualizadoEm.toISOString(),
+    };
+  }
+}

@@ -49,7 +49,9 @@ import {
 import { UploadCertificadoClienteDto } from '../dto/upload-certificado.dto';
 import { ManifestarDocumentoDto } from '../dto/manifestar-documento.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
+import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
+import { FiscalItensService } from '../services/fiscal-itens.service';
 
 @ApiTags('Fiscal (Cliente)')
 @ApiBearerAuth('session-token')
@@ -66,6 +68,7 @@ export class ClienteFiscalController {
     private readonly importacaoXmlService: ImportacaoXmlFiscalService,
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
+    private readonly fiscalItensService: FiscalItensService,
   ) {}
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
@@ -281,6 +284,131 @@ export class ClienteFiscalController {
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('itens')
+  @ApiOperation({
+    summary: 'Listar itens fiscais da empresa',
+    description:
+      'Consulta itens de NF-e/NFC-e por CFOP, CST/CSOSN, NCM, produto e período de emissão.',
+  })
+  async listItens(
+    @Query() query: QueryItensFiscaisDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
+    }
+    const pagination = parsePaginationParams(query);
+    const result = await this.fiscalItensService.listItens({
+      clienteId: cliente.id,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cst: query.cst,
+      cstIcms: query.cstIcms,
+      csosnIcms: query.csosnIcms,
+      cstPis: query.cstPis,
+      cstCofins: query.cstCofins,
+      ncm: query.ncm,
+      codigoProduto: query.codigoProduto,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('documentos/:id/itens')
+  @ApiOperation({ summary: 'Listar itens de um documento fiscal' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  async listItensDocumento(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: QueryItensFiscaisDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
+    }
+    const pagination = parsePaginationParams(query);
+    const result = await this.fiscalItensService.listItens({
+      clienteId: cliente.id,
+      documentoId: id,
+      cfop: query.cfop,
+      cst: query.cst,
+      cstIcms: query.cstIcms,
+      csosnIcms: query.csosnIcms,
+      cstPis: query.cstPis,
+      cstCofins: query.cstCofins,
+      ncm: query.ncm,
+      codigoProduto: query.codigoProduto,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('relatorios/c190')
+  @ApiOperation({ summary: 'Apuração analítica equivalente ao SPED C190' })
+  async getC190(
+    @Query() query: QueryItensFiscaisDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const data = await this.fiscalItensService.getC190({
+      clienteId: cliente.id,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cst: query.cst,
+      ncm: query.ncm,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
+    return { data };
+  }
+
+  @Get('relatorios/produtos-0200')
+  @ApiOperation({ summary: 'Cadastro consolidado de produtos para SPED 0200' })
+  async getProdutos0200(
+    @Query() query: QueryItensFiscaisDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const data = await this.fiscalItensService.getProdutos0200({
+      clienteId: cliente.id,
+      codigoProduto: query.codigoProduto,
+      ncm: query.ncm,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
+    return { data };
+  }
+
+  @Get('relatorios/livros-icms')
+  @ApiOperation({ summary: 'Resumo de entradas e saídas por CFOP e alíquota' })
+  async getResumoLivros(
+    @Query() query: QueryItensFiscaisDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const data = await this.fiscalItensService.getResumoLivros({
+      clienteId: cliente.id,
+      cfop: query.cfop,
+      cst: query.cst,
+      ncm: query.ncm,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
+    return { data };
   }
 
   @Get('documentos/:id/download-xml')

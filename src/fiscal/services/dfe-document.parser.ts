@@ -1,5 +1,6 @@
 import { gunzipSync } from 'node:zlib';
 import { XMLValidator } from 'fast-xml-parser';
+import { parseNfeItems, type ParsedNfeItem } from './nfe-item.parser';
 
 export type TipoConsultaDfe = 'NFE' | 'CTE';
 
@@ -31,6 +32,7 @@ export interface ParsedDocumentoFiscal {
   valorTotal: string;
   situacao: 'AUTORIZADA' | 'CANCELADA' | 'DENEGADA';
   participantesCnpjCpf: string[];
+  itens: ParsedNfeItem[];
   xmlContent: string;
 }
 
@@ -384,6 +386,7 @@ function parseFiscalXml(
       infElement.content,
       tipoConsulta,
     ),
+    itens: tipoConsulta === 'NFE' ? parseNfeItems(xml) : [],
     xmlContent: xml,
   };
 }

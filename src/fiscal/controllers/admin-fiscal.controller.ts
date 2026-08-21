@@ -47,8 +47,10 @@ import { FiscalCronService } from '../services/fiscal-cron.service';
 import { ImportacaoXmlFiscalService } from '../services/importacao-xml-fiscal.service';
 import { UploadCertificadoDto } from '../dto/upload-certificado.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
+import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
+import { FiscalItensService } from '../services/fiscal-itens.service';
 
 @ApiTags('Fiscal (Admin)')
 @ApiBearerAuth('session-token')
@@ -65,6 +67,7 @@ export class AdminFiscalController {
     private readonly configService: ConfigService,
     private readonly importacaoXmlService: ImportacaoXmlFiscalService,
     private readonly rateLimit: RateLimitService,
+    private readonly fiscalItensService: FiscalItensService,
   ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
@@ -310,6 +313,103 @@ export class AdminFiscalController {
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('itens')
+  @ApiOperation({
+    summary: 'Listar itens fiscais',
+    description:
+      'Consulta itens de NF-e/NFC-e por empresa, documento, CFOP, CST/CSOSN, NCM, produto e período.',
+  })
+  async listItens(@Query() query: QueryItensFiscaisDto) {
+    const pagination = parsePaginationParams(query);
+    const result = await this.fiscalItensService.listItens({
+      clienteId: query.clienteId,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cst: query.cst,
+      cstIcms: query.cstIcms,
+      csosnIcms: query.csosnIcms,
+      cstPis: query.cstPis,
+      cstCofins: query.cstCofins,
+      ncm: query.ncm,
+      codigoProduto: query.codigoProduto,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('documentos/:id/itens')
+  @ApiOperation({ summary: 'Listar itens de um documento fiscal' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  async listItensDocumento(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: QueryItensFiscaisDto,
+  ) {
+    const pagination = parsePaginationParams(query);
+    const result = await this.fiscalItensService.listItens({
+      documentoId: id,
+      clienteId: query.clienteId,
+      cfop: query.cfop,
+      cst: query.cst,
+      cstIcms: query.cstIcms,
+      csosnIcms: query.csosnIcms,
+      cstPis: query.cstPis,
+      cstCofins: query.cstCofins,
+      ncm: query.ncm,
+      codigoProduto: query.codigoProduto,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('relatorios/c190')
+  @ApiOperation({ summary: 'Apuração analítica equivalente ao SPED C190' })
+  async getC190(@Query() query: QueryItensFiscaisDto) {
+    return {
+      data: await this.fiscalItensService.getC190({
+        clienteId: query.clienteId,
+        documentoId: query.documentoId,
+        cfop: query.cfop,
+        cst: query.cst,
+        ncm: query.ncm,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
+  }
+
+  @Get('relatorios/produtos-0200')
+  @ApiOperation({ summary: 'Cadastro consolidado de produtos para SPED 0200' })
+  async getProdutos0200(@Query() query: QueryItensFiscaisDto) {
+    return {
+      data: await this.fiscalItensService.getProdutos0200({
+        clienteId: query.clienteId,
+        codigoProduto: query.codigoProduto,
+        ncm: query.ncm,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
+  }
+
+  @Get('relatorios/livros-icms')
+  @ApiOperation({ summary: 'Resumo de entradas e saídas por CFOP e alíquota' })
+  async getResumoLivros(@Query() query: QueryItensFiscaisDto) {
+    return {
+      data: await this.fiscalItensService.getResumoLivros({
+        clienteId: query.clienteId,
+        cfop: query.cfop,
+        cst: query.cst,
+        ncm: query.ncm,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
   }
 
   @Get('documentos/:id/download-xml')

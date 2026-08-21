@@ -11,6 +11,7 @@ import { DanfeService } from './services/danfe.service';
 import { FiscalCronService } from './services/fiscal-cron.service';
 import { DacteService } from './services/dacte.service';
 import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.service';
+import { FiscalItensService } from './services/fiscal-itens.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -23,6 +24,7 @@ import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.ser
     DanfeService,
     FiscalCronService,
     ImportacaoXmlFiscalService,
+    FiscalItensService,
   ],
   exports: [CertificadoService, DistribuicaoDfeService, FiscalCronService],
 })

@@ -1,4 +1,9 @@
 import { ImportacaoXmlFiscalService } from './importacao-xml-fiscal.service';
+import { documentosFiscaisItens } from '../../database/schema';
+import {
+  parseManualFiscalXml,
+  type ParsedDocumentoFiscal,
+} from './dfe-document.parser';
 
 describe('ImportacaoXmlFiscalService', () => {
   const storage = {
@@ -88,6 +93,71 @@ describe('ImportacaoXmlFiscalService', () => {
     expect(result.resultados[0].status).toBe('IGNORADO');
     expect(persist).not.toHaveBeenCalled();
   });
+
+  it('reconcilia itens de documento duplicado em transação sem novo upload', async () => {
+    const existingLimit = jest.fn().mockResolvedValue([
+      {
+        id: 'doc-1',
+        situacao: 'AUTORIZADA',
+        xmlKey: 'documento.xml',
+        danfeKey: null,
+      },
+    ]);
+    const select = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: existingLimit }),
+      }),
+    });
+    const itemValues = jest.fn().mockResolvedValue(undefined);
+    const tx = {
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(undefined),
+      }),
+      insert: jest.fn().mockReturnValue({ values: itemValues }),
+    };
+    const transaction = jest.fn(
+      (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    const duplicateService = new ImportacaoXmlFiscalService(
+      { db: { select, transaction } } as never,
+      storage as never,
+      logger as never,
+    );
+    const parsed = parseManualFiscalXml(buildNfeProc());
+    if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');
+
+    const result = await (
+      duplicateService as unknown as {
+        persistirDocumento(input: {
+          target: { id: string; cnpj: string; razaoSocial: string };
+          documento: ParsedDocumentoFiscal;
+          actorUserId: string;
+          requestId: string;
+        }): Promise<'IMPORTADO' | 'DUPLICADO'>;
+      }
+    ).persistirDocumento({
+      target: {
+        id: 'cliente-1',
+        cnpj: '12345678000195',
+        razaoSocial: 'Emitente',
+      },
+      documento: parsed.documento,
+      actorUserId: 'user-1',
+      requestId: 'request-1',
+    });
+
+    expect(result).toBe('DUPLICADO');
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(tx.delete).toHaveBeenCalledWith(documentosFiscaisItens);
+    expect(itemValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        documentoFiscalId: 'doc-1',
+        clienteId: 'cliente-1',
+        numeroItem: 1,
+      }),
+    ]);
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
 });
 
 function xmlFile(xml: string, originalname = 'documento.xml') {
@@ -111,6 +181,12 @@ function buildNfeProc() {
           <ide><mod>55</mod><serie>1</serie><nNF>123</nNF><dhEmi>2024-08-15T10:45:00-03:00</dhEmi></ide>
           <emit><CNPJ>12345678000195</CNPJ><xNome>Empresa Emitente</xNome></emit>
           <dest><CNPJ>98765432000110</CNPJ><xNome>Empresa Destinatária</xNome></dest>
+          <det nItem="1"><prod>
+            <cProd>PROD-1</cProd><cEAN>SEM GTIN</cEAN><xProd>Produto</xProd><NCM>84713012</NCM>
+            <CFOP>5102</CFOP><uCom>UN</uCom><qCom>1.0000</qCom><vUnCom>150.7500000000</vUnCom>
+            <vProd>150.75</vProd><cEANTrib>SEM GTIN</cEANTrib><uTrib>UN</uTrib>
+            <qTrib>1.0000</qTrib><vUnTrib>150.7500000000</vUnTrib><indTot>1</indTot>
+          </prod><imposto /></det>
           <total><ICMSTot><vNF>150.75</vNF></ICMSTot></total>
         </infNFe>
       </NFe>

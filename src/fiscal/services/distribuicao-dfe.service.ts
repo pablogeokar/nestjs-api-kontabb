@@ -1,5 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, and, sql, desc, asc, ilike, or, inArray } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  sql,
+  desc,
+  asc,
+  ilike,
+  or,
+  inArray,
+  type SQL,
+} from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { NfeWizardService } from './nfewizard.service';
@@ -12,6 +22,7 @@ import {
 import {
   controleNsu,
   documentosFiscais,
+  documentosFiscaisItens,
   eventosFiscais,
   certificadosDigitais,
   clientes,
@@ -133,16 +144,15 @@ export class DistribuicaoDfeService {
           ultimoNsu: control.ultimoNsu,
         });
       }
-    } catch (error: any) {
-      this.logger.error(
-        `Erro na consulta SEFAZ para ${cnpj}: ${error.message}`,
-      );
+    } catch (error: unknown) {
+      const errorMessage = this.getRootCauseMessage(error);
+      this.logger.error(`Erro na consulta SEFAZ para ${cnpj}: ${errorMessage}`);
 
       // Se for erro de validação de schema XSD, apenas pular (não bloquear)
       const isSchemaError =
-        error.message?.includes('Validação do XML') ||
-        error.message?.includes('No matching global declaration') ||
-        error.message?.includes('SchemaValidat');
+        errorMessage.includes('Validação do XML') ||
+        errorMessage.includes('No matching global declaration') ||
+        errorMessage.includes('SchemaValidat');
 
       if (isSchemaError) {
         this.logger.warn(
@@ -151,7 +161,7 @@ export class DistribuicaoDfeService {
         );
         await this.atualizarControleNsu(control.id, {
           statusSefaz: 998,
-          motivoSefaz: `Schema validation error: ${error.message?.substring(0, 200)}`,
+          motivoSefaz: `Schema validation error: ${errorMessage.substring(0, 200)}`,
           proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
         });
         return {
@@ -163,8 +173,8 @@ export class DistribuicaoDfeService {
 
       // Consumo Indevido (cStat 656) — SEFAZ pede para aguardar 1 hora
       const isConsumoIndevido =
-        error.message?.includes('Consumo Indevido') ||
-        error.message?.includes('656');
+        errorMessage.includes('Consumo Indevido') ||
+        errorMessage.includes('656');
 
       if (isConsumoIndevido) {
         this.logger.warn(
@@ -186,7 +196,7 @@ export class DistribuicaoDfeService {
       // Agendar próxima consulta para daqui 30 minutos em caso de erro
       await this.atualizarControleNsu(control.id, {
         statusSefaz: 999,
-        motivoSefaz: error.message,
+        motivoSefaz: errorMessage,
         proximaConsultaEm: new Date(Date.now() + 30 * 60 * 1000),
       });
       throw error;
@@ -309,9 +319,9 @@ export class DistribuicaoDfeService {
           };
         }
         resultados.push({ clienteId, nfe, cte });
-      } catch (error: any) {
+      } catch (error: unknown) {
         this.logger.error(
-          `Erro ao sincronizar cliente ${clienteId}: ${error.message}`,
+          `Erro ao sincronizar cliente ${clienteId}: ${this.getRootCauseMessage(error)}`,
         );
         resultados.push({
           clienteId,
@@ -374,7 +384,7 @@ export class DistribuicaoDfeService {
     search?: string;
     pagination: PaginationParams;
   }) {
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
 
     if (input.clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, input.clienteId));
@@ -402,15 +412,14 @@ export class DistribuicaoDfeService {
     }
     if (input.search) {
       const searchTerm = `%${input.search}%`;
-      conditions.push(
-        or(
-          ilike(documentosFiscais.chaveAcesso, searchTerm),
-          ilike(documentosFiscais.emitenteRazaoSocial, searchTerm),
-          ilike(documentosFiscais.emitenteCnpjCpf, searchTerm),
-          ilike(documentosFiscais.destinatarioRazaoSocial, searchTerm),
-          ilike(documentosFiscais.numeroDocumento, searchTerm),
-        ),
+      const searchCondition = or(
+        ilike(documentosFiscais.chaveAcesso, searchTerm),
+        ilike(documentosFiscais.emitenteRazaoSocial, searchTerm),
+        ilike(documentosFiscais.emitenteCnpjCpf, searchTerm),
+        ilike(documentosFiscais.destinatarioRazaoSocial, searchTerm),
+        ilike(documentosFiscais.numeroDocumento, searchTerm),
       );
+      if (searchCondition) conditions.push(searchCondition);
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -474,7 +483,7 @@ export class DistribuicaoDfeService {
    * Retorna URL assinada para download do XML de um documento fiscal.
    */
   async getXmlDownloadUrl(documentoId: string, clienteId?: string) {
-    const conditions: any[] = [eq(documentosFiscais.id, documentoId)];
+    const conditions: SQL[] = [eq(documentosFiscais.id, documentoId)];
     if (clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, clienteId));
     }
@@ -617,7 +626,7 @@ export class DistribuicaoDfeService {
     const mesAtual = new Date();
     const inicioMes = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1);
 
-    const conditions: any[] = [
+    const conditions: SQL[] = [
       sql`${documentosFiscais.criadoEm} >= ${inicioMes}`,
     ];
     if (clienteId) {
@@ -640,7 +649,7 @@ export class DistribuicaoDfeService {
     ]);
 
     // Certificados
-    const certConditions: any[] = [];
+    const certConditions: SQL[] = [];
     if (clienteId) {
       certConditions.push(eq(certificadosDigitais.clienteId, clienteId));
     }
@@ -699,11 +708,27 @@ export class DistribuicaoDfeService {
       )
       .limit(1);
 
-    if (
-      existing[0]?.nsu === parsed.nsu &&
-      existing[0]?.situacao !== 'RESUMIDA'
-    ) {
-      this.logger.debug(`Documento ${parsed.chaveAcesso} já existe, pulando.`);
+    const isDuplicate =
+      existing[0]?.nsu === parsed.nsu && existing[0]?.situacao !== 'RESUMIDA';
+
+    if (isDuplicate) {
+      await this.database.db.transaction(async (tx) => {
+        await tx
+          .delete(documentosFiscaisItens)
+          .where(eq(documentosFiscaisItens.documentoFiscalId, existing[0].id));
+        for (let offset = 0; offset < parsed.itens.length; offset += 300) {
+          await tx.insert(documentosFiscaisItens).values(
+            parsed.itens.slice(offset, offset + 300).map((item) => ({
+              ...item,
+              documentoFiscalId: existing[0].id,
+              clienteId,
+            })),
+          );
+        }
+      });
+      this.logger.debug(
+        `Documento ${parsed.chaveAcesso} já existe; itens fiscais reconciliados.`,
+      );
       return false;
     }
 
@@ -739,29 +764,51 @@ export class DistribuicaoDfeService {
     };
 
     try {
-      await this.database.db
-        .insert(documentosFiscais)
-        .values(values)
-        .onConflictDoUpdate({
-          target: [documentosFiscais.clienteId, documentosFiscais.chaveAcesso],
-          set: {
-            nsu: parsed.nsu,
-            tipoDocumento: parsed.tipoDocumento,
-            modelo: parsed.modelo,
-            serie: parsed.serie,
-            numeroDocumento: parsed.numeroDocumento,
-            emitenteCnpjCpf: parsed.emitenteCnpjCpf,
-            emitenteRazaoSocial: parsed.emitenteRazaoSocial,
-            destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
-            destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
-            dataEmissao: parsed.dataEmissao,
-            valorTotal: parsed.valorTotal,
-            situacao: parsed.situacao,
-            xmlKey,
-            danfeKey: null,
-            atualizadoEm: new Date(),
-          },
-        });
+      await this.database.db.transaction(async (tx) => {
+        const persisted = await tx
+          .insert(documentosFiscais)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [
+              documentosFiscais.clienteId,
+              documentosFiscais.chaveAcesso,
+            ],
+            set: {
+              nsu: parsed.nsu,
+              tipoDocumento: parsed.tipoDocumento,
+              modelo: parsed.modelo,
+              serie: parsed.serie,
+              numeroDocumento: parsed.numeroDocumento,
+              emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+              emitenteRazaoSocial: parsed.emitenteRazaoSocial,
+              destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
+              destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
+              dataEmissao: parsed.dataEmissao,
+              valorTotal: parsed.valorTotal,
+              situacao: parsed.situacao,
+              xmlKey,
+              danfeKey: null,
+              atualizadoEm: new Date(),
+            },
+          })
+          .returning({ id: documentosFiscais.id });
+        const documentoFiscalId = persisted[0].id;
+
+        await tx
+          .delete(documentosFiscaisItens)
+          .where(
+            eq(documentosFiscaisItens.documentoFiscalId, documentoFiscalId),
+          );
+        for (let offset = 0; offset < parsed.itens.length; offset += 300) {
+          await tx.insert(documentosFiscaisItens).values(
+            parsed.itens.slice(offset, offset + 300).map((item) => ({
+              ...item,
+              documentoFiscalId,
+              clienteId,
+            })),
+          );
+        }
+      });
     } catch (error: unknown) {
       // O upload externo nao participa da transacao do banco. Se o registro
       // ainda nao existia, removemos o objeto para nao deixar XML orfao.
