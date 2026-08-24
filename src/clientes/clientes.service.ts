@@ -1,13 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { certificadosDigitais, clientes } from '../database/schema';
+import { clientes } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageService } from '../storage/storage.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import type { PaginationParams } from '../common/types';
 import { AuthService } from '../auth/auth.service';
+import type { RegimeTributario, TipoContribuinteIcms } from './clientes.types';
 
 export interface StoredAddress {
   postalCode: string;
@@ -22,6 +23,19 @@ export interface StoredAddress {
 export interface StoredCnae {
   code: string;
   description: string;
+}
+
+interface ExistingClientFiscalConfig {
+  tipoPessoa: string;
+  regimeTributario: string | null;
+  tipoContribuinteIcms: string | null;
+}
+
+interface ClientFiscalUpdateInput {
+  regimeTributario?: RegimeTributario | null;
+  apuraIcms?: boolean;
+  inscricaoEstadual?: string | null;
+  tipoContribuinteIcms?: TipoContribuinteIcms | null;
 }
 
 @Injectable()
@@ -67,6 +81,10 @@ export class ClientesService {
           cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
           cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
           cnaesSecundarios: clientes.cnaesSecundarios,
+          regimeTributario: clientes.regimeTributario,
+          apuraIcms: clientes.apuraIcms,
+          inscricaoEstadual: clientes.inscricaoEstadual,
+          tipoContribuinteIcms: clientes.tipoContribuinteIcms,
           logoKey: clientes.logoKey,
           isFirstLogin: clientes.primeiroLogin,
           authUserId: clientes.userId,
@@ -111,6 +129,11 @@ export class ClientesService {
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
         ),
+        regime_tributario: client.regimeTributario as RegimeTributario | null,
+        apura_icms: client.apuraIcms,
+        inscricao_estadual: client.inscricaoEstadual,
+        tipo_contribuinte_icms:
+          client.tipoContribuinteIcms as TipoContribuinteIcms | null,
         logo_url: client.logoKey
           ? await this.storage.getSignedUrl(client.logoKey)
           : null,
@@ -234,7 +257,24 @@ export class ClientesService {
     address?: StoredAddress;
     primaryActivity?: StoredCnae | null;
     secondaryActivities?: StoredCnae[];
+    regimeTributario?: RegimeTributario | null;
+    apuraIcms?: boolean;
+    inscricaoEstadual?: string | null;
+    tipoContribuinteIcms?: TipoContribuinteIcms | null;
   }) {
+    const existingRows = await this.database.db
+      .select({
+        tipoPessoa: clientes.tipoPessoa,
+        regimeTributario: clientes.regimeTributario,
+        tipoContribuinteIcms: clientes.tipoContribuinteIcms,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, input.clientId))
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) return false;
+
+    const fiscalUpdate = this.normalizeFiscalUpdate(existing, input);
     const emails = input.emails
       ? this.textArray(input.emails)
       : sql`NULL::text[]`;
@@ -257,7 +297,11 @@ export class ClientesService {
           uf = CASE WHEN ${hasAddress} THEN ${this.nullableText(input.address?.state)} ELSE uf END,
           cnae_principal_codigo = CASE WHEN ${hasPrimaryActivity} THEN ${this.nullableText(input.primaryActivity?.code)} ELSE cnae_principal_codigo END,
           cnae_principal_descricao = CASE WHEN ${hasPrimaryActivity} THEN ${this.nullableText(input.primaryActivity?.description)} ELSE cnae_principal_descricao END,
-          cnaes_secundarios = CASE WHEN ${hasSecondaryActivities} THEN ${secondaryActivities}::jsonb ELSE cnaes_secundarios END
+          cnaes_secundarios = CASE WHEN ${hasSecondaryActivities} THEN ${secondaryActivities}::jsonb ELSE cnaes_secundarios END,
+          regime_tributario = CASE WHEN ${fiscalUpdate.writeRegimeTributario} THEN ${fiscalUpdate.regimeTributario}::text ELSE regime_tributario END,
+          apura_icms = CASE WHEN ${fiscalUpdate.writeApuraIcms} THEN ${fiscalUpdate.apuraIcms}::boolean ELSE apura_icms END,
+          inscricao_estadual = CASE WHEN ${fiscalUpdate.writeInscricaoEstadual} THEN ${fiscalUpdate.inscricaoEstadual}::text ELSE inscricao_estadual END,
+          tipo_contribuinte_icms = CASE WHEN ${fiscalUpdate.writeTipoContribuinteIcms} THEN ${fiscalUpdate.tipoContribuinteIcms}::text ELSE tipo_contribuinte_icms END
         WHERE id = ${input.clientId}::uuid
         RETURNING id
       ),
@@ -337,6 +381,10 @@ export class ClientesService {
         cnpj: clientes.cnpj,
         uf: clientes.uf,
         primeiroLogin: clientes.primeiroLogin,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+        inscricaoEstadual: clientes.inscricaoEstadual,
+        tipoContribuinteIcms: clientes.tipoContribuinteIcms,
       })
       .from(clientes)
       .where(eq(clientes.userId, userId))
@@ -391,6 +439,10 @@ export class ClientesService {
         cnaePrincipalCodigo: clientes.cnaePrincipalCodigo,
         cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
         cnaesSecundarios: clientes.cnaesSecundarios,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+        inscricaoEstadual: clientes.inscricaoEstadual,
+        tipoContribuinteIcms: clientes.tipoContribuinteIcms,
         logoKey: clientes.logoKey,
       })
       .from(clientes)
@@ -412,6 +464,11 @@ export class ClientesService {
           }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
+      regime_tributario: client.regimeTributario as RegimeTributario | null,
+      apura_icms: client.apuraIcms,
+      inscricao_estadual: client.inscricaoEstadual,
+      tipo_contribuinte_icms:
+        client.tipoContribuinteIcms as TipoContribuinteIcms | null,
       logo_url: client.logoKey
         ? await this.storage.getSignedUrl(client.logoKey)
         : null,
@@ -438,6 +495,8 @@ export class ClientesService {
         cnpj: clientes.cnpj,
         razaoSocial: clientes.razaoSocial,
         emails: clientes.emails,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
       })
       .from(clientes)
       .where(where)
@@ -560,6 +619,77 @@ export class ClientesService {
     const logoKey = result[0]?.logoKey;
     if (!logoKey) return null;
     return this.storage.getSignedUrl(logoKey);
+  }
+
+  private normalizeFiscalUpdate(
+    existing: ExistingClientFiscalConfig,
+    input: ClientFiscalUpdateInput,
+  ) {
+    const writeRegimeTributario = input.regimeTributario !== undefined;
+    const writeTipoContribuinteIcms = input.tipoContribuinteIcms !== undefined;
+    const hasInscricaoEstadual = input.inscricaoEstadual !== undefined;
+    const inscricaoEstadual =
+      input.inscricaoEstadual?.trim().toUpperCase() || null;
+
+    if (existing.tipoPessoa === 'PF') {
+      if (input.regimeTributario != null) {
+        throw new BadRequestException(
+          'Pessoa Física não possui regime tributário.',
+        );
+      }
+      if (
+        input.apuraIcms === true ||
+        input.tipoContribuinteIcms != null ||
+        inscricaoEstadual
+      ) {
+        throw new BadRequestException(
+          'Pessoa Física não possui configuração de regime tributário ou ICMS.',
+        );
+      }
+      return {
+        writeRegimeTributario,
+        regimeTributario: null,
+        writeApuraIcms: input.apuraIcms !== undefined,
+        apuraIcms: false,
+        writeInscricaoEstadual: hasInscricaoEstadual,
+        inscricaoEstadual: null,
+        writeTipoContribuinteIcms,
+        tipoContribuinteIcms: null,
+      };
+    }
+
+    const regimeTributario = (
+      writeRegimeTributario ? input.regimeTributario : existing.regimeTributario
+    ) as RegimeTributario | null;
+    const lucroNormal =
+      regimeTributario === 'LUCRO_PRESUMIDO' ||
+      regimeTributario === 'LUCRO_REAL';
+    const writeApuraIcms =
+      input.apuraIcms !== undefined || writeRegimeTributario;
+    const apuraIcms = lucroNormal
+      ? true
+      : regimeTributario === 'SIMPLES_NACIONAL'
+        ? (input.apuraIcms ?? false)
+        : false;
+
+    const tipoContribuinteIcms = (
+      writeTipoContribuinteIcms
+        ? input.tipoContribuinteIcms
+        : existing.tipoContribuinteIcms
+    ) as TipoContribuinteIcms | null;
+    const contribuinte = tipoContribuinteIcms === 'CONTRIBUINTE';
+
+    return {
+      writeRegimeTributario,
+      regimeTributario: input.regimeTributario ?? null,
+      writeApuraIcms,
+      apuraIcms,
+      writeInscricaoEstadual:
+        hasInscricaoEstadual || (writeTipoContribuinteIcms && !contribuinte),
+      inscricaoEstadual: contribuinte ? inscricaoEstadual : null,
+      writeTipoContribuinteIcms,
+      tipoContribuinteIcms: input.tipoContribuinteIcms ?? null,
+    };
   }
 
   private textArray(values: string[]) {

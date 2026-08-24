@@ -128,6 +128,10 @@ export const clientes = pgTable(
       .$type<Array<{ code: string; description: string }>>()
       .notNull()
       .default([]),
+    regimeTributario: text('regime_tributario'),
+    apuraIcms: boolean('apura_icms').notNull().default(false),
+    inscricaoEstadual: text('inscricao_estadual'),
+    tipoContribuinteIcms: text('tipo_contribuinte_icms'),
     logoKey: text('logo_key'),
     primeiroLogin: boolean('primeiro_login').notNull().default(true),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
@@ -153,9 +157,28 @@ export const clientes = pgTable(
       sql`jsonb_typeof(${table.cnaesSecundarios}) = 'array'`,
     ),
     check(
+      'chk_clientes_regime_tributario',
+      sql`${table.regimeTributario} IS NULL OR ${table.regimeTributario} IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL')`,
+    ),
+    check(
+      'chk_clientes_tipo_contribuinte_icms',
+      sql`${table.tipoContribuinteIcms} IS NULL OR ${table.tipoContribuinteIcms} IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')`,
+    ),
+    check(
+      'chk_clientes_inscricao_estadual',
+      sql`${table.inscricaoEstadual} IS NULL OR ${table.inscricaoEstadual} ~ '^[0-9A-Z./-]{2,20}$'`,
+    ),
+    check(
+      'chk_clientes_apura_icms_coerencia',
+      sql`(${table.tipoPessoa} = 'PF' AND ${table.regimeTributario} IS NULL) OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} IN ('LUCRO_PRESUMIDO', 'LUCRO_REAL') AND ${table.apuraIcms} = true) OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} = 'SIMPLES_NACIONAL') OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} IS NULL)`,
+    ),
+    check(
       'chk_clientes_documento_por_tipo',
       sql`(${table.tipoPessoa} = 'PJ' AND ${table.cnpj} ~ '^[0-9]{14}$' AND ${table.cpf} IS NULL) OR (${table.tipoPessoa} = 'PF' AND ${table.cnpj} ~ '^[0-9]{11}$' AND ${table.cpf} = ${table.cnpj})`,
     ),
+    index('idx_clientes_regime_tributario')
+      .on(table.regimeTributario)
+      .where(sql`${table.regimeTributario} IS NOT NULL`),
   ],
 );
 

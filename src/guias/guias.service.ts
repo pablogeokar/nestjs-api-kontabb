@@ -27,6 +27,10 @@ import { resultRows } from '../common/db-result';
 import { deriveDocumentStatus, getBahiaDate } from '../common/document-status';
 import { sanitizeFileName } from '../common/file-validation';
 import type { PaginationParams } from '../common/types';
+import {
+    simplesNacionalSemApuracaoIcms,
+    type RegimeTributario,
+} from '../clientes/clientes.types';
 
 @Injectable()
 export class GuiasService {
@@ -436,6 +440,8 @@ export class GuiasService {
             cnpj: string;
             razaoSocial: string;
             emails: string[] | null;
+            regimeTributario: RegimeTributario | null;
+            apuraIcms: boolean;
         };
         bytes: Buffer;
         fileName: string;
@@ -447,6 +453,13 @@ export class GuiasService {
         parcelaLabel: string | null;
         numeroParcelamento: string | null;
     }) {
+        if (
+            input.tipo === 'ICMS' &&
+            simplesNacionalSemApuracaoIcms(input.client)
+        ) {
+            return { ok: false as const, code: 'ICMS_NOT_APPLICABLE' };
+        }
+
         const guiaId = crypto.randomUUID();
         const r2Key = this.storage.documentObjectKey({
             cnpj: input.client.cnpj,

@@ -1,0 +1,9 @@
+ALTER TABLE "clientes" ADD COLUMN "regime_tributario" text;--> statement-breakpoint
+ALTER TABLE "clientes" ADD COLUMN "apura_icms" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "clientes" ADD COLUMN "inscricao_estadual" text;--> statement-breakpoint
+ALTER TABLE "clientes" ADD COLUMN "tipo_contribuinte_icms" text;--> statement-breakpoint
+CREATE INDEX "idx_clientes_regime_tributario" ON "clientes" USING btree ("regime_tributario") WHERE "clientes"."regime_tributario" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "clientes" ADD CONSTRAINT "chk_clientes_regime_tributario" CHECK ("clientes"."regime_tributario" IS NULL OR "clientes"."regime_tributario" IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL'));--> statement-breakpoint
+ALTER TABLE "clientes" ADD CONSTRAINT "chk_clientes_tipo_contribuinte_icms" CHECK ("clientes"."tipo_contribuinte_icms" IS NULL OR "clientes"."tipo_contribuinte_icms" IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE'));--> statement-breakpoint
+ALTER TABLE "clientes" ADD CONSTRAINT "chk_clientes_inscricao_estadual" CHECK ("clientes"."inscricao_estadual" IS NULL OR "clientes"."inscricao_estadual" ~ '^[0-9A-Z./-]{2,20}$');--> statement-breakpoint
+ALTER TABLE "clientes" ADD CONSTRAINT "chk_clientes_apura_icms_coerencia" CHECK (("clientes"."tipo_pessoa" = 'PF' AND "clientes"."regime_tributario" IS NULL) OR ("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."regime_tributario" IN ('LUCRO_PRESUMIDO', 'LUCRO_REAL') AND "clientes"."apura_icms" = true) OR ("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."regime_tributario" = 'SIMPLES_NACIONAL') OR ("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."regime_tributario" IS NULL));

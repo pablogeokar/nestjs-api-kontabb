@@ -1,0 +1,4139 @@
+{
+  "id": "ad2ea730-8daa-4ea9-b136-92e89859e458",
+  "prevId": "3e30191e-b513-4425-8900-bbd5ae5ab593",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.account": {
+      "name": "account",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_token_expires_at": {
+          "name": "access_token_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token_expires_at": {
+          "name": "refresh_token_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_account_provider_account": {
+          "name": "uidx_account_provider_account",
+          "columns": [
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_account_user_provider": {
+          "name": "uidx_account_user_provider",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "account_user_id_user_id_fk": {
+          "name": "account_user_id_user_id_fk",
+          "tableFrom": "account",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.app_rate_limits": {
+      "name": "app_rate_limits",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reset_at": {
+          "name": "reset_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_app_rate_limits_count": {
+          "name": "chk_app_rate_limits_count",
+          "value": "\"app_rate_limits\".\"count\" >= 0"
+        },
+        "chk_app_rate_limits_reset_at": {
+          "name": "chk_app_rate_limits_reset_at",
+          "value": "\"app_rate_limits\".\"reset_at\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.certificados_digitais": {
+      "name": "certificados_digitais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "razao_social": {
+          "name": "razao_social",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "senha_criptografada": {
+          "name": "senha_criptografada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thumbprint": {
+          "name": "thumbprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emissor": {
+          "name": "emissor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "validade_inicio": {
+          "name": "validade_inicio",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "validade_fim": {
+          "name": "validade_fim",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ATIVO'"
+        },
+        "uploadado_por": {
+          "name": "uploadado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_certificados_cliente_id": {
+          "name": "idx_certificados_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_certificados_cnpj": {
+          "name": "idx_certificados_cnpj",
+          "columns": [
+            {
+              "expression": "cnpj",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_certificados_status": {
+          "name": "idx_certificados_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_certificados_validade_fim": {
+          "name": "idx_certificados_validade_fim",
+          "columns": [
+            {
+              "expression": "validade_fim",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_certificados_cliente_ativo": {
+          "name": "uidx_certificados_cliente_ativo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status IN ('ATIVO', 'PRESTES_A_EXPIRAR')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "certificados_digitais_cliente_id_clientes_id_fk": {
+          "name": "certificados_digitais_cliente_id_clientes_id_fk",
+          "tableFrom": "certificados_digitais",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "certificados_digitais_uploadado_por_user_id_fk": {
+          "name": "certificados_digitais_uploadado_por_user_id_fk",
+          "tableFrom": "certificados_digitais",
+          "tableTo": "user",
+          "columnsFrom": [
+            "uploadado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_certificados_status": {
+          "name": "chk_certificados_status",
+          "value": "\"certificados_digitais\".\"status\" IN ('ATIVO', 'EXPIRADO', 'PRESTES_A_EXPIRAR', 'REVOGADO')"
+        },
+        "chk_certificados_cnpj": {
+          "name": "chk_certificados_cnpj",
+          "value": "\"certificados_digitais\".\"cnpj\" ~ '^[0-9]{14}$'"
+        },
+        "chk_certificados_validade": {
+          "name": "chk_certificados_validade",
+          "value": "\"certificados_digitais\".\"validade_inicio\" < \"certificados_digitais\".\"validade_fim\""
+        },
+        "chk_certificados_arquivo_key": {
+          "name": "chk_certificados_arquivo_key",
+          "value": "btrim(\"certificados_digitais\".\"arquivo_key\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.cfop_equivalencias": {
+      "name": "cfop_equivalencias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cfop_origem": {
+          "name": "cfop_origem",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cfop_destino": {
+          "name": "cfop_destino",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_operacao": {
+          "name": "tipo_operacao",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'SAIDA_PARA_ENTRADA'"
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_cfop_eq_origem": {
+          "name": "idx_cfop_eq_origem",
+          "columns": [
+            {
+              "expression": "cfop_origem",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_cfop_eq_cliente": {
+          "name": "idx_cfop_eq_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cfop_equivalencias_cliente_id_clientes_id_fk": {
+          "name": "cfop_equivalencias_cliente_id_clientes_id_fk",
+          "tableFrom": "cfop_equivalencias",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cfop_equivalencias_cfop_origem_cfops_codigo_fk": {
+          "name": "cfop_equivalencias_cfop_origem_cfops_codigo_fk",
+          "tableFrom": "cfop_equivalencias",
+          "tableTo": "cfops",
+          "columnsFrom": [
+            "cfop_origem"
+          ],
+          "columnsTo": [
+            "codigo"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cfop_equivalencias_cfop_destino_cfops_codigo_fk": {
+          "name": "cfop_equivalencias_cfop_destino_cfops_codigo_fk",
+          "tableFrom": "cfop_equivalencias",
+          "tableTo": "cfops",
+          "columnsFrom": [
+            "cfop_destino"
+          ],
+          "columnsTo": [
+            "codigo"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uidx_cfop_eq_cliente_origem": {
+          "name": "uidx_cfop_eq_cliente_origem",
+          "nullsNotDistinct": true,
+          "columns": [
+            "cliente_id",
+            "cfop_origem"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_cfop_eq_tipo": {
+          "name": "chk_cfop_eq_tipo",
+          "value": "\"cfop_equivalencias\".\"tipo_operacao\" IN ('SAIDA_PARA_ENTRADA', 'ENTRADA_PARA_SAIDA')"
+        },
+        "chk_cfop_eq_destino_diferente": {
+          "name": "chk_cfop_eq_destino_diferente",
+          "value": "\"cfop_equivalencias\".\"cfop_origem\" <> \"cfop_equivalencias\".\"cfop_destino\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.cfops": {
+      "name": "cfops",
+      "schema": "",
+      "columns": {
+        "codigo": {
+          "name": "codigo",
+          "type": "varchar(4)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_operacao": {
+          "name": "tipo_operacao",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "abrangencia": {
+          "name": "abrangencia",
+          "type": "varchar(15)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grupo": {
+          "name": "grupo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "descricao_detalhada": {
+          "name": "descricao_detalhada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_cfops_tipo": {
+          "name": "idx_cfops_tipo",
+          "columns": [
+            {
+              "expression": "tipo_operacao",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_cfops_abrangencia": {
+          "name": "idx_cfops_abrangencia",
+          "columns": [
+            {
+              "expression": "abrangencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_cfops_codigo": {
+          "name": "chk_cfops_codigo",
+          "value": "\"cfops\".\"codigo\" ~ '^[123567][0-9]{3}$'"
+        },
+        "chk_cfops_tipo": {
+          "name": "chk_cfops_tipo",
+          "value": "\"cfops\".\"tipo_operacao\" IN ('ENTRADA', 'SAIDA')"
+        },
+        "chk_cfops_abrangencia": {
+          "name": "chk_cfops_abrangencia",
+          "value": "\"cfops\".\"abrangencia\" IN ('ESTADUAL', 'INTERESTADUAL', 'EXTERIOR')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.clientes": {
+      "name": "clientes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tipo_pessoa": {
+          "name": "tipo_pessoa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PJ'"
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cpf": {
+          "name": "cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "razao_social": {
+          "name": "razao_social",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emails": {
+          "name": "emails",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "cep": {
+          "name": "cep",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logradouro": {
+          "name": "logradouro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero": {
+          "name": "numero",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "complemento": {
+          "name": "complemento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bairro": {
+          "name": "bairro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "municipio": {
+          "name": "municipio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uf": {
+          "name": "uf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cnae_principal_codigo": {
+          "name": "cnae_principal_codigo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cnae_principal_descricao": {
+          "name": "cnae_principal_descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cnaes_secundarios": {
+          "name": "cnaes_secundarios",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "regime_tributario": {
+          "name": "regime_tributario",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "apura_icms": {
+          "name": "apura_icms",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "inscricao_estadual": {
+          "name": "inscricao_estadual",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tipo_contribuinte_icms": {
+          "name": "tipo_contribuinte_icms",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo_key": {
+          "name": "logo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "primeiro_login": {
+          "name": "primeiro_login",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_clientes_user_id": {
+          "name": "uidx_clientes_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_clientes_regime_tributario": {
+          "name": "idx_clientes_regime_tributario",
+          "columns": [
+            {
+              "expression": "regime_tributario",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"clientes\".\"regime_tributario\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "clientes_user_id_user_id_fk": {
+          "name": "clientes_user_id_user_id_fk",
+          "tableFrom": "clientes",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "clientes_cnpj_unique": {
+          "name": "clientes_cnpj_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "cnpj"
+          ]
+        },
+        "clientes_cpf_unique": {
+          "name": "clientes_cpf_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "cpf"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_clientes_tipo_pessoa": {
+          "name": "chk_clientes_tipo_pessoa",
+          "value": "\"clientes\".\"tipo_pessoa\" IN ('PF', 'PJ')"
+        },
+        "chk_clientes_cep": {
+          "name": "chk_clientes_cep",
+          "value": "\"clientes\".\"cep\" IS NULL OR \"clientes\".\"cep\" ~ '^[0-9]{8}$'"
+        },
+        "chk_clientes_uf": {
+          "name": "chk_clientes_uf",
+          "value": "\"clientes\".\"uf\" IS NULL OR \"clientes\".\"uf\" ~ '^[A-Z]{2}$'"
+        },
+        "chk_clientes_cnae_principal": {
+          "name": "chk_clientes_cnae_principal",
+          "value": "\"clientes\".\"cnae_principal_codigo\" IS NULL OR \"clientes\".\"cnae_principal_codigo\" ~ '^[0-9]{7}$'"
+        },
+        "chk_clientes_cnaes_secundarios": {
+          "name": "chk_clientes_cnaes_secundarios",
+          "value": "jsonb_typeof(\"clientes\".\"cnaes_secundarios\") = 'array'"
+        },
+        "chk_clientes_regime_tributario": {
+          "name": "chk_clientes_regime_tributario",
+          "value": "\"clientes\".\"regime_tributario\" IS NULL OR \"clientes\".\"regime_tributario\" IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL')"
+        },
+        "chk_clientes_tipo_contribuinte_icms": {
+          "name": "chk_clientes_tipo_contribuinte_icms",
+          "value": "\"clientes\".\"tipo_contribuinte_icms\" IS NULL OR \"clientes\".\"tipo_contribuinte_icms\" IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')"
+        },
+        "chk_clientes_inscricao_estadual": {
+          "name": "chk_clientes_inscricao_estadual",
+          "value": "\"clientes\".\"inscricao_estadual\" IS NULL OR \"clientes\".\"inscricao_estadual\" ~ '^[0-9A-Z./-]{2,20}$'"
+        },
+        "chk_clientes_apura_icms_coerencia": {
+          "name": "chk_clientes_apura_icms_coerencia",
+          "value": "(\"clientes\".\"tipo_pessoa\" = 'PF' AND \"clientes\".\"regime_tributario\" IS NULL) OR (\"clientes\".\"tipo_pessoa\" = 'PJ' AND \"clientes\".\"regime_tributario\" IN ('LUCRO_PRESUMIDO', 'LUCRO_REAL') AND \"clientes\".\"apura_icms\" = true) OR (\"clientes\".\"tipo_pessoa\" = 'PJ' AND \"clientes\".\"regime_tributario\" = 'SIMPLES_NACIONAL') OR (\"clientes\".\"tipo_pessoa\" = 'PJ' AND \"clientes\".\"regime_tributario\" IS NULL)"
+        },
+        "chk_clientes_documento_por_tipo": {
+          "name": "chk_clientes_documento_por_tipo",
+          "value": "(\"clientes\".\"tipo_pessoa\" = 'PJ' AND \"clientes\".\"cnpj\" ~ '^[0-9]{14}$' AND \"clientes\".\"cpf\" IS NULL) OR (\"clientes\".\"tipo_pessoa\" = 'PF' AND \"clientes\".\"cnpj\" ~ '^[0-9]{11}$' AND \"clientes\".\"cpf\" = \"clientes\".\"cnpj\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.controle_nsu": {
+      "name": "controle_nsu",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_documento": {
+          "name": "tipo_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ultimo_nsu": {
+          "name": "ultimo_nsu",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "max_nsu": {
+          "name": "max_nsu",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "status_sefaz": {
+          "name": "status_sefaz",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_sefaz": {
+          "name": "motivo_sefaz",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ultima_consulta_em": {
+          "name": "ultima_consulta_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proxima_consulta_em": {
+          "name": "proxima_consulta_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_controle_nsu_cliente_tipo": {
+          "name": "uidx_controle_nsu_cliente_tipo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tipo_documento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_controle_nsu_cliente_id": {
+          "name": "idx_controle_nsu_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "controle_nsu_cliente_id_clientes_id_fk": {
+          "name": "controle_nsu_cliente_id_clientes_id_fk",
+          "tableFrom": "controle_nsu",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_controle_nsu_tipo": {
+          "name": "chk_controle_nsu_tipo",
+          "value": "\"controle_nsu\".\"tipo_documento\" IN ('NFE', 'CTE')"
+        },
+        "chk_controle_nsu_ultimo": {
+          "name": "chk_controle_nsu_ultimo",
+          "value": "\"controle_nsu\".\"ultimo_nsu\" >= 0"
+        },
+        "chk_controle_nsu_max": {
+          "name": "chk_controle_nsu_max",
+          "value": "\"controle_nsu\".\"max_nsu\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.documentos_fiscais": {
+      "name": "documentos_fiscais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chave_acesso": {
+          "name": "chave_acesso",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nsu": {
+          "name": "nsu",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_documento": {
+          "name": "tipo_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "modelo": {
+          "name": "modelo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "serie": {
+          "name": "serie",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero_documento": {
+          "name": "numero_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emitente_cnpj_cpf": {
+          "name": "emitente_cnpj_cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emitente_razao_social": {
+          "name": "emitente_razao_social",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destinatario_cnpj_cpf": {
+          "name": "destinatario_cnpj_cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "destinatario_razao_social": {
+          "name": "destinatario_razao_social",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_emissao": {
+          "name": "data_emissao",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_total": {
+          "name": "valor_total",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "situacao": {
+          "name": "situacao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'AUTORIZADA'"
+        },
+        "manifestacao_status": {
+          "name": "manifestacao_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'SEM_MANIFESTACAO'"
+        },
+        "tipo_operacao_escriturada": {
+          "name": "tipo_operacao_escriturada",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ENTRADA'"
+        },
+        "tp_nf_xml": {
+          "name": "tp_nf_xml",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "xml_key": {
+          "name": "xml_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "danfe_key": {
+          "name": "danfe_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_docs_fiscais_cliente_chave": {
+          "name": "uidx_docs_fiscais_cliente_chave",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "chave_acesso",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_cliente_id": {
+          "name": "idx_docs_fiscais_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_tipo": {
+          "name": "idx_docs_fiscais_tipo",
+          "columns": [
+            {
+              "expression": "tipo_documento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_data_emissao": {
+          "name": "idx_docs_fiscais_data_emissao",
+          "columns": [
+            {
+              "expression": "data_emissao",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_nsu": {
+          "name": "idx_docs_fiscais_nsu",
+          "columns": [
+            {
+              "expression": "nsu",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_destinatario": {
+          "name": "idx_docs_fiscais_destinatario",
+          "columns": [
+            {
+              "expression": "destinatario_cnpj_cpf",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_docs_fiscais_emitente": {
+          "name": "idx_docs_fiscais_emitente",
+          "columns": [
+            {
+              "expression": "emitente_cnpj_cpf",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "documentos_fiscais_cliente_id_clientes_id_fk": {
+          "name": "documentos_fiscais_cliente_id_clientes_id_fk",
+          "tableFrom": "documentos_fiscais",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_docs_fiscais_chave": {
+          "name": "chk_docs_fiscais_chave",
+          "value": "length(\"documentos_fiscais\".\"chave_acesso\") = 44"
+        },
+        "chk_docs_fiscais_tipo": {
+          "name": "chk_docs_fiscais_tipo",
+          "value": "\"documentos_fiscais\".\"tipo_documento\" IN ('NFE', 'CTE', 'NFCE')"
+        },
+        "chk_docs_fiscais_modelo": {
+          "name": "chk_docs_fiscais_modelo",
+          "value": "\"documentos_fiscais\".\"modelo\" IN ('55', '57', '65')"
+        },
+        "chk_docs_fiscais_tipo_modelo": {
+          "name": "chk_docs_fiscais_tipo_modelo",
+          "value": "(\"documentos_fiscais\".\"tipo_documento\" = 'NFE' AND \"documentos_fiscais\".\"modelo\" = '55') OR (\"documentos_fiscais\".\"tipo_documento\" = 'CTE' AND \"documentos_fiscais\".\"modelo\" = '57') OR (\"documentos_fiscais\".\"tipo_documento\" = 'NFCE' AND \"documentos_fiscais\".\"modelo\" = '65')"
+        },
+        "chk_docs_fiscais_situacao": {
+          "name": "chk_docs_fiscais_situacao",
+          "value": "\"documentos_fiscais\".\"situacao\" IN ('AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA')"
+        },
+        "chk_docs_fiscais_manifestacao": {
+          "name": "chk_docs_fiscais_manifestacao",
+          "value": "\"documentos_fiscais\".\"manifestacao_status\" IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')"
+        },
+        "chk_docs_fiscais_operacao_escriturada": {
+          "name": "chk_docs_fiscais_operacao_escriturada",
+          "value": "\"documentos_fiscais\".\"tipo_operacao_escriturada\" IN ('ENTRADA', 'SAIDA')"
+        },
+        "chk_docs_fiscais_tp_nf_xml": {
+          "name": "chk_docs_fiscais_tp_nf_xml",
+          "value": "\"documentos_fiscais\".\"tp_nf_xml\" IS NULL OR \"documentos_fiscais\".\"tp_nf_xml\" IN ('0', '1')"
+        },
+        "chk_docs_fiscais_valor": {
+          "name": "chk_docs_fiscais_valor",
+          "value": "\"documentos_fiscais\".\"valor_total\" >= 0"
+        },
+        "chk_docs_fiscais_xml_key": {
+          "name": "chk_docs_fiscais_xml_key",
+          "value": "btrim(\"documentos_fiscais\".\"xml_key\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.documentos_fiscais_itens": {
+      "name": "documentos_fiscais_itens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "documento_fiscal_id": {
+          "name": "documento_fiscal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero_item": {
+          "name": "numero_item",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_produto": {
+          "name": "codigo_produto",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_ean": {
+          "name": "codigo_ean",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ncm": {
+          "name": "ncm",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nve": {
+          "name": "nve",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cest": {
+          "name": "cest",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ind_escala": {
+          "name": "ind_escala",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cnpj_fabricante": {
+          "name": "cnpj_fabricante",
+          "type": "varchar(14)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_beneficio_fiscal": {
+          "name": "codigo_beneficio_fiscal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cfop_xml": {
+          "name": "cfop_xml",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cfop": {
+          "name": "cfop",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_operacao_escriturada": {
+          "name": "tipo_operacao_escriturada",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ENTRADA'"
+        },
+        "cfop_revisao_necessaria": {
+          "name": "cfop_revisao_necessaria",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "unidade_comercial": {
+          "name": "unidade_comercial",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantidade_comercial": {
+          "name": "quantidade_comercial",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_unitario_comercial": {
+          "name": "valor_unitario_comercial",
+          "type": "numeric(21, 10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_bruto_produto": {
+          "name": "valor_bruto_produto",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_ean_tributavel": {
+          "name": "codigo_ean_tributavel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unidade_tributavel": {
+          "name": "unidade_tributavel",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantidade_tributavel": {
+          "name": "quantidade_tributavel",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_unitario_tributavel": {
+          "name": "valor_unitario_tributavel",
+          "type": "numeric(21, 10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_frete": {
+          "name": "valor_frete",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_seguro": {
+          "name": "valor_seguro",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_desconto": {
+          "name": "valor_desconto",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_outras_despesas": {
+          "name": "valor_outras_despesas",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ind_total": {
+          "name": "ind_total",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero_pedido_compra": {
+          "name": "numero_pedido_compra",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "item_pedido_compra": {
+          "name": "item_pedido_compra",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "informacoes_adicionais": {
+          "name": "informacoes_adicionais",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origem_mercadoria": {
+          "name": "origem_mercadoria",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cst_icms": {
+          "name": "cst_icms",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "csosn_icms": {
+          "name": "csosn_icms",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "modalidade_bc_icms": {
+          "name": "modalidade_bc_icms",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "percentual_reducao_bc_icms": {
+          "name": "percentual_reducao_bc_icms",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_icms": {
+          "name": "valor_bc_icms",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_icms": {
+          "name": "aliquota_icms",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms": {
+          "name": "valor_icms",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "modalidade_bc_icms_st": {
+          "name": "modalidade_bc_icms_st",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "percentual_mva_st": {
+          "name": "percentual_mva_st",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "percentual_reducao_bc_icms_st": {
+          "name": "percentual_reducao_bc_icms_st",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_icms_st": {
+          "name": "valor_bc_icms_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_icms_st": {
+          "name": "aliquota_icms_st",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms_st": {
+          "name": "valor_icms_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_fcp": {
+          "name": "valor_bc_fcp",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_fcp": {
+          "name": "aliquota_fcp",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_fcp": {
+          "name": "valor_fcp",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_fcp_st": {
+          "name": "valor_bc_fcp_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_fcp_st": {
+          "name": "aliquota_fcp_st",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_fcp_st": {
+          "name": "valor_fcp_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_desoneracao_icms": {
+          "name": "motivo_desoneracao_icms",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms_desonerado": {
+          "name": "valor_icms_desonerado",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "percentual_diferimento": {
+          "name": "percentual_diferimento",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms_diferido": {
+          "name": "valor_icms_diferido",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms_operacao": {
+          "name": "valor_icms_operacao",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_credito_sn": {
+          "name": "aliquota_credito_sn",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_credito_icms_sn": {
+          "name": "valor_credito_icms_sn",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_icms_st_retido": {
+          "name": "valor_bc_icms_st_retido",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_icms_st_retido": {
+          "name": "aliquota_icms_st_retido",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms_st_retido": {
+          "name": "valor_icms_st_retido",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_icms_uf_dest": {
+          "name": "valor_bc_icms_uf_dest",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_fcp_uf_dest": {
+          "name": "valor_bc_fcp_uf_dest",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "percentual_fcp_uf_dest": {
+          "name": "percentual_fcp_uf_dest",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_icms_uf_dest": {
+          "name": "aliquota_icms_uf_dest",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_icms_interestadual": {
+          "name": "aliquota_icms_interestadual",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "percentual_provisorio_partilha": {
+          "name": "percentual_provisorio_partilha",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_fcp_uf_dest": {
+          "name": "valor_fcp_uf_dest",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms_uf_dest": {
+          "name": "valor_icms_uf_dest",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_icms_uf_remetente": {
+          "name": "valor_icms_uf_remetente",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cst_ipi": {
+          "name": "cst_ipi",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "classe_enquadramento_ipi": {
+          "name": "classe_enquadramento_ipi",
+          "type": "varchar(5)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_enquadramento_ipi": {
+          "name": "codigo_enquadramento_ipi",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cnpj_produtor_ipi": {
+          "name": "cnpj_produtor_ipi",
+          "type": "varchar(14)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_ipi": {
+          "name": "valor_bc_ipi",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_ipi": {
+          "name": "aliquota_ipi",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantidade_unidade_ipi": {
+          "name": "quantidade_unidade_ipi",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_unidade_ipi": {
+          "name": "valor_unidade_ipi",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_ipi": {
+          "name": "valor_ipi",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cst_pis": {
+          "name": "cst_pis",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_pis": {
+          "name": "valor_bc_pis",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_pis_percentual": {
+          "name": "aliquota_pis_percentual",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantidade_bc_pis": {
+          "name": "quantidade_bc_pis",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_pis_reais": {
+          "name": "aliquota_pis_reais",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_pis": {
+          "name": "valor_pis",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_pis_st": {
+          "name": "valor_bc_pis_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_pis_st_percentual": {
+          "name": "aliquota_pis_st_percentual",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_pis_st": {
+          "name": "valor_pis_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cst_cofins": {
+          "name": "cst_cofins",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_cofins": {
+          "name": "valor_bc_cofins",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_cofins_percentual": {
+          "name": "aliquota_cofins_percentual",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantidade_bc_cofins": {
+          "name": "quantidade_bc_cofins",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_cofins_reais": {
+          "name": "aliquota_cofins_reais",
+          "type": "numeric(15, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_cofins": {
+          "name": "valor_cofins",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_cofins_st": {
+          "name": "valor_bc_cofins_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_cofins_st_percentual": {
+          "name": "aliquota_cofins_st_percentual",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_cofins_st": {
+          "name": "valor_cofins_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_bc_ii": {
+          "name": "valor_bc_ii",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_despesa_aduaneira": {
+          "name": "valor_despesa_aduaneira",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_imposto_importacao": {
+          "name": "valor_imposto_importacao",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_iof": {
+          "name": "valor_iof",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_tributos_aproximados": {
+          "name": "valor_tributos_aproximados",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_item_doc_num": {
+          "name": "uidx_item_doc_num",
+          "columns": [
+            {
+              "expression": "documento_fiscal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "numero_item",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_cliente_id": {
+          "name": "idx_item_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_cfop": {
+          "name": "idx_item_cfop",
+          "columns": [
+            {
+              "expression": "cfop",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_cfop_xml": {
+          "name": "idx_item_cfop_xml",
+          "columns": [
+            {
+              "expression": "cfop_xml",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_operacao_escriturada": {
+          "name": "idx_item_operacao_escriturada",
+          "columns": [
+            {
+              "expression": "tipo_operacao_escriturada",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_cst_icms": {
+          "name": "idx_item_cst_icms",
+          "columns": [
+            {
+              "expression": "cst_icms",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_csosn_icms": {
+          "name": "idx_item_csosn_icms",
+          "columns": [
+            {
+              "expression": "csosn_icms",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_cst_pis": {
+          "name": "idx_item_cst_pis",
+          "columns": [
+            {
+              "expression": "cst_pis",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_cst_cofins": {
+          "name": "idx_item_cst_cofins",
+          "columns": [
+            {
+              "expression": "cst_cofins",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_item_ncm": {
+          "name": "idx_item_ncm",
+          "columns": [
+            {
+              "expression": "ncm",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "documentos_fiscais_itens_documento_fiscal_id_documentos_fiscais_id_fk": {
+          "name": "documentos_fiscais_itens_documento_fiscal_id_documentos_fiscais_id_fk",
+          "tableFrom": "documentos_fiscais_itens",
+          "tableTo": "documentos_fiscais",
+          "columnsFrom": [
+            "documento_fiscal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "documentos_fiscais_itens_cliente_id_clientes_id_fk": {
+          "name": "documentos_fiscais_itens_cliente_id_clientes_id_fk",
+          "tableFrom": "documentos_fiscais_itens",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_item_numero": {
+          "name": "chk_item_numero",
+          "value": "\"documentos_fiscais_itens\".\"numero_item\" BETWEEN 1 AND 990"
+        },
+        "chk_item_ind_escala": {
+          "name": "chk_item_ind_escala",
+          "value": "\"documentos_fiscais_itens\".\"ind_escala\" IS NULL OR \"documentos_fiscais_itens\".\"ind_escala\" IN ('S', 'N')"
+        },
+        "chk_item_ind_total": {
+          "name": "chk_item_ind_total",
+          "value": "\"documentos_fiscais_itens\".\"ind_total\" IN ('0', '1')"
+        },
+        "chk_item_origem": {
+          "name": "chk_item_origem",
+          "value": "\"documentos_fiscais_itens\".\"origem_mercadoria\" IS NULL OR \"documentos_fiscais_itens\".\"origem_mercadoria\" ~ '^[0-8]$'"
+        },
+        "chk_item_cfop": {
+          "name": "chk_item_cfop",
+          "value": "\"documentos_fiscais_itens\".\"cfop\" ~ '^[1-7][0-9]{3}$'"
+        },
+        "chk_item_cfop_xml": {
+          "name": "chk_item_cfop_xml",
+          "value": "\"documentos_fiscais_itens\".\"cfop_xml\" IS NULL OR \"documentos_fiscais_itens\".\"cfop_xml\" ~ '^[1-7][0-9]{3}$'"
+        },
+        "chk_item_operacao_escriturada": {
+          "name": "chk_item_operacao_escriturada",
+          "value": "\"documentos_fiscais_itens\".\"tipo_operacao_escriturada\" IN ('ENTRADA', 'SAIDA')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.eventos_auditoria": {
+      "name": "eventos_auditoria",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "ator_user_id": {
+          "name": "ator_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acao": {
+          "name": "acao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entidade_tipo": {
+          "name": "entidade_tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entidade_id": {
+          "name": "entidade_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dados": {
+          "name": "dados",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_eventos_auditoria_entidade": {
+          "name": "idx_eventos_auditoria_entidade",
+          "columns": [
+            {
+              "expression": "entidade_tipo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entidade_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_eventos_auditoria_ator": {
+          "name": "idx_eventos_auditoria_ator",
+          "columns": [
+            {
+              "expression": "ator_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "eventos_auditoria_ator_user_id_user_id_fk": {
+          "name": "eventos_auditoria_ator_user_id_user_id_fk",
+          "tableFrom": "eventos_auditoria",
+          "tableTo": "user",
+          "columnsFrom": [
+            "ator_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.eventos_fiscais": {
+      "name": "eventos_fiscais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "documento_fiscal_id": {
+          "name": "documento_fiscal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_evento": {
+          "name": "tipo_evento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_evento": {
+          "name": "codigo_evento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequencia_evento": {
+          "name": "sequencia_evento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "protocolo": {
+          "name": "protocolo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_sefaz": {
+          "name": "status_sefaz",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_sefaz": {
+          "name": "motivo_sefaz",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_evento": {
+          "name": "data_evento",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "xml_evento_key": {
+          "name": "xml_evento_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_eventos_fiscais_doc": {
+          "name": "idx_eventos_fiscais_doc",
+          "columns": [
+            {
+              "expression": "documento_fiscal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_eventos_fiscais_tipo": {
+          "name": "idx_eventos_fiscais_tipo",
+          "columns": [
+            {
+              "expression": "tipo_evento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_eventos_fiscais_data": {
+          "name": "idx_eventos_fiscais_data",
+          "columns": [
+            {
+              "expression": "data_evento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk": {
+          "name": "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk",
+          "tableFrom": "eventos_fiscais",
+          "tableTo": "documentos_fiscais",
+          "columnsFrom": [
+            "documento_fiscal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_eventos_fiscais_tipo": {
+          "name": "chk_eventos_fiscais_tipo",
+          "value": "\"eventos_fiscais\".\"tipo_evento\" IN ('MANIFESTACAO_CIENCIA', 'MANIFESTACAO_CONFIRMACAO', 'MANIFESTACAO_DESCONHECIMENTO', 'MANIFESTACAO_NAO_REALIZADA', 'CANCELAMENTO', 'CCE')"
+        },
+        "chk_eventos_fiscais_sequencia": {
+          "name": "chk_eventos_fiscais_sequencia",
+          "value": "\"eventos_fiscais\".\"sequencia_evento\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.folhas_pagamento": {
+      "name": "folhas_pagamento",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "documento_id": {
+          "name": "documento_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "arquivo_nome": {
+          "name": "arquivo_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "periodo_inicio": {
+          "name": "periodo_inicio",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "periodo_fim": {
+          "name": "periodo_fim",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_bruto": {
+          "name": "total_bruto",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_descontos": {
+          "name": "total_descontos",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_liquido": {
+          "name": "total_liquido",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_funcionarios": {
+          "name": "total_funcionarios",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_inss": {
+          "name": "total_inss",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "total_fgts": {
+          "name": "total_fgts",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "total_irrf": {
+          "name": "total_irrf",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "total_salario_familia": {
+          "name": "total_salario_familia",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "uploadado_por": {
+          "name": "uploadado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_folhas_cliente_competencia": {
+          "name": "uidx_folhas_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_folhas_cliente_id": {
+          "name": "idx_folhas_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_folhas_competencia": {
+          "name": "idx_folhas_competencia",
+          "columns": [
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "folhas_pagamento_cliente_id_clientes_id_fk": {
+          "name": "folhas_pagamento_cliente_id_clientes_id_fk",
+          "tableFrom": "folhas_pagamento",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "folhas_pagamento_documento_id_guias_id_fk": {
+          "name": "folhas_pagamento_documento_id_guias_id_fk",
+          "tableFrom": "folhas_pagamento",
+          "tableTo": "guias",
+          "columnsFrom": [
+            "documento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "folhas_pagamento_uploadado_por_user_id_fk": {
+          "name": "folhas_pagamento_uploadado_por_user_id_fk",
+          "tableFrom": "folhas_pagamento",
+          "tableTo": "user",
+          "columnsFrom": [
+            "uploadado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_folhas_id_cliente": {
+          "name": "uq_folhas_id_cliente",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "cliente_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_folhas_competencia": {
+          "name": "chk_folhas_competencia",
+          "value": "\"folhas_pagamento\".\"competencia\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        },
+        "chk_folhas_periodo": {
+          "name": "chk_folhas_periodo",
+          "value": "\"folhas_pagamento\".\"periodo_inicio\" <= \"folhas_pagamento\".\"periodo_fim\""
+        },
+        "chk_folhas_totais": {
+          "name": "chk_folhas_totais",
+          "value": "\"folhas_pagamento\".\"total_bruto\" >= 0 AND \"folhas_pagamento\".\"total_descontos\" >= 0 AND \"folhas_pagamento\".\"total_liquido\" >= 0 AND \"folhas_pagamento\".\"total_funcionarios\" >= 0 AND \"folhas_pagamento\".\"total_inss\" >= 0 AND \"folhas_pagamento\".\"total_fgts\" >= 0 AND \"folhas_pagamento\".\"total_irrf\" >= 0 AND \"folhas_pagamento\".\"total_salario_familia\" >= 0"
+        },
+        "chk_folhas_arquivo_key": {
+          "name": "chk_folhas_arquivo_key",
+          "value": "btrim(\"folhas_pagamento\".\"arquivo_key\") <> ''"
+        },
+        "chk_folhas_arquivo_nome": {
+          "name": "chk_folhas_arquivo_nome",
+          "value": "btrim(\"folhas_pagamento\".\"arquivo_nome\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.funcionarios_rh": {
+      "name": "funcionarios_rh",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_funcionario": {
+          "name": "codigo_funcionario",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nome_completo": {
+          "name": "nome_completo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cpf": {
+          "name": "cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_admissao": {
+          "name": "data_admissao",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cargo": {
+          "name": "cargo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "departamento": {
+          "name": "departamento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "senha_hash": {
+          "name": "senha_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "primeiro_acesso": {
+          "name": "primeiro_acesso",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_funcionarios_cliente_codigo": {
+          "name": "uidx_funcionarios_cliente_codigo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "codigo_funcionario",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_funcionarios_cliente_id": {
+          "name": "idx_funcionarios_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "funcionarios_rh_cliente_id_clientes_id_fk": {
+          "name": "funcionarios_rh_cliente_id_clientes_id_fk",
+          "tableFrom": "funcionarios_rh",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_funcionarios_id_cliente": {
+          "name": "uq_funcionarios_id_cliente",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "cliente_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_funcionarios_codigo": {
+          "name": "chk_funcionarios_codigo",
+          "value": "btrim(\"funcionarios_rh\".\"codigo_funcionario\") <> ''"
+        },
+        "chk_funcionarios_nome": {
+          "name": "chk_funcionarios_nome",
+          "value": "btrim(\"funcionarios_rh\".\"nome_completo\") <> ''"
+        },
+        "chk_funcionarios_cpf": {
+          "name": "chk_funcionarios_cpf",
+          "value": "\"funcionarios_rh\".\"cpf\" IS NULL OR \"funcionarios_rh\".\"cpf\" ~ '^[0-9]{11}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.guias": {
+      "name": "guias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "periodo": {
+          "name": "periodo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vencimento": {
+          "name": "vencimento",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor": {
+          "name": "valor",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "arquivo_nome": {
+          "name": "arquivo_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDENTE'"
+        },
+        "pago_em": {
+          "name": "pago_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pagamento_confirmado_por": {
+          "name": "pagamento_confirmado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observacao_pagamento": {
+          "name": "observacao_pagamento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "comprovante_key": {
+          "name": "comprovante_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email_status": {
+          "name": "email_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'NAO_ENVIADO'"
+        },
+        "email_erro": {
+          "name": "email_erro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero_parcelamento": {
+          "name": "numero_parcelamento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_guias_cliente_id": {
+          "name": "idx_guias_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_tipo": {
+          "name": "idx_guias_tipo",
+          "columns": [
+            {
+              "expression": "tipo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_periodo": {
+          "name": "idx_guias_periodo",
+          "columns": [
+            {
+              "expression": "periodo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_status": {
+          "name": "idx_guias_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_guias_pagamento_confirmado_por": {
+          "name": "idx_guias_pagamento_confirmado_por",
+          "columns": [
+            {
+              "expression": "pagamento_confirmado_por",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "guias_cliente_id_clientes_id_fk": {
+          "name": "guias_cliente_id_clientes_id_fk",
+          "tableFrom": "guias",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "guias_pagamento_confirmado_por_user_id_fk": {
+          "name": "guias_pagamento_confirmado_por_user_id_fk",
+          "tableFrom": "guias",
+          "tableTo": "user",
+          "columnsFrom": [
+            "pagamento_confirmado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_guias_identidade": {
+          "name": "uq_guias_identidade",
+          "nullsNotDistinct": true,
+          "columns": [
+            "cliente_id",
+            "tipo",
+            "periodo",
+            "numero_parcelamento"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_guias_tipo": {
+          "name": "chk_guias_tipo",
+          "value": "\"guias\".\"tipo\" IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')"
+        },
+        "chk_guias_status": {
+          "name": "chk_guias_status",
+          "value": "\"guias\".\"status\" IN ('PENDENTE', 'PAGO')"
+        },
+        "chk_guias_email_status": {
+          "name": "chk_guias_email_status",
+          "value": "\"guias\".\"email_status\" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')"
+        },
+        "chk_guias_periodo": {
+          "name": "chk_guias_periodo",
+          "value": "\"guias\".\"periodo\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        },
+        "chk_guias_arquivo_key": {
+          "name": "chk_guias_arquivo_key",
+          "value": "btrim(\"guias\".\"arquivo_key\") <> ''"
+        },
+        "chk_guias_arquivo_nome": {
+          "name": "chk_guias_arquivo_nome",
+          "value": "btrim(\"guias\".\"arquivo_nome\") <> ''"
+        },
+        "chk_guias_valor": {
+          "name": "chk_guias_valor",
+          "value": "\"guias\".\"valor\" IS NULL OR \"guias\".\"valor\" >= 0"
+        },
+        "chk_guias_pagamento": {
+          "name": "chk_guias_pagamento",
+          "value": "(\"guias\".\"status\" = 'PENDENTE' AND \"guias\".\"pago_em\" IS NULL) OR (\"guias\".\"status\" = 'PAGO' AND \"guias\".\"pago_em\" IS NOT NULL)"
+        },
+        "chk_guias_numero_parcelamento": {
+          "name": "chk_guias_numero_parcelamento",
+          "value": "\"guias\".\"numero_parcelamento\" IS NULL OR btrim(\"guias\".\"numero_parcelamento\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.itens_folha_pagamento": {
+      "name": "itens_folha_pagamento",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "folha_id": {
+          "name": "folha_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "funcionario_id": {
+          "name": "funcionario_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "salario_base": {
+          "name": "salario_base",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_proventos": {
+          "name": "total_proventos",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_descontos": {
+          "name": "total_descontos",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "salario_liquido": {
+          "name": "salario_liquido",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_inss": {
+          "name": "base_inss",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_inss": {
+          "name": "aliquota_inss",
+          "type": "numeric(6, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_inss": {
+          "name": "valor_inss",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "base_fgts": {
+          "name": "base_fgts",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_fgts": {
+          "name": "valor_fgts",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "base_irrf": {
+          "name": "base_irrf",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_irrf": {
+          "name": "valor_irrf",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "referencia": {
+          "name": "referencia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_folha": {
+          "name": "codigo_folha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dependentes_ir": {
+          "name": "dependentes_ir",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "dependentes_sf": {
+          "name": "dependentes_sf",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "rubricas": {
+          "name": "rubricas",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_itens_folha_funcionario": {
+          "name": "uidx_itens_folha_funcionario",
+          "columns": [
+            {
+              "expression": "folha_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "funcionario_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_itens_folha_id": {
+          "name": "idx_itens_folha_id",
+          "columns": [
+            {
+              "expression": "folha_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_itens_funcionario_id": {
+          "name": "idx_itens_funcionario_id",
+          "columns": [
+            {
+              "expression": "funcionario_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_itens_cliente_id": {
+          "name": "idx_itens_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "itens_folha_pagamento_folha_id_folhas_pagamento_id_fk": {
+          "name": "itens_folha_pagamento_folha_id_folhas_pagamento_id_fk",
+          "tableFrom": "itens_folha_pagamento",
+          "tableTo": "folhas_pagamento",
+          "columnsFrom": [
+            "folha_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "itens_folha_pagamento_funcionario_id_funcionarios_rh_id_fk": {
+          "name": "itens_folha_pagamento_funcionario_id_funcionarios_rh_id_fk",
+          "tableFrom": "itens_folha_pagamento",
+          "tableTo": "funcionarios_rh",
+          "columnsFrom": [
+            "funcionario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "itens_folha_pagamento_cliente_id_clientes_id_fk": {
+          "name": "itens_folha_pagamento_cliente_id_clientes_id_fk",
+          "tableFrom": "itens_folha_pagamento",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_itens_folha_cliente": {
+          "name": "fk_itens_folha_cliente",
+          "tableFrom": "itens_folha_pagamento",
+          "tableTo": "folhas_pagamento",
+          "columnsFrom": [
+            "folha_id",
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id",
+            "cliente_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_itens_funcionario_cliente": {
+          "name": "fk_itens_funcionario_cliente",
+          "tableFrom": "itens_folha_pagamento",
+          "tableTo": "funcionarios_rh",
+          "columnsFrom": [
+            "funcionario_id",
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id",
+            "cliente_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_itens_dependentes": {
+          "name": "chk_itens_dependentes",
+          "value": "COALESCE(\"itens_folha_pagamento\".\"dependentes_ir\", 0) >= 0 AND COALESCE(\"itens_folha_pagamento\".\"dependentes_sf\", 0) >= 0"
+        },
+        "chk_itens_rubricas": {
+          "name": "chk_itens_rubricas",
+          "value": "jsonb_typeof(\"itens_folha_pagamento\".\"rubricas\") = 'array'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.session": {
+      "name": "session",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "session_user_id_user_id_fk": {
+          "name": "session_user_id_user_id_fk",
+          "tableFrom": "session",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "session_token_unique": {
+          "name": "session_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.storage_cleanup_jobs": {
+      "name": "storage_cleanup_jobs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "object_key": {
+          "name": "object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entidade_tipo": {
+          "name": "entidade_tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entidade_id": {
+          "name": "entidade_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDENTE'"
+        },
+        "tentativas": {
+          "name": "tentativas",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "ultimo_erro": {
+          "name": "ultimo_erro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "concluido_em": {
+          "name": "concluido_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_storage_cleanup_status_criado_em": {
+          "name": "idx_storage_cleanup_status_criado_em",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "storage_cleanup_jobs_object_key_unique": {
+          "name": "storage_cleanup_jobs_object_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "object_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_storage_cleanup_status": {
+          "name": "chk_storage_cleanup_status",
+          "value": "\"storage_cleanup_jobs\".\"status\" IN ('PENDENTE', 'PROCESSANDO', 'FALHOU', 'CONCLUIDO')"
+        },
+        "chk_storage_cleanup_object_key": {
+          "name": "chk_storage_cleanup_object_key",
+          "value": "btrim(\"storage_cleanup_jobs\".\"object_key\") <> ''"
+        },
+        "chk_storage_cleanup_tentativas": {
+          "name": "chk_storage_cleanup_tentativas",
+          "value": "\"storage_cleanup_jobs\".\"tentativas\" >= 0"
+        },
+        "chk_storage_cleanup_conclusao": {
+          "name": "chk_storage_cleanup_conclusao",
+          "value": "(\"storage_cleanup_jobs\".\"status\" = 'CONCLUIDO' AND \"storage_cleanup_jobs\".\"concluido_em\" IS NOT NULL) OR (\"storage_cleanup_jobs\".\"status\" <> 'CONCLUIDO' AND \"storage_cleanup_jobs\".\"concluido_em\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.user": {
+      "name": "user",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'CLIENTE'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_email_unique": {
+          "name": "user_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_user_role": {
+          "name": "chk_user_role",
+          "value": "\"user\".\"role\" IN ('ADMIN', 'COLABORADOR', 'CLIENTE')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.verification": {
+      "name": "verification",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_verification_identifier": {
+          "name": "uidx_verification_identifier",
+          "columns": [
+            {
+              "expression": "identifier",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_verification_value": {
+          "name": "uidx_verification_value",
+          "columns": [
+            {
+              "expression": "value",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.visualizacoes_folhas": {
+      "name": "visualizacoes_folhas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "folha_id": {
+          "name": "folha_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visualizado_em": {
+          "name": "visualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_visualizacoes_folha": {
+          "name": "idx_visualizacoes_folha",
+          "columns": [
+            {
+              "expression": "folha_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visualizacoes_folha_user": {
+          "name": "idx_visualizacoes_folha_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "visualizacoes_folhas_folha_id_folhas_pagamento_id_fk": {
+          "name": "visualizacoes_folhas_folha_id_folhas_pagamento_id_fk",
+          "tableFrom": "visualizacoes_folhas",
+          "tableTo": "folhas_pagamento",
+          "columnsFrom": [
+            "folha_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "visualizacoes_folhas_user_id_user_id_fk": {
+          "name": "visualizacoes_folhas_user_id_user_id_fk",
+          "tableFrom": "visualizacoes_folhas",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.visualizacoes_guias": {
+      "name": "visualizacoes_guias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "guia_id": {
+          "name": "guia_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visualizado_em": {
+          "name": "visualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_visualizacoes_guia": {
+          "name": "idx_visualizacoes_guia",
+          "columns": [
+            {
+              "expression": "guia_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visualizacoes_guia_user": {
+          "name": "idx_visualizacoes_guia_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "visualizacoes_guias_guia_id_guias_id_fk": {
+          "name": "visualizacoes_guias_guia_id_guias_id_fk",
+          "tableFrom": "visualizacoes_guias",
+          "tableTo": "guias",
+          "columnsFrom": [
+            "guia_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "visualizacoes_guias_user_id_user_id_fk": {
+          "name": "visualizacoes_guias_user_id_user_id_fk",
+          "tableFrom": "visualizacoes_guias",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

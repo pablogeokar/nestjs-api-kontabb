@@ -3,9 +3,20 @@ import { and, asc, desc, eq, gte, lte, or, sql, type SQL } from 'drizzle-orm';
 import type { PaginationParams } from '../../common/types';
 import { DatabaseService } from '../../database/database.service';
 import {
+  clientes,
   documentosFiscais,
   documentosFiscaisItens,
 } from '../../database/schema';
+import {
+  simplesNacionalSemApuracaoIcms,
+  type RegimeTributario,
+} from '../../clientes/clientes.types';
+
+const SIMPLES_SEM_APURACAO_OBSERVACAO =
+  'Cliente optante pelo Simples Nacional — ICMS recolhido via DAS. Apuração de débito/crédito não aplicável.';
+
+const SIMPLES_C190_OBSERVACAO =
+  'Empresa optante pelo Simples Nacional — valores de ICMS apresentados apenas para conferência, sem geração de débitos/créditos.';
 
 interface ItemFilters {
   clienteId?: string;
@@ -67,6 +78,7 @@ export class FiscalItensService {
   }
 
   async getC190(input: ItemFilters) {
+    const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
     const where = this.buildWhere(input);
     const cst = sql<string>`COALESCE(${documentosFiscaisItens.cstIcms}, ${documentosFiscaisItens.csosnIcms}, '')`;
     const operacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
@@ -106,7 +118,14 @@ export class FiscalItensService {
         documentosFiscaisItens.aliquotaIcms,
       );
 
-    return rows;
+    const icmsCompoeApuracao = fiscalConfig
+      ? !simplesNacionalSemApuracaoIcms(fiscalConfig)
+      : true;
+    return {
+      data: rows,
+      icms_compoe_apuracao: icmsCompoeApuracao,
+      observacao: icmsCompoeApuracao ? null : SIMPLES_C190_OBSERVACAO,
+    };
   }
 
   async getProdutos0200(input: ItemFilters) {
@@ -148,10 +167,11 @@ export class FiscalItensService {
   }
 
   async getResumoLivros(input: ItemFilters) {
+    const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
     const where = this.buildWhere(input);
     const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
 
-    return this.database.db
+    const rows = await this.database.db
       .select({
         tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
         cfop: documentosFiscaisItens.cfop,
@@ -180,9 +200,29 @@ export class FiscalItensService {
         documentosFiscaisItens.tipoOperacaoEscriturada,
         documentosFiscaisItens.cfop,
       );
+
+    if (fiscalConfig && simplesNacionalSemApuracaoIcms(fiscalConfig)) {
+      return rows.map((row) => ({
+        ...row,
+        icms_creditado_debitado: '0.00',
+        credito_icms: '0.00',
+        debito_icms: '0.00',
+      }));
+    }
+    return rows;
   }
 
   async getApuracaoIcms(input: ItemFilters) {
+    const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
+    if (fiscalConfig && simplesNacionalSemApuracaoIcms(fiscalConfig)) {
+      return {
+        total_creditos: '0.00',
+        total_debitos: '0.00',
+        saldo_apurado: '0.00',
+        observacao: SIMPLES_SEM_APURACAO_OBSERVACAO,
+      };
+    }
+
     const where = this.buildWhere(input);
     const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
     const rows = await this.database.db
@@ -197,13 +237,32 @@ export class FiscalItensService {
         eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
       )
       .where(where);
-    return (
-      rows[0] ?? {
+    return {
+      ...(rows[0] ?? {
         total_creditos: '0',
         total_debitos: '0',
         saldo_apurado: '0',
-      }
-    );
+      }),
+      observacao: null,
+    };
+  }
+
+  private async getClienteFiscalConfig(clienteId?: string) {
+    if (!clienteId) return null;
+    const rows = await this.database.db
+      .select({
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, clienteId))
+      .limit(1);
+    const config = rows[0];
+    if (!config) return null;
+    return {
+      regimeTributario: config.regimeTributario as RegimeTributario | null,
+      apuraIcms: config.apuraIcms,
+    };
   }
 
   private buildWhere(input: ItemFilters): SQL | undefined {

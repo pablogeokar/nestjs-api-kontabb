@@ -382,6 +382,9 @@ export class UploadController {
         cnpj: client.cnpj,
         razaoSocial: client.razaoSocial,
         emails: client.emails,
+        regimeTributario: client.regimeTributario as
+          'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null,
+        apuraIcms: client.apuraIcms,
       },
       bytes: Buffer.from(file.buffer),
       fileName: file.originalname,
@@ -398,9 +401,11 @@ export class UploadController {
       const message =
         upload.code === 'DUPLICATE'
           ? `Guia duplicada: já existe um ${tipo} para o período ${finalPeriod}.`
-          : upload.code === 'STORAGE_FAILED'
-            ? 'Falha ao armazenar a guia. Tente novamente.'
-            : 'Falha ao registrar a guia. Tente novamente.';
+          : upload.code === 'ICMS_NOT_APPLICABLE'
+            ? 'Este cliente recolhe ICMS pelo Simples Nacional via DAS e não possui apuração separada habilitada.'
+            : upload.code === 'STORAGE_FAILED'
+              ? 'Falha ao armazenar a guia. Tente novamente.'
+              : 'Falha ao registrar a guia. Tente novamente.';
       return {
         fileName: file.originalname,
         success: false,

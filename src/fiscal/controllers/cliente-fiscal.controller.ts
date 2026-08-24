@@ -366,7 +366,7 @@ export class ClienteFiscalController {
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
-    const data = await this.fiscalItensService.getC190({
+    return this.fiscalItensService.getC190({
       clienteId: cliente.id,
       documentoId: query.documentoId,
       cfop: query.cfop,
@@ -377,7 +377,6 @@ export class ClienteFiscalController {
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
     });
-    return { data };
   }
 
   @Get('relatorios/produtos-0200')

@@ -374,19 +374,17 @@ export class AdminFiscalController {
   @Get('relatorios/c190')
   @ApiOperation({ summary: 'Apuração analítica equivalente ao SPED C190' })
   async getC190(@Query() query: QueryItensFiscaisDto) {
-    return {
-      data: await this.fiscalItensService.getC190({
-        clienteId: query.clienteId,
-        documentoId: query.documentoId,
-        cfop: query.cfop,
-        cfopXml: query.cfopXml,
-        tipoOperacao: query.tipoOperacao,
-        cst: query.cst,
-        ncm: query.ncm,
-        dataInicio: parseFiscalStartDate(query.dataInicio),
-        dataFim: parseFiscalEndDate(query.dataFim),
-      }),
-    };
+    return this.fiscalItensService.getC190({
+      clienteId: query.clienteId,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
+      cst: query.cst,
+      ncm: query.ncm,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
   }
 
   @Get('relatorios/produtos-0200')
