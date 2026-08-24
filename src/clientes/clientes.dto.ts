@@ -14,8 +14,10 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  FONTES_CONSULTA_CNPJ,
   REGIMES_TRIBUTARIOS,
   TIPOS_CONTRIBUINTE_ICMS,
+  type FonteConsultaCnpj,
   type RegimeTributario,
   type TipoContribuinteIcms,
 } from './clientes.types';
@@ -139,6 +141,24 @@ export class CreateClientDto {
   @ValidateNested({ each: true })
   @Type(() => ClientCnaeDto)
   secondary_activities?: ClientCnaeDto[];
+
+  @ApiPropertyOptional({
+    description: 'Resultado da consulta de opção pelo Simples Nacional',
+    type: Boolean,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  optante_simples_nacional?: boolean | null;
+
+  @ApiPropertyOptional({
+    description: 'Fonte que informou a opção pelo Simples Nacional',
+    enum: FONTES_CONSULTA_CNPJ,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(FONTES_CONSULTA_CNPJ)
+  simples_nacional_fonte?: FonteConsultaCnpj | null;
 }
 
 export class UpdateClientDto {
@@ -182,6 +202,24 @@ export class UpdateClientDto {
   @ValidateNested({ each: true })
   @Type(() => ClientCnaeDto)
   secondary_activities?: ClientCnaeDto[];
+
+  @ApiPropertyOptional({
+    description: 'Novo resultado consultado de opção pelo Simples Nacional',
+    type: Boolean,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  optante_simples_nacional?: boolean | null;
+
+  @ApiPropertyOptional({
+    description: 'Fonte do novo resultado da consulta do Simples Nacional',
+    enum: FONTES_CONSULTA_CNPJ,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(FONTES_CONSULTA_CNPJ)
+  simples_nacional_fonte?: FonteConsultaCnpj | null;
 
   @ApiPropertyOptional({
     description: 'Forma de tributação da pessoa jurídica',

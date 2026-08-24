@@ -14,6 +14,10 @@ export const TIPOS_CONTRIBUINTE_ICMS = [
 
 export type TipoContribuinteIcms = (typeof TIPOS_CONTRIBUINTE_ICMS)[number];
 
+export const FONTES_CONSULTA_CNPJ = ['OPEN_CNPJ', 'RECEITA_WS'] as const;
+
+export type FonteConsultaCnpj = (typeof FONTES_CONSULTA_CNPJ)[number];
+
 export function simplesNacionalSemApuracaoIcms(config: {
   regimeTributario: RegimeTributario | null;
   apuraIcms: boolean;

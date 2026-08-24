@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppLogger } from '../common/logger.service';
+import type { FonteConsultaCnpj } from './clientes.types';
 
 export interface CnaeData {
   code: string;
@@ -28,7 +29,7 @@ export interface CnpjLookupResult {
    * `null` quando o provedor não informa esse dado de forma confiável.
    */
   simples_nacional: boolean | null;
-  source: 'OPEN_CNPJ' | 'RECEITA_WS';
+  source: FonteConsultaCnpj;
 }
 
 export class CnpjLookupFailure extends Error {
@@ -58,7 +59,7 @@ const LOOKUP_TIMEOUT_MS = 8_000;
 
 @Injectable()
 export class CnpjLookupService {
-  constructor(private readonly logger: AppLogger) { }
+  constructor(private readonly logger: AppLogger) {}
 
   async lookup(cnpj: string, context: { requestId?: string; userId: string }) {
     let notFound = false;

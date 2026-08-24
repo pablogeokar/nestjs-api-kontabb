@@ -132,6 +132,11 @@ export const clientes = pgTable(
     apuraIcms: boolean('apura_icms').notNull().default(false),
     inscricaoEstadual: text('inscricao_estadual'),
     tipoContribuinteIcms: text('tipo_contribuinte_icms'),
+    optanteSimplesNacional: boolean('optante_simples_nacional'),
+    simplesNacionalFonte: text('simples_nacional_fonte'),
+    simplesNacionalConsultadoEm: timestamp('simples_nacional_consultado_em', {
+      withTimezone: true,
+    }),
     logoKey: text('logo_key'),
     primeiroLogin: boolean('primeiro_login').notNull().default(true),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
@@ -171,6 +176,17 @@ export const clientes = pgTable(
     check(
       'chk_clientes_apura_icms_coerencia',
       sql`(${table.tipoPessoa} = 'PF' AND ${table.regimeTributario} IS NULL) OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} IN ('LUCRO_PRESUMIDO', 'LUCRO_REAL') AND ${table.apuraIcms} = true) OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} = 'SIMPLES_NACIONAL') OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} IS NULL)`,
+    ),
+    check(
+      'chk_clientes_consulta_simples_coerencia',
+      sql`(
+        (${table.optanteSimplesNacional} IS NULL AND ${table.simplesNacionalFonte} IS NULL AND ${table.simplesNacionalConsultadoEm} IS NULL)
+        OR
+        (${table.optanteSimplesNacional} IS NOT NULL AND ${table.simplesNacionalFonte} IN ('OPEN_CNPJ', 'RECEITA_WS') AND ${table.simplesNacionalConsultadoEm} IS NOT NULL)
+      )
+      AND (${table.tipoPessoa} = 'PJ' OR ${table.optanteSimplesNacional} IS NULL)
+      AND (${table.optanteSimplesNacional} IS DISTINCT FROM true OR ${table.regimeTributario} = 'SIMPLES_NACIONAL')
+      AND (${table.optanteSimplesNacional} IS DISTINCT FROM false OR ${table.regimeTributario} IS DISTINCT FROM 'SIMPLES_NACIONAL')`,
     ),
     check(
       'chk_clientes_documento_por_tipo',

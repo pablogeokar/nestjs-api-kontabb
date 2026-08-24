@@ -68,7 +68,7 @@ export class AdminFiscalController {
     private readonly importacaoXmlService: ImportacaoXmlFiscalService,
     private readonly rateLimit: RateLimitService,
     private readonly fiscalItensService: FiscalItensService,
-  ) {}
+  ) { }
 
   // ─── Certificados ─────────────────────────────────────────────────────────
 
@@ -481,8 +481,8 @@ export class AdminFiscalController {
       'Retorna KPIs consolidados: documentos no mês, volume financeiro, status de certificados.',
   })
   @ApiResponse({ status: 200, description: 'Estatísticas do módulo fiscal.' })
-  async getDashboard() {
-    const stats = await this.distribuicaoService.getDashboardStats();
+  async getDashboard(@Query('clienteId') clienteId?: string) {
+    const stats = await this.distribuicaoService.getDashboardStats(clienteId);
     return { data: stats };
   }
 

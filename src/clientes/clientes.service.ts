@@ -8,7 +8,11 @@ import { StorageService } from '../storage/storage.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import type { PaginationParams } from '../common/types';
 import { AuthService } from '../auth/auth.service';
-import type { RegimeTributario, TipoContribuinteIcms } from './clientes.types';
+import type {
+  FonteConsultaCnpj,
+  RegimeTributario,
+  TipoContribuinteIcms,
+} from './clientes.types';
 
 export interface StoredAddress {
   postalCode: string;
@@ -29,6 +33,7 @@ interface ExistingClientFiscalConfig {
   tipoPessoa: string;
   regimeTributario: string | null;
   tipoContribuinteIcms: string | null;
+  optanteSimplesNacional?: boolean | null;
 }
 
 interface ClientFiscalUpdateInput {
@@ -36,6 +41,11 @@ interface ClientFiscalUpdateInput {
   apuraIcms?: boolean;
   inscricaoEstadual?: string | null;
   tipoContribuinteIcms?: TipoContribuinteIcms | null;
+}
+
+interface ClientSimplesNacionalInput {
+  optanteSimplesNacional?: boolean | null;
+  simplesNacionalFonte?: FonteConsultaCnpj | null;
 }
 
 @Injectable()
@@ -85,6 +95,9 @@ export class ClientesService {
           apuraIcms: clientes.apuraIcms,
           inscricaoEstadual: clientes.inscricaoEstadual,
           tipoContribuinteIcms: clientes.tipoContribuinteIcms,
+          optanteSimplesNacional: clientes.optanteSimplesNacional,
+          simplesNacionalFonte: clientes.simplesNacionalFonte,
+          simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
           logoKey: clientes.logoKey,
           isFirstLogin: clientes.primeiroLogin,
           authUserId: clientes.userId,
@@ -134,6 +147,11 @@ export class ClientesService {
         inscricao_estadual: client.inscricaoEstadual,
         tipo_contribuinte_icms:
           client.tipoContribuinteIcms as TipoContribuinteIcms | null,
+        optante_simples_nacional: client.optanteSimplesNacional,
+        simples_nacional_fonte:
+          client.simplesNacionalFonte as FonteConsultaCnpj | null,
+        simples_nacional_consultado_em:
+          client.simplesNacionalConsultadoEm?.toISOString() ?? null,
         logo_url: client.logoKey
           ? await this.storage.getSignedUrl(client.logoKey)
           : null,
@@ -167,7 +185,13 @@ export class ClientesService {
     address?: StoredAddress;
     primaryActivity?: StoredCnae | null;
     secondaryActivities?: StoredCnae[];
+    optanteSimplesNacional?: boolean | null;
+    simplesNacionalFonte?: FonteConsultaCnpj | null;
   }) {
+    const simplesNacional = this.normalizeSimplesNacionalRegistration(
+      input.tipoPessoa,
+      input,
+    );
     const authIdentifier = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
     const authEmail = `${authIdentifier}@kontabb.local`;
     const hashedPassword = await this.authService.hashPassword('123456');
@@ -205,6 +229,8 @@ export class ClientesService {
             tipo_pessoa, razao_social, cnpj, cpf, emails,
             cep, logradouro, numero, complemento, bairro, municipio, uf,
             cnae_principal_codigo, cnae_principal_descricao, cnaes_secundarios,
+            regime_tributario, apura_icms, optante_simples_nacional,
+            simples_nacional_fonte, simples_nacional_consultado_em,
             primeiro_login, user_id
           )
           SELECT
@@ -219,6 +245,11 @@ export class ClientesService {
             ${this.nullableText(input.primaryActivity?.code)},
             ${this.nullableText(input.primaryActivity?.description)},
             ${secondaryActivities}::jsonb,
+            ${simplesNacional.regimeTributario}::text,
+            ${simplesNacional.apuraIcms}::boolean,
+            ${simplesNacional.optanteSimplesNacional}::boolean,
+            ${simplesNacional.simplesNacionalFonte}::text,
+            CASE WHEN ${simplesNacional.optanteSimplesNacional}::boolean IS NULL THEN NULL ELSE now() END,
             true, id
           FROM inserted_user
           RETURNING id
@@ -226,7 +257,11 @@ export class ClientesService {
         audit_event AS (
           INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
           SELECT ${input.actorUserId}, 'CLIENTE_CRIADO', 'CLIENTE', id::text,
-            jsonb_build_object('tipoPessoa', ${input.tipoPessoa}::text)
+            jsonb_build_object(
+              'tipoPessoa', ${input.tipoPessoa}::text,
+              'optanteSimplesNacional', ${simplesNacional.optanteSimplesNacional}::boolean,
+              'simplesNacionalFonte', ${simplesNacional.simplesNacionalFonte}::text
+            )
           FROM inserted_client
           RETURNING id
         )
@@ -261,12 +296,15 @@ export class ClientesService {
     apuraIcms?: boolean;
     inscricaoEstadual?: string | null;
     tipoContribuinteIcms?: TipoContribuinteIcms | null;
+    optanteSimplesNacional?: boolean | null;
+    simplesNacionalFonte?: FonteConsultaCnpj | null;
   }) {
     const existingRows = await this.database.db
       .select({
         tipoPessoa: clientes.tipoPessoa,
         regimeTributario: clientes.regimeTributario,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
+        optanteSimplesNacional: clientes.optanteSimplesNacional,
       })
       .from(clientes)
       .where(eq(clientes.id, input.clientId))
@@ -274,7 +312,14 @@ export class ClientesService {
     const existing = existingRows[0];
     if (!existing) return false;
 
-    const fiscalUpdate = this.normalizeFiscalUpdate(existing, input);
+    const simplesNacionalUpdate = this.normalizeSimplesNacionalUpdate(
+      existing,
+      input,
+    );
+    const fiscalUpdate = this.normalizeFiscalUpdate(
+      existing,
+      simplesNacionalUpdate.fiscalInput,
+    );
     const emails = input.emails
       ? this.textArray(input.emails)
       : sql`NULL::text[]`;
@@ -301,13 +346,25 @@ export class ClientesService {
           regime_tributario = CASE WHEN ${fiscalUpdate.writeRegimeTributario} THEN ${fiscalUpdate.regimeTributario}::text ELSE regime_tributario END,
           apura_icms = CASE WHEN ${fiscalUpdate.writeApuraIcms} THEN ${fiscalUpdate.apuraIcms}::boolean ELSE apura_icms END,
           inscricao_estadual = CASE WHEN ${fiscalUpdate.writeInscricaoEstadual} THEN ${fiscalUpdate.inscricaoEstadual}::text ELSE inscricao_estadual END,
-          tipo_contribuinte_icms = CASE WHEN ${fiscalUpdate.writeTipoContribuinteIcms} THEN ${fiscalUpdate.tipoContribuinteIcms}::text ELSE tipo_contribuinte_icms END
+          tipo_contribuinte_icms = CASE WHEN ${fiscalUpdate.writeTipoContribuinteIcms} THEN ${fiscalUpdate.tipoContribuinteIcms}::text ELSE tipo_contribuinte_icms END,
+          optante_simples_nacional = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.optanteSimplesNacional}::boolean ELSE optante_simples_nacional END,
+          simples_nacional_fonte = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.simplesNacionalFonte}::text ELSE simples_nacional_fonte END,
+          simples_nacional_consultado_em = CASE
+            WHEN ${simplesNacionalUpdate.writeConsultation} AND ${simplesNacionalUpdate.optanteSimplesNacional}::boolean IS NULL THEN NULL
+            WHEN ${simplesNacionalUpdate.writeConsultation} THEN now()
+            ELSE simples_nacional_consultado_em
+          END
         WHERE id = ${input.clientId}::uuid
         RETURNING id
       ),
       audit_event AS (
-        INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id)
-        SELECT ${input.actorUserId}, 'CLIENTE_ATUALIZADO', 'CLIENTE', id::text
+        INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
+        SELECT ${input.actorUserId}, 'CLIENTE_ATUALIZADO', 'CLIENTE', id::text,
+          CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN jsonb_build_object(
+            'consultaSimplesAtualizada', true,
+            'optanteSimplesNacional', ${simplesNacionalUpdate.optanteSimplesNacional}::boolean,
+            'simplesNacionalFonte', ${simplesNacionalUpdate.simplesNacionalFonte}::text
+          ) ELSE NULL END
         FROM updated_client
         RETURNING id
       )
@@ -385,6 +442,9 @@ export class ClientesService {
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
+        optanteSimplesNacional: clientes.optanteSimplesNacional,
+        simplesNacionalFonte: clientes.simplesNacionalFonte,
+        simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
       })
       .from(clientes)
       .where(eq(clientes.userId, userId))
@@ -443,6 +503,9 @@ export class ClientesService {
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
+        optanteSimplesNacional: clientes.optanteSimplesNacional,
+        simplesNacionalFonte: clientes.simplesNacionalFonte,
+        simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
         logoKey: clientes.logoKey,
       })
       .from(clientes)
@@ -469,6 +532,11 @@ export class ClientesService {
       inscricao_estadual: client.inscricaoEstadual,
       tipo_contribuinte_icms:
         client.tipoContribuinteIcms as TipoContribuinteIcms | null,
+      optante_simples_nacional: client.optanteSimplesNacional,
+      simples_nacional_fonte:
+        client.simplesNacionalFonte as FonteConsultaCnpj | null,
+      simples_nacional_consultado_em:
+        client.simplesNacionalConsultadoEm?.toISOString() ?? null,
       logo_url: client.logoKey
         ? await this.storage.getSignedUrl(client.logoKey)
         : null,
@@ -619,6 +687,117 @@ export class ClientesService {
     const logoKey = result[0]?.logoKey;
     if (!logoKey) return null;
     return this.storage.getSignedUrl(logoKey);
+  }
+
+  private normalizeSimplesNacionalRegistration(
+    tipoPessoa: 'PF' | 'PJ',
+    input: ClientSimplesNacionalInput,
+  ) {
+    const optanteSimplesNacional = input.optanteSimplesNacional ?? null;
+    const simplesNacionalFonte = input.simplesNacionalFonte ?? null;
+
+    if (tipoPessoa === 'PF' && optanteSimplesNacional !== null) {
+      throw new BadRequestException(
+        'Pessoa Física não possui opção pelo Simples Nacional.',
+      );
+    }
+    if (optanteSimplesNacional === null && simplesNacionalFonte !== null) {
+      throw new BadRequestException(
+        'A fonte só pode ser informada com um resultado da consulta do Simples Nacional.',
+      );
+    }
+    if (optanteSimplesNacional !== null && simplesNacionalFonte === null) {
+      throw new BadRequestException(
+        'A fonte da consulta do Simples Nacional é obrigatória.',
+      );
+    }
+
+    return {
+      regimeTributario: optanteSimplesNacional
+        ? ('SIMPLES_NACIONAL' as const)
+        : null,
+      apuraIcms: false,
+      optanteSimplesNacional,
+      simplesNacionalFonte,
+    };
+  }
+
+  private normalizeSimplesNacionalUpdate(
+    existing: ExistingClientFiscalConfig,
+    input: ClientFiscalUpdateInput & ClientSimplesNacionalInput,
+  ) {
+    const writeConsultation = input.optanteSimplesNacional !== undefined;
+
+    if (!writeConsultation && input.simplesNacionalFonte !== undefined) {
+      throw new BadRequestException(
+        'O resultado da consulta do Simples Nacional deve acompanhar a fonte.',
+      );
+    }
+    if (!writeConsultation) {
+      if (
+        input.regimeTributario !== undefined &&
+        existing.optanteSimplesNacional === true &&
+        input.regimeTributario !== 'SIMPLES_NACIONAL'
+      ) {
+        throw new BadRequestException(
+          'Consulte novamente o Simples Nacional antes de alterar este regime.',
+        );
+      }
+      if (
+        input.regimeTributario === 'SIMPLES_NACIONAL' &&
+        existing.optanteSimplesNacional === false
+      ) {
+        throw new BadRequestException(
+          'Consulte novamente o Simples Nacional antes de selecionar este regime.',
+        );
+      }
+      return {
+        writeConsultation: false,
+        optanteSimplesNacional: null,
+        simplesNacionalFonte: null,
+        fiscalInput: input,
+      };
+    }
+
+    const optanteSimplesNacional = input.optanteSimplesNacional ?? null;
+    const simplesNacionalFonte = input.simplesNacionalFonte ?? null;
+    if (existing.tipoPessoa === 'PF' && optanteSimplesNacional !== null) {
+      throw new BadRequestException(
+        'Pessoa Física não possui opção pelo Simples Nacional.',
+      );
+    }
+    if (optanteSimplesNacional === null && simplesNacionalFonte !== null) {
+      throw new BadRequestException(
+        'A fonte só pode ser informada com um resultado da consulta do Simples Nacional.',
+      );
+    }
+    if (optanteSimplesNacional !== null && simplesNacionalFonte === null) {
+      throw new BadRequestException(
+        'A fonte da consulta do Simples Nacional é obrigatória.',
+      );
+    }
+
+    const fiscalInput: ClientFiscalUpdateInput = { ...input };
+    if (optanteSimplesNacional === true) {
+      fiscalInput.regimeTributario = 'SIMPLES_NACIONAL';
+      fiscalInput.apuraIcms = false;
+    } else if (optanteSimplesNacional === false) {
+      const effectiveRegime =
+        input.regimeTributario === undefined
+          ? existing.regimeTributario
+          : input.regimeTributario;
+      if (effectiveRegime === 'SIMPLES_NACIONAL') {
+        fiscalInput.regimeTributario = null;
+        fiscalInput.apuraIcms = false;
+      }
+    }
+
+    return {
+      writeConsultation: true,
+      optanteSimplesNacional,
+      simplesNacionalFonte,
+      fiscalInput,
+    };
   }
 
   private normalizeFiscalUpdate(
