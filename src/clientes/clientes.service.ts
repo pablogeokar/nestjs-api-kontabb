@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes } from '../database/schema';
+import { certificadosDigitais, clientes } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageService } from '../storage/storage.service';
@@ -71,6 +71,20 @@ export class ClientesService {
           isFirstLogin: clientes.primeiroLogin,
           authUserId: clientes.userId,
           createdAt: clientes.criadoEm,
+          certStatus: sql<string | null>`(
+            SELECT cd.status FROM certificados_digitais cd
+            WHERE cd.cliente_id = clientes.id
+              AND cd.status IN ('ATIVO', 'PRESTES_A_EXPIRAR', 'EXPIRADO')
+            ORDER BY cd.validade_fim DESC
+            LIMIT 1
+          )`.as('cert_status'),
+          certValidadeFim: sql<string | null>`(
+            SELECT cd.validade_fim::text FROM certificados_digitais cd
+            WHERE cd.cliente_id = clientes.id
+              AND cd.status IN ('ATIVO', 'PRESTES_A_EXPIRAR', 'EXPIRADO')
+            ORDER BY cd.validade_fim DESC
+            LIMIT 1
+          )`.as('cert_validade_fim'),
         })
         .from(clientes)
         .where(where)
@@ -103,6 +117,13 @@ export class ClientesService {
         is_first_login: client.isFirstLogin,
         auth_user_id: client.authUserId,
         created_at: client.createdAt.toISOString(),
+        certificado: client.certStatus
+          ? {
+              status: client.certStatus as
+                'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
+              validade_fim: client.certValidadeFim!,
+            }
+          : null,
       })),
     );
 
