@@ -116,4 +116,94 @@ describe('CNPJ lookup', () => {
     expect(isValidCnpj('03.198.283/0001-00')).toBe(false);
     expect(isValidCnpj('11.111.111/1111-11')).toBe(false);
   });
+
+  describe('simples_nacional extraction', () => {
+    it('returns true when OpenCNPJ has opcao_simples = "S"', () => {
+      const result = normalizeCnpjPayload(
+        'OPEN_CNPJ',
+        {
+          cnpj: '03198283000116',
+          razao_social: 'Empresa SN',
+          opcao_simples: 'S',
+          cnaes: [],
+        },
+        '03198283000116',
+      );
+      expect(result.simples_nacional).toBe(true);
+    });
+
+    it('returns false when OpenCNPJ has opcao_simples = "N"', () => {
+      const result = normalizeCnpjPayload(
+        'OPEN_CNPJ',
+        {
+          cnpj: '03198283000116',
+          razao_social: 'Empresa LP',
+          opcao_simples: 'N',
+          cnaes: [],
+        },
+        '03198283000116',
+      );
+      expect(result.simples_nacional).toBe(false);
+    });
+
+    it('returns null when OpenCNPJ does not include opcao_simples', () => {
+      const result = normalizeCnpjPayload(
+        'OPEN_CNPJ',
+        {
+          cnpj: '03198283000116',
+          razao_social: 'Empresa Sem Info',
+          cnaes: [],
+        },
+        '03198283000116',
+      );
+      expect(result.simples_nacional).toBeNull();
+    });
+
+    it('returns true when ReceitaWS has simples.optante = true', () => {
+      const result = normalizeCnpjPayload(
+        'RECEITA_WS',
+        {
+          status: 'OK',
+          cnpj: '03.198.283/0001-16',
+          nome: 'Empresa SN',
+          atividade_principal: [],
+          atividades_secundarias: [],
+          simples: { optante: true },
+        },
+        '03198283000116',
+      );
+      expect(result.simples_nacional).toBe(true);
+    });
+
+    it('returns false when ReceitaWS has simples.optante = false', () => {
+      const result = normalizeCnpjPayload(
+        'RECEITA_WS',
+        {
+          status: 'OK',
+          cnpj: '03.198.283/0001-16',
+          nome: 'Empresa LR',
+          atividade_principal: [],
+          atividades_secundarias: [],
+          simples: { optante: false },
+        },
+        '03198283000116',
+      );
+      expect(result.simples_nacional).toBe(false);
+    });
+
+    it('returns null when ReceitaWS does not include simples field', () => {
+      const result = normalizeCnpjPayload(
+        'RECEITA_WS',
+        {
+          status: 'OK',
+          cnpj: '03.198.283/0001-16',
+          nome: 'Empresa Sem Info',
+          atividade_principal: [],
+          atividades_secundarias: [],
+        },
+        '03198283000116',
+      );
+      expect(result.simples_nacional).toBeNull();
+    });
+  });
 });

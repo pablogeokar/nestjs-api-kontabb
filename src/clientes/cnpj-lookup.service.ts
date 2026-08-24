@@ -23,6 +23,11 @@ export interface CnpjLookupResult {
   address: ClientAddressData;
   primary_activity: CnaeData | null;
   secondary_activities: CnaeData[];
+  /**
+   * Indica se a empresa é optante pelo Simples Nacional.
+   * `null` quando o provedor não informa esse dado de forma confiável.
+   */
+  simples_nacional: boolean | null;
   source: 'OPEN_CNPJ' | 'RECEITA_WS';
 }
 
@@ -53,7 +58,7 @@ const LOOKUP_TIMEOUT_MS = 8_000;
 
 @Injectable()
 export class CnpjLookupService {
-  constructor(private readonly logger: AppLogger) {}
+  constructor(private readonly logger: AppLogger) { }
 
   async lookup(cnpj: string, context: { requestId?: string; userId: string }) {
     let notFound = false;
@@ -185,6 +190,9 @@ function normalizeOpenCnpj(
     state: cleanText(payload.uf).toUpperCase(),
   });
 
+  // "opcao_simples": "S" indica optante, "N" ou ausência indica não-optante
+  const simplesNacional = extractSimplesNacionalOpenCnpj(payload);
+
   return {
     cnpj: digits(requestedCnpj),
     company_name: companyName,
@@ -195,6 +203,7 @@ function normalizeOpenCnpj(
         ? { code: primaryCode, description: '' }
         : null,
     secondary_activities: deduplicateCnaes(secondary),
+    simples_nacional: simplesNacional,
     source: 'OPEN_CNPJ',
   };
 }
@@ -226,12 +235,16 @@ function normalizeReceitaWs(
     state: cleanText(payload.uf).toUpperCase(),
   });
 
+  // "simples": { "optante": true } indica optante pelo Simples Nacional
+  const simplesNacional = extractSimplesNacionalReceitaWs(payload);
+
   return {
     cnpj: digits(requestedCnpj),
     company_name: companyName,
     address,
     primary_activity: primary ?? null,
     secondary_activities: deduplicateCnaes(secondary),
+    simples_nacional: simplesNacional,
     source: 'RECEITA_WS',
   };
 }
@@ -241,6 +254,38 @@ function normalizeReceitaCnae(item: Record<string, unknown>): CnaeData {
     code: digits(cleanText(item.code)),
     description: cleanText(item.text),
   };
+}
+
+/**
+ * Extrai a informação de opção pelo Simples Nacional do payload da Open CNPJ.
+ * O campo "opcao_simples" tem valor "S" para optante ou "N" para não-optante.
+ * Retorna `null` se o campo não estiver presente.
+ */
+function extractSimplesNacionalOpenCnpj(
+  payload: Record<string, unknown>,
+): boolean | null {
+  const raw = cleanText(payload.opcao_simples).toUpperCase();
+  if (raw === 'S') return true;
+  if (raw === 'N') return false;
+  return null;
+}
+
+/**
+ * Extrai a informação de opção pelo Simples Nacional do payload da Receita WS.
+ * O campo "simples" é um objeto com a propriedade "optante" (boolean).
+ * Retorna `null` se o campo não estiver presente ou não for um objeto válido.
+ */
+function extractSimplesNacionalReceitaWs(
+  payload: Record<string, unknown>,
+): boolean | null {
+  const simplesObj = asRecord(payload.simples);
+  if (!simplesObj) return null;
+  if (typeof simplesObj.optante === 'boolean') return simplesObj.optante;
+  // Fallback: some responses use string "true"/"false"
+  const raw = cleanText(simplesObj.optante).toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return null;
 }
 
 function makeAddress(
