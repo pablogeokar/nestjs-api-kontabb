@@ -57,7 +57,7 @@ export class DistribuicaoDfeService {
     private readonly storage: StorageService,
     private readonly nfeWizard: NfeWizardService,
     private readonly cfopService: CfopService,
-  ) {}
+  ) { }
 
   /**
    * Executa a sincronização de documentos fiscais para um cliente.
@@ -161,7 +161,7 @@ export class DistribuicaoDfeService {
       if (isSchemaError) {
         this.logger.warn(
           `Validação de schema falhou para ${cnpj}/${tipoDocumento} — pulando. ` +
-            `Isso geralmente indica XSD desatualizado na lib.`,
+          `Isso geralmente indica XSD desatualizado na lib.`,
         );
         await this.atualizarControleNsu(control.id, {
           statusSefaz: 998,
@@ -626,11 +626,20 @@ export class DistribuicaoDfeService {
   /**
    * Retorna estatísticas do módulo fiscal para o dashboard.
    */
-  async getDashboardStats(clienteId?: string) {
-    const mesAtual = new Date();
-    const inicioMes = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1);
+  async getDashboardStats(clienteId?: string, dataInicio?: Date, dataFim?: Date) {
+    const conditions: SQL[] = [];
 
-    const conditions: SQL[] = [gte(documentosFiscais.criadoEm, inicioMes)];
+    if (dataInicio) {
+      conditions.push(gte(documentosFiscais.dataEmissao, dataInicio));
+    } else {
+      // Sem filtro de data: usa o mês atual como padrão
+      const mesAtual = new Date();
+      const inicioMes = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1);
+      conditions.push(gte(documentosFiscais.criadoEm, inicioMes));
+    }
+    if (dataFim) {
+      conditions.push(lte(documentosFiscais.dataEmissao, dataFim));
+    }
     if (clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, clienteId));
     }

@@ -481,8 +481,18 @@ export class AdminFiscalController {
       'Retorna KPIs consolidados: documentos no mês, volume financeiro, status de certificados.',
   })
   @ApiResponse({ status: 200, description: 'Estatísticas do módulo fiscal.' })
-  async getDashboard(@Query('clienteId') clienteId?: string) {
-    const stats = await this.distribuicaoService.getDashboardStats(clienteId);
+  async getDashboard(
+    @Query('clienteId') clienteId?: string,
+    @Query('dataInicio') dataInicio?: string,
+    @Query('dataFim') dataFim?: string,
+  ) {
+    const parsedInicio = dataInicio ? new Date(dataInicio) : undefined;
+    const parsedFim = dataFim ? new Date(`${dataFim}T23:59:59.999`) : undefined;
+    const stats = await this.distribuicaoService.getDashboardStats(
+      clienteId,
+      Number.isNaN(parsedInicio?.getTime()) ? undefined : parsedInicio,
+      Number.isNaN(parsedFim?.getTime()) ? undefined : parsedFim,
+    );
     return { data: stats };
   }
 
