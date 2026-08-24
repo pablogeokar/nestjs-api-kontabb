@@ -695,6 +695,10 @@ export const controleNsu = pgTable(
     motivoSefaz: text('motivo_sefaz'),
     ultimaConsultaEm: timestamp('ultima_consulta_em'),
     proximaConsultaEm: timestamp('proxima_consulta_em'),
+    sincronizacaoId: uuid('sincronizacao_id'),
+    sincronizacaoIniciadaEm: timestamp('sincronizacao_iniciada_em', {
+      withTimezone: true,
+    }),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
@@ -710,6 +714,10 @@ export const controleNsu = pgTable(
     ),
     check('chk_controle_nsu_ultimo', sql`${table.ultimoNsu} >= 0`),
     check('chk_controle_nsu_max', sql`${table.maxNsu} >= 0`),
+    check(
+      'chk_controle_nsu_sincronizacao_coerencia',
+      sql`(${table.sincronizacaoId} IS NULL AND ${table.sincronizacaoIniciadaEm} IS NULL) OR (${table.sincronizacaoId} IS NOT NULL AND ${table.sincronizacaoIniciadaEm} IS NOT NULL)`,
+    ),
   ],
 );
 

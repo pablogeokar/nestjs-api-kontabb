@@ -1,4 +1,8 @@
-import { DistribuicaoDfeService } from './distribuicao-dfe.service';
+import {
+  DistribuicaoDfeService,
+  FISCAL_SYNC_LOCK_TTL_MS,
+  isFiscalSyncLockActive,
+} from './distribuicao-dfe.service';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import {
@@ -11,6 +15,76 @@ import {
 } from './dfe-document.parser';
 
 describe('DistribuicaoDfeService', () => {
+  it('considera ativo um lock fiscal recente', () => {
+    const now = Date.now();
+
+    expect(
+      isFiscalSyncLockActive(
+        {
+          sincronizacaoId: 'sync-id',
+          iniciadaEm: new Date(now - 1_000),
+        },
+        now,
+      ),
+    ).toBe(true);
+  });
+
+  it('libera logicamente um lock fiscal abandonado', () => {
+    const now = Date.now();
+
+    expect(
+      isFiscalSyncLockActive(
+        {
+          sincronizacaoId: 'sync-id',
+          iniciadaEm: new Date(now - FISCAL_SYNC_LOCK_TTL_MS - 1),
+        },
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it('não inicia uma consulta duplicada quando o controle já está bloqueado', async () => {
+    const limit = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { id: 'client-1', cnpj: '12345678000195', uf: 'BA' },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'control-1',
+          ultimoNsu: 42,
+          maxNsu: 42,
+          proximaConsultaEm: null,
+        },
+      ]);
+    const select = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit }),
+      }),
+    });
+    const returning = jest.fn().mockResolvedValue([]);
+    const update = jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ returning }),
+      }),
+    });
+    const nfeWizard = {
+      consultarDistribuicaoDFe: jest.fn(),
+      consultarDistribuicaoCTe: jest.fn(),
+    };
+    const service = new DistribuicaoDfeService(
+      { db: { select, update } } as never,
+      {} as never,
+      nfeWizard as never,
+      createCfopServiceMock() as never,
+    );
+
+    const result = await service.sincronizarCliente('client-1', 'NFE');
+
+    expect(result.status).toBe('EM_ANDAMENTO');
+    expect(nfeWizard.consultarDistribuicaoDFe).not.toHaveBeenCalled();
+  });
+
   it('retorna o resumo completo de documentos separado por cliente', async () => {
     const orderBy = jest.fn().mockResolvedValue([
       {

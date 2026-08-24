@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   UploadedFile,
   UploadedFiles,
   UseGuards,
@@ -51,6 +52,7 @@ import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
 import { FiscalItensService } from '../services/fiscal-itens.service';
+import { getRequestId, type RequestWithId } from '../../common/request-id';
 
 @ApiTags('Fiscal (Admin)')
 @ApiBearerAuth('session-token')
@@ -68,7 +70,7 @@ export class AdminFiscalController {
     private readonly importacaoXmlService: ImportacaoXmlFiscalService,
     private readonly rateLimit: RateLimitService,
     private readonly fiscalItensService: FiscalItensService,
-  ) { }
+  ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
 
@@ -171,8 +173,17 @@ export class AdminFiscalController {
   async sincronizar(
     @Body() body: SincronizarFiscalDto,
     @CurrentUser() user: CurrentUserType,
+    @Req() request: RequestWithId,
   ) {
+    const requestId = getRequestId(request);
+    const startedAt = Date.now();
+    await this.rateLimit.consume({
+      key: `fiscal-sync:${user.id}:${body.clienteId ?? 'todos'}`,
+      limit: 3,
+      windowMs: 5 * 60 * 1000,
+    });
     this.logger.info('fiscal_sync_manual_triggered', {
+      requestId,
       userId: user.id,
       clienteId: body.clienteId || 'TODOS',
       operation: 'sincronizar_fiscal',
@@ -181,13 +192,32 @@ export class AdminFiscalController {
     if (body.clienteId) {
       const nfe = await this.sincronizarTipoSeguro(body.clienteId, 'NFE');
       const cte = await this.sincronizarTipoSeguro(body.clienteId, 'CTE');
+      const success = !isFiscalSyncFailure(nfe) && !isFiscalSyncFailure(cte);
+      this.logger.info('fiscal_sync_manual_completed', {
+        requestId,
+        userId: user.id,
+        clienteId: body.clienteId,
+        operation: 'sincronizar_fiscal',
+        result: success ? 'success' : 'partial_failure',
+        durationMs: Date.now() - startedAt,
+        nfeStatus: nfe.status,
+        cteStatus: cte.status,
+      });
       return {
-        success: !isFiscalSyncFailure(nfe) && !isFiscalSyncFailure(cte),
+        success,
         data: { nfe, cte },
       };
     }
 
     const resultado = await this.cronService.executarSincronizacao();
+    this.logger.info('fiscal_sync_manual_completed', {
+      requestId,
+      userId: user.id,
+      clienteId: 'TODOS',
+      operation: 'sincronizar_fiscal',
+      result: resultado.success ? 'success' : 'partial_failure',
+      durationMs: Date.now() - startedAt,
+    });
     return { success: resultado.success, data: resultado };
   }
 
