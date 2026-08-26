@@ -1,3 +1,0 @@
-ALTER TABLE "controle_nsu" ADD COLUMN "sincronizacao_id" uuid;--> statement-breakpoint
-ALTER TABLE "controle_nsu" ADD COLUMN "sincronizacao_iniciada_em" timestamp with time zone;--> statement-breakpoint
-ALTER TABLE "controle_nsu" ADD CONSTRAINT "chk_controle_nsu_sincronizacao_coerencia" CHECK (("controle_nsu"."sincronizacao_id" IS NULL AND "controle_nsu"."sincronizacao_iniciada_em" IS NULL) OR ("controle_nsu"."sincronizacao_id" IS NOT NULL AND "controle_nsu"."sincronizacao_iniciada_em" IS NOT NULL));

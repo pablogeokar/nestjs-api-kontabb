@@ -43,6 +43,36 @@ CREATE TABLE "certificados_digitais" (
 	CONSTRAINT "chk_certificados_arquivo_key" CHECK (btrim("certificados_digitais"."arquivo_key") <> '')
 );
 --> statement-breakpoint
+CREATE TABLE "cfop_equivalencias" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"cliente_id" uuid,
+	"cfop_origem" varchar(4) NOT NULL,
+	"cfop_destino" varchar(4) NOT NULL,
+	"tipo_operacao" varchar(20) DEFAULT 'SAIDA_PARA_ENTRADA' NOT NULL,
+	"descricao" text,
+	"ativo" boolean DEFAULT true NOT NULL,
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	"atualizado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "uidx_cfop_eq_cliente_origem" UNIQUE NULLS NOT DISTINCT("cliente_id","cfop_origem"),
+	CONSTRAINT "chk_cfop_eq_tipo" CHECK ("cfop_equivalencias"."tipo_operacao" IN ('SAIDA_PARA_ENTRADA', 'ENTRADA_PARA_SAIDA')),
+	CONSTRAINT "chk_cfop_eq_destino_diferente" CHECK ("cfop_equivalencias"."cfop_origem" <> "cfop_equivalencias"."cfop_destino")
+);
+--> statement-breakpoint
+CREATE TABLE "cfops" (
+	"codigo" varchar(4) PRIMARY KEY NOT NULL,
+	"descricao" text NOT NULL,
+	"tipo_operacao" varchar(10) NOT NULL,
+	"abrangencia" varchar(15) NOT NULL,
+	"grupo" text,
+	"descricao_detalhada" text,
+	"ativo" boolean DEFAULT true NOT NULL,
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	"atualizado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_cfops_codigo" CHECK ("cfops"."codigo" ~ '^[123567][0-9]{3}$'),
+	CONSTRAINT "chk_cfops_tipo" CHECK ("cfops"."tipo_operacao" IN ('ENTRADA', 'SAIDA')),
+	CONSTRAINT "chk_cfops_abrangencia" CHECK ("cfops"."abrangencia" IN ('ESTADUAL', 'INTERESTADUAL', 'EXTERIOR'))
+);
+--> statement-breakpoint
 CREATE TABLE "clientes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tipo_pessoa" text DEFAULT 'PJ' NOT NULL,
@@ -60,6 +90,13 @@ CREATE TABLE "clientes" (
 	"cnae_principal_codigo" text,
 	"cnae_principal_descricao" text,
 	"cnaes_secundarios" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"regime_tributario" text,
+	"apura_icms" boolean DEFAULT false NOT NULL,
+	"inscricao_estadual" text,
+	"tipo_contribuinte_icms" text,
+	"optante_simples_nacional" boolean,
+	"simples_nacional_fonte" text,
+	"simples_nacional_consultado_em" timestamp with time zone,
 	"logo_key" text,
 	"primeiro_login" boolean DEFAULT true NOT NULL,
 	"user_id" text,
@@ -71,6 +108,18 @@ CREATE TABLE "clientes" (
 	CONSTRAINT "chk_clientes_uf" CHECK ("clientes"."uf" IS NULL OR "clientes"."uf" ~ '^[A-Z]{2}$'),
 	CONSTRAINT "chk_clientes_cnae_principal" CHECK ("clientes"."cnae_principal_codigo" IS NULL OR "clientes"."cnae_principal_codigo" ~ '^[0-9]{7}$'),
 	CONSTRAINT "chk_clientes_cnaes_secundarios" CHECK (jsonb_typeof("clientes"."cnaes_secundarios") = 'array'),
+	CONSTRAINT "chk_clientes_regime_tributario" CHECK ("clientes"."regime_tributario" IS NULL OR "clientes"."regime_tributario" IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL')),
+	CONSTRAINT "chk_clientes_tipo_contribuinte_icms" CHECK ("clientes"."tipo_contribuinte_icms" IS NULL OR "clientes"."tipo_contribuinte_icms" IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')),
+	CONSTRAINT "chk_clientes_inscricao_estadual" CHECK ("clientes"."inscricao_estadual" IS NULL OR "clientes"."inscricao_estadual" ~ '^[0-9A-Z./-]{2,20}$'),
+	CONSTRAINT "chk_clientes_apura_icms_coerencia" CHECK (("clientes"."tipo_pessoa" = 'PF' AND "clientes"."regime_tributario" IS NULL) OR ("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."regime_tributario" IN ('LUCRO_PRESUMIDO', 'LUCRO_REAL') AND "clientes"."apura_icms" = true) OR ("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."regime_tributario" = 'SIMPLES_NACIONAL') OR ("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."regime_tributario" IS NULL)),
+	CONSTRAINT "chk_clientes_consulta_simples_coerencia" CHECK ((
+        ("clientes"."optante_simples_nacional" IS NULL AND "clientes"."simples_nacional_fonte" IS NULL AND "clientes"."simples_nacional_consultado_em" IS NULL)
+        OR
+        ("clientes"."optante_simples_nacional" IS NOT NULL AND "clientes"."simples_nacional_fonte" IN ('OPEN_CNPJ', 'RECEITA_WS') AND "clientes"."simples_nacional_consultado_em" IS NOT NULL)
+      )
+      AND ("clientes"."tipo_pessoa" = 'PJ' OR "clientes"."optante_simples_nacional" IS NULL)
+      AND ("clientes"."optante_simples_nacional" IS DISTINCT FROM true OR "clientes"."regime_tributario" = 'SIMPLES_NACIONAL')
+      AND ("clientes"."optante_simples_nacional" IS DISTINCT FROM false OR "clientes"."regime_tributario" IS DISTINCT FROM 'SIMPLES_NACIONAL')),
 	CONSTRAINT "chk_clientes_documento_por_tipo" CHECK (("clientes"."tipo_pessoa" = 'PJ' AND "clientes"."cnpj" ~ '^[0-9]{14}$' AND "clientes"."cpf" IS NULL) OR ("clientes"."tipo_pessoa" = 'PF' AND "clientes"."cnpj" ~ '^[0-9]{11}$' AND "clientes"."cpf" = "clientes"."cnpj"))
 );
 --> statement-breakpoint
@@ -85,11 +134,14 @@ CREATE TABLE "controle_nsu" (
 	"motivo_sefaz" text,
 	"ultima_consulta_em" timestamp,
 	"proxima_consulta_em" timestamp,
+	"sincronizacao_id" uuid,
+	"sincronizacao_iniciada_em" timestamp with time zone,
 	"criado_em" timestamp DEFAULT now() NOT NULL,
 	"atualizado_em" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "chk_controle_nsu_tipo" CHECK ("controle_nsu"."tipo_documento" IN ('NFE', 'CTE')),
 	CONSTRAINT "chk_controle_nsu_ultimo" CHECK ("controle_nsu"."ultimo_nsu" >= 0),
-	CONSTRAINT "chk_controle_nsu_max" CHECK ("controle_nsu"."max_nsu" >= 0)
+	CONSTRAINT "chk_controle_nsu_max" CHECK ("controle_nsu"."max_nsu" >= 0),
+	CONSTRAINT "chk_controle_nsu_sincronizacao_coerencia" CHECK (("controle_nsu"."sincronizacao_id" IS NULL AND "controle_nsu"."sincronizacao_iniciada_em" IS NULL) OR ("controle_nsu"."sincronizacao_id" IS NOT NULL AND "controle_nsu"."sincronizacao_iniciada_em" IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "documentos_fiscais" (
@@ -109,6 +161,8 @@ CREATE TABLE "documentos_fiscais" (
 	"valor_total" numeric(14, 2) NOT NULL,
 	"situacao" text DEFAULT 'AUTORIZADA' NOT NULL,
 	"manifestacao_status" text DEFAULT 'SEM_MANIFESTACAO' NOT NULL,
+	"tipo_operacao_escriturada" varchar(10) DEFAULT 'ENTRADA' NOT NULL,
+	"tp_nf_xml" varchar(1),
 	"xml_key" text NOT NULL,
 	"danfe_key" text,
 	"criado_em" timestamp DEFAULT now() NOT NULL,
@@ -119,8 +173,126 @@ CREATE TABLE "documentos_fiscais" (
 	CONSTRAINT "chk_docs_fiscais_tipo_modelo" CHECK (("documentos_fiscais"."tipo_documento" = 'NFE' AND "documentos_fiscais"."modelo" = '55') OR ("documentos_fiscais"."tipo_documento" = 'CTE' AND "documentos_fiscais"."modelo" = '57') OR ("documentos_fiscais"."tipo_documento" = 'NFCE' AND "documentos_fiscais"."modelo" = '65')),
 	CONSTRAINT "chk_docs_fiscais_situacao" CHECK ("documentos_fiscais"."situacao" IN ('AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA')),
 	CONSTRAINT "chk_docs_fiscais_manifestacao" CHECK ("documentos_fiscais"."manifestacao_status" IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')),
+	CONSTRAINT "chk_docs_fiscais_operacao_escriturada" CHECK ("documentos_fiscais"."tipo_operacao_escriturada" IN ('ENTRADA', 'SAIDA')),
+	CONSTRAINT "chk_docs_fiscais_tp_nf_xml" CHECK ("documentos_fiscais"."tp_nf_xml" IS NULL OR "documentos_fiscais"."tp_nf_xml" IN ('0', '1')),
 	CONSTRAINT "chk_docs_fiscais_valor" CHECK ("documentos_fiscais"."valor_total" >= 0),
 	CONSTRAINT "chk_docs_fiscais_xml_key" CHECK (btrim("documentos_fiscais"."xml_key") <> '')
+);
+--> statement-breakpoint
+CREATE TABLE "documentos_fiscais_itens" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"documento_fiscal_id" uuid NOT NULL,
+	"cliente_id" uuid NOT NULL,
+	"numero_item" integer NOT NULL,
+	"codigo_produto" text NOT NULL,
+	"codigo_ean" text,
+	"descricao" text NOT NULL,
+	"ncm" varchar(8),
+	"nve" text,
+	"cest" varchar(7),
+	"ind_escala" varchar(1),
+	"cnpj_fabricante" varchar(14),
+	"codigo_beneficio_fiscal" text,
+	"cfop_xml" varchar(4),
+	"cfop" varchar(4) NOT NULL,
+	"tipo_operacao_escriturada" varchar(10) DEFAULT 'ENTRADA' NOT NULL,
+	"cfop_revisao_necessaria" boolean DEFAULT false NOT NULL,
+	"unidade_comercial" varchar(10) NOT NULL,
+	"quantidade_comercial" numeric(15, 4) NOT NULL,
+	"valor_unitario_comercial" numeric(21, 10) NOT NULL,
+	"valor_bruto_produto" numeric(15, 2) NOT NULL,
+	"codigo_ean_tributavel" text,
+	"unidade_tributavel" varchar(10),
+	"quantidade_tributavel" numeric(15, 4),
+	"valor_unitario_tributavel" numeric(21, 10),
+	"valor_frete" numeric(15, 2),
+	"valor_seguro" numeric(15, 2),
+	"valor_desconto" numeric(15, 2),
+	"valor_outras_despesas" numeric(15, 2),
+	"ind_total" varchar(1) NOT NULL,
+	"numero_pedido_compra" text,
+	"item_pedido_compra" text,
+	"informacoes_adicionais" text,
+	"origem_mercadoria" varchar(1),
+	"cst_icms" varchar(3),
+	"csosn_icms" varchar(4),
+	"modalidade_bc_icms" varchar(1),
+	"percentual_reducao_bc_icms" numeric(7, 4),
+	"valor_bc_icms" numeric(15, 2),
+	"aliquota_icms" numeric(7, 4),
+	"valor_icms" numeric(15, 2),
+	"modalidade_bc_icms_st" varchar(1),
+	"percentual_mva_st" numeric(7, 4),
+	"percentual_reducao_bc_icms_st" numeric(7, 4),
+	"valor_bc_icms_st" numeric(15, 2),
+	"aliquota_icms_st" numeric(7, 4),
+	"valor_icms_st" numeric(15, 2),
+	"valor_bc_fcp" numeric(15, 2),
+	"aliquota_fcp" numeric(7, 4),
+	"valor_fcp" numeric(15, 2),
+	"valor_bc_fcp_st" numeric(15, 2),
+	"aliquota_fcp_st" numeric(7, 4),
+	"valor_fcp_st" numeric(15, 2),
+	"motivo_desoneracao_icms" varchar(2),
+	"valor_icms_desonerado" numeric(15, 2),
+	"percentual_diferimento" numeric(7, 4),
+	"valor_icms_diferido" numeric(15, 2),
+	"valor_icms_operacao" numeric(15, 2),
+	"aliquota_credito_sn" numeric(7, 4),
+	"valor_credito_icms_sn" numeric(15, 2),
+	"valor_bc_icms_st_retido" numeric(15, 2),
+	"aliquota_icms_st_retido" numeric(7, 4),
+	"valor_icms_st_retido" numeric(15, 2),
+	"valor_bc_icms_uf_dest" numeric(15, 2),
+	"valor_bc_fcp_uf_dest" numeric(15, 2),
+	"percentual_fcp_uf_dest" numeric(7, 4),
+	"aliquota_icms_uf_dest" numeric(7, 4),
+	"aliquota_icms_interestadual" numeric(7, 4),
+	"percentual_provisorio_partilha" numeric(7, 4),
+	"valor_fcp_uf_dest" numeric(15, 2),
+	"valor_icms_uf_dest" numeric(15, 2),
+	"valor_icms_uf_remetente" numeric(15, 2),
+	"cst_ipi" varchar(2),
+	"classe_enquadramento_ipi" varchar(5),
+	"codigo_enquadramento_ipi" varchar(3),
+	"cnpj_produtor_ipi" varchar(14),
+	"valor_bc_ipi" numeric(15, 2),
+	"aliquota_ipi" numeric(7, 4),
+	"quantidade_unidade_ipi" numeric(15, 4),
+	"valor_unidade_ipi" numeric(15, 4),
+	"valor_ipi" numeric(15, 2),
+	"cst_pis" varchar(2),
+	"valor_bc_pis" numeric(15, 2),
+	"aliquota_pis_percentual" numeric(7, 4),
+	"quantidade_bc_pis" numeric(15, 4),
+	"aliquota_pis_reais" numeric(15, 4),
+	"valor_pis" numeric(15, 2),
+	"valor_bc_pis_st" numeric(15, 2),
+	"aliquota_pis_st_percentual" numeric(7, 4),
+	"valor_pis_st" numeric(15, 2),
+	"cst_cofins" varchar(2),
+	"valor_bc_cofins" numeric(15, 2),
+	"aliquota_cofins_percentual" numeric(7, 4),
+	"quantidade_bc_cofins" numeric(15, 4),
+	"aliquota_cofins_reais" numeric(15, 4),
+	"valor_cofins" numeric(15, 2),
+	"valor_bc_cofins_st" numeric(15, 2),
+	"aliquota_cofins_st_percentual" numeric(7, 4),
+	"valor_cofins_st" numeric(15, 2),
+	"valor_bc_ii" numeric(15, 2),
+	"valor_despesa_aduaneira" numeric(15, 2),
+	"valor_imposto_importacao" numeric(15, 2),
+	"valor_iof" numeric(15, 2),
+	"valor_tributos_aproximados" numeric(15, 2),
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	"atualizado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_item_numero" CHECK ("documentos_fiscais_itens"."numero_item" BETWEEN 1 AND 990),
+	CONSTRAINT "chk_item_ind_escala" CHECK ("documentos_fiscais_itens"."ind_escala" IS NULL OR "documentos_fiscais_itens"."ind_escala" IN ('S', 'N')),
+	CONSTRAINT "chk_item_ind_total" CHECK ("documentos_fiscais_itens"."ind_total" IN ('0', '1')),
+	CONSTRAINT "chk_item_origem" CHECK ("documentos_fiscais_itens"."origem_mercadoria" IS NULL OR "documentos_fiscais_itens"."origem_mercadoria" ~ '^[0-8]$'),
+	CONSTRAINT "chk_item_cfop" CHECK ("documentos_fiscais_itens"."cfop" ~ '^[1-7][0-9]{3}$'),
+	CONSTRAINT "chk_item_cfop_xml" CHECK ("documentos_fiscais_itens"."cfop_xml" IS NULL OR "documentos_fiscais_itens"."cfop_xml" ~ '^[1-7][0-9]{3}$'),
+	CONSTRAINT "chk_item_operacao_escriturada" CHECK ("documentos_fiscais_itens"."tipo_operacao_escriturada" IN ('ENTRADA', 'SAIDA'))
 );
 --> statement-breakpoint
 CREATE TABLE "eventos_auditoria" (
@@ -323,9 +495,14 @@ CREATE TABLE "visualizacoes_guias" (
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "certificados_digitais" ADD CONSTRAINT "certificados_digitais_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "certificados_digitais" ADD CONSTRAINT "certificados_digitais_uploadado_por_user_id_fk" FOREIGN KEY ("uploadado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cfop_equivalencias" ADD CONSTRAINT "cfop_equivalencias_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cfop_equivalencias" ADD CONSTRAINT "cfop_equivalencias_cfop_origem_cfops_codigo_fk" FOREIGN KEY ("cfop_origem") REFERENCES "public"."cfops"("codigo") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cfop_equivalencias" ADD CONSTRAINT "cfop_equivalencias_cfop_destino_cfops_codigo_fk" FOREIGN KEY ("cfop_destino") REFERENCES "public"."cfops"("codigo") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "clientes" ADD CONSTRAINT "clientes_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "controle_nsu" ADD CONSTRAINT "controle_nsu_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "documentos_fiscais" ADD CONSTRAINT "documentos_fiscais_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_itens" ADD CONSTRAINT "documentos_fiscais_itens_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_itens" ADD CONSTRAINT "documentos_fiscais_itens_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "eventos_auditoria" ADD CONSTRAINT "eventos_auditoria_ator_user_id_user_id_fk" FOREIGN KEY ("ator_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "eventos_fiscais" ADD CONSTRAINT "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "folhas_pagamento" ADD CONSTRAINT "folhas_pagamento_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -351,7 +528,12 @@ CREATE INDEX "idx_certificados_cnpj" ON "certificados_digitais" USING btree ("cn
 CREATE INDEX "idx_certificados_status" ON "certificados_digitais" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "idx_certificados_validade_fim" ON "certificados_digitais" USING btree ("validade_fim");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_certificados_cliente_ativo" ON "certificados_digitais" USING btree ("cliente_id") WHERE status IN ('ATIVO', 'PRESTES_A_EXPIRAR');--> statement-breakpoint
+CREATE INDEX "idx_cfop_eq_origem" ON "cfop_equivalencias" USING btree ("cfop_origem");--> statement-breakpoint
+CREATE INDEX "idx_cfop_eq_cliente" ON "cfop_equivalencias" USING btree ("cliente_id");--> statement-breakpoint
+CREATE INDEX "idx_cfops_tipo" ON "cfops" USING btree ("tipo_operacao");--> statement-breakpoint
+CREATE INDEX "idx_cfops_abrangencia" ON "cfops" USING btree ("abrangencia");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_clientes_user_id" ON "clientes" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_clientes_regime_tributario" ON "clientes" USING btree ("regime_tributario") WHERE "clientes"."regime_tributario" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_controle_nsu_cliente_tipo" ON "controle_nsu" USING btree ("cliente_id","tipo_documento");--> statement-breakpoint
 CREATE INDEX "idx_controle_nsu_cliente_id" ON "controle_nsu" USING btree ("cliente_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_docs_fiscais_cliente_chave" ON "documentos_fiscais" USING btree ("cliente_id","chave_acesso");--> statement-breakpoint
@@ -361,6 +543,16 @@ CREATE INDEX "idx_docs_fiscais_data_emissao" ON "documentos_fiscais" USING btree
 CREATE INDEX "idx_docs_fiscais_nsu" ON "documentos_fiscais" USING btree ("nsu");--> statement-breakpoint
 CREATE INDEX "idx_docs_fiscais_destinatario" ON "documentos_fiscais" USING btree ("destinatario_cnpj_cpf");--> statement-breakpoint
 CREATE INDEX "idx_docs_fiscais_emitente" ON "documentos_fiscais" USING btree ("emitente_cnpj_cpf");--> statement-breakpoint
+CREATE UNIQUE INDEX "uidx_item_doc_num" ON "documentos_fiscais_itens" USING btree ("documento_fiscal_id","numero_item");--> statement-breakpoint
+CREATE INDEX "idx_item_cliente_id" ON "documentos_fiscais_itens" USING btree ("cliente_id");--> statement-breakpoint
+CREATE INDEX "idx_item_cfop" ON "documentos_fiscais_itens" USING btree ("cfop");--> statement-breakpoint
+CREATE INDEX "idx_item_cfop_xml" ON "documentos_fiscais_itens" USING btree ("cfop_xml");--> statement-breakpoint
+CREATE INDEX "idx_item_operacao_escriturada" ON "documentos_fiscais_itens" USING btree ("tipo_operacao_escriturada");--> statement-breakpoint
+CREATE INDEX "idx_item_cst_icms" ON "documentos_fiscais_itens" USING btree ("cst_icms");--> statement-breakpoint
+CREATE INDEX "idx_item_csosn_icms" ON "documentos_fiscais_itens" USING btree ("csosn_icms");--> statement-breakpoint
+CREATE INDEX "idx_item_cst_pis" ON "documentos_fiscais_itens" USING btree ("cst_pis");--> statement-breakpoint
+CREATE INDEX "idx_item_cst_cofins" ON "documentos_fiscais_itens" USING btree ("cst_cofins");--> statement-breakpoint
+CREATE INDEX "idx_item_ncm" ON "documentos_fiscais_itens" USING btree ("ncm");--> statement-breakpoint
 CREATE INDEX "idx_eventos_auditoria_entidade" ON "eventos_auditoria" USING btree ("entidade_tipo","entidade_id","criado_em");--> statement-breakpoint
 CREATE INDEX "idx_eventos_auditoria_ator" ON "eventos_auditoria" USING btree ("ator_user_id","criado_em");--> statement-breakpoint
 CREATE INDEX "idx_eventos_fiscais_doc" ON "eventos_fiscais" USING btree ("documento_fiscal_id");--> statement-breakpoint

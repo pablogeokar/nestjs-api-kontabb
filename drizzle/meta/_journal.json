@@ -5,43 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1786965224065,
-      "tag": "0000_initial_base",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1787343930779,
-      "tag": "0001_persistencia_itens_fiscais",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1787349519050,
-      "tag": "0002_equal_mysterio",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1787601568397,
-      "tag": "0003_regime_tributario_clientes",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1787603240065,
-      "tag": "0004_persistencia_consulta_simples_nacional",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1787609056242,
-      "tag": "0005_acompanhamento_sincronizacao_fiscal",
+      "when": 1787747908722,
+      "tag": "0000_base_de_dados_inicial",
       "breakpoints": true
     }
   ]
