@@ -5,309 +5,543 @@ import { cfopEquivalencias, cfops } from '../schema';
 type CfopSeed = typeof cfops.$inferInsert;
 type EquivalenciaSeed = typeof cfopEquivalencias.$inferInsert;
 
-const ENTRADAS: Array<[string, string, string]> = [
-  ['1101', 'Compra para industrialização ou produção rural', 'Compras'],
-  ['1102', 'Compra para comercialização', 'Compras'],
-  ['1201', 'Devolução de venda de produção do estabelecimento', 'Devoluções'],
-  [
-    '1202',
-    'Devolução de venda de mercadoria adquirida de terceiros',
-    'Devoluções',
-  ],
-  [
-    '1353',
-    'Aquisição de serviço de transporte por estabelecimento comercial',
-    'Transportes',
-  ],
-  [
-    '1401',
-    'Compra de produção sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '1403',
-    'Compra para comercialização sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '1405',
-    'Compra para comercialização em operação com substituição tributária',
-    'Substituição tributária',
-  ],
-  ['1551', 'Compra de bem para o ativo imobilizado', 'Ativo imobilizado'],
-  ['1556', 'Compra de material para uso ou consumo', 'Uso e consumo'],
-  [
-    '1949',
-    'Outra entrada de mercadoria ou prestação de serviço não especificada',
-    'Outras entradas',
-  ],
-  [
-    '2101',
-    'Compra interestadual para industrialização ou produção rural',
-    'Compras',
-  ],
-  ['2102', 'Compra interestadual para comercialização', 'Compras'],
-  [
-    '2201',
-    'Devolução interestadual de venda de produção do estabelecimento',
-    'Devoluções',
-  ],
-  [
-    '2202',
-    'Devolução interestadual de venda de mercadoria de terceiros',
-    'Devoluções',
-  ],
-  [
-    '2353',
-    'Aquisição interestadual de serviço de transporte por estabelecimento comercial',
-    'Transportes',
-  ],
-  [
-    '2401',
-    'Compra interestadual de produção sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '2403',
-    'Compra interestadual para comercialização sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '2405',
-    'Compra interestadual para comercialização com substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '2551',
-    'Compra interestadual de bem para o ativo imobilizado',
-    'Ativo imobilizado',
-  ],
-  [
-    '2556',
-    'Compra interestadual de material para uso ou consumo',
-    'Uso e consumo',
-  ],
-  ['2949', 'Outra entrada interestadual não especificada', 'Outras entradas'],
-  [
-    '3101',
-    'Compra do exterior para industrialização ou produção rural',
-    'Compras',
-  ],
-  ['3102', 'Compra do exterior para comercialização', 'Compras'],
-  ['3949', 'Outra entrada do exterior não especificada', 'Outras entradas'],
-];
-
-const SAIDAS: Array<[string, string, string]> = [
-  ['5101', 'Venda de produção do estabelecimento', 'Vendas'],
-  ['5102', 'Venda de mercadoria adquirida ou recebida de terceiros', 'Vendas'],
-  [
-    '5201',
-    'Devolução de compra para industrialização ou produção rural',
-    'Devoluções',
-  ],
-  ['5202', 'Devolução de compra para comercialização', 'Devoluções'],
-  [
-    '5353',
-    'Prestação de serviço de transporte a estabelecimento comercial',
-    'Transportes',
-  ],
-  [
-    '5401',
-    'Venda de produção sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '5403',
-    'Venda de mercadoria de terceiros sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '5405',
-    'Venda de mercadoria sujeita à substituição tributária na condição de substituído',
-    'Substituição tributária',
-  ],
-  ['5551', 'Venda de bem do ativo imobilizado', 'Ativo imobilizado'],
-  [
-    '5556',
-    'Devolução de compra de material de uso ou consumo',
-    'Uso e consumo',
-  ],
-  [
-    '5949',
-    'Outra saída de mercadoria ou prestação de serviço não especificada',
-    'Outras saídas',
-  ],
-  ['6101', 'Venda interestadual de produção do estabelecimento', 'Vendas'],
-  [
-    '6102',
-    'Venda interestadual de mercadoria adquirida de terceiros',
-    'Vendas',
-  ],
-  [
-    '6201',
-    'Devolução interestadual de compra para industrialização',
-    'Devoluções',
-  ],
-  [
-    '6202',
-    'Devolução interestadual de compra para comercialização',
-    'Devoluções',
-  ],
-  [
-    '6353',
-    'Prestação interestadual de serviço de transporte a estabelecimento comercial',
-    'Transportes',
-  ],
-  [
-    '6401',
-    'Venda interestadual de produção sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '6403',
-    'Venda interestadual de mercadoria sujeita à substituição tributária',
-    'Substituição tributária',
-  ],
-  [
-    '6405',
-    'Venda interestadual na condição de substituído tributário',
-    'Substituição tributária',
-  ],
-  [
-    '6551',
-    'Venda interestadual de bem do ativo imobilizado',
-    'Ativo imobilizado',
-  ],
-  [
-    '6556',
-    'Devolução interestadual de material de uso ou consumo',
-    'Uso e consumo',
-  ],
-  ['6949', 'Outra saída interestadual não especificada', 'Outras saídas'],
-  ['7101', 'Venda de produção do estabelecimento para o exterior', 'Vendas'],
-  [
-    '7102',
-    'Venda de mercadoria adquirida de terceiros para o exterior',
-    'Vendas',
-  ],
-  ['7949', 'Outra saída para o exterior não especificada', 'Outras saídas'],
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// Dados extraídos da tabela cfops (49 registros)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const CFOPS_SEED: CfopSeed[] = [
-  ...ENTRADAS.map(([codigo, descricao, grupo]) => ({
-    codigo,
-    descricao,
-    grupo,
+  // ── ENTRADA — ESTADUAL ──────────────────────────────────────────────────
+  {
+    codigo: '1101',
+    descricao: 'Compra para industrialização ou produção rural',
     tipoOperacao: 'ENTRADA',
-    abrangencia: abrangenciaFromCodigo(codigo),
-  })),
-  ...SAIDAS.map(([codigo, descricao, grupo]) => ({
-    codigo,
-    descricao,
-    grupo,
+    abrangencia: 'ESTADUAL',
+    grupo: 'Compras',
+  },
+  {
+    codigo: '1102',
+    descricao: 'Compra para comercialização',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Compras',
+  },
+  {
+    codigo: '1201',
+    descricao: 'Devolução de venda de produção do estabelecimento',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '1202',
+    descricao: 'Devolução de venda de mercadoria adquirida de terceiros',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '1353',
+    descricao:
+      'Aquisição de serviço de transporte por estabelecimento comercial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '1401',
+    descricao: 'Compra de produção sujeita à substituição tributária',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '1403',
+    descricao: 'Compra para comercialização sujeita à substituição tributária',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '1405',
+    descricao:
+      'Compra para comercialização em operação com substituição tributária',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '1551',
+    descricao: 'Compra de bem para o ativo imobilizado',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Ativo imobilizado',
+  },
+  {
+    codigo: '1556',
+    descricao: 'Compra de material para uso ou consumo',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Uso e consumo',
+  },
+  {
+    codigo: '1949',
+    descricao:
+      'Outra entrada de mercadoria ou prestação de serviço não especificada',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Outras entradas',
+  },
+
+  // ── ENTRADA — INTERESTADUAL ─────────────────────────────────────────────
+  {
+    codigo: '2101',
+    descricao: 'Compra interestadual para industrialização ou produção rural',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Compras',
+  },
+  {
+    codigo: '2102',
+    descricao: 'Compra interestadual para comercialização',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Compras',
+  },
+  {
+    codigo: '2201',
+    descricao:
+      'Devolução interestadual de venda de produção do estabelecimento',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '2202',
+    descricao: 'Devolução interestadual de venda de mercadoria de terceiros',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '2353',
+    descricao:
+      'Aquisição interestadual de serviço de transporte por estabelecimento comercial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '2401',
+    descricao:
+      'Compra interestadual de produção sujeita à substituição tributária',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '2403',
+    descricao:
+      'Compra interestadual para comercialização sujeita à substituição tributária',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '2405',
+    descricao:
+      'Compra interestadual para comercialização com substituição tributária',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '2551',
+    descricao: 'Compra interestadual de bem para o ativo imobilizado',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Ativo imobilizado',
+  },
+  {
+    codigo: '2556',
+    descricao: 'Compra interestadual de material para uso ou consumo',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Uso e consumo',
+  },
+  {
+    codigo: '2949',
+    descricao: 'Outra entrada interestadual não especificada',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Outras entradas',
+  },
+
+  // ── ENTRADA — EXTERIOR ──────────────────────────────────────────────────
+  {
+    codigo: '3101',
+    descricao: 'Compra do exterior para industrialização ou produção rural',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Compras',
+  },
+  {
+    codigo: '3102',
+    descricao: 'Compra do exterior para comercialização',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Compras',
+  },
+  {
+    codigo: '3949',
+    descricao: 'Outra entrada do exterior não especificada',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Outras entradas',
+  },
+
+  // ── SAÍDA — ESTADUAL ────────────────────────────────────────────────────
+  {
+    codigo: '5101',
+    descricao: 'Venda de produção do estabelecimento',
     tipoOperacao: 'SAIDA',
-    abrangencia: abrangenciaFromCodigo(codigo),
-  })),
+    abrangencia: 'ESTADUAL',
+    grupo: 'Vendas',
+  },
+  {
+    codigo: '5102',
+    descricao: 'Venda de mercadoria adquirida ou recebida de terceiros',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Vendas',
+  },
+  {
+    codigo: '5201',
+    descricao: 'Devolução de compra para industrialização ou produção rural',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '5202',
+    descricao: 'Devolução de compra para comercialização',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '5353',
+    descricao: 'Prestação de serviço de transporte a estabelecimento comercial',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '5401',
+    descricao: 'Venda de produção sujeita à substituição tributária',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '5403',
+    descricao:
+      'Venda de mercadoria de terceiros sujeita à substituição tributária',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '5405',
+    descricao:
+      'Venda de mercadoria sujeita à substituição tributária na condição de substituído',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '5551',
+    descricao: 'Venda de bem do ativo imobilizado',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Ativo imobilizado',
+  },
+  {
+    codigo: '5556',
+    descricao: 'Devolução de compra de material de uso ou consumo',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Uso e consumo',
+  },
+  {
+    codigo: '5949',
+    descricao:
+      'Outra saída de mercadoria ou prestação de serviço não especificada',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Outras saídas',
+  },
+
+  // ── SAÍDA — INTERESTADUAL ───────────────────────────────────────────────
+  {
+    codigo: '6101',
+    descricao: 'Venda interestadual de produção do estabelecimento',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Vendas',
+  },
+  {
+    codigo: '6102',
+    descricao: 'Venda interestadual de mercadoria adquirida de terceiros',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Vendas',
+  },
+  {
+    codigo: '6201',
+    descricao: 'Devolução interestadual de compra para industrialização',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '6202',
+    descricao: 'Devolução interestadual de compra para comercialização',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Devoluções',
+  },
+  {
+    codigo: '6353',
+    descricao:
+      'Prestação interestadual de serviço de transporte a estabelecimento comercial',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '6401',
+    descricao:
+      'Venda interestadual de produção sujeita à substituição tributária',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '6403',
+    descricao:
+      'Venda interestadual de mercadoria sujeita à substituição tributária',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '6405',
+    descricao: 'Venda interestadual na condição de substituído tributário',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Substituição tributária',
+  },
+  {
+    codigo: '6551',
+    descricao: 'Venda interestadual de bem do ativo imobilizado',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Ativo imobilizado',
+  },
+  {
+    codigo: '6556',
+    descricao: 'Devolução interestadual de material de uso ou consumo',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Uso e consumo',
+  },
+  {
+    codigo: '6949',
+    descricao: 'Outra saída interestadual não especificada',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Outras saídas',
+  },
+
+  // ── SAÍDA — EXTERIOR ────────────────────────────────────────────────────
+  {
+    codigo: '7101',
+    descricao: 'Venda de produção do estabelecimento para o exterior',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Vendas',
+  },
+  {
+    codigo: '7102',
+    descricao: 'Venda de mercadoria adquirida de terceiros para o exterior',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Vendas',
+  },
+  {
+    codigo: '7949',
+    descricao: 'Outra saída para o exterior não especificada',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Outras saídas',
+  },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Equivalências globais (clienteId = null) — 20 registros
+// Mapeiam CFOP de saída do fornecedor → CFOP de entrada para o destinatário
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const CFOP_EQUIVALENCIAS_SEED: EquivalenciaSeed[] = [
-  equivalencia(
-    '5101',
-    '1101',
-    'Venda de produção para compra de industrialização',
-  ),
-  equivalencia(
-    '5102',
-    '1102',
-    'Venda de mercadoria para compra de comercialização',
-  ),
-  equivalencia(
-    '5201',
-    '1201',
-    'Devolução de compra para devolução de venda de produção',
-  ),
-  equivalencia(
-    '5202',
-    '1202',
-    'Devolução de compra para devolução de venda de mercadoria',
-  ),
-  equivalencia(
-    '5353',
-    '1353',
-    'Prestação para aquisição de transporte estadual',
-  ),
-  equivalencia(
-    '5401',
-    '1401',
-    'Venda de produção ST para compra de produção ST',
-  ),
-  equivalencia(
-    '5403',
-    '1403',
-    'Venda ST para compra destinada à comercialização ST',
-  ),
-  equivalencia(
-    '5405',
-    '1403',
-    'Venda por substituído para compra com substituição tributária',
-  ),
-  equivalencia('5551', '1551', 'Venda para compra de ativo imobilizado'),
-  equivalencia(
-    '5556',
-    '1556',
-    'Devolução para compra de material de uso ou consumo',
-  ),
-  equivalencia(
-    '6101',
-    '2101',
-    'Venda interestadual de produção para compra de industrialização',
-  ),
-  equivalencia(
-    '6102',
-    '2102',
-    'Venda interestadual para compra de comercialização',
-  ),
-  equivalencia(
-    '6201',
-    '2201',
-    'Devolução interestadual de compra para devolução de venda',
-  ),
-  equivalencia(
-    '6202',
-    '2202',
-    'Devolução interestadual de compra para devolução de venda',
-  ),
-  equivalencia(
-    '6353',
-    '2353',
-    'Prestação para aquisição de transporte interestadual',
-  ),
-  equivalencia(
-    '6401',
-    '2401',
-    'Venda interestadual de produção ST para compra ST',
-  ),
-  equivalencia(
-    '6403',
-    '2403',
-    'Venda interestadual ST para compra interestadual ST',
-  ),
-  equivalencia(
-    '6405',
-    '2405',
-    'Venda interestadual por substituído para compra ST',
-  ),
-  equivalencia(
-    '6551',
-    '2551',
-    'Venda interestadual para compra de ativo imobilizado',
-  ),
-  equivalencia(
-    '6556',
-    '2556',
-    'Devolução interestadual para compra de uso ou consumo',
-  ),
+  // Estadual
+  {
+    clienteId: null,
+    cfopOrigem: '5101',
+    cfopDestino: '1101',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda de produção para compra de industrialização',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5102',
+    cfopDestino: '1102',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda de mercadoria para compra de comercialização',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5201',
+    cfopDestino: '1201',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Devolução de compra para devolução de venda de produção',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5202',
+    cfopDestino: '1202',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Devolução de compra para devolução de venda de mercadoria',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5353',
+    cfopDestino: '1353',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Prestação para aquisição de transporte estadual',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5401',
+    cfopDestino: '1401',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda de produção ST para compra de produção ST',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5403',
+    cfopDestino: '1403',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda ST para compra destinada à comercialização ST',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5405',
+    cfopDestino: '1403',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda por substituído para compra com substituição tributária',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5551',
+    cfopDestino: '1551',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda para compra de ativo imobilizado',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5556',
+    cfopDestino: '1556',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Devolução para compra de material de uso ou consumo',
+  },
+
+  // Interestadual
+  {
+    clienteId: null,
+    cfopOrigem: '6101',
+    cfopDestino: '2101',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao:
+      'Venda interestadual de produção para compra de industrialização',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6102',
+    cfopDestino: '2102',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda interestadual para compra de comercialização',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6201',
+    cfopDestino: '2201',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Devolução interestadual de compra para devolução de venda',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6202',
+    cfopDestino: '2202',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Devolução interestadual de compra para devolução de venda',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6353',
+    cfopDestino: '2353',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Prestação para aquisição de transporte interestadual',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6401',
+    cfopDestino: '2401',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda interestadual de produção ST para compra ST',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6403',
+    cfopDestino: '2403',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda interestadual ST para compra interestadual ST',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6405',
+    cfopDestino: '2405',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda interestadual por substituído para compra ST',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6551',
+    cfopDestino: '2551',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Venda interestadual para compra de ativo imobilizado',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6556',
+    cfopDestino: '2556',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Devolução interestadual para compra de uso ou consumo',
+  },
 ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Execução do seed
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function seedCfops(databaseUrl: string) {
   const client = postgres(databaseUrl, { max: 1 });
@@ -323,26 +557,6 @@ export async function seedCfops(databaseUrl: string) {
   } finally {
     await client.end({ timeout: 5 });
   }
-}
-
-function abrangenciaFromCodigo(codigo: string) {
-  if (['1', '5'].includes(codigo[0])) return 'ESTADUAL';
-  if (['2', '6'].includes(codigo[0])) return 'INTERESTADUAL';
-  return 'EXTERIOR';
-}
-
-function equivalencia(
-  cfopOrigem: string,
-  cfopDestino: string,
-  descricao: string,
-): EquivalenciaSeed {
-  return {
-    clienteId: null,
-    cfopOrigem,
-    cfopDestino,
-    descricao,
-    tipoOperacao: 'SAIDA_PARA_ENTRADA',
-  };
 }
 
 if (require.main === module) {
