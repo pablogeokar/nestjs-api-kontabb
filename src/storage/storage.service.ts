@@ -94,7 +94,7 @@ export class StorageService {
     return `comprovantes/${input.obligationId}/${input.receiptId}.${input.extension}`;
   }
 
-  logoObjectKey(input: { clientId: string; extension: string }) {
-    return `clientes/${input.clientId}/logo.${input.extension}`;
+  logoObjectKey(input: { cnpjCpf: string; extension: string }) {
+    return `clientes/${input.cnpjCpf}/logo.${input.extension}`;
   }
 }

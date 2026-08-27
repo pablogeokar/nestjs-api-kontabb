@@ -608,15 +608,25 @@ export class ClientesService {
   }): Promise<{ ok: true; logoUrl: string } | { ok: false; code: string }> {
     // Check client exists and get current logo_key
     const existing = await this.database.db
-      .select({ id: clientes.id, logoKey: clientes.logoKey })
+      .select({
+        id: clientes.id,
+        logoKey: clientes.logoKey,
+        cnpj: clientes.cnpj,
+        cpf: clientes.cpf,
+        tipoPessoa: clientes.tipoPessoa,
+      })
       .from(clientes)
       .where(eq(clientes.id, input.clientId))
       .limit(1);
     if (!existing[0]) return { ok: false, code: 'NOT_FOUND' };
 
     const oldLogoKey = existing[0].logoKey;
+    const cnpjCpf =
+      existing[0].tipoPessoa === 'PF' && existing[0].cpf
+        ? existing[0].cpf
+        : existing[0].cnpj;
     const newKey = this.storage.logoObjectKey({
-      clientId: input.clientId,
+      cnpjCpf,
       extension: input.extension,
     });
 
