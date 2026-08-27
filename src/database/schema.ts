@@ -804,12 +804,8 @@ export const documentosFiscaisItens = pgTable(
   'documentos_fiscais_itens',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    documentoFiscalId: uuid('documento_fiscal_id')
-      .notNull()
-      .references(() => documentosFiscais.id, { onDelete: 'cascade' }),
-    clienteId: uuid('cliente_id')
-      .notNull()
-      .references(() => clientes.id, { onDelete: 'cascade' }),
+    documentoFiscalId: uuid('documento_fiscal_id').notNull(),
+    clienteId: uuid('cliente_id').notNull(),
     numeroItem: integer('numero_item').notNull(),
     codigoProduto: text('codigo_produto').notNull(),
     codigoEan: text('codigo_ean'),
@@ -1056,6 +1052,16 @@ export const documentosFiscaisItens = pgTable(
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
   (table) => [
+    foreignKey({
+      name: 'fk_df_itens_documento_fiscal',
+      columns: [table.documentoFiscalId],
+      foreignColumns: [documentosFiscais.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'fk_df_itens_cliente',
+      columns: [table.clienteId],
+      foreignColumns: [clientes.id],
+    }).onDelete('cascade'),
     uniqueIndex('uidx_item_doc_num').on(
       table.documentoFiscalId,
       table.numeroItem,
