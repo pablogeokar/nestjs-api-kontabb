@@ -87,14 +87,14 @@ export class StorageService {
   }
 
   receiptObjectKey(input: {
-    obligationId: string;
+    cnpjCpf: string;
     receiptId: string;
     extension: string;
   }) {
-    return `comprovantes/${input.obligationId}/${input.receiptId}.${input.extension}`;
+    return `clientes/${input.cnpjCpf}/comprovantes/${input.receiptId}.${input.extension}`;
   }
 
-  logoObjectKey(input: { clientId: string; extension: string }) {
-    return `clientes/${input.clientId}/logo.${input.extension}`;
+  logoObjectKey(input: { cnpjCpf: string; extension: string }) {
+    return `clientes/${input.cnpjCpf}/logo.${input.extension}`;
   }
 }

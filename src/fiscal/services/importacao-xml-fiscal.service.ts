@@ -6,6 +6,7 @@ import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   documentosFiscais,
+  documentosFiscaisItens,
   eventosAuditoria,
 } from '../../database/schema';
 import { StorageService } from '../../storage/storage.service';
@@ -13,6 +14,7 @@ import {
   parseManualFiscalXml,
   type ParsedDocumentoFiscal,
 } from './dfe-document.parser';
+import { CfopService } from './cfop.service';
 
 const MAX_XML_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_XML_MIMES = new Set([
@@ -65,6 +67,7 @@ export class ImportacaoXmlFiscalService {
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
+    private readonly cfopService: CfopService,
   ) {}
 
   async importar(input: {
@@ -304,6 +307,13 @@ export class ImportacaoXmlFiscalService {
     requestId: string;
   }): Promise<'IMPORTADO' | 'DUPLICADO'> {
     const { target, documento } = input;
+    const escrituracao = await this.cfopService.prepararItensEscrituracao({
+      clienteId: target.id,
+      clienteCnpjCpf: target.cnpj,
+      emitenteCnpjCpf: documento.emitenteCnpjCpf,
+      tpNfXml: documento.tpNfXml,
+      itens: documento.itens,
+    });
     const existingRows = await this.database.db
       .select({
         id: documentosFiscais.id,
@@ -320,7 +330,35 @@ export class ImportacaoXmlFiscalService {
       )
       .limit(1);
     const existing = existingRows[0];
-    if (existing && existing.situacao !== 'RESUMIDA') return 'DUPLICADO';
+    if (existing && existing.situacao !== 'RESUMIDA') {
+      await this.database.db.transaction(async (tx) => {
+        await tx
+          .update(documentosFiscais)
+          .set({
+            tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+            tpNfXml: documento.tpNfXml,
+            atualizadoEm: new Date(),
+          })
+          .where(eq(documentosFiscais.id, existing.id));
+        await tx
+          .delete(documentosFiscaisItens)
+          .where(eq(documentosFiscaisItens.documentoFiscalId, existing.id));
+        for (
+          let offset = 0;
+          offset < escrituracao.itens.length;
+          offset += 300
+        ) {
+          await tx.insert(documentosFiscaisItens).values(
+            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
+              ...item,
+              documentoFiscalId: existing.id,
+              clienteId: target.id,
+            })),
+          );
+        }
+      });
+      return 'DUPLICADO';
+    }
 
     const year = String(documento.dataEmissao.getUTCFullYear());
     const month = String(documento.dataEmissao.getUTCMonth() + 1).padStart(
@@ -359,6 +397,8 @@ export class ImportacaoXmlFiscalService {
       dataEmissao: documento.dataEmissao,
       valorTotal: documento.valorTotal,
       situacao: documento.situacao,
+      tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+      tpNfXml: documento.tpNfXml,
       xmlKey,
       danfeKey: null,
       atualizadoEm: new Date(),
@@ -366,31 +406,55 @@ export class ImportacaoXmlFiscalService {
 
     try {
       let persisted: Array<{ id: string }> = [];
-      if (existing) {
-        persisted = await this.database.db
-          .update(documentosFiscais)
-          .set(values)
-          .where(
-            and(
-              eq(documentosFiscais.id, existing.id),
-              eq(documentosFiscais.situacao, 'RESUMIDA'),
-            ),
-          )
-          .returning();
-      }
+      await this.database.db.transaction(async (tx) => {
+        if (existing) {
+          persisted = await tx
+            .update(documentosFiscais)
+            .set(values)
+            .where(
+              and(
+                eq(documentosFiscais.id, existing.id),
+                eq(documentosFiscais.situacao, 'RESUMIDA'),
+              ),
+            )
+            .returning({ id: documentosFiscais.id });
+        }
 
-      if (persisted.length === 0) {
-        persisted = await this.database.db
-          .insert(documentosFiscais)
-          .values(values)
-          .onConflictDoNothing({
-            target: [
-              documentosFiscais.clienteId,
-              documentosFiscais.chaveAcesso,
-            ],
-          })
-          .returning();
-      }
+        if (persisted.length === 0) {
+          persisted = await tx
+            .insert(documentosFiscais)
+            .values(values)
+            .onConflictDoNothing({
+              target: [
+                documentosFiscais.clienteId,
+                documentosFiscais.chaveAcesso,
+              ],
+            })
+            .returning({ id: documentosFiscais.id });
+        }
+
+        if (persisted.length > 0) {
+          const documentoFiscalId = persisted[0].id;
+          await tx
+            .delete(documentosFiscaisItens)
+            .where(
+              eq(documentosFiscaisItens.documentoFiscalId, documentoFiscalId),
+            );
+          for (
+            let offset = 0;
+            offset < escrituracao.itens.length;
+            offset += 300
+          ) {
+            await tx.insert(documentosFiscaisItens).values(
+              escrituracao.itens.slice(offset, offset + 300).map((item) => ({
+                ...item,
+                documentoFiscalId,
+                clienteId: target.id,
+              })),
+            );
+          }
+        }
+      });
 
       if (persisted.length === 0) {
         await this.deleteUploadedXml(xmlKey, input);

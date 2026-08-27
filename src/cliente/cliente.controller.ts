@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Patch,
   UseGuards,
 } from '@nestjs/common';
@@ -144,5 +145,31 @@ export class ClienteController {
     }
 
     return { success: true, primeiroLogin: false };
+  }
+}
+
+@ApiTags('Cliente')
+@ApiBearerAuth('session-token')
+@Controller('clientes')
+@UseGuards(AuthGuard)
+export class ClientesMeController {
+  constructor(private readonly clientesService: ClientesService) {}
+
+  @Get('me')
+  @ApiOperation({
+    summary: 'Obter o cadastro do cliente autenticado',
+    description:
+      'Retorna os dados cadastrais e a configuração tributária da empresa vinculada à sessão.',
+  })
+  @ApiResponse({ status: 200, description: 'Dados do cliente autenticado.' })
+  @ApiResponse({ status: 403, description: 'Sem permissão — apenas clientes.' })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  async me(@CurrentUser() currentUser: CurrentUserType) {
+    if (currentUser.role !== 'CLIENTE') {
+      throw new ForbiddenException('Sem permissão.');
+    }
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) throw new NotFoundException('Cliente não encontrado.');
+    return this.clientesService.getClientSummary(client.id);
   }
 }

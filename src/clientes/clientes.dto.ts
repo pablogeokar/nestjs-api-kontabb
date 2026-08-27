@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsIn,
   IsOptional,
@@ -12,6 +13,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  FONTES_CONSULTA_CNPJ,
+  REGIMES_TRIBUTARIOS,
+  TIPOS_CONTRIBUINTE_ICMS,
+  type FonteConsultaCnpj,
+  type RegimeTributario,
+  type TipoContribuinteIcms,
+} from './clientes.types';
 
 export type ClientType = 'PF' | 'PJ';
 
@@ -132,6 +141,24 @@ export class CreateClientDto {
   @ValidateNested({ each: true })
   @Type(() => ClientCnaeDto)
   secondary_activities?: ClientCnaeDto[];
+
+  @ApiPropertyOptional({
+    description: 'Resultado da consulta de opção pelo Simples Nacional',
+    type: Boolean,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  optante_simples_nacional?: boolean | null;
+
+  @ApiPropertyOptional({
+    description: 'Fonte que informou a opção pelo Simples Nacional',
+    enum: FONTES_CONSULTA_CNPJ,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(FONTES_CONSULTA_CNPJ)
+  simples_nacional_fonte?: FonteConsultaCnpj | null;
 }
 
 export class UpdateClientDto {
@@ -175,6 +202,66 @@ export class UpdateClientDto {
   @ValidateNested({ each: true })
   @Type(() => ClientCnaeDto)
   secondary_activities?: ClientCnaeDto[];
+
+  @ApiPropertyOptional({
+    description: 'Novo resultado consultado de opção pelo Simples Nacional',
+    type: Boolean,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  optante_simples_nacional?: boolean | null;
+
+  @ApiPropertyOptional({
+    description: 'Fonte do novo resultado da consulta do Simples Nacional',
+    enum: FONTES_CONSULTA_CNPJ,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(FONTES_CONSULTA_CNPJ)
+  simples_nacional_fonte?: FonteConsultaCnpj | null;
+
+  @ApiPropertyOptional({
+    description: 'Forma de tributação da pessoa jurídica',
+    enum: REGIMES_TRIBUTARIOS,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(REGIMES_TRIBUTARIOS)
+  regime_tributario?: RegimeTributario | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Indica se o ICMS é apurado separadamente; obrigatório para Lucro Presumido e Lucro Real',
+    type: Boolean,
+  })
+  @IsOptional()
+  @IsBoolean()
+  apura_icms?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Classificação do cliente quanto ao ICMS',
+    enum: TIPOS_CONTRIBUINTE_ICMS,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(TIPOS_CONTRIBUINTE_ICMS)
+  tipo_contribuinte_icms?: TipoContribuinteIcms | null;
+
+  @ApiPropertyOptional({
+    description: 'Inscrição estadual, quando o cliente é contribuinte',
+    nullable: true,
+    example: '123.456.789.001',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9A-Z./-]{2,20}$/, {
+    message: 'Formato de IE inválido.',
+  })
+  inscricao_estadual?: string | null;
 }
 
 export class BatchClientItemDto {

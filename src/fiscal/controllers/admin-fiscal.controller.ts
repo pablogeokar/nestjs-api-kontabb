@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   UploadedFile,
   UploadedFiles,
   UseGuards,
@@ -47,8 +48,11 @@ import { FiscalCronService } from '../services/fiscal-cron.service';
 import { ImportacaoXmlFiscalService } from '../services/importacao-xml-fiscal.service';
 import { UploadCertificadoDto } from '../dto/upload-certificado.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
+import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
+import { FiscalItensService } from '../services/fiscal-itens.service';
+import { getRequestId, type RequestWithId } from '../../common/request-id';
 
 @ApiTags('Fiscal (Admin)')
 @ApiBearerAuth('session-token')
@@ -65,6 +69,7 @@ export class AdminFiscalController {
     private readonly configService: ConfigService,
     private readonly importacaoXmlService: ImportacaoXmlFiscalService,
     private readonly rateLimit: RateLimitService,
+    private readonly fiscalItensService: FiscalItensService,
   ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
@@ -168,8 +173,17 @@ export class AdminFiscalController {
   async sincronizar(
     @Body() body: SincronizarFiscalDto,
     @CurrentUser() user: CurrentUserType,
+    @Req() request: RequestWithId,
   ) {
+    const requestId = getRequestId(request);
+    const startedAt = Date.now();
+    await this.rateLimit.consume({
+      key: `fiscal-sync:${user.id}:${body.clienteId ?? 'todos'}`,
+      limit: 3,
+      windowMs: 5 * 60 * 1000,
+    });
     this.logger.info('fiscal_sync_manual_triggered', {
+      requestId,
       userId: user.id,
       clienteId: body.clienteId || 'TODOS',
       operation: 'sincronizar_fiscal',
@@ -178,13 +192,32 @@ export class AdminFiscalController {
     if (body.clienteId) {
       const nfe = await this.sincronizarTipoSeguro(body.clienteId, 'NFE');
       const cte = await this.sincronizarTipoSeguro(body.clienteId, 'CTE');
+      const success = !isFiscalSyncFailure(nfe) && !isFiscalSyncFailure(cte);
+      this.logger.info('fiscal_sync_manual_completed', {
+        requestId,
+        userId: user.id,
+        clienteId: body.clienteId,
+        operation: 'sincronizar_fiscal',
+        result: success ? 'success' : 'partial_failure',
+        durationMs: Date.now() - startedAt,
+        nfeStatus: nfe.status,
+        cteStatus: cte.status,
+      });
       return {
-        success: !isFiscalSyncFailure(nfe) && !isFiscalSyncFailure(cte),
+        success,
         data: { nfe, cte },
       };
     }
 
     const resultado = await this.cronService.executarSincronizacao();
+    this.logger.info('fiscal_sync_manual_completed', {
+      requestId,
+      userId: user.id,
+      clienteId: 'TODOS',
+      operation: 'sincronizar_fiscal',
+      result: resultado.success ? 'success' : 'partial_failure',
+      durationMs: Date.now() - startedAt,
+    });
     return { success: resultado.success, data: resultado };
   }
 
@@ -312,6 +345,128 @@ export class AdminFiscalController {
     return buildPaginatedResponse(result.data, result.total, pagination);
   }
 
+  @Get('itens')
+  @ApiOperation({
+    summary: 'Listar itens fiscais',
+    description:
+      'Consulta itens de NF-e/NFC-e por empresa, documento, CFOP, CST/CSOSN, NCM, produto e período.',
+  })
+  async listItens(@Query() query: QueryItensFiscaisDto) {
+    const pagination = parsePaginationParams(query);
+    const result = await this.fiscalItensService.listItens({
+      clienteId: query.clienteId,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
+      cst: query.cst,
+      cstIcms: query.cstIcms,
+      csosnIcms: query.csosnIcms,
+      cstPis: query.cstPis,
+      cstCofins: query.cstCofins,
+      ncm: query.ncm,
+      codigoProduto: query.codigoProduto,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('documentos/:id/itens')
+  @ApiOperation({ summary: 'Listar itens de um documento fiscal' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  async listItensDocumento(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: QueryItensFiscaisDto,
+  ) {
+    const pagination = parsePaginationParams(query);
+    const result = await this.fiscalItensService.listItens({
+      documentoId: id,
+      clienteId: query.clienteId,
+      cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
+      cst: query.cst,
+      cstIcms: query.cstIcms,
+      csosnIcms: query.csosnIcms,
+      cstPis: query.cstPis,
+      cstCofins: query.cstCofins,
+      ncm: query.ncm,
+      codigoProduto: query.codigoProduto,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Get('relatorios/c190')
+  @ApiOperation({ summary: 'Apuração analítica equivalente ao SPED C190' })
+  async getC190(@Query() query: QueryItensFiscaisDto) {
+    return this.fiscalItensService.getC190({
+      clienteId: query.clienteId,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cfopXml: query.cfopXml,
+      tipoOperacao: query.tipoOperacao,
+      cst: query.cst,
+      ncm: query.ncm,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
+  }
+
+  @Get('relatorios/produtos-0200')
+  @ApiOperation({ summary: 'Cadastro consolidado de produtos para SPED 0200' })
+  async getProdutos0200(@Query() query: QueryItensFiscaisDto) {
+    return {
+      data: await this.fiscalItensService.getProdutos0200({
+        clienteId: query.clienteId,
+        cfopXml: query.cfopXml,
+        tipoOperacao: query.tipoOperacao,
+        codigoProduto: query.codigoProduto,
+        ncm: query.ncm,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
+  }
+
+  @Get('relatorios/livros-icms')
+  @ApiOperation({ summary: 'Resumo de entradas e saídas por CFOP e alíquota' })
+  async getResumoLivros(@Query() query: QueryItensFiscaisDto) {
+    return {
+      data: await this.fiscalItensService.getResumoLivros({
+        clienteId: query.clienteId,
+        cfop: query.cfop,
+        cfopXml: query.cfopXml,
+        tipoOperacao: query.tipoOperacao,
+        cst: query.cst,
+        ncm: query.ncm,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
+  }
+
+  @Get('relatorios/apuracao-icms')
+  @ApiOperation({ summary: 'Consolidar créditos, débitos e saldo de ICMS' })
+  async getApuracaoIcms(@Query() query: QueryItensFiscaisDto) {
+    return {
+      data: await this.fiscalItensService.getApuracaoIcms({
+        clienteId: query.clienteId,
+        cfop: query.cfop,
+        cfopXml: query.cfopXml,
+        tipoOperacao: query.tipoOperacao,
+        cst: query.cst,
+        ncm: query.ncm,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
+  }
+
   @Get('documentos/:id/download-xml')
   @ApiOperation({
     summary: 'Download do XML de um documento fiscal',
@@ -356,8 +511,18 @@ export class AdminFiscalController {
       'Retorna KPIs consolidados: documentos no mês, volume financeiro, status de certificados.',
   })
   @ApiResponse({ status: 200, description: 'Estatísticas do módulo fiscal.' })
-  async getDashboard() {
-    const stats = await this.distribuicaoService.getDashboardStats();
+  async getDashboard(
+    @Query('clienteId') clienteId?: string,
+    @Query('dataInicio') dataInicio?: string,
+    @Query('dataFim') dataFim?: string,
+  ) {
+    const parsedInicio = dataInicio ? new Date(dataInicio) : undefined;
+    const parsedFim = dataFim ? new Date(`${dataFim}T23:59:59.999`) : undefined;
+    const stats = await this.distribuicaoService.getDashboardStats(
+      clienteId,
+      Number.isNaN(parsedInicio?.getTime()) ? undefined : parsedInicio,
+      Number.isNaN(parsedFim?.getTime()) ? undefined : parsedFim,
+    );
     return { data: stats };
   }
 

@@ -1,5 +1,6 @@
 import { gunzipSync } from 'node:zlib';
 import { XMLValidator } from 'fast-xml-parser';
+import { parseNfeItems, type ParsedNfeItem } from './nfe-item.parser';
 
 export type TipoConsultaDfe = 'NFE' | 'CTE';
 
@@ -29,8 +30,10 @@ export interface ParsedDocumentoFiscal {
   destinatarioRazaoSocial: string;
   dataEmissao: Date;
   valorTotal: string;
+  tpNfXml: '0' | '1';
   situacao: 'AUTORIZADA' | 'CANCELADA' | 'DENEGADA';
   participantesCnpjCpf: string[];
+  itens: ParsedNfeItem[];
   xmlContent: string;
 }
 
@@ -365,6 +368,13 @@ function parseFiscalXml(
   if (['110', '301', '302'].includes(protocolStatus)) {
     situacao = 'DENEGADA';
   }
+  // tpCTe/tpServ indicam finalidade/modalidade do CT-e, não o sentido fiscal.
+  // Normalizamos o CT-e como emissão de saída e deixamos a comparação do
+  // emitente com o cliente definir se a escrituração será entrada ou saída.
+  const tpNfValue =
+    tipoConsulta === 'NFE' ? extractTagValue(infElement.content, 'tpNF') : '1';
+  const tpNfXml: ParsedDocumentoFiscal['tpNfXml'] =
+    tpNfValue === '0' ? '0' : '1';
 
   return {
     chaveAcesso,
@@ -379,11 +389,13 @@ function parseFiscalXml(
     destinatarioRazaoSocial: extractTagValue(destinatario, 'xNome'),
     dataEmissao,
     valorTotal,
+    tpNfXml,
     situacao,
     participantesCnpjCpf: extractParticipantTaxIds(
       infElement.content,
       tipoConsulta,
     ),
+    itens: tipoConsulta === 'NFE' ? parseNfeItems(xml) : [],
     xmlContent: xml,
   };
 }

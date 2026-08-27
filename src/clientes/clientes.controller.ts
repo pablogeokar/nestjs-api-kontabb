@@ -232,6 +232,8 @@ export class ClientesController {
         dto.secondary_activities,
         dto.primary_activity?.code,
       ),
+      optanteSimplesNacional: dto.optante_simples_nacional,
+      simplesNacionalFonte: dto.simples_nacional_fonte,
     });
 
     if (!result.ok) {
@@ -315,7 +317,8 @@ export class ClientesController {
   @Patch(':id')
   @ApiOperation({
     summary: 'Atualizar cliente',
-    description: 'Atualiza razão social e/ou e-mails de um cliente existente.',
+    description:
+      'Atualiza dados cadastrais e a configuração tributária de um cliente existente.',
   })
   @ApiParam({
     name: 'id',
@@ -343,6 +346,12 @@ export class ClientesController {
         dto.secondary_activities,
         dto.primary_activity?.code,
       ),
+      regimeTributario: dto.regime_tributario,
+      apuraIcms: dto.apura_icms,
+      inscricaoEstadual: dto.inscricao_estadual,
+      tipoContribuinteIcms: dto.tipo_contribuinte_icms,
+      optanteSimplesNacional: dto.optante_simples_nacional,
+      simplesNacionalFonte: dto.simples_nacional_fonte,
     });
     if (!updated) throw new NotFoundException('Cliente não encontrado.');
     return { success: true };

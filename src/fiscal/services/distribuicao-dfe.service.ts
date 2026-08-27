@@ -1,5 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, and, sql, desc, asc, ilike, or, inArray } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  sql,
+  desc,
+  asc,
+  ilike,
+  or,
+  inArray,
+  isNull,
+  lt,
+  gte,
+  lte,
+  type SQL,
+} from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { NfeWizardService } from './nfewizard.service';
@@ -12,14 +26,22 @@ import {
 import {
   controleNsu,
   documentosFiscais,
+  documentosFiscaisItens,
   eventosFiscais,
   certificadosDigitais,
   clientes,
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
+import { CfopService } from './cfop.service';
 
 export interface FiscalSyncResult {
-  status: 'OK' | 'ADIADO' | 'SCHEMA_ERROR' | 'CONSUMO_INDEVIDO' | 'ERRO';
+  status:
+    | 'OK'
+    | 'ADIADO'
+    | 'EM_ANDAMENTO'
+    | 'SCHEMA_ERROR'
+    | 'CONSUMO_INDEVIDO'
+    | 'ERRO';
   message?: string;
   cStat?: number;
   ultimoNsu?: number;
@@ -34,6 +56,19 @@ export function isFiscalSyncFailure(result: FiscalSyncResult) {
   return result.status === 'ERRO' || result.status === 'SCHEMA_ERROR';
 }
 
+export const FISCAL_SYNC_LOCK_TTL_MS = 15 * 60 * 1000;
+
+export function isFiscalSyncLockActive(
+  input: { sincronizacaoId: string | null; iniciadaEm: Date | null },
+  now = Date.now(),
+) {
+  return Boolean(
+    input.sincronizacaoId &&
+    input.iniciadaEm &&
+    input.iniciadaEm.getTime() > now - FISCAL_SYNC_LOCK_TTL_MS,
+  );
+}
+
 @Injectable()
 export class DistribuicaoDfeService {
   private readonly logger = new Logger(DistribuicaoDfeService.name);
@@ -42,6 +77,7 @@ export class DistribuicaoDfeService {
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
     private readonly nfeWizard: NfeWizardService,
+    private readonly cfopService: CfopService,
   ) {}
 
   /**
@@ -82,13 +118,16 @@ export class DistribuicaoDfeService {
       .limit(1);
 
     if (!nsuControl[0]) {
-      await this.database.db.insert(controleNsu).values({
-        clienteId,
-        cnpj,
-        tipoDocumento,
-        ultimoNsu: 0,
-        maxNsu: 0,
-      });
+      await this.database.db
+        .insert(controleNsu)
+        .values({
+          clienteId,
+          cnpj,
+          tipoDocumento,
+          ultimoNsu: 0,
+          maxNsu: 0,
+        })
+        .onConflictDoNothing();
       nsuControl = await this.database.db
         .select()
         .from(controleNsu)
@@ -115,165 +154,186 @@ export class DistribuicaoDfeService {
       };
     }
 
-    // 4. Consultar SEFAZ
-    let resposta: unknown;
+    const sincronizacaoId = await this.tentarIniciarSincronizacao(control.id);
+    if (!sincronizacaoId) {
+      return {
+        status: 'EM_ANDAMENTO',
+        message:
+          'Já existe uma sincronização em andamento para este tipo de documento.',
+        documentosProcessados: 0,
+      };
+    }
+
     try {
-      if (tipoDocumento === 'NFE') {
-        resposta = await this.nfeWizard.consultarDistribuicaoDFe({
-          clienteId,
-          cnpj,
-          uf: uf || 'SP',
-          ultimoNsu: control.ultimoNsu,
+      // 4. Consultar SEFAZ
+      let resposta: unknown;
+      try {
+        if (tipoDocumento === 'NFE') {
+          resposta = await this.nfeWizard.consultarDistribuicaoDFe({
+            clienteId,
+            cnpj,
+            uf: uf || 'SP',
+            ultimoNsu: control.ultimoNsu,
+          });
+        } else {
+          resposta = await this.nfeWizard.consultarDistribuicaoCTe({
+            clienteId,
+            cnpj,
+            uf: uf || 'SP',
+            ultimoNsu: control.ultimoNsu,
+          });
+        }
+      } catch (error: unknown) {
+        const errorMessage = this.getRootCauseMessage(error);
+        this.logger.error(
+          `Erro na consulta SEFAZ para ${cnpj}: ${errorMessage}`,
+        );
+
+        // Se for erro de validação de schema XSD, apenas pular (não bloquear)
+        const isSchemaError =
+          errorMessage.includes('Validação do XML') ||
+          errorMessage.includes('No matching global declaration') ||
+          errorMessage.includes('SchemaValidat');
+
+        if (isSchemaError) {
+          this.logger.warn(
+            `Validação de schema falhou para ${cnpj}/${tipoDocumento} — pulando. ` +
+              `Isso geralmente indica XSD desatualizado na lib.`,
+          );
+          await this.atualizarControleNsu(control.id, {
+            statusSefaz: 998,
+            motivoSefaz: `Schema validation error: ${errorMessage.substring(0, 200)}`,
+            proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
+          });
+          return {
+            status: 'SCHEMA_ERROR',
+            message: `Erro de validação de schema XSD para ${tipoDocumento}. Consulta será retentada posteriormente.`,
+            documentosProcessados: 0,
+          };
+        }
+
+        // Consumo Indevido (cStat 656) — SEFAZ pede para aguardar 1 hora
+        const isConsumoIndevido =
+          errorMessage.includes('Consumo Indevido') ||
+          errorMessage.includes('656');
+
+        if (isConsumoIndevido) {
+          this.logger.warn(
+            `Consumo Indevido para ${cnpj}/${tipoDocumento} — aguardando 1 hora.`,
+          );
+          await this.atualizarControleNsu(control.id, {
+            statusSefaz: 656,
+            motivoSefaz: 'Consumo Indevido - aguardar 1 hora',
+            proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
+          });
+          return {
+            status: 'CONSUMO_INDEVIDO',
+            message:
+              'SEFAZ rejeitou por Consumo Indevido. Próxima tentativa em 1 hora.',
+            documentosProcessados: 0,
+          };
+        }
+
+        // Agendar próxima consulta para daqui 30 minutos em caso de erro
+        await this.atualizarControleNsu(control.id, {
+          statusSefaz: 999,
+          motivoSefaz: errorMessage,
+          proximaConsultaEm: new Date(Date.now() + 30 * 60 * 1000),
         });
-      } else {
-        resposta = await this.nfeWizard.consultarDistribuicaoCTe({
-          clienteId,
-          cnpj,
-          uf: uf || 'SP',
-          ultimoNsu: control.ultimoNsu,
-        });
+        throw error;
       }
-    } catch (error: any) {
-      this.logger.error(
-        `Erro na consulta SEFAZ para ${cnpj}: ${error.message}`,
+
+      // 5. Processar resposta da SEFAZ
+      const metadata = extractDfeResponseMetadata(resposta);
+      const { cStat, ultimoNsu: ultNSU, maxNsu: maxNSU } = metadata;
+
+      this.logger.log(
+        `SEFAZ response for ${cnpj}/${tipoDocumento}: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}`,
       );
 
-      // Se for erro de validação de schema XSD, apenas pular (não bloquear)
-      const isSchemaError =
-        error.message?.includes('Validação do XML') ||
-        error.message?.includes('No matching global declaration') ||
-        error.message?.includes('SchemaValidat');
+      // Atualizar controle de NSU
+      let proximaConsulta: Date | null = null;
 
-      if (isSchemaError) {
-        this.logger.warn(
-          `Validação de schema falhou para ${cnpj}/${tipoDocumento} — pulando. ` +
-            `Isso geralmente indica XSD desatualizado na lib.`,
-        );
-        await this.atualizarControleNsu(control.id, {
-          statusSefaz: 998,
-          motivoSefaz: `Schema validation error: ${error.message?.substring(0, 200)}`,
-          proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
-        });
-        return {
-          status: 'SCHEMA_ERROR',
-          message: `Erro de validação de schema XSD para ${tipoDocumento}. Consulta será retentada posteriormente.`,
-          documentosProcessados: 0,
-        };
+      // cStat 137 = sem docs, 656 = consumo indevido - aguardar
+      if (cStat === 137 || cStat === 656) {
+        proximaConsulta = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
       }
 
-      // Consumo Indevido (cStat 656) — SEFAZ pede para aguardar 1 hora
-      const isConsumoIndevido =
-        error.message?.includes('Consumo Indevido') ||
-        error.message?.includes('656');
-
-      if (isConsumoIndevido) {
-        this.logger.warn(
-          `Consumo Indevido para ${cnpj}/${tipoDocumento} — aguardando 1 hora.`,
-        );
-        await this.atualizarControleNsu(control.id, {
-          statusSefaz: 656,
-          motivoSefaz: 'Consumo Indevido - aguardar 1 hora',
-          proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
-        });
-        return {
-          status: 'CONSUMO_INDEVIDO',
-          message:
-            'SEFAZ rejeitou por Consumo Indevido. Próxima tentativa em 1 hora.',
-          documentosProcessados: 0,
-        };
+      // Se ultNSU alcançou maxNSU, não há mais documentos no momento
+      if (ultNSU >= maxNSU && maxNSU > 0) {
+        proximaConsulta = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 horas
       }
 
-      // Agendar próxima consulta para daqui 30 minutos em caso de erro
-      await this.atualizarControleNsu(control.id, {
-        statusSefaz: 999,
-        motivoSefaz: error.message,
-        proximaConsultaEm: new Date(Date.now() + 30 * 60 * 1000),
-      });
-      throw error;
-    }
+      // 6. Processar documentos retornados
+      const docZips = extractDfeDocZips(resposta);
+      let documentosProcessados = 0;
+      let documentosIgnorados = 0;
+      let documentosComFalha = 0;
+      let ultimoNsuSeguro = control.ultimoNsu;
 
-    // 5. Processar resposta da SEFAZ
-    const metadata = extractDfeResponseMetadata(resposta);
-    const { cStat, ultimoNsu: ultNSU, maxNsu: maxNSU } = metadata;
+      for (const docZip of [...docZips].sort((a, b) => a.nsu - b.nsu)) {
+        try {
+          const parsed = parseDfeDocZip(docZip, tipoDocumento);
+          if (!parsed) {
+            documentosIgnorados++;
+            ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+            this.logger.debug(
+              `docZip ignorado: consulta=${tipoDocumento}, NSU=${docZip.nsu}, schema=${docZip.schema || 'desconhecido'}`,
+            );
+            continue;
+          }
 
-    this.logger.log(
-      `SEFAZ response for ${cnpj}/${tipoDocumento}: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}`,
-    );
-
-    // Atualizar controle de NSU
-    let proximaConsulta: Date | null = null;
-
-    // cStat 137 = sem docs, 656 = consumo indevido - aguardar
-    if (cStat === 137 || cStat === 656) {
-      proximaConsulta = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
-    }
-
-    // Se ultNSU alcançou maxNSU, não há mais documentos no momento
-    if (ultNSU >= maxNSU && maxNSU > 0) {
-      proximaConsulta = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 horas
-    }
-
-    // 6. Processar documentos retornados
-    const docZips = extractDfeDocZips(resposta);
-    let documentosProcessados = 0;
-    let documentosIgnorados = 0;
-    let documentosComFalha = 0;
-    let ultimoNsuSeguro = control.ultimoNsu;
-
-    for (const docZip of [...docZips].sort((a, b) => a.nsu - b.nsu)) {
-      try {
-        const parsed = parseDfeDocZip(docZip, tipoDocumento);
-        if (!parsed) {
-          documentosIgnorados++;
+          if (await this.salvarDocumento(clienteId, cnpj, parsed)) {
+            documentosProcessados += 1;
+          }
           ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
-          this.logger.debug(
-            `docZip ignorado: consulta=${tipoDocumento}, NSU=${docZip.nsu}, schema=${docZip.schema || 'desconhecido'}`,
+        } catch (error: unknown) {
+          documentosComFalha += 1;
+          this.logger.error(
+            `Falha ao persistir docZip NSU ${docZip.nsu}: ${this.getRootCauseMessage(error)}`,
           );
-          continue;
+          break;
         }
+      }
 
-        if (await this.salvarDocumento(clienteId, cnpj, parsed)) {
-          documentosProcessados += 1;
-        }
-        ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+      // 7. Atualizar controle de NSU final
+      const houveFalha = documentosComFalha > 0;
+      await this.atualizarControleNsu(control.id, {
+        ultimoNsu: houveFalha
+          ? ultimoNsuSeguro
+          : ultNSU > control.ultimoNsu
+            ? ultNSU
+            : control.ultimoNsu,
+        maxNsu: maxNSU > control.maxNsu ? maxNSU : control.maxNsu,
+        statusSefaz: houveFalha ? 999 : cStat,
+        motivoSefaz: houveFalha
+          ? 'Falha ao persistir documento fiscal. A consulta será retomada do último NSU seguro.'
+          : metadata.motivo,
+        proximaConsultaEm: houveFalha ? null : proximaConsulta,
+      });
+
+      return {
+        status: houveFalha ? 'ERRO' : 'OK',
+        message: houveFalha
+          ? 'Um documento fiscal não pôde ser persistido. A próxima consulta retomará do último NSU seguro.'
+          : undefined,
+        cStat,
+        ultimoNsu: houveFalha ? ultimoNsuSeguro : ultNSU,
+        maxNsu: maxNSU,
+        documentosRecebidos: docZips.length,
+        documentosProcessados,
+        documentosIgnorados,
+        documentosComFalha,
+      };
+    } finally {
+      try {
+        await this.finalizarSincronizacao(control.id, sincronizacaoId);
       } catch (error: unknown) {
-        documentosComFalha += 1;
         this.logger.error(
-          `Falha ao persistir docZip NSU ${docZip.nsu}: ${this.getRootCauseMessage(error)}`,
+          `Falha ao liberar controle de sincronização ${control.id}: ${this.getRootCauseMessage(error)}`,
         );
-        break;
       }
     }
-
-    // 7. Atualizar controle de NSU final
-    const houveFalha = documentosComFalha > 0;
-    await this.atualizarControleNsu(control.id, {
-      ultimoNsu: houveFalha
-        ? ultimoNsuSeguro
-        : ultNSU > control.ultimoNsu
-          ? ultNSU
-          : control.ultimoNsu,
-      maxNsu: maxNSU > control.maxNsu ? maxNSU : control.maxNsu,
-      statusSefaz: houveFalha ? 999 : cStat,
-      motivoSefaz: houveFalha
-        ? 'Falha ao persistir documento fiscal. A consulta será retomada do último NSU seguro.'
-        : metadata.motivo,
-      proximaConsultaEm: houveFalha ? null : proximaConsulta,
-    });
-
-    return {
-      status: houveFalha ? 'ERRO' : 'OK',
-      message: houveFalha
-        ? 'Um documento fiscal não pôde ser persistido. A próxima consulta retomará do último NSU seguro.'
-        : undefined,
-      cStat,
-      ultimoNsu: houveFalha ? ultimoNsuSeguro : ultNSU,
-      maxNsu: maxNSU,
-      documentosRecebidos: docZips.length,
-      documentosProcessados,
-      documentosIgnorados,
-      documentosComFalha,
-    };
   }
 
   /**
@@ -281,7 +341,7 @@ export class DistribuicaoDfeService {
    */
   async sincronizarTodos() {
     const clientesAtivos = await this.database.db
-      .select({
+      .selectDistinct({
         clienteId: certificadosDigitais.clienteId,
       })
       .from(certificadosDigitais)
@@ -309,9 +369,9 @@ export class DistribuicaoDfeService {
           };
         }
         resultados.push({ clienteId, nfe, cte });
-      } catch (error: any) {
+      } catch (error: unknown) {
         this.logger.error(
-          `Erro ao sincronizar cliente ${clienteId}: ${error.message}`,
+          `Erro ao sincronizar cliente ${clienteId}: ${this.getRootCauseMessage(error)}`,
         );
         resultados.push({
           clienteId,
@@ -374,7 +434,7 @@ export class DistribuicaoDfeService {
     search?: string;
     pagination: PaginationParams;
   }) {
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
 
     if (input.clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, input.clienteId));
@@ -391,26 +451,21 @@ export class DistribuicaoDfeService {
       );
     }
     if (input.dataInicio) {
-      conditions.push(
-        sql`${documentosFiscais.dataEmissao} >= ${input.dataInicio}`,
-      );
+      conditions.push(gte(documentosFiscais.dataEmissao, input.dataInicio));
     }
     if (input.dataFim) {
-      conditions.push(
-        sql`${documentosFiscais.dataEmissao} <= ${input.dataFim}`,
-      );
+      conditions.push(lte(documentosFiscais.dataEmissao, input.dataFim));
     }
     if (input.search) {
       const searchTerm = `%${input.search}%`;
-      conditions.push(
-        or(
-          ilike(documentosFiscais.chaveAcesso, searchTerm),
-          ilike(documentosFiscais.emitenteRazaoSocial, searchTerm),
-          ilike(documentosFiscais.emitenteCnpjCpf, searchTerm),
-          ilike(documentosFiscais.destinatarioRazaoSocial, searchTerm),
-          ilike(documentosFiscais.numeroDocumento, searchTerm),
-        ),
+      const searchCondition = or(
+        ilike(documentosFiscais.chaveAcesso, searchTerm),
+        ilike(documentosFiscais.emitenteRazaoSocial, searchTerm),
+        ilike(documentosFiscais.emitenteCnpjCpf, searchTerm),
+        ilike(documentosFiscais.destinatarioRazaoSocial, searchTerm),
+        ilike(documentosFiscais.numeroDocumento, searchTerm),
       );
+      if (searchCondition) conditions.push(searchCondition);
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -438,6 +493,8 @@ export class DistribuicaoDfeService {
           valorTotal: documentosFiscais.valorTotal,
           situacao: documentosFiscais.situacao,
           manifestacaoStatus: documentosFiscais.manifestacaoStatus,
+          tipoOperacaoEscriturada: documentosFiscais.tipoOperacaoEscriturada,
+          tpNfXml: documentosFiscais.tpNfXml,
           criadoEm: documentosFiscais.criadoEm,
         })
         .from(documentosFiscais)
@@ -464,6 +521,8 @@ export class DistribuicaoDfeService {
       valor_total: row.valorTotal,
       situacao: row.situacao,
       manifestacao_status: row.manifestacaoStatus,
+      tipo_operacao_escriturada: row.tipoOperacaoEscriturada,
+      tp_nf_xml: row.tpNfXml,
       criado_em: row.criadoEm.toISOString(),
     }));
 
@@ -474,7 +533,7 @@ export class DistribuicaoDfeService {
    * Retorna URL assinada para download do XML de um documento fiscal.
    */
   async getXmlDownloadUrl(documentoId: string, clienteId?: string) {
-    const conditions: any[] = [eq(documentosFiscais.id, documentoId)];
+    const conditions: SQL[] = [eq(documentosFiscais.id, documentoId)];
     if (clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, clienteId));
     }
@@ -530,26 +589,38 @@ export class DistribuicaoDfeService {
         motivoSefaz: controleNsu.motivoSefaz,
         ultimaConsultaEm: controleNsu.ultimaConsultaEm,
         proximaConsultaEm: controleNsu.proximaConsultaEm,
+        sincronizacaoId: controleNsu.sincronizacaoId,
+        sincronizacaoIniciadaEm: controleNsu.sincronizacaoIniciadaEm,
       })
       .from(controleNsu)
       .innerJoin(clientes, eq(clientes.id, controleNsu.clienteId))
       .where(where)
       .orderBy(desc(controleNsu.ultimaConsultaEm));
 
-    return rows.map((row) => ({
-      cliente_id: row.clienteId,
-      razao_social: row.razaoSocial,
-      tipo_documento: row.tipoDocumento,
-      ultimo_nsu: row.ultimoNsu,
-      max_nsu: row.maxNsu,
-      status_sefaz: row.statusSefaz,
-      motivo_sefaz: this.getMotivoSefazPublico(
-        row.statusSefaz,
-        row.motivoSefaz,
-      ),
-      ultima_consulta_em: row.ultimaConsultaEm?.toISOString() ?? null,
-      proxima_consulta_em: row.proximaConsultaEm?.toISOString() ?? null,
-    }));
+    return rows.map((row) => {
+      const sincronizacaoEmAndamento = isFiscalSyncLockActive({
+        sincronizacaoId: row.sincronizacaoId,
+        iniciadaEm: row.sincronizacaoIniciadaEm,
+      });
+      return {
+        cliente_id: row.clienteId,
+        razao_social: row.razaoSocial,
+        tipo_documento: row.tipoDocumento,
+        ultimo_nsu: row.ultimoNsu,
+        max_nsu: row.maxNsu,
+        status_sefaz: row.statusSefaz,
+        motivo_sefaz: this.getMotivoSefazPublico(
+          row.statusSefaz,
+          row.motivoSefaz,
+        ),
+        ultima_consulta_em: row.ultimaConsultaEm?.toISOString() ?? null,
+        proxima_consulta_em: row.proximaConsultaEm?.toISOString() ?? null,
+        sincronizacao_em_andamento: sincronizacaoEmAndamento,
+        sincronizacao_iniciada_em: sincronizacaoEmAndamento
+          ? (row.sincronizacaoIniciadaEm?.toISOString() ?? null)
+          : null,
+      };
+    });
   }
 
   /**
@@ -613,13 +684,28 @@ export class DistribuicaoDfeService {
   /**
    * Retorna estatísticas do módulo fiscal para o dashboard.
    */
-  async getDashboardStats(clienteId?: string) {
-    const mesAtual = new Date();
-    const inicioMes = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1);
+  async getDashboardStats(
+    clienteId?: string,
+    dataInicio?: Date,
+    dataFim?: Date,
+  ) {
+    const conditions: SQL[] = [];
 
-    const conditions: any[] = [
-      sql`${documentosFiscais.criadoEm} >= ${inicioMes}`,
-    ];
+    if (dataInicio) {
+      conditions.push(gte(documentosFiscais.dataEmissao, dataInicio));
+    } else {
+      // Sem filtro de data: usa o mês atual como padrão
+      const mesAtual = new Date();
+      const inicioMes = new Date(
+        mesAtual.getFullYear(),
+        mesAtual.getMonth(),
+        1,
+      );
+      conditions.push(gte(documentosFiscais.criadoEm, inicioMes));
+    }
+    if (dataFim) {
+      conditions.push(lte(documentosFiscais.dataEmissao, dataFim));
+    }
     if (clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, clienteId));
     }
@@ -640,7 +726,7 @@ export class DistribuicaoDfeService {
     ]);
 
     // Certificados
-    const certConditions: any[] = [];
+    const certConditions: SQL[] = [];
     if (clienteId) {
       certConditions.push(eq(certificadosDigitais.clienteId, clienteId));
     }
@@ -681,6 +767,13 @@ export class DistribuicaoDfeService {
     cnpj: string,
     parsed: ParsedDocumentoFiscal,
   ): Promise<boolean> {
+    const escrituracao = await this.cfopService.prepararItensEscrituracao({
+      clienteId,
+      clienteCnpjCpf: cnpj,
+      emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+      tpNfXml: parsed.tpNfXml,
+      itens: parsed.itens,
+    });
     // Um resumo/evento salvo por uma versao anterior deve ser substituido
     // quando o XML fiscal completo chegar para o mesmo cliente.
     const existing = await this.database.db
@@ -699,11 +792,39 @@ export class DistribuicaoDfeService {
       )
       .limit(1);
 
-    if (
-      existing[0]?.nsu === parsed.nsu &&
-      existing[0]?.situacao !== 'RESUMIDA'
-    ) {
-      this.logger.debug(`Documento ${parsed.chaveAcesso} já existe, pulando.`);
+    const isDuplicate =
+      existing[0]?.nsu === parsed.nsu && existing[0]?.situacao !== 'RESUMIDA';
+
+    if (isDuplicate) {
+      await this.database.db.transaction(async (tx) => {
+        await tx
+          .update(documentosFiscais)
+          .set({
+            tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+            tpNfXml: parsed.tpNfXml,
+            atualizadoEm: new Date(),
+          })
+          .where(eq(documentosFiscais.id, existing[0].id));
+        await tx
+          .delete(documentosFiscaisItens)
+          .where(eq(documentosFiscaisItens.documentoFiscalId, existing[0].id));
+        for (
+          let offset = 0;
+          offset < escrituracao.itens.length;
+          offset += 300
+        ) {
+          await tx.insert(documentosFiscaisItens).values(
+            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
+              ...item,
+              documentoFiscalId: existing[0].id,
+              clienteId,
+            })),
+          );
+        }
+      });
+      this.logger.debug(
+        `Documento ${parsed.chaveAcesso} já existe; itens fiscais reconciliados.`,
+      );
       return false;
     }
 
@@ -735,33 +856,63 @@ export class DistribuicaoDfeService {
       dataEmissao: parsed.dataEmissao,
       valorTotal: parsed.valorTotal,
       situacao: parsed.situacao,
+      tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+      tpNfXml: parsed.tpNfXml,
       xmlKey,
     };
 
     try {
-      await this.database.db
-        .insert(documentosFiscais)
-        .values(values)
-        .onConflictDoUpdate({
-          target: [documentosFiscais.clienteId, documentosFiscais.chaveAcesso],
-          set: {
-            nsu: parsed.nsu,
-            tipoDocumento: parsed.tipoDocumento,
-            modelo: parsed.modelo,
-            serie: parsed.serie,
-            numeroDocumento: parsed.numeroDocumento,
-            emitenteCnpjCpf: parsed.emitenteCnpjCpf,
-            emitenteRazaoSocial: parsed.emitenteRazaoSocial,
-            destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
-            destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
-            dataEmissao: parsed.dataEmissao,
-            valorTotal: parsed.valorTotal,
-            situacao: parsed.situacao,
-            xmlKey,
-            danfeKey: null,
-            atualizadoEm: new Date(),
-          },
-        });
+      await this.database.db.transaction(async (tx) => {
+        const persisted = await tx
+          .insert(documentosFiscais)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [
+              documentosFiscais.clienteId,
+              documentosFiscais.chaveAcesso,
+            ],
+            set: {
+              nsu: parsed.nsu,
+              tipoDocumento: parsed.tipoDocumento,
+              modelo: parsed.modelo,
+              serie: parsed.serie,
+              numeroDocumento: parsed.numeroDocumento,
+              emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+              emitenteRazaoSocial: parsed.emitenteRazaoSocial,
+              destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
+              destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
+              dataEmissao: parsed.dataEmissao,
+              valorTotal: parsed.valorTotal,
+              situacao: parsed.situacao,
+              tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+              tpNfXml: parsed.tpNfXml,
+              xmlKey,
+              danfeKey: null,
+              atualizadoEm: new Date(),
+            },
+          })
+          .returning({ id: documentosFiscais.id });
+        const documentoFiscalId = persisted[0].id;
+
+        await tx
+          .delete(documentosFiscaisItens)
+          .where(
+            eq(documentosFiscaisItens.documentoFiscalId, documentoFiscalId),
+          );
+        for (
+          let offset = 0;
+          offset < escrituracao.itens.length;
+          offset += 300
+        ) {
+          await tx.insert(documentosFiscaisItens).values(
+            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
+              ...item,
+              documentoFiscalId,
+              clienteId,
+            })),
+          );
+        }
+      });
     } catch (error: unknown) {
       // O upload externo nao participa da transacao do banco. Se o registro
       // ainda nao existia, removemos o objeto para nao deixar XML orfao.
@@ -790,6 +941,49 @@ export class DistribuicaoDfeService {
     }
 
     return true;
+  }
+
+  private async tentarIniciarSincronizacao(controlId: string) {
+    const sincronizacaoId = crypto.randomUUID();
+    const staleBefore = new Date(Date.now() - FISCAL_SYNC_LOCK_TTL_MS);
+    const claimed = await this.database.db
+      .update(controleNsu)
+      .set({
+        sincronizacaoId,
+        sincronizacaoIniciadaEm: new Date(),
+        atualizadoEm: new Date(),
+      })
+      .where(
+        and(
+          eq(controleNsu.id, controlId),
+          or(
+            isNull(controleNsu.sincronizacaoIniciadaEm),
+            lt(controleNsu.sincronizacaoIniciadaEm, staleBefore),
+          ),
+        ),
+      )
+      .returning({ id: controleNsu.id });
+
+    return claimed[0] ? sincronizacaoId : null;
+  }
+
+  private async finalizarSincronizacao(
+    controlId: string,
+    sincronizacaoId: string,
+  ) {
+    await this.database.db
+      .update(controleNsu)
+      .set({
+        sincronizacaoId: null,
+        sincronizacaoIniciadaEm: null,
+        atualizadoEm: new Date(),
+      })
+      .where(
+        and(
+          eq(controleNsu.id, controlId),
+          eq(controleNsu.sincronizacaoId, sincronizacaoId),
+        ),
+      );
   }
 
   private async atualizarControleNsu(

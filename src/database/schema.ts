@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   unique,
   foreignKey,
+  varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -127,6 +128,15 @@ export const clientes = pgTable(
       .$type<Array<{ code: string; description: string }>>()
       .notNull()
       .default([]),
+    regimeTributario: text('regime_tributario'),
+    apuraIcms: boolean('apura_icms').notNull().default(false),
+    inscricaoEstadual: text('inscricao_estadual'),
+    tipoContribuinteIcms: text('tipo_contribuinte_icms'),
+    optanteSimplesNacional: boolean('optante_simples_nacional'),
+    simplesNacionalFonte: text('simples_nacional_fonte'),
+    simplesNacionalConsultadoEm: timestamp('simples_nacional_consultado_em', {
+      withTimezone: true,
+    }),
     logoKey: text('logo_key'),
     primeiroLogin: boolean('primeiro_login').notNull().default(true),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
@@ -152,9 +162,39 @@ export const clientes = pgTable(
       sql`jsonb_typeof(${table.cnaesSecundarios}) = 'array'`,
     ),
     check(
+      'chk_clientes_regime_tributario',
+      sql`${table.regimeTributario} IS NULL OR ${table.regimeTributario} IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL')`,
+    ),
+    check(
+      'chk_clientes_tipo_contribuinte_icms',
+      sql`${table.tipoContribuinteIcms} IS NULL OR ${table.tipoContribuinteIcms} IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')`,
+    ),
+    check(
+      'chk_clientes_inscricao_estadual',
+      sql`${table.inscricaoEstadual} IS NULL OR ${table.inscricaoEstadual} ~ '^[0-9A-Z./-]{2,20}$'`,
+    ),
+    check(
+      'chk_clientes_apura_icms_coerencia',
+      sql`(${table.tipoPessoa} = 'PF' AND ${table.regimeTributario} IS NULL) OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} IN ('LUCRO_PRESUMIDO', 'LUCRO_REAL') AND ${table.apuraIcms} = true) OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} = 'SIMPLES_NACIONAL') OR (${table.tipoPessoa} = 'PJ' AND ${table.regimeTributario} IS NULL)`,
+    ),
+    check(
+      'chk_clientes_consulta_simples_coerencia',
+      sql`(
+        (${table.optanteSimplesNacional} IS NULL AND ${table.simplesNacionalFonte} IS NULL AND ${table.simplesNacionalConsultadoEm} IS NULL)
+        OR
+        (${table.optanteSimplesNacional} IS NOT NULL AND ${table.simplesNacionalFonte} IN ('OPEN_CNPJ', 'RECEITA_WS') AND ${table.simplesNacionalConsultadoEm} IS NOT NULL)
+      )
+      AND (${table.tipoPessoa} = 'PJ' OR ${table.optanteSimplesNacional} IS NULL)
+      AND (${table.optanteSimplesNacional} IS DISTINCT FROM true OR ${table.regimeTributario} = 'SIMPLES_NACIONAL')
+      AND (${table.optanteSimplesNacional} IS DISTINCT FROM false OR ${table.regimeTributario} IS DISTINCT FROM 'SIMPLES_NACIONAL')`,
+    ),
+    check(
       'chk_clientes_documento_por_tipo',
       sql`(${table.tipoPessoa} = 'PJ' AND ${table.cnpj} ~ '^[0-9]{14}$' AND ${table.cpf} IS NULL) OR (${table.tipoPessoa} = 'PF' AND ${table.cnpj} ~ '^[0-9]{11}$' AND ${table.cpf} = ${table.cnpj})`,
     ),
+    index('idx_clientes_regime_tributario')
+      .on(table.regimeTributario)
+      .where(sql`${table.regimeTributario} IS NOT NULL`),
   ],
 );
 
@@ -201,10 +241,7 @@ export const guias = pgTable(
       'chk_guias_tipo',
       sql`${table.tipo} IN ('FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS', 'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR', 'TAXA-ASSISTENCIAL', 'OUTROS', 'FOLHA-PAGAMENTO')`,
     ),
-    check(
-      'chk_guias_status',
-      sql`${table.status} IN ('PENDENTE', 'PAGO')`,
-    ),
+    check('chk_guias_status', sql`${table.status} IN ('PENDENTE', 'PAGO')`),
     check(
       'chk_guias_email_status',
       sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')`,
@@ -214,10 +251,7 @@ export const guias = pgTable(
       sql`${table.periodo} ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'`,
     ),
     check('chk_guias_arquivo_key', sql`btrim(${table.arquivoKey}) <> ''`),
-    check(
-      'chk_guias_arquivo_nome',
-      sql`btrim(${table.arquivoNome}) <> ''`,
-    ),
+    check('chk_guias_arquivo_nome', sql`btrim(${table.arquivoNome}) <> ''`),
     check(
       'chk_guias_valor',
       sql`${table.valor} IS NULL OR ${table.valor} >= 0`,
@@ -583,6 +617,69 @@ export const certificadosDigitais = pgTable(
   ],
 );
 
+export const cfops = pgTable(
+  'cfops',
+  {
+    codigo: varchar('codigo', { length: 4 }).primaryKey(),
+    descricao: text('descricao').notNull(),
+    tipoOperacao: varchar('tipo_operacao', { length: 10 }).notNull(),
+    abrangencia: varchar('abrangencia', { length: 15 }).notNull(),
+    grupo: text('grupo'),
+    descricaoDetalhada: text('descricao_detalhada'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_cfops_tipo').on(table.tipoOperacao),
+    index('idx_cfops_abrangencia').on(table.abrangencia),
+    check('chk_cfops_codigo', sql`${table.codigo} ~ '^[123567][0-9]{3}$'`),
+    check('chk_cfops_tipo', sql`${table.tipoOperacao} IN ('ENTRADA', 'SAIDA')`),
+    check(
+      'chk_cfops_abrangencia',
+      sql`${table.abrangencia} IN ('ESTADUAL', 'INTERESTADUAL', 'EXTERIOR')`,
+    ),
+  ],
+);
+
+export const cfopEquivalencias = pgTable(
+  'cfop_equivalencias',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id').references(() => clientes.id, {
+      onDelete: 'cascade',
+    }),
+    cfopOrigem: varchar('cfop_origem', { length: 4 })
+      .notNull()
+      .references(() => cfops.codigo, { onDelete: 'cascade' }),
+    cfopDestino: varchar('cfop_destino', { length: 4 })
+      .notNull()
+      .references(() => cfops.codigo, { onDelete: 'cascade' }),
+    tipoOperacao: varchar('tipo_operacao', { length: 20 })
+      .notNull()
+      .default('SAIDA_PARA_ENTRADA'),
+    descricao: text('descricao'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('uidx_cfop_eq_cliente_origem')
+      .on(table.clienteId, table.cfopOrigem)
+      .nullsNotDistinct(),
+    index('idx_cfop_eq_origem').on(table.cfopOrigem),
+    index('idx_cfop_eq_cliente').on(table.clienteId),
+    check(
+      'chk_cfop_eq_tipo',
+      sql`${table.tipoOperacao} IN ('SAIDA_PARA_ENTRADA', 'ENTRADA_PARA_SAIDA')`,
+    ),
+    check(
+      'chk_cfop_eq_destino_diferente',
+      sql`${table.cfopOrigem} <> ${table.cfopDestino}`,
+    ),
+  ],
+);
+
 export const controleNsu = pgTable(
   'controle_nsu',
   {
@@ -598,6 +695,10 @@ export const controleNsu = pgTable(
     motivoSefaz: text('motivo_sefaz'),
     ultimaConsultaEm: timestamp('ultima_consulta_em'),
     proximaConsultaEm: timestamp('proxima_consulta_em'),
+    sincronizacaoId: uuid('sincronizacao_id'),
+    sincronizacaoIniciadaEm: timestamp('sincronizacao_iniciada_em', {
+      withTimezone: true,
+    }),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
@@ -613,6 +714,10 @@ export const controleNsu = pgTable(
     ),
     check('chk_controle_nsu_ultimo', sql`${table.ultimoNsu} >= 0`),
     check('chk_controle_nsu_max', sql`${table.maxNsu} >= 0`),
+    check(
+      'chk_controle_nsu_sincronizacao_coerencia',
+      sql`(${table.sincronizacaoId} IS NULL AND ${table.sincronizacaoIniciadaEm} IS NULL) OR (${table.sincronizacaoId} IS NOT NULL AND ${table.sincronizacaoIniciadaEm} IS NOT NULL)`,
+    ),
   ],
 );
 
@@ -639,6 +744,12 @@ export const documentosFiscais = pgTable(
     manifestacaoStatus: text('manifestacao_status')
       .notNull()
       .default('SEM_MANIFESTACAO'),
+    tipoOperacaoEscriturada: varchar('tipo_operacao_escriturada', {
+      length: 10,
+    })
+      .notNull()
+      .default('ENTRADA'),
+    tpNfXml: varchar('tp_nf_xml', { length: 1 }),
     xmlKey: text('xml_key').notNull(),
     danfeKey: text('danfe_key'),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
@@ -676,8 +787,307 @@ export const documentosFiscais = pgTable(
       'chk_docs_fiscais_manifestacao',
       sql`${table.manifestacaoStatus} IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')`,
     ),
+    check(
+      'chk_docs_fiscais_operacao_escriturada',
+      sql`${table.tipoOperacaoEscriturada} IN ('ENTRADA', 'SAIDA')`,
+    ),
+    check(
+      'chk_docs_fiscais_tp_nf_xml',
+      sql`${table.tpNfXml} IS NULL OR ${table.tpNfXml} IN ('0', '1')`,
+    ),
     check('chk_docs_fiscais_valor', sql`${table.valorTotal} >= 0`),
     check('chk_docs_fiscais_xml_key', sql`btrim(${table.xmlKey}) <> ''`),
+  ],
+);
+
+export const documentosFiscaisItens = pgTable(
+  'documentos_fiscais_itens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    documentoFiscalId: uuid('documento_fiscal_id')
+      .notNull()
+      .references(() => documentosFiscais.id, { onDelete: 'cascade' }),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    numeroItem: integer('numero_item').notNull(),
+    codigoProduto: text('codigo_produto').notNull(),
+    codigoEan: text('codigo_ean'),
+    descricao: text('descricao').notNull(),
+    ncm: varchar('ncm', { length: 8 }),
+    nve: text('nve'),
+    cest: varchar('cest', { length: 7 }),
+    indEscala: varchar('ind_escala', { length: 1 }),
+    cnpjFabricante: varchar('cnpj_fabricante', { length: 14 }),
+    codigoBeneficioFiscal: text('codigo_beneficio_fiscal'),
+    cfopXml: varchar('cfop_xml', { length: 4 }),
+    cfop: varchar('cfop', { length: 4 }).notNull(),
+    tipoOperacaoEscriturada: varchar('tipo_operacao_escriturada', {
+      length: 10,
+    })
+      .notNull()
+      .default('ENTRADA'),
+    cfopRevisaoNecessaria: boolean('cfop_revisao_necessaria')
+      .notNull()
+      .default(false),
+    unidadeComercial: varchar('unidade_comercial', { length: 10 }).notNull(),
+    quantidadeComercial: numeric('quantidade_comercial', {
+      precision: 15,
+      scale: 4,
+    }).notNull(),
+    valorUnitarioComercial: numeric('valor_unitario_comercial', {
+      precision: 21,
+      scale: 10,
+    }).notNull(),
+    valorBrutoProduto: numeric('valor_bruto_produto', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    codigoEanTributavel: text('codigo_ean_tributavel'),
+    unidadeTributavel: varchar('unidade_tributavel', { length: 10 }),
+    quantidadeTributavel: numeric('quantidade_tributavel', {
+      precision: 15,
+      scale: 4,
+    }),
+    valorUnitarioTributavel: numeric('valor_unitario_tributavel', {
+      precision: 21,
+      scale: 10,
+    }),
+    valorFrete: numeric('valor_frete', { precision: 15, scale: 2 }),
+    valorSeguro: numeric('valor_seguro', { precision: 15, scale: 2 }),
+    valorDesconto: numeric('valor_desconto', { precision: 15, scale: 2 }),
+    valorOutrasDespesas: numeric('valor_outras_despesas', {
+      precision: 15,
+      scale: 2,
+    }),
+    indTotal: varchar('ind_total', { length: 1 }).notNull(),
+    numeroPedidoCompra: text('numero_pedido_compra'),
+    itemPedidoCompra: text('item_pedido_compra'),
+    informacoesAdicionais: text('informacoes_adicionais'),
+
+    origemMercadoria: varchar('origem_mercadoria', { length: 1 }),
+    cstIcms: varchar('cst_icms', { length: 3 }),
+    csosnIcms: varchar('csosn_icms', { length: 4 }),
+    modalidadeBcIcms: varchar('modalidade_bc_icms', { length: 1 }),
+    percentualReducaoBcIcms: numeric('percentual_reducao_bc_icms', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorBcIcms: numeric('valor_bc_icms', { precision: 15, scale: 2 }),
+    aliquotaIcms: numeric('aliquota_icms', { precision: 7, scale: 4 }),
+    valorIcms: numeric('valor_icms', { precision: 15, scale: 2 }),
+    modalidadeBcIcmsSt: varchar('modalidade_bc_icms_st', { length: 1 }),
+    percentualMvaSt: numeric('percentual_mva_st', {
+      precision: 7,
+      scale: 4,
+    }),
+    percentualReducaoBcIcmsSt: numeric('percentual_reducao_bc_icms_st', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorBcIcmsSt: numeric('valor_bc_icms_st', { precision: 15, scale: 2 }),
+    aliquotaIcmsSt: numeric('aliquota_icms_st', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorIcmsSt: numeric('valor_icms_st', { precision: 15, scale: 2 }),
+    valorBcFcp: numeric('valor_bc_fcp', { precision: 15, scale: 2 }),
+    aliquotaFcp: numeric('aliquota_fcp', { precision: 7, scale: 4 }),
+    valorFcp: numeric('valor_fcp', { precision: 15, scale: 2 }),
+    valorBcFcpSt: numeric('valor_bc_fcp_st', { precision: 15, scale: 2 }),
+    aliquotaFcpSt: numeric('aliquota_fcp_st', { precision: 7, scale: 4 }),
+    valorFcpSt: numeric('valor_fcp_st', { precision: 15, scale: 2 }),
+    motivoDesoneracaoIcms: varchar('motivo_desoneracao_icms', { length: 2 }),
+    valorIcmsDesonerado: numeric('valor_icms_desonerado', {
+      precision: 15,
+      scale: 2,
+    }),
+    percentualDiferimento: numeric('percentual_diferimento', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorIcmsDiferido: numeric('valor_icms_diferido', {
+      precision: 15,
+      scale: 2,
+    }),
+    valorIcmsOperacao: numeric('valor_icms_operacao', {
+      precision: 15,
+      scale: 2,
+    }),
+    aliquotaCreditoSn: numeric('aliquota_credito_sn', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorCreditoIcmsSn: numeric('valor_credito_icms_sn', {
+      precision: 15,
+      scale: 2,
+    }),
+    valorBcIcmsStRetido: numeric('valor_bc_icms_st_retido', {
+      precision: 15,
+      scale: 2,
+    }),
+    aliquotaIcmsStRetido: numeric('aliquota_icms_st_retido', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorIcmsStRetido: numeric('valor_icms_st_retido', {
+      precision: 15,
+      scale: 2,
+    }),
+
+    valorBcIcmsUfDest: numeric('valor_bc_icms_uf_dest', {
+      precision: 15,
+      scale: 2,
+    }),
+    valorBcFcpUfDest: numeric('valor_bc_fcp_uf_dest', {
+      precision: 15,
+      scale: 2,
+    }),
+    percentualFcpUfDest: numeric('percentual_fcp_uf_dest', {
+      precision: 7,
+      scale: 4,
+    }),
+    aliquotaIcmsUfDest: numeric('aliquota_icms_uf_dest', {
+      precision: 7,
+      scale: 4,
+    }),
+    aliquotaIcmsInterestadual: numeric('aliquota_icms_interestadual', {
+      precision: 7,
+      scale: 4,
+    }),
+    percentualProvisorioPartilha: numeric('percentual_provisorio_partilha', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorFcpUfDest: numeric('valor_fcp_uf_dest', {
+      precision: 15,
+      scale: 2,
+    }),
+    valorIcmsUfDest: numeric('valor_icms_uf_dest', {
+      precision: 15,
+      scale: 2,
+    }),
+    valorIcmsUfRemetente: numeric('valor_icms_uf_remetente', {
+      precision: 15,
+      scale: 2,
+    }),
+
+    cstIpi: varchar('cst_ipi', { length: 2 }),
+    classeEnquadramentoIpi: varchar('classe_enquadramento_ipi', { length: 5 }),
+    codigoEnquadramentoIpi: varchar('codigo_enquadramento_ipi', { length: 3 }),
+    cnpjProdutorIpi: varchar('cnpj_produtor_ipi', { length: 14 }),
+    valorBcIpi: numeric('valor_bc_ipi', { precision: 15, scale: 2 }),
+    aliquotaIpi: numeric('aliquota_ipi', { precision: 7, scale: 4 }),
+    quantidadeUnidadeIpi: numeric('quantidade_unidade_ipi', {
+      precision: 15,
+      scale: 4,
+    }),
+    valorUnidadeIpi: numeric('valor_unidade_ipi', {
+      precision: 15,
+      scale: 4,
+    }),
+    valorIpi: numeric('valor_ipi', { precision: 15, scale: 2 }),
+
+    cstPis: varchar('cst_pis', { length: 2 }),
+    valorBcPis: numeric('valor_bc_pis', { precision: 15, scale: 2 }),
+    aliquotaPisPercentual: numeric('aliquota_pis_percentual', {
+      precision: 7,
+      scale: 4,
+    }),
+    quantidadeBcPis: numeric('quantidade_bc_pis', {
+      precision: 15,
+      scale: 4,
+    }),
+    aliquotaPisReais: numeric('aliquota_pis_reais', {
+      precision: 15,
+      scale: 4,
+    }),
+    valorPis: numeric('valor_pis', { precision: 15, scale: 2 }),
+    valorBcPisSt: numeric('valor_bc_pis_st', { precision: 15, scale: 2 }),
+    aliquotaPisStPercentual: numeric('aliquota_pis_st_percentual', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorPisSt: numeric('valor_pis_st', { precision: 15, scale: 2 }),
+
+    cstCofins: varchar('cst_cofins', { length: 2 }),
+    valorBcCofins: numeric('valor_bc_cofins', { precision: 15, scale: 2 }),
+    aliquotaCofinsPercentual: numeric('aliquota_cofins_percentual', {
+      precision: 7,
+      scale: 4,
+    }),
+    quantidadeBcCofins: numeric('quantidade_bc_cofins', {
+      precision: 15,
+      scale: 4,
+    }),
+    aliquotaCofinsReais: numeric('aliquota_cofins_reais', {
+      precision: 15,
+      scale: 4,
+    }),
+    valorCofins: numeric('valor_cofins', { precision: 15, scale: 2 }),
+    valorBcCofinsSt: numeric('valor_bc_cofins_st', {
+      precision: 15,
+      scale: 2,
+    }),
+    aliquotaCofinsStPercentual: numeric('aliquota_cofins_st_percentual', {
+      precision: 7,
+      scale: 4,
+    }),
+    valorCofinsSt: numeric('valor_cofins_st', {
+      precision: 15,
+      scale: 2,
+    }),
+
+    valorBcIi: numeric('valor_bc_ii', { precision: 15, scale: 2 }),
+    valorDespesaAduaneira: numeric('valor_despesa_aduaneira', {
+      precision: 15,
+      scale: 2,
+    }),
+    valorImpostoImportacao: numeric('valor_imposto_importacao', {
+      precision: 15,
+      scale: 2,
+    }),
+    valorIof: numeric('valor_iof', { precision: 15, scale: 2 }),
+    valorTributosAproximados: numeric('valor_tributos_aproximados', {
+      precision: 15,
+      scale: 2,
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_item_doc_num').on(
+      table.documentoFiscalId,
+      table.numeroItem,
+    ),
+    index('idx_item_cliente_id').on(table.clienteId),
+    index('idx_item_cfop').on(table.cfop),
+    index('idx_item_cfop_xml').on(table.cfopXml),
+    index('idx_item_operacao_escriturada').on(table.tipoOperacaoEscriturada),
+    index('idx_item_cst_icms').on(table.cstIcms),
+    index('idx_item_csosn_icms').on(table.csosnIcms),
+    index('idx_item_cst_pis').on(table.cstPis),
+    index('idx_item_cst_cofins').on(table.cstCofins),
+    index('idx_item_ncm').on(table.ncm),
+    check('chk_item_numero', sql`${table.numeroItem} BETWEEN 1 AND 990`),
+    check(
+      'chk_item_ind_escala',
+      sql`${table.indEscala} IS NULL OR ${table.indEscala} IN ('S', 'N')`,
+    ),
+    check('chk_item_ind_total', sql`${table.indTotal} IN ('0', '1')`),
+    check(
+      'chk_item_origem',
+      sql`${table.origemMercadoria} IS NULL OR ${table.origemMercadoria} ~ '^[0-8]$'`,
+    ),
+    check('chk_item_cfop', sql`${table.cfop} ~ '^[1-7][0-9]{3}$'`),
+    check(
+      'chk_item_cfop_xml',
+      sql`${table.cfopXml} IS NULL OR ${table.cfopXml} ~ '^[1-7][0-9]{3}$'`,
+    ),
+    check(
+      'chk_item_operacao_escriturada',
+      sql`${table.tipoOperacaoEscriturada} IN ('ENTRADA', 'SAIDA')`,
+    ),
   ],
 );
 
