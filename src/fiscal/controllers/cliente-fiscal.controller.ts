@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
   ServiceUnavailableException,
   UploadedFile,
   UploadedFiles,
@@ -17,6 +18,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -471,17 +473,19 @@ export class ClienteFiscalController {
   @Get('documentos/:id/danfe')
   @ApiOperation({
     summary: 'Visualizar documento auxiliar (PDF)',
-    description: 'Retorna URL ou gera DANFE/DACTE em PDF.',
+    description:
+      'Gera a DANFE/DACTE em PDF a partir do XML e transmite o arquivo em memória.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({
     status: 200,
-    description: 'URL do documento auxiliar em PDF.',
+    description: 'PDF do documento auxiliar.',
   })
   @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
   async getDanfe(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) {
@@ -490,11 +494,14 @@ export class ClienteFiscalController {
       );
     }
 
-    const result = await this.danfeService.getDanfePdf(id, cliente.id);
-    if ('url' in result) {
-      return { url: result.url };
-    }
-    return { url: null, message: 'DANFE gerada mas URL não disponível.' };
+    const { buffer, contentType } = await this.danfeService.getDanfePdf(
+      id,
+      cliente.id,
+    );
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Content-Disposition', `inline; filename="${id}.pdf"`);
+    res.end(buffer);
   }
 
   // ─── Manifestação do Destinatário ─────────────────────────────────────────
