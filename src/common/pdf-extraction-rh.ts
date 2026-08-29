@@ -132,8 +132,8 @@ export function extractDadosFolhaPagamento(
     for (let i = headerMatches.length - 1; i >= 1; i--) {
       const hMatch = headerMatches[i];
       cleanedText =
-        cleanedText.substring(0, hMatch.index!) +
-        cleanedText.substring(hMatch.index! + hMatch[0].length);
+        cleanedText.substring(0, hMatch.index) +
+        cleanedText.substring(hMatch.index + hMatch[0].length);
     }
   }
 

@@ -18,7 +18,7 @@ import { deriveDocumentStatus, getBahiaDate } from '../common/document-status';
 @UseGuards(AuthGuard)
 @StaffOnly()
 export class DashboardController {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(private readonly database: DatabaseService) {}
 
   @Get()
   @ApiOperation({
@@ -45,18 +45,11 @@ export class DashboardController {
       recentDocumentRows,
     ] = await Promise.all([
       this.database.db.select({ count: sql<number>`count(*)` }).from(clientes),
-      this.database.db
-        .select({ count: sql<number>`count(*)` })
-        .from(guias),
+      this.database.db.select({ count: sql<number>`count(*)` }).from(guias),
       this.database.db
         .select({ count: sql<number>`count(*)` })
         .from(guias)
-        .where(
-          and(
-            lt(guias.vencimento, today),
-            eq(guias.status, 'PENDENTE'),
-          ),
-        ),
+        .where(and(lt(guias.vencimento, today), eq(guias.status, 'PENDENTE'))),
       this.database.db
         .select({ count: sql<number>`count(*)` })
         .from(guias)

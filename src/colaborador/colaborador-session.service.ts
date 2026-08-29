@@ -26,8 +26,7 @@ export class ColaboradorSessionService {
 
   constructor(configService: ConfigService) {
     this.secret = configService.getOrThrow<string>('BETTER_AUTH_SECRET');
-    this.isProduction =
-      configService.get<string>('NODE_ENV') === 'production';
+    this.isProduction = configService.get<string>('NODE_ENV') === 'production';
   }
 
   /**

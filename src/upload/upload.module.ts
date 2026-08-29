@@ -5,7 +5,7 @@ import { GuiasModule } from '../guias/guias.module';
 import { ClientesModule } from '../clientes/clientes.module';
 
 @Module({
-    imports: [AuthModule, GuiasModule, ClientesModule],
-    controllers: [UploadController],
+  imports: [AuthModule, GuiasModule, ClientesModule],
+  controllers: [UploadController],
 })
-export class UploadModule { }
+export class UploadModule {}
