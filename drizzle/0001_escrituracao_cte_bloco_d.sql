@@ -42,6 +42,10 @@ CREATE TABLE "documentos_fiscais_cte_escrituracao" (
 	CONSTRAINT "chk_cte_escrituracao_municipio_destino" CHECK ("documentos_fiscais_cte_escrituracao"."codigo_municipio_destino" IS NULL OR "documentos_fiscais_cte_escrituracao"."codigo_municipio_destino" ~ '^[0-9]{7}$')
 );
 --> statement-breakpoint
+ALTER TABLE "documentos_fiscais_itens" DROP CONSTRAINT "documentos_fiscais_itens_documento_fiscal_id_documentos_fiscais_id_fk";
+--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_itens" DROP CONSTRAINT "documentos_fiscais_itens_cliente_id_clientes_id_fk";
+--> statement-breakpoint
 ALTER TABLE "documentos_fiscais" ADD COLUMN "escriturado" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "documentos_fiscais" ADD COLUMN "escrituracao_status" varchar(24) DEFAULT 'NAO_ESCRITURAVEL' NOT NULL;--> statement-breakpoint
 ALTER TABLE "documentos_fiscais_cte_escrituracao" ADD CONSTRAINT "documentos_fiscais_cte_escrituracao_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -51,5 +55,7 @@ CREATE INDEX "idx_cte_escrituracao_cliente" ON "documentos_fiscais_cte_escritura
 CREATE INDEX "idx_cte_escrituracao_cfop" ON "documentos_fiscais_cte_escrituracao" USING btree ("cfop");--> statement-breakpoint
 CREATE INDEX "idx_cte_escrituracao_apuracao" ON "documentos_fiscais_cte_escrituracao" USING btree ("cliente_id","escrituravel","cfop");--> statement-breakpoint
 CREATE INDEX "idx_cte_escrituracao_referencia" ON "documentos_fiscais_cte_escrituracao" USING btree ("chave_cte_referenciado");--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_itens" ADD CONSTRAINT "fk_df_itens_documento_fiscal" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_itens" ADD CONSTRAINT "fk_df_itens_cliente" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "documentos_fiscais" ADD CONSTRAINT "chk_docs_fiscais_escrituracao_status" CHECK ("documentos_fiscais"."escrituracao_status" IN ('ESCRITURADO', 'NAO_ESCRITURAVEL', 'PENDENTE_REVISAO'));--> statement-breakpoint
 ALTER TABLE "documentos_fiscais" ADD CONSTRAINT "chk_docs_fiscais_escrituracao_coerencia" CHECK (("documentos_fiscais"."escriturado" = false AND "documentos_fiscais"."escrituracao_status" = 'NAO_ESCRITURAVEL') OR ("documentos_fiscais"."escriturado" = true AND "documentos_fiscais"."escrituracao_status" IN ('ESCRITURADO', 'PENDENTE_REVISAO')));
