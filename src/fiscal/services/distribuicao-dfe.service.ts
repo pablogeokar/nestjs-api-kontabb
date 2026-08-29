@@ -413,6 +413,9 @@ export class DistribuicaoDfeService {
         id: clientes.id,
         razaoSocial: clientes.razaoSocial,
         cnpj: clientes.cnpj,
+        inscricaoEstadual: clientes.inscricaoEstadual,
+        municipio: clientes.municipio,
+        uf: clientes.uf,
         totalDocumentos: sql<number>`count(${documentosFiscais.id})`,
       })
       .from(clientes)
@@ -420,13 +423,23 @@ export class DistribuicaoDfeService {
         documentosFiscais,
         eq(documentosFiscais.clienteId, clientes.id),
       )
-      .groupBy(clientes.id, clientes.razaoSocial, clientes.cnpj)
+      .groupBy(
+        clientes.id,
+        clientes.razaoSocial,
+        clientes.cnpj,
+        clientes.inscricaoEstadual,
+        clientes.municipio,
+        clientes.uf,
+      )
       .orderBy(asc(clientes.razaoSocial));
 
     return rows.map((row) => ({
       id: row.id,
       razao_social: row.razaoSocial,
       cnpj: row.cnpj,
+      inscricao_estadual: row.inscricaoEstadual,
+      municipio: row.municipio,
+      uf: row.uf,
       total_documentos: Number(row.totalDocumentos),
     }));
   }

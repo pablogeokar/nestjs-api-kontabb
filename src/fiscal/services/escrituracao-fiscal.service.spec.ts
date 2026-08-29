@@ -66,6 +66,7 @@ describe('EscrituracaoFiscalService', () => {
       { db: { select, transaction } } as never,
       storage as never,
       cfopService as never,
+      {} as never,
     );
 
     await expect(

@@ -23,6 +23,7 @@ describe('ImportacaoXmlFiscalService', () => {
       storage as never,
       logger as never,
       createCfopServiceMock() as never,
+      {} as never,
     );
   });
 
@@ -129,6 +130,7 @@ describe('ImportacaoXmlFiscalService', () => {
       storage as never,
       logger as never,
       createCfopServiceMock() as never,
+      {} as never,
     );
     const parsed = parseManualFiscalXml(buildNfeProc());
     if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');

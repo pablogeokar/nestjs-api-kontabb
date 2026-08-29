@@ -174,17 +174,23 @@ export class FiscalItensService {
     const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
     const where = this.buildWhere(input);
     const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
+    const valorOperacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
+    const valorSemTributacao = sql`GREATEST(${valorOperacao} - COALESCE(${documentosFiscaisItens.valorBcIcms}, 0), 0)`;
+    const isentaOuNaoTributada = sql`(RIGHT(COALESCE(${documentosFiscaisItens.cstIcms}, ''), 2) IN ('40', '41') OR ${documentosFiscaisItens.csosnIcms} IN ('103', '300', '400'))`;
 
     const rows = await this.database.db
       .select({
         tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
         cfop: documentosFiscaisItens.cfop,
         aliquota_icms: documentosFiscaisItens.aliquotaIcms,
+        valor_contabil: sql<string>`COALESCE(SUM(${valorOperacao}), 0)`,
         valor_produtos: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBrutoProduto}), 0)`,
         base_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcms}), 0)`,
         icms_creditado_debitado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' OR (${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido}) THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
         credito_icms: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
         debito_icms: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        isentas_nao_tributadas: sql<string>`COALESCE(SUM(CASE WHEN ${isentaOuNaoTributada} THEN ${valorSemTributacao} ELSE 0 END), 0)`,
+        outras: sql<string>`COALESCE(SUM(CASE WHEN NOT ${isentaOuNaoTributada} THEN ${valorSemTributacao} ELSE 0 END), 0)`,
         base_icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcmsSt}), 0)`,
         icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcmsSt}), 0)`,
         ipi: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIpi}), 0)`,

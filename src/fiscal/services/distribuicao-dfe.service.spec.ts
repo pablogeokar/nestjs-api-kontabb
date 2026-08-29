@@ -77,6 +77,7 @@ describe('DistribuicaoDfeService', () => {
       {} as never,
       nfeWizard as never,
       createCfopServiceMock() as never,
+      {} as never,
     );
 
     const result = await service.sincronizarCliente('client-1', 'NFE');
@@ -91,12 +92,18 @@ describe('DistribuicaoDfeService', () => {
         id: 'cliente-1',
         razaoSocial: 'ALFA COMERCIO LTDA',
         cnpj: '12345678000195',
+        inscricaoEstadual: '123456789',
+        municipio: 'Salvador',
+        uf: 'BA',
         totalDocumentos: '105',
       },
       {
         id: 'cliente-2',
         razaoSocial: 'BETA INDUSTRIA LTDA',
         cnpj: '98765432000110',
+        inscricaoEstadual: null,
+        municipio: null,
+        uf: null,
         totalDocumentos: '8',
       },
     ]);
@@ -109,6 +116,7 @@ describe('DistribuicaoDfeService', () => {
       {} as never,
       {} as never,
       createCfopServiceMock() as never,
+      {} as never,
     );
 
     const result = await service.listClientesComDocumentosFiscais();
@@ -118,12 +126,18 @@ describe('DistribuicaoDfeService', () => {
         id: 'cliente-1',
         razao_social: 'ALFA COMERCIO LTDA',
         cnpj: '12345678000195',
+        inscricao_estadual: '123456789',
+        municipio: 'Salvador',
+        uf: 'BA',
         total_documentos: 105,
       },
       {
         id: 'cliente-2',
         razao_social: 'BETA INDUSTRIA LTDA',
         cnpj: '98765432000110',
+        inscricao_estadual: null,
+        municipio: null,
+        uf: null,
         total_documentos: 8,
       },
     ]);
@@ -173,6 +187,7 @@ describe('DistribuicaoDfeService', () => {
       storage as never,
       {} as never,
       createCfopServiceMock() as never,
+      {} as never,
     );
     const documento = parseDocumentWithItem();
 
@@ -219,6 +234,7 @@ describe('DistribuicaoDfeService', () => {
       {} as never,
       {} as never,
       createCfopServiceMock() as never,
+      {} as never,
     );
 
     await service.getDashboardStats();

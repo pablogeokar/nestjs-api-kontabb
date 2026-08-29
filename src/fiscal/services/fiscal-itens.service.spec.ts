@@ -154,6 +154,9 @@ describe('FiscalItensService', () => {
     expect(credito).toContain('csosn_icms');
     expect(debito).toContain('tipo_operacao_escriturada');
     expect(selection).toHaveProperty('cfop');
+    expect(selection).toHaveProperty('valor_contabil');
+    expect(selection).toHaveProperty('isentas_nao_tributadas');
+    expect(selection).toHaveProperty('outras');
   });
 
   it('não leva créditos e débitos aos livros do Simples sem apuração separada', async () => {
