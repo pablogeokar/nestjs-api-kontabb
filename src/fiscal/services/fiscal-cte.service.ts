@@ -424,7 +424,14 @@ export class FiscalCteService {
   }
 
   async getD100(input: CteFiscalFilters) {
-    const conditions = this.buildConditions({ ...input, escrituravel: true });
+    const conditions = this.buildConditions({
+      ...input,
+      escrituravel: true,
+      revisaoNecessaria: false,
+    });
+    conditions.push(
+      eq(documentosFiscaisCteEscrituracao.cfopRevisaoNecessaria, false),
+    );
     const rows = await this.database.db
       .select({
         documentoId: documentosFiscais.id,
@@ -495,13 +502,21 @@ export class FiscalCteService {
   }
 
   async getD190(input: CteFiscalFilters) {
-    const conditions = this.buildConditions({ ...input, escrituravel: true });
-    conditions.push(eq(documentosFiscais.situacao, 'AUTORIZADA'));
+    const conditions = this.buildConditions({
+      ...input,
+      escrituravel: true,
+      revisaoNecessaria: false,
+    });
+    conditions.push(
+      eq(documentosFiscais.situacao, 'AUTORIZADA'),
+      eq(documentosFiscaisCteEscrituracao.cfopRevisaoNecessaria, false),
+    );
     const cst = sql<string>`COALESCE(${documentosFiscaisCteEscrituracao.cstIcms}, ${documentosFiscaisCteEscrituracao.csosnIcms}, '')`;
     const reducao = sql`CASE WHEN ${documentosFiscaisCteEscrituracao.valorTotalServico} < 0 THEN -GREATEST(ABS(COALESCE(${documentosFiscaisCteEscrituracao.valorTotalServico}, 0)) - ABS(COALESCE(${documentosFiscaisCteEscrituracao.valorBcIcms}, 0)), 0) ELSE GREATEST(COALESCE(${documentosFiscaisCteEscrituracao.valorTotalServico}, 0) - COALESCE(${documentosFiscaisCteEscrituracao.valorBcIcms}, 0), 0) END`;
     const rows = await this.database.db
       .select({
         reg: sql<string>`'D190'`,
+        documento_fiscal_id: documentosFiscaisCteEscrituracao.documentoFiscalId,
         cst_icms: cst,
         cfop: documentosFiscaisCteEscrituracao.cfop,
         aliquota_icms: documentosFiscaisCteEscrituracao.aliquotaIcms,
@@ -521,11 +536,13 @@ export class FiscalCteService {
       )
       .where(and(...conditions))
       .groupBy(
+        documentosFiscaisCteEscrituracao.documentoFiscalId,
         cst,
         documentosFiscaisCteEscrituracao.cfop,
         documentosFiscaisCteEscrituracao.aliquotaIcms,
       )
       .orderBy(
+        documentosFiscaisCteEscrituracao.documentoFiscalId,
         documentosFiscaisCteEscrituracao.cfop,
         documentosFiscaisCteEscrituracao.aliquotaIcms,
       );
@@ -533,8 +550,15 @@ export class FiscalCteService {
   }
 
   async getResumoLivros(input: CteFiscalFilters) {
-    const conditions = this.buildConditions({ ...input, escrituravel: true });
-    conditions.push(eq(documentosFiscais.situacao, 'AUTORIZADA'));
+    const conditions = this.buildConditions({
+      ...input,
+      escrituravel: true,
+      revisaoNecessaria: false,
+    });
+    conditions.push(
+      eq(documentosFiscais.situacao, 'AUTORIZADA'),
+      eq(documentosFiscaisCteEscrituracao.cfopRevisaoNecessaria, false),
+    );
     return this.database.db
       .select({
         bloco: sql<string>`'D'`,
@@ -563,8 +587,15 @@ export class FiscalCteService {
   }
 
   async getTotalCreditoIcms(input: CteFiscalFilters) {
-    const conditions = this.buildConditions({ ...input, escrituravel: true });
-    conditions.push(eq(documentosFiscais.situacao, 'AUTORIZADA'));
+    const conditions = this.buildConditions({
+      ...input,
+      escrituravel: true,
+      revisaoNecessaria: false,
+    });
+    conditions.push(
+      eq(documentosFiscais.situacao, 'AUTORIZADA'),
+      eq(documentosFiscaisCteEscrituracao.cfopRevisaoNecessaria, false),
+    );
     const rows = await this.database.db
       .select({
         total_creditos_frete: sql<string>`COALESCE(SUM(${documentosFiscaisCteEscrituracao.valorIcmsCreditavel}), 0)`,
@@ -641,8 +672,8 @@ export class FiscalCteService {
 }
 
 function normalizeTaxId(value: string) {
-  const normalized = value.replace(/\D/g, '');
-  return /^\d{11}(?:\d{3})?$/.test(normalized) ? normalized : '';
+  const normalized = value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  return /^\d{11}$|^[0-9A-Z]{12}\d{2}$/.test(normalized) ? normalized : '';
 }
 
 function signedNullableDecimal(value: string | null, sign: number) {

@@ -190,7 +190,7 @@ export const clientes = pgTable(
     ),
     check(
       'chk_clientes_documento_por_tipo',
-      sql`(${table.tipoPessoa} = 'PJ' AND ${table.cnpj} ~ '^[0-9]{14}$' AND ${table.cpf} IS NULL) OR (${table.tipoPessoa} = 'PF' AND ${table.cnpj} ~ '^[0-9]{11}$' AND ${table.cpf} = ${table.cnpj})`,
+      sql`(${table.tipoPessoa} = 'PJ' AND ${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$' AND ${table.cpf} IS NULL) OR (${table.tipoPessoa} = 'PF' AND ${table.cnpj} ~ '^[0-9]{11}$' AND ${table.cpf} = ${table.cnpj})`,
     ),
     index('idx_clientes_regime_tributario')
       .on(table.regimeTributario)
@@ -739,7 +739,33 @@ export const documentosFiscais = pgTable(
     destinatarioCnpjCpf: text('destinatario_cnpj_cpf').notNull(),
     destinatarioRazaoSocial: text('destinatario_razao_social'),
     dataEmissao: timestamp('data_emissao').notNull(),
+    dataEmissaoFiscal: date('data_emissao_fiscal'),
+    dataEntradaSaida: timestamp('data_entrada_saida'),
+    dataEntradaSaidaFiscal: date('data_entrada_saida_fiscal'),
     valorTotal: numeric('valor_total', { precision: 14, scale: 2 }).notNull(),
+    valorTotalDeclaradoXml: numeric('valor_total_declarado_xml', {
+      precision: 15,
+      scale: 2,
+    }),
+    totaisDeclaradosXml: jsonb('totais_declarados_xml').$type<
+      Record<string, string | null>
+    >(),
+    quantidadeItensDeclaradaXml: integer('quantidade_itens_declarada_xml'),
+    integridadeConferida: boolean('integridade_conferida')
+      .notNull()
+      .default(false),
+    integridadeStatus: varchar('integridade_status', { length: 20 })
+      .notNull()
+      .default('NAO_CONFERIDA'),
+    integridadeDetalhes: jsonb('integridade_detalhes').$type<
+      Record<string, unknown>
+    >(),
+    codSituacaoSped: varchar('cod_situacao_sped', { length: 2 }),
+    modalidadeFrete: varchar('modalidade_frete', { length: 1 }),
+    informacoesComplementares: text('informacoes_complementares'),
+    emitenteDados: jsonb('emitente_dados').$type<Record<string, unknown>>(),
+    destinatarioDados:
+      jsonb('destinatario_dados').$type<Record<string, unknown>>(),
     situacao: text('situacao').notNull().default('AUTORIZADA'),
     manifestacaoStatus: text('manifestacao_status')
       .notNull()
@@ -767,6 +793,11 @@ export const documentosFiscais = pgTable(
     index('idx_docs_fiscais_cliente_id').on(table.clienteId),
     index('idx_docs_fiscais_tipo').on(table.tipoDocumento),
     index('idx_docs_fiscais_data_emissao').on(table.dataEmissao),
+    index('idx_docs_fiscais_cliente_competencia').on(
+      table.clienteId,
+      table.dataEmissaoFiscal,
+      table.id,
+    ),
     index('idx_docs_fiscais_nsu').on(table.nsu),
     index('idx_docs_fiscais_destinatario').on(table.destinatarioCnpjCpf),
     index('idx_docs_fiscais_emitente').on(table.emitenteCnpjCpf),
@@ -808,6 +839,30 @@ export const documentosFiscais = pgTable(
       sql`(${table.escriturado} = false AND ${table.escrituracaoStatus} = 'NAO_ESCRITURAVEL') OR (${table.escriturado} = true AND ${table.escrituracaoStatus} IN ('ESCRITURADO', 'PENDENTE_REVISAO'))`,
     ),
     check('chk_docs_fiscais_valor', sql`${table.valorTotal} >= 0`),
+    check(
+      'chk_docs_fiscais_valor_declarado',
+      sql`${table.valorTotalDeclaradoXml} IS NULL OR ${table.valorTotalDeclaradoXml} >= 0`,
+    ),
+    check(
+      'chk_docs_fiscais_quantidade_itens_declarada',
+      sql`${table.quantidadeItensDeclaradaXml} IS NULL OR ${table.quantidadeItensDeclaradaXml} >= 0`,
+    ),
+    check(
+      'chk_docs_fiscais_integridade_status',
+      sql`${table.integridadeStatus} IN ('NAO_CONFERIDA', 'OK', 'DIVERGENTE')`,
+    ),
+    check(
+      'chk_docs_fiscais_integridade_coerencia',
+      sql`(${table.integridadeConferida} = false AND ${table.integridadeStatus} = 'NAO_CONFERIDA') OR (${table.integridadeConferida} = true AND ${table.integridadeStatus} IN ('OK', 'DIVERGENTE'))`,
+    ),
+    check(
+      'chk_docs_fiscais_cod_situacao_sped',
+      sql`${table.codSituacaoSped} IS NULL OR ${table.codSituacaoSped} ~ '^[0-9]{2}$'`,
+    ),
+    check(
+      'chk_docs_fiscais_modalidade_frete',
+      sql`${table.modalidadeFrete} IS NULL OR ${table.modalidadeFrete} ~ '^[0-9]$'`,
+    ),
     check('chk_docs_fiscais_xml_key', sql`btrim(${table.xmlKey}) <> ''`),
   ],
 );
@@ -872,6 +927,8 @@ export const documentosFiscaisItens = pgTable(
     numeroPedidoCompra: text('numero_pedido_compra'),
     itemPedidoCompra: text('item_pedido_compra'),
     informacoesAdicionais: text('informacoes_adicionais'),
+    codObsSped: varchar('cod_obs_sped', { length: 6 }),
+    codCtaSped: text('cod_cta_sped'),
 
     origemMercadoria: varchar('origem_mercadoria', { length: 1 }),
     cstIcms: varchar('cst_icms', { length: 3 }),
@@ -1182,7 +1239,7 @@ export const documentosFiscaisCteEscrituracao = pgTable(
     ),
     check(
       'chk_cte_escrituracao_tomador_documento',
-      sql`${table.tomadorCnpjCpf} ~ '^[0-9]{11}([0-9]{3})?$'`,
+      sql`${table.tomadorCnpjCpf} ~ '^[0-9]{11}$|^[0-9A-Z]{12}[0-9]{2}$'`,
     ),
     check(
       'chk_cte_escrituracao_tomador_papel',
@@ -1211,7 +1268,7 @@ export const documentosFiscaisCteEscrituracao = pgTable(
     ),
     check(
       'chk_cte_escrituracao_referencia',
-      sql`${table.chaveCteReferenciado} IS NULL OR ${table.chaveCteReferenciado} ~ '^[0-9]{44}$'`,
+      sql`${table.chaveCteReferenciado} IS NULL OR ${table.chaveCteReferenciado} ~ '^[0-9A-Z]{44}$'`,
     ),
     check(
       'chk_cte_escrituracao_municipio_origem',
@@ -1251,5 +1308,552 @@ export const eventosFiscais = pgTable(
       sql`${table.tipoEvento} IN ('MANIFESTACAO_CIENCIA', 'MANIFESTACAO_CONFIRMACAO', 'MANIFESTACAO_DESCONHECIMENTO', 'MANIFESTACAO_NAO_REALIZADA', 'CANCELAMENTO', 'CCE')`,
     ),
     check('chk_eventos_fiscais_sequencia', sql`${table.sequenciaEvento} >= 1`),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EFD ICMS/IPI (SPED Fiscal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const spedConfiguracoes = pgTable(
+  'sped_configuracoes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    obrigadoEfdIcmsIpi: boolean('obrigado_efd_icms_ipi')
+      .notNull()
+      .default(false),
+    perfilEfd: varchar('perfil_efd', { length: 1 }),
+    indAtiv: varchar('ind_ativ', { length: 1 }),
+    classificacaoEstabelecimentoIndustrial: varchar(
+      'classificacao_estabelecimento_industrial',
+      { length: 2 },
+    ),
+    codigoMunicipioIbge: varchar('codigo_municipio_ibge', { length: 7 }),
+    nomeFantasia: text('nome_fantasia'),
+    inscricaoMunicipal: text('inscricao_municipal'),
+    suframa: text('suframa'),
+    telefone: text('telefone'),
+    fax: text('fax'),
+    inventarioObrigatorio: boolean('inventario_obrigatorio')
+      .notNull()
+      .default(false),
+    blocoKComMovimento: boolean('bloco_k_com_movimento')
+      .notNull()
+      .default(false),
+    tipoItemPadrao: varchar('tipo_item_padrao', { length: 2 })
+      .notNull()
+      .default('00'),
+    indicadores1010: jsonb('indicadores_1010')
+      .$type<Record<string, 'S' | 'N'>>()
+      .notNull()
+      .default({}),
+    atualizadoPor: text('atualizado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_config_cliente').on(table.clienteId),
+    check(
+      'chk_sped_config_perfil',
+      sql`${table.perfilEfd} IS NULL OR ${table.perfilEfd} IN ('A', 'B', 'C')`,
+    ),
+    check(
+      'chk_sped_config_ind_ativ',
+      sql`${table.indAtiv} IS NULL OR ${table.indAtiv} IN ('0', '1')`,
+    ),
+    check(
+      'chk_sped_config_clas_estab_ind',
+      sql`${table.classificacaoEstabelecimentoIndustrial} IS NULL OR ${table.classificacaoEstabelecimentoIndustrial} ~ '^[0-9]{2}$'`,
+    ),
+    check(
+      'chk_sped_config_codigo_municipio',
+      sql`${table.codigoMunicipioIbge} IS NULL OR ${table.codigoMunicipioIbge} ~ '^[0-9]{7}$'`,
+    ),
+    check(
+      'chk_sped_config_tipo_item_padrao',
+      sql`${table.tipoItemPadrao} ~ '^[0-9]{2}$'`,
+    ),
+    check(
+      'chk_sped_config_indicadores_1010',
+      sql`jsonb_typeof(${table.indicadores1010}) = 'object'`,
+    ),
+  ],
+);
+
+export const spedContabilistas = pgTable(
+  'sped_contabilistas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    nome: text('nome').notNull(),
+    cpf: varchar('cpf', { length: 11 }),
+    crc: text('crc').notNull(),
+    cnpj: varchar('cnpj', { length: 14 }),
+    cep: varchar('cep', { length: 8 }),
+    logradouro: text('logradouro'),
+    numero: text('numero'),
+    complemento: text('complemento'),
+    bairro: text('bairro'),
+    telefone: text('telefone'),
+    fax: text('fax'),
+    email: text('email'),
+    codigoMunicipioIbge: varchar('codigo_municipio_ibge', {
+      length: 7,
+    }).notNull(),
+    atualizadoPor: text('atualizado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_contabilista_cliente').on(table.clienteId),
+    check(
+      'chk_sped_contabilista_documento',
+      sql`(${table.cpf} IS NOT NULL AND ${table.cpf} ~ '^[0-9]{11}$') OR (${table.cnpj} IS NOT NULL AND ${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$')`,
+    ),
+    check(
+      'chk_sped_contabilista_cep',
+      sql`${table.cep} IS NULL OR ${table.cep} ~ '^[0-9]{8}$'`,
+    ),
+    check(
+      'chk_sped_contabilista_codigo_municipio',
+      sql`${table.codigoMunicipioIbge} ~ '^[0-9]{7}$'`,
+    ),
+  ],
+);
+
+export const spedParticipantes = pgTable(
+  'sped_participantes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    codigo: varchar('codigo', { length: 60 }).notNull(),
+    documento: varchar('documento', { length: 14 }).notNull(),
+    tipoDocumento: varchar('tipo_documento', { length: 4 }).notNull(),
+    nome: text('nome').notNull(),
+    codigoPais: varchar('codigo_pais', { length: 5 })
+      .notNull()
+      .default('01058'),
+    inscricaoEstadual: text('inscricao_estadual'),
+    codigoMunicipioIbge: varchar('codigo_municipio_ibge', { length: 7 }),
+    suframa: text('suframa'),
+    logradouro: text('logradouro'),
+    numero: text('numero'),
+    complemento: text('complemento'),
+    bairro: text('bairro'),
+    cep: varchar('cep', { length: 8 }),
+    fonteUltimoDocumentoId: uuid('fonte_ultimo_documento_id').references(
+      () => documentosFiscais.id,
+      { onDelete: 'set null' },
+    ),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_participante_codigo').on(
+      table.clienteId,
+      table.codigo,
+    ),
+    uniqueIndex('uidx_sped_participante_documento').on(
+      table.clienteId,
+      table.documento,
+    ),
+    index('idx_sped_participante_cliente').on(table.clienteId),
+    check(
+      'chk_sped_participante_tipo_documento',
+      sql`${table.tipoDocumento} IN ('CNPJ', 'CPF')`,
+    ),
+    check(
+      'chk_sped_participante_documento',
+      sql`(${table.tipoDocumento} = 'CPF' AND ${table.documento} ~ '^[0-9]{11}$') OR (${table.tipoDocumento} = 'CNPJ' AND ${table.documento} ~ '^[0-9A-Z]{12}[0-9]{2}$')`,
+    ),
+    check(
+      'chk_sped_participante_codigo_pais',
+      sql`${table.codigoPais} ~ '^[0-9]{5}$'`,
+    ),
+    check(
+      'chk_sped_participante_codigo_municipio',
+      sql`${table.codigoMunicipioIbge} IS NULL OR ${table.codigoMunicipioIbge} ~ '^[0-9]{7}$'`,
+    ),
+  ],
+);
+
+export const spedUnidades = pgTable(
+  'sped_unidades',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    codigo: varchar('codigo', { length: 6 }).notNull(),
+    descricao: text('descricao').notNull(),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_unidade_codigo').on(table.clienteId, table.codigo),
+    index('idx_sped_unidade_cliente').on(table.clienteId),
+    check('chk_sped_unidade_codigo', sql`btrim(${table.codigo}) <> ''`),
+  ],
+);
+
+export const spedItens = pgTable(
+  'sped_itens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    participanteOrigemId: uuid('participante_origem_id').references(
+      () => spedParticipantes.id,
+      { onDelete: 'restrict' },
+    ),
+    codigo: varchar('codigo', { length: 60 }).notNull(),
+    codigoExterno: text('codigo_externo').notNull(),
+    descricao: text('descricao').notNull(),
+    codigoBarras: text('codigo_barras'),
+    unidadeId: uuid('unidade_id')
+      .notNull()
+      .references(() => spedUnidades.id, { onDelete: 'restrict' }),
+    tipoItem: varchar('tipo_item', { length: 2 }).notNull().default('00'),
+    tipoItemInferido: boolean('tipo_item_inferido').notNull().default(true),
+    ncm: varchar('ncm', { length: 8 }),
+    exIpi: varchar('ex_ipi', { length: 3 }),
+    codigoGenero: varchar('codigo_genero', { length: 2 }),
+    codigoServico: text('codigo_servico'),
+    aliquotaIcms: numeric('aliquota_icms', { precision: 7, scale: 4 }),
+    cest: varchar('cest', { length: 7 }),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_item_codigo').on(table.clienteId, table.codigo),
+    unique('uq_sped_item_origem_externo')
+      .on(table.clienteId, table.participanteOrigemId, table.codigoExterno)
+      .nullsNotDistinct(),
+    index('idx_sped_item_cliente').on(table.clienteId),
+    check('chk_sped_item_tipo', sql`${table.tipoItem} ~ '^[0-9]{2}$'`),
+    check(
+      'chk_sped_item_ncm',
+      sql`${table.ncm} IS NULL OR ${table.ncm} ~ '^[0-9]{8}$'`,
+    ),
+    check(
+      'chk_sped_item_cest',
+      sql`${table.cest} IS NULL OR ${table.cest} ~ '^[0-9]{7}$'`,
+    ),
+  ],
+);
+
+export const spedResponsabilidadesTributarias = pgTable(
+  'sped_responsabilidades_tributarias',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    tipo: varchar('tipo', { length: 20 }).notNull(),
+    uf: varchar('uf', { length: 2 }).notNull(),
+    vigenciaInicio: date('vigencia_inicio').notNull(),
+    vigenciaFim: date('vigencia_fim'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_responsabilidade_vigencia').on(
+      table.clienteId,
+      table.tipo,
+      table.uf,
+      table.vigenciaInicio,
+    ),
+    index('idx_sped_responsabilidade_cliente').on(table.clienteId),
+    check(
+      'chk_sped_responsabilidade_tipo',
+      sql`${table.tipo} IN ('ICMS_ST', 'DIFAL_FCP')`,
+    ),
+    check('chk_sped_responsabilidade_uf', sql`${table.uf} ~ '^[A-Z]{2}$'`),
+    check(
+      'chk_sped_responsabilidade_vigencia',
+      sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,
+    ),
+  ],
+);
+
+export const spedSaldosApuracao = pgTable(
+  'sped_saldos_apuracao',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    tipo: varchar('tipo', { length: 20 }).notNull(),
+    uf: varchar('uf', { length: 2 }),
+    saldoCredorAnterior: numeric('saldo_credor_anterior', {
+      precision: 15,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+    atualizadoPor: text('atualizado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('uq_sped_saldo_competencia')
+      .on(table.clienteId, table.competencia, table.tipo, table.uf)
+      .nullsNotDistinct(),
+    index('idx_sped_saldo_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    check(
+      'chk_sped_saldo_tipo',
+      sql`${table.tipo} IN ('ICMS_PROPRIO', 'ICMS_ST', 'IPI')`,
+    ),
+    check(
+      'chk_sped_saldo_uf',
+      sql`${table.uf} IS NULL OR ${table.uf} ~ '^[A-Z]{2}$'`,
+    ),
+    check('chk_sped_saldo_valor', sql`${table.saldoCredorAnterior} >= 0`),
+  ],
+);
+
+export const spedAjustesApuracao = pgTable(
+  'sped_ajustes_apuracao',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    registro: varchar('registro', { length: 4 }).notNull(),
+    codigoAjuste: text('codigo_ajuste').notNull(),
+    descricao: text('descricao'),
+    valor: numeric('valor', { precision: 15, scale: 2 }).notNull(),
+    indicador: varchar('indicador', { length: 24 }).notNull(),
+    uf: varchar('uf', { length: 2 }),
+    numeroDocumento: text('numero_documento'),
+    atualizadoPor: text('atualizado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_sped_ajuste_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    check(
+      'chk_sped_ajuste_registro',
+      sql`${table.registro} IN ('E111', 'E220', 'E311', 'E530')`,
+    ),
+    check(
+      'chk_sped_ajuste_indicador',
+      sql`${table.indicador} IN ('DEBITO', 'CREDITO', 'ESTORNO_DEBITO', 'ESTORNO_CREDITO', 'DEDUCAO')`,
+    ),
+    check('chk_sped_ajuste_valor', sql`${table.valor} >= 0`),
+    check(
+      'chk_sped_ajuste_uf',
+      sql`${table.uf} IS NULL OR ${table.uf} ~ '^[A-Z]{2}$'`,
+    ),
+  ],
+);
+
+export const spedObrigacoesRecolhimento = pgTable(
+  'sped_obrigacoes_recolhimento',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    tipo: varchar('tipo', { length: 20 }).notNull(),
+    uf: varchar('uf', { length: 2 }),
+    codigoObrigacao: text('codigo_obrigacao').notNull(),
+    valor: numeric('valor', { precision: 15, scale: 2 }).notNull(),
+    dataVencimento: date('data_vencimento').notNull(),
+    codigoReceita: text('codigo_receita'),
+    numeroProcesso: text('numero_processo'),
+    indicadorProcesso: varchar('indicador_processo', { length: 1 }),
+    processo: text('processo'),
+    textoComplementar: text('texto_complementar'),
+    mesReferencia: varchar('mes_referencia', { length: 6 }),
+    atualizadoPor: text('atualizado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    unique('uq_sped_obrigacao_competencia')
+      .on(table.clienteId, table.competencia, table.tipo, table.uf)
+      .nullsNotDistinct(),
+    index('idx_sped_obrigacao_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    check(
+      'chk_sped_obrigacao_tipo',
+      sql`${table.tipo} IN ('ICMS_PROPRIO', 'ICMS_ST', 'DIFAL_FCP')`,
+    ),
+    check('chk_sped_obrigacao_valor', sql`${table.valor} >= 0`),
+    check(
+      'chk_sped_obrigacao_uf',
+      sql`${table.uf} IS NULL OR ${table.uf} ~ '^[A-Z]{2}$'`,
+    ),
+    check(
+      'chk_sped_obrigacao_mes_referencia',
+      sql`${table.mesReferencia} IS NULL OR ${table.mesReferencia} ~ '^[0-9]{6}$'`,
+    ),
+  ],
+);
+
+export const spedInventarios = pgTable(
+  'sped_inventarios',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    dataInventario: date('data_inventario').notNull(),
+    motivo: varchar('motivo', { length: 2 }).notNull(),
+    valorTotal: numeric('valor_total', { precision: 15, scale: 2 }).notNull(),
+    status: varchar('status', { length: 12 }).notNull().default('RASCUNHO'),
+    atualizadoPor: text('atualizado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_inventario_cliente_data_motivo').on(
+      table.clienteId,
+      table.dataInventario,
+      table.motivo,
+    ),
+    index('idx_sped_inventario_cliente_data').on(
+      table.clienteId,
+      table.dataInventario,
+    ),
+    check('chk_sped_inventario_motivo', sql`${table.motivo} ~ '^[0-9]{2}$'`),
+    check(
+      'chk_sped_inventario_status',
+      sql`${table.status} IN ('RASCUNHO', 'FECHADO')`,
+    ),
+    check('chk_sped_inventario_valor', sql`${table.valorTotal} >= 0`),
+  ],
+);
+
+export const spedInventarioItens = pgTable(
+  'sped_inventario_itens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    inventarioId: uuid('inventario_id')
+      .notNull()
+      .references(() => spedInventarios.id, { onDelete: 'cascade' }),
+    spedItemId: uuid('sped_item_id')
+      .notNull()
+      .references(() => spedItens.id, { onDelete: 'restrict' }),
+    unidade: varchar('unidade', { length: 6 }).notNull(),
+    quantidade: numeric('quantidade', { precision: 15, scale: 4 }).notNull(),
+    valorUnitario: numeric('valor_unitario', {
+      precision: 21,
+      scale: 10,
+    }).notNull(),
+    valorItem: numeric('valor_item', { precision: 15, scale: 2 }).notNull(),
+    indicadorPropriedade: varchar('indicador_propriedade', { length: 1 })
+      .notNull()
+      .default('0'),
+    participanteId: uuid('participante_id').references(
+      () => spedParticipantes.id,
+      { onDelete: 'restrict' },
+    ),
+    textoComplementar: text('texto_complementar'),
+    codigoConta: text('codigo_conta'),
+    valorItemIr: numeric('valor_item_ir', { precision: 15, scale: 2 }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_sped_inventario_item').on(
+      table.inventarioId,
+      table.spedItemId,
+      table.indicadorPropriedade,
+    ),
+    index('idx_sped_inventario_item_inventario').on(table.inventarioId),
+    check('chk_sped_inventario_item_qtd', sql`${table.quantidade} >= 0`),
+    check('chk_sped_inventario_item_valor', sql`${table.valorItem} >= 0`),
+    check(
+      'chk_sped_inventario_item_ind_prop',
+      sql`${table.indicadorPropriedade} IN ('0', '1', '2')`,
+    ),
+  ],
+);
+
+export const spedArquivosGerados = pgTable(
+  'sped_arquivos_gerados',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    finalidade: varchar('finalidade', { length: 1 }).notNull(),
+    codVersao: varchar('cod_versao', { length: 3 }).notNull(),
+    perfil: varchar('perfil', { length: 1 }).notNull(),
+    status: varchar('status', { length: 12 }).notNull(),
+    hashSha256: varchar('hash_sha256', { length: 64 }),
+    arquivoKey: text('arquivo_key'),
+    arquivoNome: text('arquivo_nome'),
+    tamanhoBytes: bigint('tamanho_bytes', { mode: 'number' }),
+    contadores: jsonb('contadores').$type<Record<string, unknown>>(),
+    inconsistencias:
+      jsonb('inconsistencias').$type<Array<Record<string, unknown>>>(),
+    erro: text('erro'),
+    geradoPor: text('gerado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    concluidoEm: timestamp('concluido_em'),
+  },
+  (table) => [
+    index('idx_sped_arquivo_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+      table.criadoEm,
+    ),
+    index('idx_sped_arquivo_status').on(table.status),
+    check(
+      'chk_sped_arquivo_finalidade',
+      sql`${table.finalidade} IN ('0', '1')`,
+    ),
+    check('chk_sped_arquivo_perfil', sql`${table.perfil} IN ('A', 'B', 'C')`),
+    check(
+      'chk_sped_arquivo_status',
+      sql`${table.status} IN ('PROCESSANDO', 'GERADO', 'FALHOU')`,
+    ),
+    check(
+      'chk_sped_arquivo_hash',
+      sql`${table.hashSha256} IS NULL OR ${table.hashSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'chk_sped_arquivo_tamanho',
+      sql`${table.tamanhoBytes} IS NULL OR ${table.tamanhoBytes} >= 0`,
+    ),
   ],
 );

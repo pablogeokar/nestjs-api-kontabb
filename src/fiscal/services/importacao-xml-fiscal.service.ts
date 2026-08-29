@@ -18,6 +18,10 @@ import {
 import { CfopService } from './cfop.service';
 import { FiscalCteService } from './fiscal-cte.service';
 import type { RegimeTributario } from '../../clientes/clientes.types';
+import {
+  buildDocumentoFiscalSpedMetadata,
+  documentoNfePrecisaRevisao,
+} from './documento-fiscal-sped-metadata';
 
 const MAX_XML_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_XML_MIMES = new Set([
@@ -149,7 +153,9 @@ export class ImportacaoXmlFiscalService {
     const documento = parsed.documento;
     let targets: ImportTarget[];
     if (context.fixedTarget) {
-      const targetTaxId = context.fixedTarget.cnpj.replace(/\D/g, '');
+      const targetTaxId = context.fixedTarget.cnpj
+        .replace(/[^0-9A-Za-z]/g, '')
+        .toUpperCase();
       if (!documento.participantesCnpjCpf.includes(targetTaxId)) {
         return this.errorResult(
           arquivo,
@@ -341,6 +347,10 @@ export class ImportacaoXmlFiscalService {
             tpNfXml: documento.tpNfXml,
             itens: documento.itens,
           });
+    const spedMetadata = buildDocumentoFiscalSpedMetadata(documento);
+    const nfePendenteRevisao =
+      documento.tipoDocumento !== 'CTE' &&
+      documentoNfePrecisaRevisao(documento, escrituracao.itens);
     const existingRows = await this.database.db
       .select({
         id: documentosFiscais.id,
@@ -364,9 +374,12 @@ export class ImportacaoXmlFiscalService {
           .set({
             tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
             tpNfXml: documento.tpNfXml,
+            ...spedMetadata,
             ...(documento.tipoDocumento !== 'CTE' && {
               escriturado: true,
-              escrituracaoStatus: 'ESCRITURADO' as const,
+              escrituracaoStatus: nfePendenteRevisao
+                ? ('PENDENTE_REVISAO' as const)
+                : ('ESCRITURADO' as const),
             }),
             atualizadoEm: new Date(),
           })
@@ -444,6 +457,7 @@ export class ImportacaoXmlFiscalService {
       destinatarioRazaoSocial: documento.destinatarioRazaoSocial,
       dataEmissao: documento.dataEmissao,
       valorTotal: documento.valorTotal,
+      ...spedMetadata,
       situacao: documento.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: documento.tpNfXml,
@@ -451,7 +465,9 @@ export class ImportacaoXmlFiscalService {
       escrituracaoStatus:
         documento.tipoDocumento === 'CTE'
           ? ('NAO_ESCRITURAVEL' as const)
-          : ('ESCRITURADO' as const),
+          : nfePendenteRevisao
+            ? ('PENDENTE_REVISAO' as const)
+            : ('ESCRITURADO' as const),
       xmlKey,
       danfeKey: null,
       atualizadoEm: new Date(),

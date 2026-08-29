@@ -206,7 +206,7 @@ export class ClientesController {
     const requestId = this.logger.generateRequestId();
     const emails = this.normalizeEmails(dto.emails);
     const tipoPessoa = dto.tipo_pessoa;
-    const cnpj = dto.cnpj?.replace(/\D/g, '') ?? '';
+    const cnpj = dto.cnpj?.replace(/[^0-9A-Za-z]/g, '').toUpperCase() ?? '';
     const cpf = dto.cpf?.replace(/\D/g, '') ?? '';
 
     if (tipoPessoa === 'PJ' && !isValidCnpj(cnpj)) {
@@ -287,7 +287,7 @@ export class ClientesController {
         requestId,
         actorUserId: currentUser.id,
         tipoPessoa: 'PJ',
-        cnpj: client.cnpj.replace(/\D/g, ''),
+        cnpj: client.cnpj.replace(/[^0-9A-Za-z]/g, '').toUpperCase(),
         cpf: '',
         companyName: client.company_name.trim(),
         emails: [],

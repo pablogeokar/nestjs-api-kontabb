@@ -35,6 +35,10 @@ import type { PaginationParams } from '../../common/types';
 import { CfopService } from './cfop.service';
 import { FiscalCteService } from './fiscal-cte.service';
 import type { RegimeTributario } from '../../clientes/clientes.types';
+import {
+  buildDocumentoFiscalSpedMetadata,
+  documentoNfePrecisaRevisao,
+} from './documento-fiscal-sped-metadata';
 
 export interface FiscalSyncResult {
   status:
@@ -821,6 +825,10 @@ export class DistribuicaoDfeService {
             tpNfXml: parsed.tpNfXml,
             itens: parsed.itens,
           });
+    const spedMetadata = buildDocumentoFiscalSpedMetadata(parsed);
+    const nfePendenteRevisao =
+      parsed.tipoDocumento !== 'CTE' &&
+      documentoNfePrecisaRevisao(parsed, escrituracao.itens);
     // Um resumo/evento salvo por uma versao anterior deve ser substituido
     // quando o XML fiscal completo chegar para o mesmo cliente.
     const existing = await this.database.db
@@ -849,9 +857,12 @@ export class DistribuicaoDfeService {
           .set({
             tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
             tpNfXml: parsed.tpNfXml,
+            ...spedMetadata,
             ...(parsed.tipoDocumento !== 'CTE' && {
               escriturado: true,
-              escrituracaoStatus: 'ESCRITURADO' as const,
+              escrituracaoStatus: nfePendenteRevisao
+                ? ('PENDENTE_REVISAO' as const)
+                : ('ESCRITURADO' as const),
             }),
             atualizadoEm: new Date(),
           })
@@ -914,6 +925,7 @@ export class DistribuicaoDfeService {
       destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
       dataEmissao: parsed.dataEmissao,
       valorTotal: parsed.valorTotal,
+      ...spedMetadata,
       situacao: parsed.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: parsed.tpNfXml,
@@ -921,7 +933,9 @@ export class DistribuicaoDfeService {
       escrituracaoStatus:
         parsed.tipoDocumento === 'CTE'
           ? ('NAO_ESCRITURAVEL' as const)
-          : ('ESCRITURADO' as const),
+          : nfePendenteRevisao
+            ? ('PENDENTE_REVISAO' as const)
+            : ('ESCRITURADO' as const),
       xmlKey,
     };
 
@@ -947,6 +961,7 @@ export class DistribuicaoDfeService {
               destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
               dataEmissao: parsed.dataEmissao,
               valorTotal: parsed.valorTotal,
+              ...spedMetadata,
               situacao: parsed.situacao,
               tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
               tpNfXml: parsed.tpNfXml,
@@ -954,7 +969,9 @@ export class DistribuicaoDfeService {
               escrituracaoStatus:
                 parsed.tipoDocumento === 'CTE'
                   ? ('NAO_ESCRITURAVEL' as const)
-                  : ('ESCRITURADO' as const),
+                  : nfePendenteRevisao
+                    ? ('PENDENTE_REVISAO' as const)
+                    : ('ESCRITURADO' as const),
               xmlKey,
               danfeKey: null,
               atualizadoEm: new Date(),

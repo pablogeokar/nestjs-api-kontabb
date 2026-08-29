@@ -497,7 +497,7 @@ export class CfopService {
 }
 
 function normalizeTaxId(value: string) {
-  return value.replace(/\D/g, '');
+  return value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
 }
 
 function normalizeCfop(value: string) {

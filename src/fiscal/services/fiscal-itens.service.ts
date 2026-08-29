@@ -83,13 +83,14 @@ export class FiscalItensService {
 
   async getC190(input: ItemFilters) {
     const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
-    const where = this.buildWhere(input);
-    const cst = sql<string>`COALESCE(${documentosFiscaisItens.cstIcms}, ${documentosFiscaisItens.csosnIcms}, '')`;
-    const operacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
+    const where = this.buildWhere(input, true);
+    const cst = sql<string>`CASE WHEN ${documentosFiscaisItens.cstIcms} IS NOT NULL THEN COALESCE(${documentosFiscaisItens.origemMercadoria}, '0') || ${documentosFiscaisItens.cstIcms} ELSE COALESCE(${documentosFiscaisItens.csosnIcms}, '') END`;
+    const operacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) + COALESCE(${documentosFiscaisItens.valorIcmsSt}, 0) + COALESCE(${documentosFiscaisItens.valorFcpSt}, 0) + COALESCE(${documentosFiscaisItens.valorIpi}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
 
     const rows = await this.database.db
       .select({
         tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
+        documento_fiscal_id: documentosFiscaisItens.documentoFiscalId,
         cst_icms_csosn: cst,
         cfop: documentosFiscaisItens.cfop,
         cfops_xml: sql<
@@ -111,12 +112,14 @@ export class FiscalItensService {
       )
       .where(where)
       .groupBy(
+        documentosFiscaisItens.documentoFiscalId,
         documentosFiscaisItens.tipoOperacaoEscriturada,
         cst,
         documentosFiscaisItens.cfop,
         documentosFiscaisItens.aliquotaIcms,
       )
       .orderBy(
+        documentosFiscaisItens.documentoFiscalId,
         documentosFiscaisItens.tipoOperacaoEscriturada,
         documentosFiscaisItens.cfop,
         documentosFiscaisItens.aliquotaIcms,
@@ -133,15 +136,17 @@ export class FiscalItensService {
   }
 
   async getProdutos0200(input: ItemFilters) {
-    const where = this.buildWhere(input);
+    const where = this.buildWhere(input, true);
     const rows = await this.database.db
       .selectDistinctOn(
         [
           documentosFiscaisItens.clienteId,
+          documentosFiscais.emitenteCnpjCpf,
           documentosFiscaisItens.codigoProduto,
         ],
         {
           cliente_id: documentosFiscaisItens.clienteId,
+          participante_origem: documentosFiscais.emitenteCnpjCpf,
           codigo_produto: documentosFiscaisItens.codigoProduto,
           descricao: documentosFiscaisItens.descricao,
           ncm: documentosFiscaisItens.ncm,
@@ -159,6 +164,7 @@ export class FiscalItensService {
       .where(where)
       .orderBy(
         documentosFiscaisItens.clienteId,
+        documentosFiscais.emitenteCnpjCpf,
         documentosFiscaisItens.codigoProduto,
         desc(documentosFiscais.dataEmissao),
         desc(documentosFiscaisItens.criadoEm),
@@ -172,7 +178,7 @@ export class FiscalItensService {
 
   async getResumoLivros(input: ItemFilters) {
     const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
-    const where = this.buildWhere(input);
+    const where = this.buildWhere(input, true);
     const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
     const valorOperacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
     const valorSemTributacao = sql`GREATEST(${valorOperacao} - COALESCE(${documentosFiscaisItens.valorBcIcms}, 0), 0)`;
@@ -186,8 +192,8 @@ export class FiscalItensService {
         valor_contabil: sql<string>`COALESCE(SUM(${valorOperacao}), 0)`,
         valor_produtos: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBrutoProduto}), 0)`,
         base_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcms}), 0)`,
-        icms_creditado_debitado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' OR (${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido}) THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
-        credito_icms: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        icms_creditado_debitado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${documentosFiscaisItens.csosnIcms} IN ('101', '201') THEN COALESCE(${documentosFiscaisItens.valorCreditoIcmsSn}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        credito_icms: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${documentosFiscaisItens.csosnIcms} IN ('101', '201') THEN COALESCE(${documentosFiscaisItens.valorCreditoIcmsSn}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
         debito_icms: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
         isentas_nao_tributadas: sql<string>`COALESCE(SUM(CASE WHEN ${isentaOuNaoTributada} THEN ${valorSemTributacao} ELSE 0 END), 0)`,
         outras: sql<string>`COALESCE(SUM(CASE WHEN NOT ${isentaOuNaoTributada} THEN ${valorSemTributacao} ELSE 0 END), 0)`,
@@ -233,13 +239,13 @@ export class FiscalItensService {
       };
     }
 
-    const where = this.buildWhere(input);
+    const where = this.buildWhere(input, true);
     const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
     const rows = await this.database.db
       .select({
-        total_creditos: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        total_creditos: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${documentosFiscaisItens.csosnIcms} IN ('101', '201') THEN COALESCE(${documentosFiscaisItens.valorCreditoIcmsSn}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
         total_debitos: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
-        saldo_apurado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN -COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
+        saldo_apurado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'SAIDA' THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${documentosFiscaisItens.csosnIcms} IN ('101', '201') THEN -COALESCE(${documentosFiscaisItens.valorCreditoIcmsSn}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN -COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
       })
       .from(documentosFiscaisItens)
       .innerJoin(
@@ -296,8 +302,19 @@ export class FiscalItensService {
     };
   }
 
-  private buildWhere(input: ItemFilters): SQL | undefined {
+  private buildWhere(
+    input: ItemFilters,
+    onlyReadyForFiscalBooks = false,
+  ): SQL | undefined {
     const conditions: SQL[] = [];
+    if (onlyReadyForFiscalBooks) {
+      conditions.push(
+        eq(documentosFiscais.situacao, 'AUTORIZADA'),
+        eq(documentosFiscais.escriturado, true),
+        eq(documentosFiscais.escrituracaoStatus, 'ESCRITURADO'),
+        eq(documentosFiscaisItens.cfopRevisaoNecessaria, false),
+      );
+    }
     if (input.clienteId) {
       conditions.push(eq(documentosFiscaisItens.clienteId, input.clienteId));
     }

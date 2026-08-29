@@ -122,14 +122,17 @@ export function normalizeCnpjPayload(
 }
 
 export function isValidCnpj(value: string) {
-  const cnpj = digits(value);
-  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const cnpj = normalizeCnpj(value);
+  if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(cnpj) || /^(.)\1{13}$/.test(cnpj)) {
+    return false;
+  }
 
   const calculateDigit = (base: string, weights: number[]) => {
     const sum = base
       .split('')
       .reduce(
-        (total, digit, index) => total + Number(digit) * weights[index],
+        (total, character, index) =>
+          total + (character.charCodeAt(0) - 48) * weights[index],
         0,
       );
     const remainder = sum % 11;
@@ -195,7 +198,7 @@ function normalizeOpenCnpj(
   const simplesNacional = extractSimplesNacionalOpenCnpj(payload);
 
   return {
-    cnpj: digits(requestedCnpj),
+    cnpj: normalizeCnpj(requestedCnpj),
     company_name: companyName,
     address,
     primary_activity: primary
@@ -240,7 +243,7 @@ function normalizeReceitaWs(
   const simplesNacional = extractSimplesNacionalReceitaWs(payload);
 
   return {
-    cnpj: digits(requestedCnpj),
+    cnpj: normalizeCnpj(requestedCnpj),
     company_name: companyName,
     address,
     primary_activity: primary ?? null,
@@ -314,8 +317,8 @@ function joinStreet(type: string, street: string) {
 }
 
 function assertMatchingCnpj(value: unknown, requestedCnpj: string) {
-  const returned = digits(cleanText(value));
-  if (returned && returned !== digits(requestedCnpj)) {
+  const returned = normalizeCnpj(cleanText(value));
+  if (returned && returned !== normalizeCnpj(requestedCnpj)) {
     throw new Error('CNPJ_MISMATCH');
   }
 }
@@ -350,4 +353,11 @@ function cleanText(value: unknown) {
 
 function digits(value: string) {
   return value.replace(/\D/g, '');
+}
+
+function normalizeCnpj(value: string) {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, '');
 }

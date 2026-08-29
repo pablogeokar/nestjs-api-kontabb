@@ -1,4 +1,9 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import {
+  isValidFiscalAccessKey,
+  normalizeFiscalAccessKey,
+  normalizeFiscalTaxId,
+} from './fiscal-identifier';
 
 type XmlRecord = Record<string, unknown>;
 
@@ -102,8 +107,9 @@ export function parseDacteXml(xml: string): DacteData {
   }
 
   const chaveAcesso =
-    digits(text(infCte['@_Id'])) || digits(text(protocolo.chCTe));
-  if (!/^\d{44}$/.test(chaveAcesso)) {
+    normalizeFiscalAccessKey(text(infCte['@_Id'])) ||
+    normalizeFiscalAccessKey(text(protocolo.chCTe));
+  if (!chaveAcesso) {
     throw new Error('Chave de acesso do CT-e inválida.');
   }
 
@@ -205,18 +211,19 @@ export function parseCteEscrituracaoXml(xml: string): CteEscrituracaoParseData {
   }
 
   const chaveAcesso =
-    digits(text(infCte['@_Id'])) || digits(text(protocolo.chCTe));
-  const chaveProtocolo = digits(text(protocolo.chCTe));
+    normalizeFiscalAccessKey(text(infCte['@_Id'])) ||
+    normalizeFiscalAccessKey(text(protocolo.chCTe));
+  const chaveProtocolo = normalizeFiscalAccessKey(text(protocolo.chCTe));
   if (
-    !isValidAccessKey(chaveAcesso) ||
+    !isValidFiscalAccessKey(chaveAcesso) ||
     (chaveProtocolo && chaveAcesso !== chaveProtocolo)
   ) {
     throw new Error('Chave de acesso do CT-e inválida.');
   }
 
   const tomador = readTomador(infCte, ide);
-  const tomadorCnpjCpf = digits(tomador.party.documento);
-  if (!/^\d{11}(?:\d{3})?$/.test(tomadorCnpjCpf)) {
+  const tomadorCnpjCpf = normalizeFiscalTaxId(tomador.party.documento);
+  if (!tomadorCnpjCpf) {
     throw new Error('Tomador do serviço de transporte não encontrado.');
   }
 
@@ -329,12 +336,8 @@ function readReferencedCteKey(
   for (const group of groups.flatMap(toArray)) {
     const record = asRecord(group);
     for (const key of ['chCTe', 'chCte', 'refCte', 'refCteAnu']) {
-      const candidate = digits(text(record[key]));
-      if (
-        candidate !== currentKey &&
-        /^\d{44}$/.test(candidate) &&
-        isValidAccessKey(candidate)
-      ) {
+      const candidate = normalizeFiscalAccessKey(text(record[key]));
+      if (candidate !== currentKey && isValidFiscalAccessKey(candidate)) {
         return candidate;
       }
     }
@@ -381,8 +384,8 @@ function readQuantidades(value: unknown): DacteValueItem[] {
 function readDocumentosOriginarios(value: unknown) {
   const documentos = asRecord(value);
   const chavesNfe = toArray(documentos.infNFe)
-    .map((item) => text(asRecord(item).chave))
-    .filter((key) => /^\d{44}$/.test(key))
+    .map((item) => normalizeFiscalAccessKey(text(asRecord(item).chave)))
+    .filter(Boolean)
     .map((key) => `NF-e ${formatAccessKey(key)}`);
   const notas = toArray(documentos.infNF)
     .map((item) => asRecord(item))
@@ -433,7 +436,7 @@ function readObservacoes(value: unknown) {
 }
 
 export function formatAccessKey(key: string) {
-  return key.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  return key.replace(/([A-Z0-9]{4})(?=[A-Z0-9])/gi, '$1 ').trim();
 }
 
 function emptyParty(): DacteParty {
@@ -488,19 +491,6 @@ function municipalityCode(value: unknown) {
   return /^\d{7}$/.test(normalized) ? normalized : null;
 }
 
-function isValidAccessKey(value: string) {
-  if (!/^\d{44}$/.test(value)) return false;
-  let weight = 2;
-  let sum = 0;
-  for (let index = 42; index >= 0; index--) {
-    sum += Number(value[index]) * weight;
-    weight = weight === 9 ? 2 : weight + 1;
-  }
-  const remainder = sum % 11;
-  const digit = remainder === 0 || remainder === 1 ? 0 : 11 - remainder;
-  return digit === Number(value[43]);
-}
-
 function mapValue(value: string, values: Record<string, string>) {
   return values[value] || value || '-';
 }
@@ -510,10 +500,10 @@ function joinNonEmpty(first: string, second: string, separator: string) {
 }
 
 function formatTaxId(value: string) {
-  const normalized = digits(value);
+  const normalized = normalizeFiscalTaxId(value);
   if (normalized.length === 14) {
     return normalized.replace(
-      /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+      /^([A-Z0-9]{2})([A-Z0-9]{3})([A-Z0-9]{3})([A-Z0-9]{4})(\d{2})$/,
       '$1.$2.$3/$4-$5',
     );
   }
