@@ -84,15 +84,24 @@ Os docs citam Guia Prático **3.2.2 / leiaute 020**, mas as referências oficiai
 
 ## 3. Embasamento legal e normativo
 
-A escrituração e a apuração devem observar, no mínimo:
+A escrituração e a apuração devem observar, no mínimo. Os normativos abaixo estão consolidados na página oficial da EFD ICMS/IPI da Receita Federal ([gov.br/sped → EFD ICMS IPI](https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-icms-ipi)). *Conteúdo reescrito para conformidade com restrições de licenciamento.*
 
-- **Lei Complementar nº 87/1996 (Lei Kandir)** — regra-matriz do ICMS, não-cumulatividade (art. 19 e 20: direito a crédito nas entradas tributadas, inclusive **crédito de ICMS sobre frete/CT-e** quando vinculado a operação tributada), vedações e estornos (arts. 20–21).
+**Normativos que instituem e regem a EFD (fonte oficial):**
+
+- **Convênio ICMS nº 143, de 15/12/2006** — instituiu a EFD ICMS/IPI.
+- **Protocolo ICMS nº 77, de 18/09/2008** — dispõe sobre a obrigatoriedade da EFD.
+- **Ajuste SINIEF nº 02, de 03/04/2009** — disciplina a EFD (SPED Fiscal).
+- **Protocolo ICMS nº 3, de 01/04/2011** — fixa prazo para a obrigatoriedade da EFD.
+- **Ato COTEPE/ICMS nº 44, de 07/08/2018** (e alterações) — **especificações técnicas do leiaute** do arquivo digital da EFD ICMS/IPI (blocos, registros, campos, validações). É a fonte normativa dos layouts do §5, junto ao **Guia Prático da EFD ICMS/IPI** vigente.
+- **Decreto nº 7.212, de 15/06/2010 (RIPI)** — regulamenta o **IPI** (contribuintes, base de cálculo, créditos, período de apuração — Bloco E500+).
+- **Instruções Normativas RFB** para o Livro de Registro de Controle da Produção e do Estoque (Bloco K) e casos específicos: **IN RFB nº 1.371/2013** (contribuintes do IPI em PE), **IN RFB nº 1.652/2016** e **IN RFB nº 1.672/2016** (Bloco K para fabricantes de bebidas e de produtos do fumo), **IN RFB nº 1.685/2017** (contribuintes do IPI no DF).
+
+**Fundamentos materiais dos tributos:**
+
+- **Lei Complementar nº 87/1996 (Lei Kandir)** — regra-matriz do ICMS, não-cumulatividade (arts. 19 e 20: direito a crédito nas entradas tributadas, inclusive **crédito de ICMS sobre frete/CT-e** quando vinculado a operação tributada), vedações e estornos (arts. 20–21).
 - **Constituição Federal, art. 155, §2º** — não-cumulatividade do ICMS e partilha do **DIFAL** nas operações interestaduais a consumidor final (EC 87/2015 e LC 190/2022).
-- **Convênio ICMS 142/2018** — regras gerais da **substituição tributária (ICMS-ST)**.
-- **RIPI (Decreto nº 7.212/2010)** — apuração do **IPI**, contribuintes, base de cálculo, créditos e período de apuração (Bloco E500+).
+- **Convênio ICMS nº 142/2018** — regras gerais da **substituição tributária (ICMS-ST)**.
 - **Lei Complementar nº 123/2006 (Simples Nacional)** — o optante recolhe ICMS no DAS e, em regra, **não se credita nem escritura ICMS/IPI na EFD ICMS/IPI**; o CT-e/NF-e é mantido para conferência, sem débito/crédito.
-- **Ajuste SINIEF 02/2009** — institui a **EFD (SPED Fiscal)** e a obrigatoriedade por UF.
-- **ATO COTEPE/ICMS nº 44/2018** (e alterações) e o **Guia Prático da EFD ICMS/IPI** vigente — **especificações técnicas do arquivo** (blocos, registros, campos, validações). É a fonte normativa dos layouts do §5.
 - **Tabela oficial de CFOP** (Convênio S/Nº de 1970 e atualizações) e **tabelas de CST/CSOSN** (ICMS, IPI, PIS, COFINS).
 
 > **Regra de ouro:** onde houver dúvida entre creditar automaticamente ou não (frete, subcontratação, benefícios, vedações estaduais), **não creditar** e marcar `revisaoNecessaria = true` — o software não deve assumir posições fiscais controversas sem validação humana.
@@ -248,7 +257,8 @@ Sugestões (ajustar tipos ao padrão de `schema.ts`):
 
 ## 9. Pontos a confirmar antes de codar
 
-- **Versão do leiaute / Guia Prático vigente para o período.** As fontes oficiais atuais indicam **Guia Prático v3.2.0 (vigência jan/2026)** e **PVA 6.1.0** (CNPJ alfanumérico), enquanto os docs internos citam **3.2.2 / leiaute 020**. Fixar a versão em função do período e validar os campos exatos de cada registro no ATO COTEPE/ICMS 44/2018 vigente antes de emitir arquivo definitivo. Referências: [Guia Prático EFD ICMS/IPI](https://sped.rfb.gov.br/item/show/1573), [ATO COTEPE/ICMS 44/18](https://www.confaz.fazenda.gov.br/legislacao/atos/2018/ato-cotepe-icms-44-18), [PVA EFD ICMS IPI 6.1.0](https://www.gov.br/sped/pt-br/assuntos/comunicados/efd-icms-ipi/publicacao-do-programa-efd-icms-ipi-versao-6-1.0). *Conteúdo das fontes foi reescrito para conformidade com restrições de licenciamento.*
+- **Fonte oficial primária da documentação:** a página consolidada da Receita Federal para a EFD ICMS/IPI é [gov.br/sped → Escriturações Digitais → EFD ICMS IPI](https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-icms-ipi). Use-a como ponto de partida para obter o **Guia Prático**, o **leiaute (Ato COTEPE 44/2018 e alterações)**, os **comunicados** e a versão vigente do **PVA**. Sempre confira a data de vigência do documento contra o período de apuração alvo.
+- **Versão do leiaute / Guia Prático vigente para o período.** As fontes oficiais recentes indicam **Guia Prático v3.2.0 (vigência a partir de jan/2026)** e **PVA 6.1.0** (adequação ao CNPJ alfanumérico), enquanto os docs internos citam **3.2.2 / leiaute 020**. Fixar a versão em função do período e validar os campos exatos de cada registro no Ato COTEPE/ICMS 44/2018 vigente antes de emitir arquivo definitivo. Referências: [Guia Prático e leiaute](https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-icms-ipi), [ATO COTEPE/ICMS 44/18](https://www.confaz.fazenda.gov.br/legislacao/atos/2018/ato-cotepe-icms-44-18), [PVA EFD ICMS IPI 6.1.0](https://www.gov.br/sped/pt-br/assuntos/comunicados/efd-icms-ipi/publicacao-do-programa-efd-icms-ipi-versao-6-1.0). *Conteúdo das fontes foi reescrito para conformidade com restrições de licenciamento.*
 - **Obrigatoriedade por UF e por perfil** (Ajuste SINIEF 02/2009 e legislação estadual): confirmar quais clientes são obrigados e o **perfil (A/B/C)**, pois isso muda a granularidade exigida (ex.: dispensa de C170 para NFC-e).
 - **Política de crédito** (frete/CT-e, benefícios, vedações estaduais): manter a diretriz de **marcar para revisão** em vez de creditar automaticamente em casos ambíguos.
 - **CNPJ alfanumérico**: o PVA 6.1.0 já contempla; garantir que validações de chave e de `0150`/participantes suportem o novo formato quando aplicável.

@@ -65,6 +65,6 @@ o leiaute correspondente e o resultado deve ser validado no PVA.
 
 Referências oficiais:
 
-- [Guia Prático EFD ICMS/IPI 3.2.2](https://sped.rfb.gov.br/item/show/8112)
-- [Manuais e Guias Práticos da EFD ICMS/IPI](https://sped.rfb.gov.br/item/show/1573)
+- [EFD ICMS IPI — página oficial da Receita Federal (Guia Prático, leiaute e comunicados)](https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-icms-ipi)
+- [ATO COTEPE/ICMS 44/2018 — especificações técnicas do leiaute](https://www.confaz.fazenda.gov.br/legislacao/atos/2018/ato-cotepe-icms-44-18)
 - [Tabela oficial de CFOP](https://www.nfe.fazenda.gov.br/portal/listaConteudo.aspx?tipoConteudo=/NJarYc9nus=)
