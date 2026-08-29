@@ -118,6 +118,12 @@ describe('DF-e document parser', () => {
       serie: '2',
       numeroDocumento: '456',
       valorTotal: '999.90',
+      cteEscrituracao: {
+        tomadorCnpjCpf: '98765432000110',
+        tomadorPapel: 'REMETENTE',
+        cfop: '5353',
+        valorTotalServico: '999.90',
+      },
     });
   });
 
@@ -244,10 +250,12 @@ function buildCteProc(modelo: '57' | '67'): string {
     <cteProc xmlns="http://www.portalfiscal.inf.br/cte" versao="4.00">
       <CTe>
         <infCte Id="CTe${chave}" versao="4.00">
-          <ide><mod>${modelo}</mod><serie>2</serie><nCT>456</nCT><dhEmi>2024-08-16T08:00:00-03:00</dhEmi></ide>
+          <ide><CFOP>5353</CFOP><mod>${modelo}</mod><serie>2</serie><nCT>456</nCT><dhEmi>2024-08-16T08:00:00-03:00</dhEmi><tpCTe>0</tpCTe><tpServ>0</tpServ><modal>01</modal><cMunIni>2927408</cMunIni><cMunFim>2910800</cMunFim><toma3><toma>0</toma></toma3></ide>
           <emit><CNPJ>12345678000195</CNPJ><xNome>Transportadora Teste</xNome></emit>
+          <rem><CNPJ>98765432000110</CNPJ><xNome>Remetente Teste</xNome></rem>
           <dest><CNPJ>98765432000110</CNPJ><xNome>Destino Teste</xNome></dest>
-          <vPrest><vTPrest>999.90</vTPrest></vPrest>
+          <vPrest><vTPrest>999.90</vTPrest><vRec>999.90</vRec></vPrest>
+          <imp><ICMS><ICMS00><CST>00</CST><vBC>999.90</vBC><pICMS>12.0000</pICMS><vICMS>119.99</vICMS></ICMS00></ICMS><vTotTrib>119.99</vTotTrib></imp>
         </infCte>
       </CTe>
       <protCTe><infProt><chCTe>${chave}</chCTe><cStat>100</cStat></infProt></protCTe>

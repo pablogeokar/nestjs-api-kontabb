@@ -33,6 +33,8 @@ import {
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
 import { CfopService } from './cfop.service';
+import { FiscalCteService } from './fiscal-cte.service';
+import type { RegimeTributario } from '../../clientes/clientes.types';
 
 export interface FiscalSyncResult {
   status:
@@ -78,6 +80,7 @@ export class DistribuicaoDfeService {
     private readonly storage: StorageService,
     private readonly nfeWizard: NfeWizardService,
     private readonly cfopService: CfopService,
+    private readonly fiscalCteService: FiscalCteService,
   ) {}
 
   /**
@@ -94,6 +97,8 @@ export class DistribuicaoDfeService {
         id: clientes.id,
         cnpj: clientes.cnpj,
         uf: clientes.uf,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
       })
       .from(clientes)
       .where(eq(clientes.id, clienteId))
@@ -103,7 +108,7 @@ export class DistribuicaoDfeService {
       throw new Error(`Cliente ${clienteId} não encontrado.`);
     }
 
-    const { cnpj, uf } = clienteData[0];
+    const { cnpj, uf, regimeTributario, apuraIcms } = clienteData[0];
 
     // 2. Buscar ou criar controle de NSU
     let nsuControl = await this.database.db
@@ -283,7 +288,12 @@ export class DistribuicaoDfeService {
             continue;
           }
 
-          if (await this.salvarDocumento(clienteId, cnpj, parsed)) {
+          if (
+            await this.salvarDocumento(clienteId, cnpj, parsed, {
+              regimeTributario: regimeTributario as RegimeTributario | null,
+              apuraIcms,
+            })
+          ) {
             documentosProcessados += 1;
           }
           ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
@@ -495,6 +505,8 @@ export class DistribuicaoDfeService {
           manifestacaoStatus: documentosFiscais.manifestacaoStatus,
           tipoOperacaoEscriturada: documentosFiscais.tipoOperacaoEscriturada,
           tpNfXml: documentosFiscais.tpNfXml,
+          escriturado: documentosFiscais.escriturado,
+          escrituracaoStatus: documentosFiscais.escrituracaoStatus,
           criadoEm: documentosFiscais.criadoEm,
         })
         .from(documentosFiscais)
@@ -523,6 +535,8 @@ export class DistribuicaoDfeService {
       manifestacao_status: row.manifestacaoStatus,
       tipo_operacao_escriturada: row.tipoOperacaoEscriturada,
       tp_nf_xml: row.tpNfXml,
+      escriturado: row.escriturado,
+      escrituracao_status: row.escrituracaoStatus,
       criado_em: row.criadoEm.toISOString(),
     }));
 
@@ -766,14 +780,34 @@ export class DistribuicaoDfeService {
     clienteId: string,
     cnpj: string,
     parsed: ParsedDocumentoFiscal,
+    fiscalConfig: {
+      regimeTributario: RegimeTributario | null;
+      apuraIcms: boolean;
+    } = { regimeTributario: null, apuraIcms: false },
   ): Promise<boolean> {
-    const escrituracao = await this.cfopService.prepararItensEscrituracao({
-      clienteId,
-      clienteCnpjCpf: cnpj,
-      emitenteCnpjCpf: parsed.emitenteCnpjCpf,
-      tpNfXml: parsed.tpNfXml,
-      itens: parsed.itens,
-    });
+    const ctePreparada = parsed.cteEscrituracao
+      ? await this.fiscalCteService.prepararEscrituracao({
+          clienteId,
+          clienteCnpjCpf: cnpj,
+          regimeTributario: fiscalConfig.regimeTributario,
+          apuraIcms: fiscalConfig.apuraIcms,
+          situacao: parsed.situacao,
+          cte: parsed.cteEscrituracao,
+        })
+      : null;
+    if (parsed.tipoDocumento === 'CTE' && !ctePreparada) {
+      throw new Error('Dados de escrituração do CT-e não foram extraídos.');
+    }
+    const escrituracao =
+      parsed.tipoDocumento === 'CTE'
+        ? { tipoOperacaoEscriturada: 'ENTRADA' as const, itens: [] }
+        : await this.cfopService.prepararItensEscrituracao({
+            clienteId,
+            clienteCnpjCpf: cnpj,
+            emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+            tpNfXml: parsed.tpNfXml,
+            itens: parsed.itens,
+          });
     // Um resumo/evento salvo por uma versao anterior deve ser substituido
     // quando o XML fiscal completo chegar para o mesmo cliente.
     const existing = await this.database.db
@@ -802,6 +836,10 @@ export class DistribuicaoDfeService {
           .set({
             tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
             tpNfXml: parsed.tpNfXml,
+            ...(parsed.tipoDocumento !== 'CTE' && {
+              escriturado: true,
+              escrituracaoStatus: 'ESCRITURADO' as const,
+            }),
             atualizadoEm: new Date(),
           })
           .where(eq(documentosFiscais.id, existing[0].id));
@@ -820,6 +858,14 @@ export class DistribuicaoDfeService {
               clienteId,
             })),
           );
+        }
+        if (ctePreparada) {
+          await this.fiscalCteService.persistirEscrituracao(tx, {
+            documentoFiscalId: existing[0].id,
+            clienteId,
+            chaveAcesso: parsed.chaveAcesso,
+            preparada: ctePreparada,
+          });
         }
       });
       this.logger.debug(
@@ -858,6 +904,11 @@ export class DistribuicaoDfeService {
       situacao: parsed.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: parsed.tpNfXml,
+      escriturado: parsed.tipoDocumento !== 'CTE',
+      escrituracaoStatus:
+        parsed.tipoDocumento === 'CTE'
+          ? ('NAO_ESCRITURAVEL' as const)
+          : ('ESCRITURADO' as const),
       xmlKey,
     };
 
@@ -886,6 +937,11 @@ export class DistribuicaoDfeService {
               situacao: parsed.situacao,
               tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
               tpNfXml: parsed.tpNfXml,
+              escriturado: parsed.tipoDocumento !== 'CTE',
+              escrituracaoStatus:
+                parsed.tipoDocumento === 'CTE'
+                  ? ('NAO_ESCRITURAVEL' as const)
+                  : ('ESCRITURADO' as const),
               xmlKey,
               danfeKey: null,
               atualizadoEm: new Date(),
@@ -911,6 +967,14 @@ export class DistribuicaoDfeService {
               clienteId,
             })),
           );
+        }
+        if (ctePreparada) {
+          await this.fiscalCteService.persistirEscrituracao(tx, {
+            documentoFiscalId,
+            clienteId,
+            chaveAcesso: parsed.chaveAcesso,
+            preparada: ctePreparada,
+          });
         }
       });
     } catch (error: unknown) {

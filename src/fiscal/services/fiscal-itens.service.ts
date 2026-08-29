@@ -11,6 +11,7 @@ import {
   simplesNacionalSemApuracaoIcms,
   type RegimeTributario,
 } from '../../clientes/clientes.types';
+import { FiscalCteService } from './fiscal-cte.service';
 
 const SIMPLES_SEM_APURACAO_OBSERVACAO =
   'Cliente optante pelo Simples Nacional — ICMS recolhido via DAS. Apuração de débito/crédito não aplicável.';
@@ -37,7 +38,10 @@ interface ItemFilters {
 
 @Injectable()
 export class FiscalItensService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly fiscalCteService?: FiscalCteService,
+  ) {}
 
   async listItens(input: ItemFilters & { pagination: PaginationParams }) {
     const where = this.buildWhere(input);
@@ -237,12 +241,33 @@ export class FiscalItensService {
         eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
       )
       .where(where);
+    const apuracaoMercadorias = rows[0] ?? {
+      total_creditos: '0',
+      total_debitos: '0',
+      saldo_apurado: '0',
+    };
+    const creditosFrete =
+      input.tipoOperacao === 'SAIDA' || !this.fiscalCteService
+        ? '0.00'
+        : await this.fiscalCteService.getTotalCreditoIcms({
+            clienteId: input.clienteId,
+            documentoId: input.documentoId,
+            cfop: input.cfop,
+            cst: input.cst,
+            dataInicio: input.dataInicio,
+            dataFim: input.dataFim,
+          });
     return {
-      ...(rows[0] ?? {
-        total_creditos: '0',
-        total_debitos: '0',
-        saldo_apurado: '0',
-      }),
+      total_creditos: addMoney(
+        apuracaoMercadorias.total_creditos,
+        creditosFrete,
+      ),
+      total_debitos: normalizeMoney(apuracaoMercadorias.total_debitos),
+      saldo_apurado: subtractMoney(
+        apuracaoMercadorias.saldo_apurado,
+        creditosFrete,
+      ),
+      creditos_frete_cte: normalizeMoney(creditosFrete),
       observacao: null,
     };
   }
@@ -466,4 +491,30 @@ export class FiscalItensService {
       atualizado_em: item.atualizadoEm.toISOString(),
     };
   }
+}
+
+function moneyToCents(value: string) {
+  const match = value.trim().match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
+  if (!match) return 0n;
+  const cents =
+    BigInt(match[2]) * 100n + BigInt((match[3] ?? '').padEnd(2, '0'));
+  return match[1] === '-' ? -cents : cents;
+}
+
+function centsToMoney(value: bigint) {
+  const sign = value < 0n ? '-' : '';
+  const absolute = value < 0n ? -value : value;
+  return `${sign}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
+}
+
+function normalizeMoney(value: string) {
+  return centsToMoney(moneyToCents(value));
+}
+
+function addMoney(first: string, second: string) {
+  return centsToMoney(moneyToCents(first) + moneyToCents(second));
+}
+
+function subtractMoney(first: string, second: string) {
+  return centsToMoney(moneyToCents(first) - moneyToCents(second));
 }

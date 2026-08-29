@@ -75,6 +75,8 @@ describe('EscrituracaoFiscalService', () => {
       itensAtualizados: 1,
       itensParaRevisao: 0,
       documentosComTpNfInferido: 0,
+      ctesAtualizados: 0,
+      ctesComFalha: 0,
       sucesso: true,
     });
     expect(updates).toHaveLength(2);

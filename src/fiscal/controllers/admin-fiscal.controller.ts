@@ -51,9 +51,11 @@ import { ImportacaoXmlFiscalService } from '../services/importacao-xml-fiscal.se
 import { UploadCertificadoDto } from '../dto/upload-certificado.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
 import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
+import { QueryCteFiscalDto } from '../dto/query-cte-fiscal.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
 import { FiscalItensService } from '../services/fiscal-itens.service';
+import { FiscalCteService } from '../services/fiscal-cte.service';
 import { getRequestId, type RequestWithId } from '../../common/request-id';
 
 @ApiTags('Fiscal (Admin)')
@@ -72,6 +74,7 @@ export class AdminFiscalController {
     private readonly importacaoXmlService: ImportacaoXmlFiscalService,
     private readonly rateLimit: RateLimitService,
     private readonly fiscalItensService: FiscalItensService,
+    private readonly fiscalCteService: FiscalCteService,
   ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
@@ -375,6 +378,24 @@ export class AdminFiscalController {
     return buildPaginatedResponse(result.data, result.total, pagination);
   }
 
+  @Get('cte')
+  @ApiOperation({ summary: 'Listar CT-e e status de escrituração' })
+  async listCtes(@Query() query: QueryCteFiscalDto) {
+    const pagination = parsePaginationParams(query);
+    const result = await this.fiscalCteService.listCtes({
+      clienteId: query.clienteId,
+      documentoId: query.documentoId,
+      escrituravel: parseOptionalBoolean(query.escrituravel),
+      revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
+      cfop: query.cfop,
+      cst: query.cst,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+      pagination,
+    });
+    return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
   @Get('documentos/:id/itens')
   @ApiOperation({ summary: 'Listar itens de um documento fiscal' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
@@ -419,6 +440,47 @@ export class AdminFiscalController {
     });
   }
 
+  @Get('relatorios/d100')
+  @ApiOperation({ summary: 'Registros de CT-e equivalentes ao SPED D100' })
+  async getD100(@Query() query: QueryCteFiscalDto) {
+    return this.fiscalCteService.getD100({
+      clienteId: query.clienteId,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cst: query.cst,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
+  }
+
+  @Get('relatorios/d190')
+  @ApiOperation({ summary: 'Apuração analítica de CT-e para o SPED D190' })
+  async getD190(@Query() query: QueryCteFiscalDto) {
+    return this.fiscalCteService.getD190({
+      clienteId: query.clienteId,
+      documentoId: query.documentoId,
+      cfop: query.cfop,
+      cst: query.cst,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    });
+  }
+
+  @Get('relatorios/cte/apuracao-icms')
+  @ApiOperation({ summary: 'Crédito de ICMS dos fretes tomados' })
+  async getApuracaoIcmsFrete(@Query() query: QueryCteFiscalDto) {
+    return {
+      data: await this.fiscalCteService.getApuracaoFrete({
+        clienteId: query.clienteId,
+        documentoId: query.documentoId,
+        cfop: query.cfop,
+        cst: query.cst,
+        dataInicio: parseFiscalStartDate(query.dataInicio),
+        dataFim: parseFiscalEndDate(query.dataFim),
+      }),
+    };
+  }
+
   @Get('relatorios/produtos-0200')
   @ApiOperation({ summary: 'Cadastro consolidado de produtos para SPED 0200' })
   async getProdutos0200(@Query() query: QueryItensFiscaisDto) {
@@ -438,6 +500,13 @@ export class AdminFiscalController {
   @Get('relatorios/livros-icms')
   @ApiOperation({ summary: 'Resumo de entradas e saídas por CFOP e alíquota' })
   async getResumoLivros(@Query() query: QueryItensFiscaisDto) {
+    const filtrosCte = {
+      clienteId: query.clienteId,
+      cfop: query.cfop,
+      cst: query.cst,
+      dataInicio: parseFiscalStartDate(query.dataInicio),
+      dataFim: parseFiscalEndDate(query.dataFim),
+    };
     return {
       data: await this.fiscalItensService.getResumoLivros({
         clienteId: query.clienteId,
@@ -449,6 +518,8 @@ export class AdminFiscalController {
         dataInicio: parseFiscalStartDate(query.dataInicio),
         dataFim: parseFiscalEndDate(query.dataFim),
       }),
+      transportes_bloco_d:
+        await this.fiscalCteService.getResumoLivros(filtrosCte),
     };
   }
 
@@ -549,4 +620,8 @@ export class AdminFiscalController {
       };
     }
   }
+}
+
+function parseOptionalBoolean(value?: string) {
+  return value === undefined ? undefined : value === 'true';
 }

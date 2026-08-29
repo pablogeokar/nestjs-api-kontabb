@@ -6,6 +6,7 @@ import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   documentosFiscais,
+  documentosFiscaisCteEscrituracao,
   documentosFiscaisItens,
   eventosAuditoria,
 } from '../../database/schema';
@@ -15,6 +16,8 @@ import {
   type ParsedDocumentoFiscal,
 } from './dfe-document.parser';
 import { CfopService } from './cfop.service';
+import { FiscalCteService } from './fiscal-cte.service';
+import type { RegimeTributario } from '../../clientes/clientes.types';
 
 const MAX_XML_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_XML_MIMES = new Set([
@@ -32,6 +35,8 @@ interface ImportTarget {
   id: string;
   cnpj: string;
   razaoSocial: string;
+  regimeTributario?: string | null;
+  apuraIcms?: boolean;
 }
 
 interface TargetResult {
@@ -68,6 +73,7 @@ export class ImportacaoXmlFiscalService {
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
     private readonly cfopService: CfopService,
+    private readonly fiscalCteService: FiscalCteService,
   ) {}
 
   async importar(input: {
@@ -281,6 +287,8 @@ export class ImportacaoXmlFiscalService {
         id: clientes.id,
         cnpj: clientes.cnpj,
         razaoSocial: clientes.razaoSocial,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
       })
       .from(clientes)
       .where(eq(clientes.id, clienteId))
@@ -295,6 +303,8 @@ export class ImportacaoXmlFiscalService {
         id: clientes.id,
         cnpj: clientes.cnpj,
         razaoSocial: clientes.razaoSocial,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
       })
       .from(clientes)
       .where(inArray(clientes.cnpj, participantIds));
@@ -307,13 +317,30 @@ export class ImportacaoXmlFiscalService {
     requestId: string;
   }): Promise<'IMPORTADO' | 'DUPLICADO'> {
     const { target, documento } = input;
-    const escrituracao = await this.cfopService.prepararItensEscrituracao({
-      clienteId: target.id,
-      clienteCnpjCpf: target.cnpj,
-      emitenteCnpjCpf: documento.emitenteCnpjCpf,
-      tpNfXml: documento.tpNfXml,
-      itens: documento.itens,
-    });
+    const ctePreparada = documento.cteEscrituracao
+      ? await this.fiscalCteService.prepararEscrituracao({
+          clienteId: target.id,
+          clienteCnpjCpf: target.cnpj,
+          regimeTributario:
+            (target.regimeTributario as RegimeTributario | null) ?? null,
+          apuraIcms: target.apuraIcms ?? false,
+          situacao: documento.situacao,
+          cte: documento.cteEscrituracao,
+        })
+      : null;
+    if (documento.tipoDocumento === 'CTE' && !ctePreparada) {
+      throw new Error('Dados de escrituração do CT-e não foram extraídos.');
+    }
+    const escrituracao =
+      documento.tipoDocumento === 'CTE'
+        ? { tipoOperacaoEscriturada: 'ENTRADA' as const, itens: [] }
+        : await this.cfopService.prepararItensEscrituracao({
+            clienteId: target.id,
+            clienteCnpjCpf: target.cnpj,
+            emitenteCnpjCpf: documento.emitenteCnpjCpf,
+            tpNfXml: documento.tpNfXml,
+            itens: documento.itens,
+          });
     const existingRows = await this.database.db
       .select({
         id: documentosFiscais.id,
@@ -337,6 +364,10 @@ export class ImportacaoXmlFiscalService {
           .set({
             tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
             tpNfXml: documento.tpNfXml,
+            ...(documento.tipoDocumento !== 'CTE' && {
+              escriturado: true,
+              escrituracaoStatus: 'ESCRITURADO' as const,
+            }),
             atualizadoEm: new Date(),
           })
           .where(eq(documentosFiscais.id, existing.id));
@@ -355,6 +386,23 @@ export class ImportacaoXmlFiscalService {
               clienteId: target.id,
             })),
           );
+        }
+        if (ctePreparada) {
+          await this.fiscalCteService.persistirEscrituracao(tx, {
+            documentoFiscalId: existing.id,
+            clienteId: target.id,
+            chaveAcesso: documento.chaveAcesso,
+            preparada: ctePreparada,
+          });
+        } else {
+          await tx
+            .delete(documentosFiscaisCteEscrituracao)
+            .where(
+              eq(
+                documentosFiscaisCteEscrituracao.documentoFiscalId,
+                existing.id,
+              ),
+            );
         }
       });
       return 'DUPLICADO';
@@ -399,6 +447,11 @@ export class ImportacaoXmlFiscalService {
       situacao: documento.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: documento.tpNfXml,
+      escriturado: documento.tipoDocumento !== 'CTE',
+      escrituracaoStatus:
+        documento.tipoDocumento === 'CTE'
+          ? ('NAO_ESCRITURAVEL' as const)
+          : ('ESCRITURADO' as const),
       xmlKey,
       danfeKey: null,
       atualizadoEm: new Date(),
@@ -406,6 +459,7 @@ export class ImportacaoXmlFiscalService {
 
     try {
       let persisted: Array<{ id: string }> = [];
+      let ctePersistedStatus: CteEscrituracaoPreparadaStatus | undefined;
       await this.database.db.transaction(async (tx) => {
         if (existing) {
           persisted = await tx
@@ -453,6 +507,16 @@ export class ImportacaoXmlFiscalService {
               })),
             );
           }
+          if (ctePreparada) {
+            const ctePersistida =
+              await this.fiscalCteService.persistirEscrituracao(tx, {
+                documentoFiscalId,
+                clienteId: target.id,
+                chaveAcesso: documento.chaveAcesso,
+                preparada: ctePreparada,
+              });
+            ctePersistedStatus = ctePersistida.status;
+          }
         }
       });
 
@@ -468,6 +532,8 @@ export class ImportacaoXmlFiscalService {
         chaveAcesso: documento.chaveAcesso,
         tipoDocumento: documento.tipoDocumento,
         clienteId: target.id,
+        cteEscrituracaoStatus:
+          ctePersistedStatus ?? ctePreparada?.escrituracaoStatus,
       });
 
       if (existing) {
@@ -492,20 +558,41 @@ export class ImportacaoXmlFiscalService {
     chaveAcesso: string;
     tipoDocumento: string;
     clienteId: string;
+    cteEscrituracaoStatus?: CteEscrituracaoPreparadaStatus;
   }) {
     try {
-      await this.database.db.insert(eventosAuditoria).values({
-        atorUserId: input.actorUserId,
-        acao: 'DOCUMENTO_FISCAL_XML_IMPORTADO',
-        entidadeTipo: 'DOCUMENTO_FISCAL',
-        entidadeId: input.documentoId,
-        dados: {
-          origem: 'UPLOAD_MANUAL',
-          tipoDocumento: input.tipoDocumento,
-          chaveAcesso: input.chaveAcesso,
-          clienteId: input.clienteId,
+      await this.database.db.insert(eventosAuditoria).values([
+        {
+          atorUserId: input.actorUserId,
+          acao: 'DOCUMENTO_FISCAL_XML_IMPORTADO',
+          entidadeTipo: 'DOCUMENTO_FISCAL',
+          entidadeId: input.documentoId,
+          dados: {
+            origem: 'UPLOAD_MANUAL',
+            tipoDocumento: input.tipoDocumento,
+            chaveAcesso: input.chaveAcesso,
+            clienteId: input.clienteId,
+          },
         },
-      });
+        ...(input.cteEscrituracaoStatus
+          ? [
+              {
+                atorUserId: input.actorUserId,
+                acao:
+                  input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
+                    ? 'CTE_NAO_ESCRITURAVEL'
+                    : 'CTE_ESCRITURADO',
+                entidadeTipo: 'DOCUMENTO_FISCAL',
+                entidadeId: input.documentoId,
+                dados: {
+                  origem: 'UPLOAD_MANUAL',
+                  clienteId: input.clienteId,
+                  escrituracaoStatus: input.cteEscrituracaoStatus,
+                },
+              },
+            ]
+          : []),
+      ]);
     } catch (error: unknown) {
       this.logger.error('fiscal_xml_import_audit_failed', error, {
         requestId: input.requestId,
@@ -587,3 +674,6 @@ export class ImportacaoXmlFiscalService {
     return parts.join(', ') || 'Nenhum registro processado.';
   }
 }
+
+type CteEscrituracaoPreparadaStatus =
+  'ESCRITURADO' | 'NAO_ESCRITURAVEL' | 'PENDENTE_REVISAO';

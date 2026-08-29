@@ -1,6 +1,10 @@
 import { gunzipSync } from 'node:zlib';
 import { XMLValidator } from 'fast-xml-parser';
 import { parseNfeItems, type ParsedNfeItem } from './nfe-item.parser';
+import {
+  parseCteEscrituracaoXml,
+  type CteEscrituracaoParseData,
+} from './dacte.parser';
 
 export type TipoConsultaDfe = 'NFE' | 'CTE';
 
@@ -34,6 +38,7 @@ export interface ParsedDocumentoFiscal {
   situacao: 'AUTORIZADA' | 'CANCELADA' | 'DENEGADA';
   participantesCnpjCpf: string[];
   itens: ParsedNfeItem[];
+  cteEscrituracao: CteEscrituracaoParseData | null;
   xmlContent: string;
 }
 
@@ -375,6 +380,14 @@ function parseFiscalXml(
     tipoConsulta === 'NFE' ? extractTagValue(infElement.content, 'tpNF') : '1';
   const tpNfXml: ParsedDocumentoFiscal['tpNfXml'] =
     tpNfValue === '0' ? '0' : '1';
+  let cteEscrituracao: CteEscrituracaoParseData | null = null;
+  if (tipoConsulta === 'CTE') {
+    try {
+      cteEscrituracao = parseCteEscrituracaoXml(xml);
+    } catch {
+      return null;
+    }
+  }
 
   return {
     chaveAcesso,
@@ -396,6 +409,7 @@ function parseFiscalXml(
       tipoConsulta,
     ),
     itens: tipoConsulta === 'NFE' ? parseNfeItems(xml) : [],
+    cteEscrituracao,
     xmlContent: xml,
   };
 }

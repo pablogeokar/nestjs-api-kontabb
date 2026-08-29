@@ -92,7 +92,35 @@ describe('FiscalItensService', () => {
       total_creditos: '15.00',
       total_debitos: '40.00',
       saldo_apurado: '25.00',
+      creditos_frete_cte: '0.00',
       observacao: null,
+    });
+  });
+
+  it('soma o crédito dos CT-e tomados à apuração de entradas', async () => {
+    const database = createApuracaoDatabase(
+      { regimeTributario: 'LUCRO_REAL', apuraIcms: true },
+      {
+        total_creditos: '15.00',
+        total_debitos: '40.00',
+        saldo_apurado: '25.00',
+      },
+    );
+    const fiscalCte = {
+      getTotalCreditoIcms: jest.fn().mockResolvedValue('5.25'),
+    };
+    const service = new FiscalItensService(
+      database as never,
+      fiscalCte as never,
+    );
+
+    await expect(
+      service.getApuracaoIcms({ clienteId: 'cliente-1' }),
+    ).resolves.toMatchObject({
+      total_creditos: '20.25',
+      total_debitos: '40.00',
+      saldo_apurado: '19.75',
+      creditos_frete_cte: '5.25',
     });
   });
 

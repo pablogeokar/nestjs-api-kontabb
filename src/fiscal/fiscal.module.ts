@@ -19,6 +19,7 @@ import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.ser
 import { FiscalItensService } from './services/fiscal-itens.service';
 import { CfopService } from './services/cfop.service';
 import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.service';
+import { FiscalCteService } from './services/fiscal-cte.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -39,6 +40,7 @@ import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.servic
     ImportacaoXmlFiscalService,
     FiscalItensService,
     CfopService,
+    FiscalCteService,
     EscrituracaoFiscalService,
   ],
   exports: [
