@@ -34,8 +34,8 @@ describe('ImportacaoXmlFiscalService', () => {
     ]);
     jest
       .spyOn(service as any, 'persistirDocumento')
-      .mockResolvedValueOnce('IMPORTADO')
-      .mockResolvedValueOnce('DUPLICADO');
+      .mockResolvedValueOnce({ status: 'IMPORTADO', revisoes: [] })
+      .mockResolvedValueOnce({ status: 'DUPLICADO', revisoes: [] });
 
     const result = await service.importar({
       files: [xmlFile(buildNfeProc())],
@@ -55,6 +55,61 @@ describe('ImportacaoXmlFiscalService', () => {
       tipo_documento: 'NFE',
       importados: 1,
       duplicados: 1,
+    });
+  });
+
+  it('expõe a revisão de CFOP sem transformar a importação em falha silenciosa', async () => {
+    jest.spyOn(service as any, 'findClientesForDocument').mockResolvedValue([
+      {
+        id: 'cliente-1',
+        cnpj: '98765432000110',
+        razaoSocial: 'Destinatário',
+      },
+    ]);
+    jest.spyOn(service as any, 'persistirDocumento').mockResolvedValue({
+      status: 'IMPORTADO',
+      revisoes: [
+        {
+          codigo: 'CFOP_DESTINO_NAO_CADASTRADO',
+          mensagem: 'A conversão 5910 → 1910 não encontrou um destino ativo.',
+          acao_recomendada: 'Cadastre o CFOP 1910 e reprocesse o período.',
+          cliente_id: 'cliente-1',
+          razao_social: 'Destinatário',
+          numero_documento: '123',
+          chave_acesso: '1'.repeat(44),
+          itens: [
+            {
+              numero_item: 1,
+              descricao: 'Produto',
+              cfop_xml: '5910',
+              cfop_aplicado: '1949',
+              cfop_sugerido: '1910',
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await service.importar({
+      files: [xmlFile(buildNfeProc())],
+      actorUserId: 'user-1',
+      requestId: 'request-1',
+    });
+
+    expect(result).toMatchObject({
+      importados: 1,
+      erros: 0,
+      pendentes_revisao: 1,
+    });
+    expect(result.resultados[0]).toMatchObject({
+      status: 'IMPORTADO',
+      revisoes: [
+        expect.objectContaining({
+          codigo: 'CFOP_DESTINO_NAO_CADASTRADO',
+          numero_documento: '123',
+        }),
+      ],
+      clientes: [expect.objectContaining({ pendente_revisao: true })],
     });
   });
 
@@ -142,7 +197,10 @@ describe('ImportacaoXmlFiscalService', () => {
           documento: ParsedDocumentoFiscal;
           actorUserId: string;
           requestId: string;
-        }): Promise<'IMPORTADO' | 'DUPLICADO'>;
+        }): Promise<{
+          status: 'IMPORTADO' | 'DUPLICADO';
+          revisoes: unknown[];
+        }>;
       }
     ).persistirDocumento({
       target: {
@@ -155,7 +213,7 @@ describe('ImportacaoXmlFiscalService', () => {
       requestId: 'request-1',
     });
 
-    expect(result).toBe('DUPLICADO');
+    expect(result).toEqual({ status: 'DUPLICADO', revisoes: [] });
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.delete).toHaveBeenCalledWith(documentosFiscaisItens);
     expect(itemValues).toHaveBeenCalledWith([
@@ -220,6 +278,7 @@ function createCfopServiceMock() {
             : 'ENTRADA';
         return Promise.resolve({
           tipoOperacaoEscriturada,
+          revisoes: [],
           itens: params.itens.map((item) => ({
             ...item,
             cfopXml: item.cfop,

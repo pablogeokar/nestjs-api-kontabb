@@ -527,7 +527,9 @@ export class EfdIcmsIpiService {
             document,
             'DOCUMENTO_PENDENTE_ESCRITURACAO',
             'ERRO',
-            'Documento pendente de revisão fiscal não pode compor a EFD.',
+            pendingDocumentReviewMessage(
+              itemsByDocument.get(document.id) ?? [],
+            ),
           ),
         );
         continue;
@@ -1662,6 +1664,7 @@ export class EfdIcmsIpiService {
       severidade,
       mensagem,
       documentoId: document.id,
+      numeroDocumento: document.numeroDocumento,
       chaveAcesso: document.chaveAcesso,
     };
   }
@@ -1676,6 +1679,29 @@ export class EfdIcmsIpiService {
       })
       .where(eq(spedArquivosGerados.id, id));
   }
+}
+
+export function pendingDocumentReviewMessage(
+  items: ReadonlyArray<{
+    cfopXml: string | null;
+    cfop: string;
+    cfopRevisaoNecessaria: boolean;
+  }>,
+) {
+  const pendingItems = items.filter((item) => item.cfopRevisaoNecessaria);
+  if (pendingItems.length === 0) {
+    return 'Documento pendente de revisão fiscal não pode compor a EFD. Revise o documento e reprocesse a escrituração.';
+  }
+
+  const mappings = Array.from(
+    new Set(
+      pendingItems.map(
+        (item) => `${item.cfopXml ?? 'sem CFOP'} → ${item.cfop}`,
+      ),
+    ),
+  ).join(', ');
+  const itemLabel = pendingItems.length === 1 ? 'item possui' : 'itens possuem';
+  return `${pendingItems.length} ${itemLabel} CFOP sem equivalência confirmada (${mappings}). Corrija as Regras CFOP e reprocesse o período antes de gerar a EFD.`;
 }
 
 function isSpedProfile(value: string | null): value is 'A' | 'B' | 'C' {

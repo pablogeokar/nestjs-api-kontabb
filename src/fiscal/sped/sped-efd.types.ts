@@ -8,6 +8,7 @@ export interface SpedInconsistencia {
   mensagem: string;
   campo?: string;
   documentoId?: string;
+  numeroDocumento?: string;
   chaveAcesso?: string;
 }
 

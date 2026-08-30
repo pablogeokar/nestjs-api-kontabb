@@ -3,6 +3,7 @@ import type { SpedDocumentoNfeBuilderData } from './efd-icms-ipi.builder';
 import {
   inputTaxSignals,
   isInventoryDueForPeriod,
+  pendingDocumentReviewMessage,
   validateFcpAdjustments,
   type SpedFcpTaxSignals,
 } from './efd-icms-ipi.service';
@@ -114,5 +115,26 @@ describe('exigência do Bloco H por competência', () => {
     expect(
       isInventoryDueForPeriod(true, 3, new Date('2026-02-01T00:00:00Z')),
     ).toBe(false);
+  });
+});
+
+describe('diagnóstico de documento pendente na EFD', () => {
+  it('identifica os CFOPs afetados e orienta o reprocessamento', () => {
+    const message = pendingDocumentReviewMessage([
+      {
+        cfopXml: '5910',
+        cfop: '1949',
+        cfopRevisaoNecessaria: true,
+      },
+      {
+        cfopXml: '5102',
+        cfop: '1102',
+        cfopRevisaoNecessaria: false,
+      },
+    ]);
+
+    expect(message).toContain('5910 → 1949');
+    expect(message).toContain('Regras CFOP');
+    expect(message).toContain('reprocesse o período');
   });
 });

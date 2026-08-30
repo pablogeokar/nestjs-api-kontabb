@@ -294,17 +294,25 @@ export class AdminFiscalController {
       requestId,
       userId: user.id,
       operation: 'importar_xml_fiscal',
-      result: result.erros > 0 ? 'PARTIAL_OR_FAILED' : 'SUCCESS',
+      result:
+        result.erros > 0
+          ? 'PARTIAL_OR_FAILED'
+          : result.pendentes_revisao > 0
+            ? 'REVIEW_REQUIRED'
+            : 'SUCCESS',
       totalArquivos: result.total_arquivos,
       importados: result.importados,
       duplicados: result.duplicados,
       ignorados: result.ignorados,
       erros: result.erros,
+      pendentesRevisao: result.pendentes_revisao,
     });
 
     return {
-      success: result.erros === 0,
-      partial: result.importados > 0 && result.erros > 0,
+      success: result.erros === 0 && result.pendentes_revisao === 0,
+      partial:
+        result.importados > 0 &&
+        (result.erros > 0 || result.pendentes_revisao > 0),
       data: result,
     };
   }
