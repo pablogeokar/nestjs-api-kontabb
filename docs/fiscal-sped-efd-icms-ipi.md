@@ -18,6 +18,7 @@ Referências oficiais:
 - [Guia Prático 3.2.2](https://www.gov.br/sped/pt-br/assuntos/escrituracoes-digitais/efd-icms-ipi/manuais-e-documentos-tecnicos/guia-pratico-da-efd-icms-ipi-3-2.2)
 - [Nota Técnica 2025.001 — leiaute 020/119](https://www.confaz.fazenda.gov.br/legislacao/arquivo-manuais/06___anexo_2.pdf/@@download/file/06___ANEXO_2.pdf)
 - [PVA 6.1.1](https://www.gov.br/sped/pt-br/assuntos/comunicados/efd-icms-ipi/publicacao-do-programa-efd-icms-ipi-versao-6-1.1)
+- [CNPJ alfanumérico — Receita Federal](https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/acoes-e-programas/programas-e-atividades/cnpj-alfanumerico)
 
 ## Blocos e documentos suportados
 
@@ -64,7 +65,8 @@ pertence à EFD-Contribuições.
 - A data fiscal (`YYYY-MM-DD`) é preservada separadamente do instante do XML,
   evitando deslocamento de competência por fuso horário.
 - CNPJ e chaves de acesso aceitam o formato alfanumérico previsto para o novo
-  CNPJ.
+  CNPJ. O cadastro e a leitura do certificado A1 também aceitam as 12 primeiras
+  posições alfanuméricas e mantêm os dois dígitos verificadores numéricos.
 
 ## Fluxo operacional
 
@@ -177,7 +179,7 @@ Execute antes de publicar:
 
 ```bash
 pnpm exec tsc --noEmit
-pnpm test -- --runInBand
+pnpm exec jest --runInBand
 pnpm lint
 pnpm build
 pnpm drizzle-kit check

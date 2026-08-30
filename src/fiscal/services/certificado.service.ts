@@ -34,7 +34,7 @@ interface ExtractedCnpj {
   index: number;
 }
 
-function normalizeCnpj(value: string): string | null {
+export function normalizeCertificateCnpj(value: string): string | null {
   const normalized = value
     .trim()
     .toUpperCase()
@@ -47,13 +47,17 @@ function extractCnpjFromText(value: string): ExtractedCnpj | null {
   const match = CNPJ_IN_TEXT_PATTERN.exec(value.toUpperCase());
   if (!match) return null;
 
-  const cnpj = normalizeCnpj(match[2]);
+  const cnpj = normalizeCertificateCnpj(match[2]);
   if (!cnpj) return null;
 
   return {
     cnpj,
     index: (match.index ?? 0) + match[1].length,
   };
+}
+
+export function extractCertificateCnpj(value: string): string | null {
+  return extractCnpjFromText(value)?.cnpj ?? null;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -179,7 +183,7 @@ export class CertificadoService {
       throw new NotFoundException('Cliente não encontrado.');
     }
 
-    const cnpjCliente = normalizeCnpj(cliente[0].cnpj);
+    const cnpjCliente = normalizeCertificateCnpj(cliente[0].cnpj);
 
     // 2. Validar o certificado e extrair metadados
     let metadata: CertificadoMetadata;

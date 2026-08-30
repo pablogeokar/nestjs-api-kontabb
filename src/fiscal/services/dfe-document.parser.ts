@@ -6,7 +6,6 @@ import {
   normalizeFiscalAccessKey,
   normalizeFiscalCnpj,
   normalizeFiscalCpf,
-  normalizeFiscalTaxId,
 } from './fiscal-identifier';
 import {
   conferirIntegridadeDocumentoFiscal,
