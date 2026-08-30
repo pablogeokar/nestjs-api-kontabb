@@ -109,6 +109,7 @@ const EMPTY_APURACAO: SpedPreview['apuracao'] = {
     estornosCreditos: '0.00',
     estornosDebitos: '0.00',
     deducoes: '0.00',
+    debitosEspeciais: '0.00',
     saldoApurado: '0.00',
     icmsRecolher: '0.00',
     saldoCredorTransportar: '0.00',
@@ -674,6 +675,7 @@ export class EfdIcmsIpiService {
           participantes,
           unidades,
           itensCatalogo,
+          profile,
           inconsistencias,
         )
       : null;
@@ -772,6 +774,7 @@ export class EfdIcmsIpiService {
       builtRecords.apuracao,
       obrigacoes,
       responsabilidades,
+      ajustes,
       inputTaxSignals(nfe),
       inconsistencias,
     );
@@ -1059,7 +1062,7 @@ export class EfdIcmsIpiService {
       documento: identifier,
       tipoDocumento: identifier.length === 11 ? 'CPF' : 'CNPJ',
       nome: name || 'PARTICIPANTE SEM NOME',
-      codigoPais: raw?.codPais || '01058',
+      codigoPais: normalizeCountryCode(raw?.codPais),
       inscricaoEstadual: raw?.ie?.trim() || null,
       codigoMunicipioIbge: codigoMunicipio,
       suframa: raw?.suframa?.trim() || null,
@@ -1159,8 +1162,10 @@ export class EfdIcmsIpiService {
     participants: Map<string, CatalogParticipant>,
     units: Map<string, SpedUnidadeBuilderData>,
     catalog: Map<string, CatalogItem>,
+    profile: 'A' | 'B' | 'C',
     issues: SpedInconsistencia[],
   ): Promise<SpedEfdBuilderInput['inventario']> {
+    const earliestInventoryDate = firstDayMonthsBefore(endDate, 2);
     const rows = await db
       .select()
       .from(spedInventarios)
@@ -1168,10 +1173,16 @@ export class EfdIcmsIpiService {
         and(
           eq(spedInventarios.clienteId, clienteId),
           eq(spedInventarios.status, 'FECHADO'),
+          eq(spedInventarios.motivo, '01'),
+          gte(spedInventarios.dataInventario, earliestInventoryDate),
           lte(spedInventarios.dataInventario, endDate),
         ),
       )
-      .orderBy(desc(spedInventarios.dataInventario))
+      .orderBy(
+        desc(spedInventarios.dataInventario),
+        asc(spedInventarios.motivo),
+        asc(spedInventarios.id),
+      )
       .limit(1);
     const inventory = rows[0];
     if (!inventory) return null;
@@ -1222,12 +1233,42 @@ export class EfdIcmsIpiService {
         eq(spedParticipantes.id, spedInventarioItens.participanteId),
       )
       .where(eq(spedInventarioItens.inventarioId, inventory.id))
-      .orderBy(asc(spedItens.codigo));
-    if (items.length === 0) {
+      .orderBy(
+        asc(spedItens.codigo),
+        asc(spedInventarioItens.indicadorPropriedade),
+        asc(spedParticipantes.codigo),
+      );
+    const inventoryValue = toScaledInteger(inventory.valorTotal);
+    const itemsValue = items.reduce(
+      (total, item) => total + toScaledInteger(item.row.valorItem),
+      0n,
+    );
+    if (items.length === 0 && inventoryValue > 0n) {
       issues.push({
         codigo: 'INVENTARIO_SEM_ITENS',
         severidade: 'ERRO',
-        mensagem: 'O inventário fechado não possui itens.',
+        mensagem: 'O inventário fechado possui valor, mas não possui itens.',
+      });
+    }
+    if (items.length > 0 && inventoryValue === 0n) {
+      issues.push({
+        codigo: 'INVENTARIO_ZERO_COM_ITENS',
+        severidade: 'ERRO',
+        mensagem:
+          'Um inventário com valor total zero não pode possuir registros H010.',
+      });
+    }
+    if (
+      !differenceWithinTolerance(
+        inventory.valorTotal,
+        fromScaledInteger(itemsValue),
+      )
+    ) {
+      issues.push({
+        codigo: 'INVENTARIO_TOTAL_DIVERGENTE',
+        severidade: 'ERRO',
+        mensagem: `O total do inventário (${inventory.valorTotal}) diverge da soma dos itens (${fromScaledInteger(itemsValue)}).`,
+        campo: 'inventario.valorTotal',
       });
     }
     for (const item of items) {
@@ -1243,7 +1284,18 @@ export class EfdIcmsIpiService {
           campo: item.codigoItem,
         });
       }
-      const identity = `${item.participanteCodigo ?? 'PROPRIO'}|${item.codigoExterno}`;
+      if (
+        (profile === 'A' || profile === 'B') &&
+        !item.row.codigoConta?.trim()
+      ) {
+        issues.push({
+          codigo: 'INVENTARIO_CONTA_CONTABIL_AUSENTE',
+          severidade: 'ERRO',
+          mensagem: `O item ${item.codigoItem} exige COD_CTA no perfil ${profile}.`,
+          campo: item.codigoItem,
+        });
+      }
+      const identity = `PROPRIO|${item.codigoExterno}`;
       if (
         ![...catalog.values()].some(
           (catalogItem) => catalogItem.codigo === item.codigoItem,
@@ -1264,7 +1316,7 @@ export class EfdIcmsIpiService {
           codigoServico: item.codigoServico,
           aliquotaIcms: item.aliquotaIcms,
           cest: item.cest,
-          participanteOrigemCodigo: item.participanteCodigo,
+          participanteOrigemCodigo: null,
         });
       }
       if (
@@ -1279,7 +1331,7 @@ export class EfdIcmsIpiService {
           documento: item.participanteDocumento,
           tipoDocumento: item.participanteTipoDocumento,
           nome: item.participanteNome ?? 'PARTICIPANTE SEM NOME',
-          codigoPais: item.participanteCodigoPais ?? '01058',
+          codigoPais: normalizeCountryCode(item.participanteCodigoPais),
           inscricaoEstadual: item.participanteIe,
           codigoMunicipioIbge: item.participanteCodigoMunicipio,
           suframa: item.participanteSuframa,
@@ -1306,25 +1358,11 @@ export class EfdIcmsIpiService {
     apuracao: SpedPreview['apuracao'],
     obrigacoes: Array<typeof spedObrigacoesRecolhimento.$inferSelect>,
     responsabilidades: Array<{ tipo: string; uf: string }>,
-    taxSignals: { fcpProprio: bigint; fcpSt: bigint },
+    ajustes: Array<typeof spedAjustesApuracao.$inferSelect>,
+    taxSignals: { fcpProprio: bigint; fcpStPorUf: Map<string, bigint> },
     issues: SpedInconsistencia[],
   ) {
-    if (taxSignals.fcpProprio > 0n) {
-      issues.push({
-        codigo: 'FCP_PROPRIO_EXIGE_AJUSTE_ESTADUAL',
-        severidade: 'ERRO',
-        mensagem:
-          'Há FCP próprio no período; informe o ajuste estadual aplicável antes da geração.',
-      });
-    }
-    if (taxSignals.fcpSt > 0n) {
-      issues.push({
-        codigo: 'FCP_ST_EXIGE_TRATAMENTO_ESTADUAL',
-        severidade: 'ERRO',
-        mensagem:
-          'Há FCP-ST no período; configure o recolhimento estadual aplicável antes da geração.',
-      });
-    }
+    issues.push(...validateFcpAdjustments(taxSignals, ajustes));
 
     this.validarObrigacao(
       'ICMS_PROPRIO',
@@ -1637,6 +1675,22 @@ function normalizeIdentifier(value: string): string {
   return value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
 }
 
+function normalizeCountryCode(value?: string | null): string {
+  const digits = value?.replace(/\D/g, '') ?? '';
+  return digits ? digits.slice(-5).padStart(5, '0') : '01058';
+}
+
+function firstDayMonthsBefore(date: string, months: number): string {
+  const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(date);
+  if (!match) throw new TypeError(`Data fiscal inválida: ${date}`);
+  const value = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1 - months, 1),
+  );
+  return `${String(value.getUTCFullYear()).padStart(4, '0')}-${String(
+    value.getUTCMonth() + 1,
+  ).padStart(2, '0')}-01`;
+}
+
 function stableCode(prefix: string, value: string, totalLength: number) {
   const digest = createHash('sha256')
     .update(value, 'utf8')
@@ -1662,15 +1716,87 @@ function uniqueUnitCode(
   return code;
 }
 
-function inputTaxSignals(documents: SpedDocumentoNfeBuilderData[]) {
+export interface SpedFcpTaxSignals {
+  fcpProprio: bigint;
+  fcpStPorUf: Map<string, bigint>;
+}
+
+export function inputTaxSignals(
+  documents: SpedDocumentoNfeBuilderData[],
+): SpedFcpTaxSignals {
   return documents.reduce(
     (total, document) => {
+      if (document.row.tipoOperacaoEscriturada !== 'SAIDA') return total;
       for (const item of document.itens) {
         total.fcpProprio += toScaledInteger(item.row.valorFcp);
-        total.fcpSt += toScaledInteger(item.row.valorFcpSt);
+        const fcpSt = toScaledInteger(item.row.valorFcpSt);
+        if (fcpSt > 0n) {
+          const uf = document.participanteUf?.trim().toUpperCase() ?? '';
+          total.fcpStPorUf.set(uf, (total.fcpStPorUf.get(uf) ?? 0n) + fcpSt);
+        }
       }
       return total;
     },
-    { fcpProprio: 0n, fcpSt: 0n },
+    { fcpProprio: 0n, fcpStPorUf: new Map<string, bigint>() },
+  );
+}
+
+export function validateFcpAdjustments(
+  taxSignals: SpedFcpTaxSignals,
+  adjustments: Array<typeof spedAjustesApuracao.$inferSelect>,
+): SpedInconsistencia[] {
+  const issues: SpedInconsistencia[] = [];
+  if (
+    taxSignals.fcpProprio > 0n &&
+    !hasMatchingDebitAdjustment(
+      adjustments,
+      'E111',
+      null,
+      taxSignals.fcpProprio,
+    )
+  ) {
+    issues.push({
+      codigo: 'FCP_PROPRIO_AJUSTE_NAO_CONCILIADO',
+      severidade: 'ERRO',
+      mensagem: `Há ${fromScaledInteger(taxSignals.fcpProprio)} de FCP próprio no período. Cadastre um ajuste E111 de débito com o código estadual e o mesmo valor.`,
+      campo: 'ajustes.E111',
+    });
+  }
+  for (const [uf, value] of taxSignals.fcpStPorUf) {
+    if (!uf) {
+      issues.push({
+        codigo: 'FCP_ST_UF_DESTINO_AUSENTE',
+        severidade: 'ERRO',
+        mensagem:
+          'Há FCP-ST sem UF de destino identificada; complete o cadastro do participante antes da geração.',
+        campo: 'participante.uf',
+      });
+      continue;
+    }
+    if (!hasMatchingDebitAdjustment(adjustments, 'E220', uf, value)) {
+      issues.push({
+        codigo: 'FCP_ST_AJUSTE_NAO_CONCILIADO',
+        severidade: 'ERRO',
+        mensagem: `Há ${fromScaledInteger(value)} de FCP-ST para ${uf}. Cadastre um ajuste E220 de débito com o código estadual e o mesmo valor.`,
+        campo: `ajustes.E220.${uf}`,
+      });
+    }
+  }
+  return issues;
+}
+
+function hasMatchingDebitAdjustment(
+  adjustments: Array<typeof spedAjustesApuracao.$inferSelect>,
+  record: 'E111' | 'E220',
+  uf: string | null,
+  value: bigint,
+): boolean {
+  const expected = fromScaledInteger(value);
+  return adjustments.some(
+    (adjustment) =>
+      adjustment.registro === record &&
+      adjustment.indicador === 'DEBITO' &&
+      (adjustment.uf?.trim().toUpperCase() ?? null) === uf &&
+      differenceWithinTolerance(adjustment.valor, expected),
   );
 }

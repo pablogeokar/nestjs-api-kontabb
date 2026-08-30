@@ -317,7 +317,7 @@ function buildBlocoC(input: SpedEfdBuilderInput): SpedRecord[] {
   const records: SpedRecord[] = [];
   for (const documento of input.nfe) {
     const row = documento.row;
-    const regular = (row.codSituacaoSped ?? '00') === '00';
+    const regular = hasFiscalValues(row.codSituacaoSped);
     const totals = asTotals(row.totaisDeclaradosXml);
     const indOper = row.tipoOperacaoEscriturada === 'SAIDA' ? '1' : '0';
     const indEmit = sameIdentifier(row.emitenteCnpjCpf, input.empresa.cnpj)
@@ -472,14 +472,13 @@ function buildBlocoD(input: SpedEfdBuilderInput): SpedRecord[] {
   for (const documento of input.cte) {
     const row = documento.row;
     const cte = documento.cte;
-    const regular = (row.codSituacaoSped ?? '00') === '00';
+    const regular = hasFiscalValues(row.codSituacaoSped);
     const indOper = cte.tipoOperacaoEscriturada === 'SAIDA' ? '1' : '0';
     const indEmit = sameIdentifier(row.emitenteCnpjCpf, input.empresa.cnpj)
       ? '0'
       : '1';
-    const creditavel = toScaledInteger(cte.valorIcmsCreditavel);
-    const valorBc = creditavel > 0n ? cte.valorBcIcms : null;
-    const valorIcms = creditavel > 0n ? cte.valorIcmsCreditavel : null;
+    const valorBc = cte.valorBcIcms;
+    const valorIcms = cte.valorIcms;
     const valorNaoTributado = maximum(
       toScaledInteger(cte.valorTotalServico) - toScaledInteger(valorBc),
       0n,
@@ -546,7 +545,9 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
 } {
   const records: SpedRecord[] = [];
   const simples = input.empresa.regimeTributario === 'SIMPLES_NACIONAL';
-  const ajustesIcms = input.ajustes.filter((row) => row.registro === 'E111');
+  const ajustesIcms = simples
+    ? []
+    : input.ajustes.filter((row) => row.registro === 'E111');
   const debitos = simples ? 0n : totalIcmsDocumentos(input.nfe, 'SAIDA');
   const creditosMercadorias = simples
     ? 0n
@@ -564,6 +565,7 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
   const estornosDebitos = totalAjustes(ajustesIcms, 'ESTORNO_DEBITO');
   const estornosCreditos = totalAjustes(ajustesIcms, 'ESTORNO_CREDITO');
   const deducoes = totalAjustes(ajustesIcms, 'DEDUCAO');
+  const debitosEspeciais = totalAjustes(ajustesIcms, 'DEBITO_ESPECIAL');
   const saldoAnterior = getSaldo(input.saldos, 'ICMS_PROPRIO', null);
   const saldoCalculado =
     debitos +
@@ -594,7 +596,7 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
       money(deducoes),
       money(recolher),
       money(saldoCredor),
-      money(0n),
+      money(debitosEspeciais),
     ),
   );
 
@@ -630,6 +632,7 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
         estornosCreditos: fromScaledInteger(estornosCreditos),
         estornosDebitos: fromScaledInteger(estornosDebitos),
         deducoes: fromScaledInteger(deducoes),
+        debitosEspeciais: fromScaledInteger(debitosEspeciais),
         saldoApurado: fromScaledInteger(saldoApurado),
         icmsRecolher: fromScaledInteger(recolher),
         saldoCredorTransportar: fromScaledInteger(saldoCredor),
@@ -660,13 +663,32 @@ function buildIcmsSt(
   const configuredUfs = input.responsabilidades
     .filter((row) => row.tipo === 'ICMS_ST')
     .map((row) => row.uf);
-  const ufs = [...new Set([...configuredUfs, ...totals.keys()])].sort();
+  const adjustmentUfs = input.ajustes
+    .filter((row) => row.registro === 'E220' && row.uf)
+    .map((row) => row.uf!);
+  const ufs = [
+    ...new Set([...configuredUfs, ...totals.keys(), ...adjustmentUfs]),
+  ].sort();
   const result: SpedApuracaoPreview['icmsStPorUf'] = [];
   for (const uf of ufs) {
     const debitos = totals.get(uf) ?? 0n;
     const saldoAnterior = getSaldo(input.saldos, 'ICMS_ST', uf);
-    const recolher = positive(debitos - saldoAnterior);
-    const saldoCredor = positive(saldoAnterior - debitos);
+    const ajustes = input.ajustes.filter(
+      (row) => row.registro === 'E220' && row.uf === uf,
+    );
+    const ajustesDebitos =
+      totalAjustes(ajustes, 'DEBITO') +
+      totalAjustes(ajustes, 'ESTORNO_CREDITO');
+    const ajustesCreditos =
+      totalAjustes(ajustes, 'CREDITO') +
+      totalAjustes(ajustes, 'ESTORNO_DEBITO');
+    const deducoes = totalAjustes(ajustes, 'DEDUCAO');
+    const debitosEspeciais = totalAjustes(ajustes, 'DEBITO_ESPECIAL');
+    const saldoCalculado =
+      debitos + ajustesDebitos - ajustesCreditos - saldoAnterior;
+    const saldoDevedorAntesDeducoes = positive(saldoCalculado);
+    const recolher = positive(saldoDevedorAntesDeducoes - deducoes);
+    const saldoCredor = positive(-saldoCalculado);
     records.push(
       createSpedRecord(
         'E200',
@@ -676,22 +698,32 @@ function buildIcmsSt(
       ),
       createSpedRecord(
         'E210',
-        debitos > 0n ? '1' : '0',
+        debitos > 0n || ajustes.length > 0 ? '1' : '0',
         money(saldoAnterior),
         money(0n),
         money(0n),
         money(0n),
-        money(0n),
+        money(ajustesCreditos),
         money(debitos),
         money(0n),
-        money(0n),
-        money(debitos),
-        money(0n),
+        money(ajustesDebitos),
+        money(saldoDevedorAntesDeducoes),
+        money(deducoes),
         money(recolher),
         money(saldoCredor),
-        money(0n),
+        money(debitosEspeciais),
       ),
     );
+    for (const ajuste of ajustes) {
+      records.push(
+        createSpedRecord(
+          'E220',
+          ajuste.codigoAjuste,
+          ajuste.descricao,
+          decimalField(ajuste.valor),
+        ),
+      );
+    }
     const obrigacao = findObrigacao(input.obrigacoes, 'ICMS_ST', uf);
     if (recolher > 0n && obrigacao) {
       records.push(buildObrigacaoRecord('E250', obrigacao));
@@ -702,6 +734,7 @@ function buildIcmsSt(
       saldoCredorAnterior: fromScaledInteger(saldoAnterior),
       recolher: fromScaledInteger(recolher),
       saldoCredorTransportar: fromScaledInteger(saldoCredor),
+      debitosEspeciais: fromScaledInteger(debitosEspeciais),
     });
   }
   return result;
@@ -727,12 +760,28 @@ function buildDifalFcp(
   const configuredUfs = input.responsabilidades
     .filter((row) => row.tipo === 'DIFAL_FCP')
     .map((row) => row.uf);
-  const ufs = [...new Set([...configuredUfs, ...totals.keys()])].sort();
+  const adjustmentUfs = input.ajustes
+    .filter((row) => row.registro === 'E311' && row.uf)
+    .map((row) => row.uf!);
+  const ufs = [
+    ...new Set([...configuredUfs, ...totals.keys(), ...adjustmentUfs]),
+  ].sort();
   const result: SpedApuracaoPreview['difalFcpPorUf'] = [];
   for (const uf of ufs) {
     const total = totals.get(uf) ?? { difal: 0n, fcp: 0n };
-    const recolherDifal = positive(total.difal);
-    const recolherFcp = positive(total.fcp);
+    const ajustes = input.ajustes.filter(
+      (row) => row.registro === 'E311' && row.uf === uf,
+    );
+    const apuracaoDifal = calculateDifalFcpComponent(
+      total.difal,
+      ajustes.filter((row) => row.codigoAjuste[2] === '2'),
+    );
+    const apuracaoFcp = calculateDifalFcpComponent(
+      total.fcp,
+      ajustes.filter((row) => row.codigoAjuste[2] === '3'),
+    );
+    const recolherDifal = apuracaoDifal.recolher;
+    const recolherFcp = apuracaoFcp.recolher;
     const recolher = recolherDifal + recolherFcp;
     records.push(
       createSpedRecord(
@@ -743,29 +792,39 @@ function buildDifalFcp(
       ),
       createSpedRecord(
         'E310',
-        recolher > 0n ? '1' : '0',
+        total.difal > 0n || total.fcp > 0n || ajustes.length > 0 ? '1' : '0',
         money(0n),
         money(total.difal),
+        money(apuracaoDifal.outrosDebitos),
         money(0n),
-        money(0n),
-        money(0n),
-        money(total.difal),
-        money(0n),
+        money(apuracaoDifal.outrosCreditos),
+        money(apuracaoDifal.saldoDevedorAntesDeducoes),
+        money(apuracaoDifal.deducoes),
         money(recolherDifal),
-        money(0n),
-        money(0n),
-        money(0n),
-        money(total.fcp),
-        money(0n),
-        money(0n),
+        money(apuracaoDifal.saldoCredorTransportar),
+        money(apuracaoDifal.debitosEspeciais),
         money(0n),
         money(total.fcp),
+        money(apuracaoFcp.outrosDebitos),
         money(0n),
+        money(apuracaoFcp.outrosCreditos),
+        money(apuracaoFcp.saldoDevedorAntesDeducoes),
+        money(apuracaoFcp.deducoes),
         money(recolherFcp),
-        money(0n),
-        money(0n),
+        money(apuracaoFcp.saldoCredorTransportar),
+        money(apuracaoFcp.debitosEspeciais),
       ),
     );
+    for (const ajuste of ajustes) {
+      records.push(
+        createSpedRecord(
+          'E311',
+          ajuste.codigoAjuste,
+          ajuste.descricao,
+          decimalField(ajuste.valor),
+        ),
+      );
+    }
     const obrigacao = findObrigacao(input.obrigacoes, 'DIFAL_FCP', uf);
     if (recolher > 0n && obrigacao) {
       records.push(buildObrigacaoRecord('E316', obrigacao));
@@ -775,9 +834,32 @@ function buildDifalFcp(
       difal: fromScaledInteger(total.difal),
       fcp: fromScaledInteger(total.fcp),
       recolher: fromScaledInteger(recolher),
+      debitosEspeciais: fromScaledInteger(
+        apuracaoDifal.debitosEspeciais + apuracaoFcp.debitosEspeciais,
+      ),
     });
   }
   return result;
+}
+
+function calculateDifalFcpComponent(base: bigint, ajustes: AjusteRow[]) {
+  const outrosDebitos =
+    totalAjustes(ajustes, 'DEBITO') + totalAjustes(ajustes, 'ESTORNO_CREDITO');
+  const outrosCreditos =
+    totalAjustes(ajustes, 'CREDITO') + totalAjustes(ajustes, 'ESTORNO_DEBITO');
+  const deducoes = totalAjustes(ajustes, 'DEDUCAO');
+  const debitosEspeciais = totalAjustes(ajustes, 'DEBITO_ESPECIAL');
+  const saldo = base + outrosDebitos - outrosCreditos;
+  const saldoDevedorAntesDeducoes = positive(saldo);
+  return {
+    outrosDebitos,
+    outrosCreditos,
+    deducoes,
+    debitosEspeciais,
+    saldoDevedorAntesDeducoes,
+    recolher: positive(saldoDevedorAntesDeducoes - deducoes),
+    saldoCredorTransportar: positive(-saldo),
+  };
 }
 
 function buildIpi(
@@ -813,8 +895,16 @@ function buildIpi(
       group.bc += toScaledInteger(row.valorBcIpi);
       group.ipi += ipi;
       groups.set(key, group);
-      if (documento.row.tipoOperacaoEscriturada === 'SAIDA') debitos += ipi;
-      else creditos += ipi;
+      if (ipi <= 0n) continue;
+      if (documento.row.tipoOperacaoEscriturada === 'SAIDA') {
+        if (row.cstIpi === '50') debitos += ipi;
+        else
+          reportAmbiguousIpi(documento, item, 'DEBITO', input.inconsistencias);
+      } else if (row.cstIpi === '00') {
+        creditos += ipi;
+      } else {
+        reportAmbiguousIpi(documento, item, 'CREDITO', input.inconsistencias);
+      }
     }
   }
 
@@ -903,8 +993,12 @@ function buildBlocoH(input: SpedEfdBuilderInput): SpedRecord[] {
         'H010',
         item.codigoItem,
         item.row.unidade,
-        decimalField(item.row.quantidade),
-        decimalField(item.row.valorUnitario),
+        decimalField(
+          fromScaledInteger(toScaledInteger(item.row.quantidade, 3), 3),
+        ),
+        decimalField(
+          fromScaledInteger(toScaledInteger(item.row.valorUnitario, 6), 6),
+        ),
         decimalField(item.row.valorItem),
         item.row.indicadorPropriedade,
         item.participanteCodigo,
@@ -971,9 +1065,11 @@ function aggregateC190(items: SpedItemDocumentoBuilderData[]): AnaliticoC190[] {
     group.valorIcms += toScaledInteger(row.valorIcms);
     group.valorBcIcmsSt += toScaledInteger(row.valorBcIcmsSt);
     group.valorIcmsSt += toScaledInteger(row.valorIcmsSt);
-    group.valorReducaoBc += positive(
-      valorItemLiquido - toScaledInteger(row.valorBcIcms),
-    );
+    if (toScaledInteger(row.percentualReducaoBcIcms, 4) > 0n) {
+      group.valorReducaoBc += positive(
+        valorItemLiquido - toScaledInteger(row.valorBcIcms),
+      );
+    }
     group.valorIpi += toScaledInteger(row.valorIpi);
     groups.set(key, group);
   }
@@ -1055,6 +1151,22 @@ function reportAmbiguousCredit(
   });
 }
 
+function reportAmbiguousIpi(
+  documento: SpedDocumentoNfeBuilderData,
+  item: SpedItemDocumentoBuilderData,
+  kind: 'DEBITO' | 'CREDITO',
+  issues: SpedInconsistencia[],
+) {
+  issues.push({
+    codigo: `IPI_${kind}_EXIGE_REVISAO`,
+    severidade: 'ERRO',
+    mensagem: `O ${kind === 'DEBITO' ? 'débito' : 'crédito'} de IPI do item ${item.row.numeroItem} usa CST ${item.row.cstIpi ?? 'não informado'} e não será apropriado automaticamente.`,
+    documentoId: documento.row.id,
+    chaveAcesso: documento.row.chaveAcesso,
+    campo: `item.${item.row.numeroItem}.cstIpi`,
+  });
+}
+
 function sumDifal(items: SpedItemDocumentoBuilderData[]) {
   return items.reduce(
     (sum, item) => ({
@@ -1127,6 +1239,10 @@ function buildObrigacaoRecord(
 
 function sameIdentifier(first: string, second: string): boolean {
   return normalizeIdentifier(first) === normalizeIdentifier(second);
+}
+
+function hasFiscalValues(codSituacao: string | null): boolean {
+  return !['02', '03', '04', '05'].includes(codSituacao ?? '00');
 }
 
 function normalizeIdentifier(value: string): string {

@@ -410,6 +410,25 @@ describe('buildEfdIcmsIpiRecords', () => {
     expect(fieldsOf(serializeSpedRecord(blocoC[6]))[3]).toBe('80,00');
   });
 
+  it('nao informa reducao de base no C190 apenas por a operacao ser isenta', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        nfe: [
+          makeNfe({}, [
+            makeItem({
+              cstIcms: '40',
+              valorBcIcms: '0.00',
+              valorIcms: '0.00',
+              percentualReducaoBcIcms: null,
+            }),
+          ]),
+        ],
+      }),
+    );
+
+    expect(fieldsOf(lineFor(result.records, 'C190'))[8]).toBe('0,00');
+  });
+
   it.each([
     {
       caso: 'NFC-e',
@@ -471,6 +490,31 @@ describe('buildEfdIcmsIpiRecords', () => {
     ]);
     expect(file.lines).toContain('|D001|0|');
     expect(file.lines).toContain('|D990|4|');
+  });
+
+  it('mantem os tributos documentais do CT-e complementar sem apropriar credito indevido', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        cte: [
+          makeCte(
+            { codSituacaoSped: '06' },
+            { tpCte: '1', valorIcmsCreditavel: '0.00' },
+          ),
+        ],
+      }),
+    );
+    const d100 = fieldsOf(lineFor(result.records, 'D100'));
+    const d190 = fieldsOf(lineFor(result.records, 'D190'));
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+
+    expect(d100[4]).toBe('06');
+    expect(d100[9]).toBe('05082026');
+    expect(d100[13]).toBe('150,00');
+    expect(d100[17]).toBe('100,00');
+    expect(d100[18]).toBe('12,00');
+    expect(d190[4]).toBe('100,00');
+    expect(d190[5]).toBe('12,00');
+    expect(e110[4]).toBe('0,00');
   });
 
   it('leva o credito do CT-e uma unica vez para o ICMS proprio', () => {
@@ -546,6 +590,20 @@ describe('buildEfdIcmsIpiRecords', () => {
     });
   });
 
+  it('ignora ajustes E111 no E110 zerado do Simples Nacional', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: { regimeTributario: 'SIMPLES_NACIONAL' },
+        ajustes: [makeAjuste({ indicador: 'DEBITO' })],
+      }),
+    );
+
+    expect(fieldsOf(lineFor(result.records, 'E110'))).toEqual(
+      Array<string>(14).fill('0,00'),
+    );
+    expect(result.records.some((record) => record.reg === 'E111')).toBe(false);
+  });
+
   it('gera 0002 e a apuracao E500/E510/E520 para estabelecimento industrial', () => {
     const saida = makeNfe(
       {
@@ -589,6 +647,37 @@ describe('buildEfdIcmsIpiRecords', () => {
     });
   });
 
+  it('nao apropria credito de IPI de entrada com CST ambiguo', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: {
+          indAtiv: '0',
+          classificacaoEstabelecimentoIndustrial: '2099',
+        },
+        inconsistencias,
+        nfe: [
+          makeNfe({}, [
+            makeItem({
+              cstIpi: '49',
+              valorBcIpi: '100.00',
+              aliquotaIpi: '5.00',
+              valorIpi: '5.00',
+            }),
+          ]),
+        ],
+      }),
+    );
+
+    expect(result.apuracao.ipi?.creditos).toBe('0.00');
+    expect(inconsistencias).toContainEqual(
+      expect.objectContaining({
+        codigo: 'IPI_CREDITO_EXIGE_REVISAO',
+        severidade: 'ERRO',
+      }),
+    );
+  });
+
   it('gera E200/E210/E250 para responsabilidade de ICMS-ST por UF', () => {
     const saida = makeNfe(
       {
@@ -630,8 +719,58 @@ describe('buildEfdIcmsIpiRecords', () => {
         saldoCredorAnterior: '0.00',
         recolher: '12.34',
         saldoCredorTransportar: '0.00',
+        debitosEspeciais: '0.00',
       },
     ]);
+    expect(
+      validateSpedFile(buildSpedFile({ records: result.records }).bytes, {
+        strictFieldCounts: true,
+      }).valid,
+    ).toBe(true);
+  });
+
+  it('incorpora ajuste E220 de debito ao saldo e ao recolhimento do ICMS-ST', () => {
+    const saida = makeNfe(
+      {
+        tipoOperacaoEscriturada: 'SAIDA',
+        emitenteCnpjCpf: EMPRESA_CNPJ,
+      },
+      [makeItem({ cfop: '6404', valorIcmsSt: '12.34' })],
+      'DEST-SE',
+      'SE',
+    );
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        nfe: [saida],
+        ajustes: [
+          makeAjuste({
+            registro: 'E220',
+            codigoAjuste: 'SE100001',
+            descricao: 'FCP-ST A RECOLHER',
+            valor: '2.00',
+            indicador: 'DEBITO',
+            uf: 'SE',
+          }),
+        ],
+        obrigacoes: [
+          makeObrigacao({
+            tipo: 'ICMS_ST',
+            uf: 'SE',
+            codigoObrigacao: '002',
+            valor: '14.34',
+          }),
+        ],
+      }),
+    );
+    const e210 = fieldsOf(lineFor(result.records, 'E210'));
+
+    expect(e210[8]).toBe('2,00');
+    expect(e210[9]).toBe('14,34');
+    expect(e210[11]).toBe('14,34');
+    expect(lineFor(result.records, 'E220')).toBe(
+      '|E220|SE100001|FCP-ST A RECOLHER|2,00|',
+    );
+    expect(lineFor(result.records, 'E250')).toContain('|14,34|');
     expect(
       validateSpedFile(buildSpedFile({ records: result.records }).bytes, {
         strictFieldCounts: true,
@@ -680,7 +819,90 @@ describe('buildEfdIcmsIpiRecords', () => {
       '|E316|003|22,00|10092026|1000|||||082026|',
     );
     expect(result.apuracao.difalFcpPorUf).toEqual([
-      { uf: 'MG', difal: '20.00', fcp: '2.00', recolher: '22.00' },
+      {
+        uf: 'MG',
+        difal: '20.00',
+        fcp: '2.00',
+        recolher: '22.00',
+        debitosEspeciais: '0.00',
+      },
+    ]);
+    expect(
+      validateSpedFile(buildSpedFile({ records: result.records }).bytes, {
+        strictFieldCounts: true,
+      }).valid,
+    ).toBe(true);
+  });
+
+  it('incorpora ajustes E311 separando DIFAL e FCP pelo codigo estadual', () => {
+    const saida = makeNfe(
+      {
+        tipoOperacaoEscriturada: 'SAIDA',
+        emitenteCnpjCpf: EMPRESA_CNPJ,
+      },
+      [
+        makeItem({
+          cfop: '6108',
+          valorFcpUfDest: '2.00',
+          valorIcmsUfDest: '20.00',
+        }),
+      ],
+      'DEST-MG',
+      'MG',
+    );
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        nfe: [saida],
+        ajustes: [
+          makeAjuste({
+            registro: 'E311',
+            codigoAjuste: 'MG220001',
+            descricao: 'DEDUCAO DO DIFAL',
+            valor: '5.00',
+            indicador: 'DEDUCAO',
+            uf: 'MG',
+          }),
+          makeAjuste({
+            registro: 'E311',
+            codigoAjuste: 'MG330001',
+            descricao: 'CREDITO DO FCP',
+            valor: '1.00',
+            indicador: 'CREDITO',
+            uf: 'MG',
+          }),
+        ],
+        obrigacoes: [
+          makeObrigacao({
+            tipo: 'DIFAL_FCP',
+            uf: 'MG',
+            codigoObrigacao: '003',
+            valor: '16.00',
+          }),
+        ],
+      }),
+    );
+    const e310 = fieldsOf(lineFor(result.records, 'E310'));
+
+    expect(e310[7]).toBe('5,00');
+    expect(e310[8]).toBe('15,00');
+    expect(e310[15]).toBe('1,00');
+    expect(e310[16]).toBe('1,00');
+    expect(e310[18]).toBe('1,00');
+    expect(lineFor(result.records, 'E311', 0)).toBe(
+      '|E311|MG220001|DEDUCAO DO DIFAL|5,00|',
+    );
+    expect(lineFor(result.records, 'E311', 1)).toBe(
+      '|E311|MG330001|CREDITO DO FCP|1,00|',
+    );
+    expect(lineFor(result.records, 'E316')).toContain('|16,00|');
+    expect(result.apuracao.difalFcpPorUf).toEqual([
+      {
+        uf: 'MG',
+        difal: '20.00',
+        fcp: '2.00',
+        recolher: '16.00',
+        debitosEspeciais: '0.00',
+      },
     ]);
     expect(
       validateSpedFile(buildSpedFile({ records: result.records }).bytes, {
@@ -718,7 +940,7 @@ describe('buildEfdIcmsIpiRecords', () => {
 
     expect(lineFor(result.records, 'H005')).toBe('|H005|31122026|250,00|01|');
     expect(lineFor(result.records, 'H010')).toBe(
-      '|H010|ITEM-ESTOQUE|UN|10,0000|25,0000000000|250,00|1|PART-TERCEIRO|EM PODER DE TERCEIRO|1.1.3.01|240,00|',
+      '|H010|ITEM-ESTOQUE|UN|10,000|25,000000|250,00|1|PART-TERCEIRO|EM PODER DE TERCEIRO|1.1.3.01|240,00|',
     );
     expect(file.lines).toContain('|H001|0|');
     expect(file.lines).toContain('|H990|4|');
@@ -727,6 +949,61 @@ describe('buildEfdIcmsIpiRecords', () => {
     expect(validateSpedFile(file.text, { strictFieldCounts: true }).valid).toBe(
       true,
     );
+  });
+
+  it('leva a natureza 5 somente aos campos de debito especial', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        ajustes: [
+          makeAjuste({
+            codigoAjuste: 'SE050001',
+            indicador: 'DEBITO_ESPECIAL',
+            valor: '3.00',
+          }),
+          makeAjuste({
+            registro: 'E220',
+            codigoAjuste: 'BA150001',
+            indicador: 'DEBITO_ESPECIAL',
+            valor: '4.00',
+            uf: 'BA',
+          }),
+          makeAjuste({
+            registro: 'E311',
+            codigoAjuste: 'MG250001',
+            indicador: 'DEBITO_ESPECIAL',
+            valor: '5.00',
+            uf: 'MG',
+          }),
+          makeAjuste({
+            registro: 'E311',
+            codigoAjuste: 'MG350001',
+            indicador: 'DEBITO_ESPECIAL',
+            valor: '6.00',
+            uf: 'MG',
+          }),
+        ],
+      }),
+    );
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+    const e210 = fieldsOf(lineFor(result.records, 'E210'));
+    const e310 = fieldsOf(lineFor(result.records, 'E310'));
+
+    expect(e110[11]).toBe('0,00');
+    expect(e110[13]).toBe('3,00');
+    expect(e210[11]).toBe('0,00');
+    expect(e210[13]).toBe('4,00');
+    expect(e310[8]).toBe('0,00');
+    expect(e310[10]).toBe('5,00');
+    expect(e310[18]).toBe('0,00');
+    expect(e310[20]).toBe('6,00');
+    expect(result.apuracao.icmsProprio.debitosEspeciais).toBe('3.00');
+    expect(result.apuracao.icmsStPorUf[0].debitosEspeciais).toBe('4.00');
+    expect(result.apuracao.difalFcpPorUf[0].debitosEspeciais).toBe('11.00');
+    expect(
+      validateSpedFile(buildSpedFile({ records: result.records }).bytes, {
+        strictFieldCounts: true,
+      }).valid,
+    ).toBe(true);
   });
 
   it('considera cada estorno de debito uma unica vez no saldo do E110', () => {

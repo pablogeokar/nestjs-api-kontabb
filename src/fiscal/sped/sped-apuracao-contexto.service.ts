@@ -95,8 +95,8 @@ export class SpedApuracaoContextoService {
     data: AtualizarContextoApuracaoSpedDto;
   }) {
     const period = parseCompetencia(input.data.competencia);
-    await this.assertCliente(input.clienteId);
-    this.validarSemantica(input.data);
+    const cliente = await this.assertCliente(input.clienteId);
+    assertSpedApuracaoContextPayload(input.data, cliente.uf);
     const now = new Date();
 
     await this.database.db.transaction(async (tx) => {
@@ -131,7 +131,7 @@ export class SpedApuracaoContextoService {
             clienteId: input.clienteId,
             competencia: period.competencia,
             tipo: row.tipo,
-            uf: row.uf ?? null,
+            uf: normalizeOptionalUf(row.uf),
             saldoCredorAnterior: row.saldoCredorAnterior,
             atualizadoPor: input.actorUserId,
             atualizadoEm: now,
@@ -144,11 +144,11 @@ export class SpedApuracaoContextoService {
             clienteId: input.clienteId,
             competencia: period.competencia,
             registro: row.registro,
-            codigoAjuste: row.codigoAjuste.trim(),
+            codigoAjuste: normalizeAdjustmentCode(row.codigoAjuste),
             descricao: row.descricao?.trim() || null,
             valor: row.valor,
             indicador: row.indicador,
-            uf: row.uf ?? null,
+            uf: normalizeOptionalUf(row.uf),
             numeroDocumento: row.numeroDocumento?.trim() || null,
             atualizadoPor: input.actorUserId,
             atualizadoEm: now,
@@ -161,7 +161,7 @@ export class SpedApuracaoContextoService {
             clienteId: input.clienteId,
             competencia: period.competencia,
             tipo: row.tipo,
-            uf: row.uf ?? null,
+            uf: normalizeOptionalUf(row.uf),
             codigoObrigacao: row.codigoObrigacao.trim(),
             valor: row.valor,
             dataVencimento: row.dataVencimento,
@@ -183,7 +183,7 @@ export class SpedApuracaoContextoService {
           .values({
             clienteId: input.clienteId,
             tipo: row.tipo,
-            uf: row.uf,
+            uf: normalizeOptionalUf(row.uf)!,
             vigenciaInicio: row.vigenciaInicio,
             vigenciaFim: row.vigenciaFim ?? null,
             ativo: row.ativo,
@@ -210,93 +210,166 @@ export class SpedApuracaoContextoService {
 
   private async assertCliente(clienteId: string) {
     const rows = await this.database.db
-      .select({ id: clientes.id })
+      .select({ id: clientes.id, uf: clientes.uf })
       .from(clientes)
       .where(eq(clientes.id, clienteId))
       .limit(1);
     if (!rows[0]) throw new NotFoundException('Empresa não encontrada.');
+    return rows[0];
+  }
+}
+
+const ADJUSTMENT_INDICATOR_BY_NATURE = {
+  '0': 'DEBITO',
+  '1': 'ESTORNO_CREDITO',
+  '2': 'CREDITO',
+  '3': 'ESTORNO_DEBITO',
+  '4': 'DEDUCAO',
+  '5': 'DEBITO_ESPECIAL',
+} as const;
+
+export function assertSpedApuracaoContextPayload(
+  data: AtualizarContextoApuracaoSpedDto,
+  establishmentUf: string | null | undefined,
+) {
+  assertUnique(
+    data.saldos.map(
+      (row) => `${row.tipo}:${normalizeOptionalUf(row.uf) ?? ''}`,
+    ),
+    'Há saldos anteriores duplicados para o mesmo tributo e UF.',
+  );
+  assertUnique(
+    data.obrigacoes.map(
+      (row) => `${row.tipo}:${normalizeOptionalUf(row.uf) ?? ''}`,
+    ),
+    'Há obrigações duplicadas para o mesmo tributo e UF.',
+  );
+  assertUnique(
+    (data.responsabilidades ?? []).map(
+      (row) =>
+        `${row.tipo}:${normalizeOptionalUf(row.uf) ?? ''}:${row.vigenciaInicio}`,
+    ),
+    'Há responsabilidades tributárias duplicadas para a mesma vigência.',
+  );
+
+  for (const row of data.saldos) {
+    const exigeUf = row.tipo === 'ICMS_ST';
+    if (exigeUf !== Boolean(normalizeOptionalUf(row.uf))) {
+      throw new BadRequestException(
+        'Informe UF somente para saldo anterior de ICMS-ST.',
+      );
+    }
   }
 
-  private validarSemantica(data: AtualizarContextoApuracaoSpedDto) {
-    assertUnique(
-      data.saldos.map((row) => `${row.tipo}:${row.uf ?? ''}`),
-      'Há saldos anteriores duplicados para o mesmo tributo e UF.',
-    );
-    assertUnique(
-      data.obrigacoes.map((row) => `${row.tipo}:${row.uf ?? ''}`),
-      'Há obrigações duplicadas para o mesmo tributo e UF.',
-    );
-    assertUnique(
-      (data.responsabilidades ?? []).map(
-        (row) => `${row.tipo}:${row.uf}:${row.vigenciaInicio}`,
-      ),
-      'Há responsabilidades tributárias duplicadas para a mesma vigência.',
-    );
+  for (const row of data.ajustes) {
+    assertValidAdjustment(row, establishmentUf);
+  }
 
-    for (const row of data.saldos) {
-      const exigeUf = row.tipo === 'ICMS_ST';
-      if (exigeUf !== Boolean(row.uf)) {
-        throw new BadRequestException(
-          'Informe UF somente para saldo anterior de ICMS-ST.',
-        );
-      }
+  for (const row of data.obrigacoes) {
+    const exigeUf = row.tipo !== 'ICMS_PROPRIO';
+    if (exigeUf !== Boolean(normalizeOptionalUf(row.uf))) {
+      throw new BadRequestException(
+        `A obrigação ${row.tipo} ${exigeUf ? 'exige' : 'não aceita'} UF.`,
+      );
     }
-    for (const row of data.ajustes) {
-      const exigeUf = row.registro === 'E220' || row.registro === 'E311';
-      if (exigeUf !== Boolean(row.uf)) {
+    assertValidDate(row.dataVencimento, 'data de vencimento');
+  }
+
+  for (const row of data.responsabilidades ?? []) {
+    assertValidDate(row.vigenciaInicio, 'início da vigência');
+    if (row.vigenciaFim) {
+      assertValidDate(row.vigenciaFim, 'fim da vigência');
+      if (row.vigenciaFim < row.vigenciaInicio) {
         throw new BadRequestException(
-          `O ajuste ${row.registro} ${exigeUf ? 'exige' : 'não aceita'} UF.`,
+          'O fim da vigência não pode ser anterior ao início.',
         );
-      }
-      const codigo = row.codigoAjuste.trim().toUpperCase();
-      if (row.registro !== 'E530' && !/^[A-Z0-9]{8}$/.test(codigo)) {
-        throw new BadRequestException(
-          `O código do ajuste ${row.registro} deve possuir 8 caracteres alfanuméricos.`,
-        );
-      }
-      if (row.registro === 'E220' && codigo.slice(0, 2) !== row.uf) {
-        throw new BadRequestException(
-          'O código E220 deve iniciar com a UF informada.',
-        );
-      }
-      if (
-        row.registro === 'E311' &&
-        (codigo.slice(0, 2) !== row.uf || !['2', '3'].includes(codigo[2]))
-      ) {
-        throw new BadRequestException(
-          'O código E311 deve iniciar com a UF e identificar ajuste DIFAL (2) ou FCP (3).',
-        );
-      }
-      if (
-        row.registro === 'E530' &&
-        !['DEBITO', 'CREDITO'].includes(row.indicador)
-      ) {
-        throw new BadRequestException(
-          'O ajuste E530 aceita somente débito ou crédito.',
-        );
-      }
-    }
-    for (const row of data.obrigacoes) {
-      const exigeUf = row.tipo !== 'ICMS_PROPRIO';
-      if (exigeUf !== Boolean(row.uf)) {
-        throw new BadRequestException(
-          `A obrigação ${row.tipo} ${exigeUf ? 'exige' : 'não aceita'} UF.`,
-        );
-      }
-      assertValidDate(row.dataVencimento, 'data de vencimento');
-    }
-    for (const row of data.responsabilidades ?? []) {
-      assertValidDate(row.vigenciaInicio, 'início da vigência');
-      if (row.vigenciaFim) {
-        assertValidDate(row.vigenciaFim, 'fim da vigência');
-        if (row.vigenciaFim < row.vigenciaInicio) {
-          throw new BadRequestException(
-            'O fim da vigência não pode ser anterior ao início.',
-          );
-        }
       }
     }
   }
+}
+
+function assertValidAdjustment(
+  row: AtualizarContextoApuracaoSpedDto['ajustes'][number],
+  establishmentUf: string | null | undefined,
+) {
+  const codigo = normalizeAdjustmentCode(row.codigoAjuste);
+  const uf = normalizeOptionalUf(row.uf);
+  const exigeUf = row.registro === 'E220' || row.registro === 'E311';
+  if (exigeUf !== Boolean(uf)) {
+    throw new BadRequestException(
+      `O ajuste ${row.registro} ${exigeUf ? 'exige' : 'não aceita'} UF.`,
+    );
+  }
+
+  if (row.registro === 'E530') {
+    if (!/^[A-Z0-9]{1,3}$/.test(codigo)) {
+      throw new BadRequestException(
+        'O código do ajuste E530 deve possuir de 1 a 3 caracteres alfanuméricos.',
+      );
+    }
+    if (!['DEBITO', 'CREDITO'].includes(row.indicador)) {
+      throw new BadRequestException(
+        'O ajuste E530 aceita somente débito ou crédito.',
+      );
+    }
+    return;
+  }
+
+  if (!/^[A-Z]{2}[0-3][0-5][A-Z0-9]{4}$/.test(codigo)) {
+    throw new BadRequestException(
+      `O código do ajuste ${row.registro} deve possuir 8 caracteres e seguir UF + apuração + natureza + código estadual.`,
+    );
+  }
+
+  const expectedUf =
+    row.registro === 'E111' ? normalizeOptionalUf(establishmentUf) : uf;
+  if (!expectedUf) {
+    throw new BadRequestException(
+      'Cadastre a UF do estabelecimento antes de informar ajustes E111.',
+    );
+  }
+  if (codigo.slice(0, 2) !== expectedUf) {
+    throw new BadRequestException(
+      `O código ${row.registro} deve iniciar com a UF ${expectedUf}.`,
+    );
+  }
+
+  const expectedAssessmentDigits =
+    row.registro === 'E111'
+      ? ['0']
+      : row.registro === 'E220'
+        ? ['1']
+        : ['2', '3'];
+  if (!expectedAssessmentDigits.includes(codigo[2])) {
+    const description =
+      row.registro === 'E111'
+        ? 'ICMS próprio (0)'
+        : row.registro === 'E220'
+          ? 'ICMS-ST (1)'
+          : 'DIFAL (2) ou FCP (3)';
+    throw new BadRequestException(
+      `O terceiro caractere do código ${row.registro} deve identificar ${description}.`,
+    );
+  }
+
+  const expectedIndicator =
+    ADJUSTMENT_INDICATOR_BY_NATURE[
+      codigo[3] as keyof typeof ADJUSTMENT_INDICATOR_BY_NATURE
+    ];
+  if (row.indicador !== expectedIndicator) {
+    throw new BadRequestException(
+      `O indicador ${row.indicador} não corresponde à natureza ${codigo[3]} do código ${row.registro}; use ${expectedIndicator}.`,
+    );
+  }
+}
+
+function normalizeAdjustmentCode(value: string) {
+  return value.trim().toUpperCase();
+}
+
+function normalizeOptionalUf(value: string | null | undefined) {
+  const normalized = value?.trim().toUpperCase();
+  return normalized || null;
 }
 
 function parseCompetencia(value: string) {
@@ -331,12 +404,14 @@ function assertValidDate(value: string, field: string) {
 }
 
 function stripAuditColumns<T extends Record<string, unknown>>(row: T) {
-  const {
-    clienteId: _clienteId,
-    atualizadoPor: _atualizadoPor,
-    criadoEm: _criadoEm,
-    atualizadoEm: _atualizadoEm,
-    ...data
-  } = row;
+  const data: Record<string, unknown> = { ...row };
+  for (const column of [
+    'clienteId',
+    'atualizadoPor',
+    'criadoEm',
+    'atualizadoEm',
+  ]) {
+    delete data[column];
+  }
   return data;
 }

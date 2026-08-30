@@ -27,6 +27,7 @@ export interface SpedApuracaoPreview {
     estornosCreditos: string;
     estornosDebitos: string;
     deducoes: string;
+    debitosEspeciais: string;
     saldoApurado: string;
     icmsRecolher: string;
     saldoCredorTransportar: string;
@@ -37,12 +38,14 @@ export interface SpedApuracaoPreview {
     saldoCredorAnterior: string;
     recolher: string;
     saldoCredorTransportar: string;
+    debitosEspeciais: string;
   }>;
   difalFcpPorUf: Array<{
     uf: string;
     difal: string;
     fcp: string;
     recolher: string;
+    debitosEspeciais: string;
   }>;
   ipi: null | {
     debitos: string;

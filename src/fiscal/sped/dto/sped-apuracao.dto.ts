@@ -26,6 +26,10 @@ function normalizeUf(value: unknown) {
   return typeof value === 'string' ? value.trim().toUpperCase() : value;
 }
 
+function normalizeUppercase(value: unknown) {
+  return typeof value === 'string' ? value.trim().toUpperCase() : value;
+}
+
 export class CompetenciaSpedDto {
   @ApiProperty({ example: '2026-08' })
   @IsString()
@@ -63,10 +67,12 @@ export class SpedSaldoApuracaoDto {
 
 export class SpedAjusteApuracaoDto {
   @ApiProperty({ enum: ['E111', 'E220', 'E311', 'E530'] })
+  @Transform(({ value }: { value: unknown }) => normalizeUppercase(value))
   @IsIn(['E111', 'E220', 'E311', 'E530'])
   registro: 'E111' | 'E220' | 'E311' | 'E530';
 
   @ApiProperty()
+  @Transform(({ value }: { value: unknown }) => normalizeUppercase(value))
   @IsString()
   @Length(1, 120)
   codigoAjuste: string;
@@ -90,21 +96,25 @@ export class SpedAjusteApuracaoDto {
       'ESTORNO_DEBITO',
       'ESTORNO_CREDITO',
       'DEDUCAO',
+      'DEBITO_ESPECIAL',
     ],
   })
+  @Transform(({ value }: { value: unknown }) => normalizeUppercase(value))
   @IsIn([
     'DEBITO',
     'CREDITO',
     'ESTORNO_DEBITO',
     'ESTORNO_CREDITO',
     'DEDUCAO',
+    'DEBITO_ESPECIAL',
   ])
   indicador:
     | 'DEBITO'
     | 'CREDITO'
     | 'ESTORNO_DEBITO'
     | 'ESTORNO_CREDITO'
-    | 'DEDUCAO';
+    | 'DEDUCAO'
+    | 'DEBITO_ESPECIAL';
 
   @ApiPropertyOptional({ example: 'BA' })
   @Transform(({ value }: { value: unknown }) => normalizeUf(value))

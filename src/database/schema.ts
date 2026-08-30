@@ -1664,12 +1664,33 @@ export const spedAjustesApuracao = pgTable(
     ),
     check(
       'chk_sped_ajuste_indicador',
-      sql`${table.indicador} IN ('DEBITO', 'CREDITO', 'ESTORNO_DEBITO', 'ESTORNO_CREDITO', 'DEDUCAO')`,
+      sql`${table.indicador} IN ('DEBITO', 'CREDITO', 'ESTORNO_DEBITO', 'ESTORNO_CREDITO', 'DEDUCAO', 'DEBITO_ESPECIAL')`,
     ),
     check('chk_sped_ajuste_valor', sql`${table.valor} >= 0`),
     check(
       'chk_sped_ajuste_uf',
       sql`${table.uf} IS NULL OR ${table.uf} ~ '^[A-Z]{2}$'`,
+    ),
+    check(
+      'chk_sped_ajuste_coerencia',
+      sql`(
+        (${table.registro} = 'E111' AND ${table.uf} IS NULL AND ${table.codigoAjuste} ~ '^[A-Z]{2}0[0-5][A-Z0-9]{4}$')
+        OR (${table.registro} = 'E220' AND ${table.uf} IS NOT NULL AND ${table.codigoAjuste} ~ ('^' || ${table.uf} || '1[0-5][A-Z0-9]{4}$'))
+        OR (${table.registro} = 'E311' AND ${table.uf} IS NOT NULL AND ${table.codigoAjuste} ~ ('^' || ${table.uf} || '[23][0-5][A-Z0-9]{4}$'))
+        OR (${table.registro} = 'E530' AND ${table.uf} IS NULL AND ${table.codigoAjuste} ~ '^[A-Z0-9]{1,3}$' AND ${table.indicador} IN ('DEBITO', 'CREDITO'))
+      )`,
+    ),
+    check(
+      'chk_sped_ajuste_natureza_indicador',
+      sql`${table.registro} = 'E530' OR CASE substring(${table.codigoAjuste} FROM 4 FOR 1)
+        WHEN '0' THEN ${table.indicador} = 'DEBITO'
+        WHEN '1' THEN ${table.indicador} = 'ESTORNO_CREDITO'
+        WHEN '2' THEN ${table.indicador} = 'CREDITO'
+        WHEN '3' THEN ${table.indicador} = 'ESTORNO_DEBITO'
+        WHEN '4' THEN ${table.indicador} = 'DEDUCAO'
+        WHEN '5' THEN ${table.indicador} = 'DEBITO_ESPECIAL'
+        ELSE false
+      END`,
     ),
   ],
 );
@@ -1750,7 +1771,10 @@ export const spedInventarios = pgTable(
       table.clienteId,
       table.dataInventario,
     ),
-    check('chk_sped_inventario_motivo', sql`${table.motivo} ~ '^[0-9]{2}$'`),
+    check(
+      'chk_sped_inventario_motivo',
+      sql`${table.motivo} IN ('01', '02', '03', '04', '05', '06')`,
+    ),
     check(
       'chk_sped_inventario_status',
       sql`${table.status} IN ('RASCUNHO', 'FECHADO')`,
@@ -1770,10 +1794,10 @@ export const spedInventarioItens = pgTable(
       .notNull()
       .references(() => spedItens.id, { onDelete: 'restrict' }),
     unidade: varchar('unidade', { length: 6 }).notNull(),
-    quantidade: numeric('quantidade', { precision: 15, scale: 4 }).notNull(),
+    quantidade: numeric('quantidade', { precision: 15, scale: 3 }).notNull(),
     valorUnitario: numeric('valor_unitario', {
       precision: 21,
-      scale: 10,
+      scale: 6,
     }).notNull(),
     valorItem: numeric('valor_item', { precision: 15, scale: 2 }).notNull(),
     indicadorPropriedade: varchar('indicador_propriedade', { length: 1 })
@@ -1790,17 +1814,40 @@ export const spedInventarioItens = pgTable(
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('uidx_sped_inventario_item').on(
-      table.inventarioId,
-      table.spedItemId,
-      table.indicadorPropriedade,
-    ),
+    unique('uq_sped_inventario_item_participante')
+      .on(
+        table.inventarioId,
+        table.spedItemId,
+        table.indicadorPropriedade,
+        table.participanteId,
+      )
+      .nullsNotDistinct(),
     index('idx_sped_inventario_item_inventario').on(table.inventarioId),
     check('chk_sped_inventario_item_qtd', sql`${table.quantidade} >= 0`),
+    check(
+      'chk_sped_inventario_item_valor_unitario',
+      sql`${table.valorUnitario} >= 0`,
+    ),
     check('chk_sped_inventario_item_valor', sql`${table.valorItem} >= 0`),
+    check(
+      'chk_sped_inventario_item_calculo',
+      sql`${table.valorItem} = round(${table.quantidade} * ${table.valorUnitario}, 2)`,
+    ),
+    check(
+      'chk_sped_inventario_item_unidade',
+      sql`${table.unidade} ~ '^[0-9A-Z]{1,6}$'`,
+    ),
     check(
       'chk_sped_inventario_item_ind_prop',
       sql`${table.indicadorPropriedade} IN ('0', '1', '2')`,
+    ),
+    check(
+      'chk_sped_inventario_item_participante',
+      sql`(${table.indicadorPropriedade} = '0' AND ${table.participanteId} IS NULL) OR (${table.indicadorPropriedade} IN ('1', '2') AND ${table.participanteId} IS NOT NULL)`,
+    ),
+    check(
+      'chk_sped_inventario_item_valor_ir',
+      sql`${table.valorItemIr} IS NULL OR ${table.valorItemIr} >= 0`,
     ),
   ],
 );

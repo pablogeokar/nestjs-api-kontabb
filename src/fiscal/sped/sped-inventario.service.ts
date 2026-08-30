@@ -9,15 +9,30 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
+  spedConfiguracoes,
   spedInventarioItens,
   spedInventarios,
   spedItens,
   spedParticipantes,
   spedUnidades,
 } from '../../database/schema';
-import type {
-  AtualizarInventarioSpedDto,
-  SpedInventarioItemDto,
+import {
+  normalizeInventoryUnitCode,
+  SPED_INVENTORY_REASONS,
+  type AtualizarInventarioSpedDto,
+  type SpedInventarioItemDto,
+  type SpedInventarioParticipanteDto,
+} from './dto/sped-inventario.dto';
+/*
+ * Reexported for callers that already consume this normalization from the
+ * service module. The canonical implementation lives beside the DTO so the
+ * HTTP transform and persistence layer cannot diverge.
+ */
+export {
+  normalizeInventoryUnitCode,
+  type AtualizarInventarioSpedDto,
+  type SpedInventarioItemDto,
+  type SpedInventarioParticipanteDto,
 } from './dto/sped-inventario.dto';
 import { fromScaledInteger, toScaledInteger } from './sped-decimal';
 
@@ -37,6 +52,8 @@ interface PersistedCatalogItem {
 }
 
 const BATCH_SIZE = 500;
+const INVENTORY_QUANTITY_PATTERN = /^\d{1,12}(?:\.\d{1,3})?$/;
+const INVENTORY_UNIT_VALUE_PATTERN = /^\d{1,15}(?:\.\d{1,6})?$/;
 
 @Injectable()
 export class SpedInventarioService {
@@ -46,7 +63,18 @@ export class SpedInventarioService {
     assertValidInventoryDate(dataInventario);
     await this.assertCliente(clienteId);
 
-    const inventories = await this.database.db
+    return this.database.db.transaction(
+      (tx) => this.obterSnapshot(tx, clienteId, dataInventario),
+      { isolationLevel: 'repeatable read' },
+    );
+  }
+
+  private async obterSnapshot(
+    db: DatabaseExecutor,
+    clienteId: string,
+    dataInventario: string,
+  ) {
+    const inventories = await db
       .select({
         id: spedInventarios.id,
         dataInventario: spedInventarios.dataInventario,
@@ -66,10 +94,10 @@ export class SpedInventarioService {
       .orderBy(asc(spedInventarios.motivo), asc(spedInventarios.id));
 
     if (inventories.length === 0) {
-      return { dataInventario, inventarios: [] };
+      return { dataInventario, participantes: [], inventarios: [] };
     }
 
-    const itemRows = await this.database.db
+    const itemRows = await db
       .select({
         id: spedInventarioItens.id,
         inventarioId: spedInventarioItens.inventarioId,
@@ -88,6 +116,16 @@ export class SpedInventarioService {
         participanteCodigo: spedParticipantes.codigo,
         participanteDocumento: spedParticipantes.documento,
         participanteNome: spedParticipantes.nome,
+        participanteTipoDocumento: spedParticipantes.tipoDocumento,
+        participanteCodigoPais: spedParticipantes.codigoPais,
+        participanteInscricaoEstadual: spedParticipantes.inscricaoEstadual,
+        participanteCodigoMunicipio: spedParticipantes.codigoMunicipioIbge,
+        participanteSuframa: spedParticipantes.suframa,
+        participanteLogradouro: spedParticipantes.logradouro,
+        participanteNumero: spedParticipantes.numero,
+        participanteComplemento: spedParticipantes.complemento,
+        participanteBairro: spedParticipantes.bairro,
+        participanteCep: spedParticipantes.cep,
         textoComplementar: spedInventarioItens.textoComplementar,
         codigoConta: spedInventarioItens.codigoConta,
         valorItemIr: spedInventarioItens.valorItemIr,
@@ -109,6 +147,7 @@ export class SpedInventarioService {
         asc(spedInventarioItens.inventarioId),
         asc(spedItens.codigo),
         asc(spedInventarioItens.indicadorPropriedade),
+        asc(spedParticipantes.codigo),
       );
 
     const itemsByInventory = new Map<
@@ -121,8 +160,30 @@ export class SpedInventarioService {
       itemsByInventory.set(row.inventarioId, items);
     }
 
+    const participants = new Map<string, Record<string, string | null>>();
+    for (const item of itemRows) {
+      if (!item.participanteDocumento) continue;
+      participants.set(item.participanteDocumento, {
+        tipoDocumento: item.participanteTipoDocumento,
+        documento: item.participanteDocumento,
+        nome: item.participanteNome,
+        codigoPais: item.participanteCodigoPais,
+        inscricaoEstadual: item.participanteInscricaoEstadual,
+        codigoMunicipioIbge: item.participanteCodigoMunicipio,
+        suframa: item.participanteSuframa,
+        logradouro: item.participanteLogradouro,
+        numero: item.participanteNumero,
+        complemento: item.participanteComplemento,
+        bairro: item.participanteBairro,
+        cep: item.participanteCep,
+      });
+    }
+
     return {
       dataInventario,
+      participantes: [...participants.values()].sort((first, second) =>
+        (first.documento ?? '').localeCompare(second.documento ?? '', 'pt-BR'),
+      ),
       inventarios: inventories.map((inventory) => ({
         ...inventory,
         itens: (itemsByInventory.get(inventory.id) ?? []).map((item) => ({
@@ -142,10 +203,21 @@ export class SpedInventarioService {
           participante: item.participanteDocumento
             ? {
                 codigo: item.participanteCodigo,
+                tipoDocumento: item.participanteTipoDocumento,
                 documento: item.participanteDocumento,
                 nome: item.participanteNome,
+                codigoPais: item.participanteCodigoPais,
+                inscricaoEstadual: item.participanteInscricaoEstadual,
+                codigoMunicipioIbge: item.participanteCodigoMunicipio,
+                suframa: item.participanteSuframa,
+                logradouro: item.participanteLogradouro,
+                numero: item.participanteNumero,
+                complemento: item.participanteComplemento,
+                bairro: item.participanteBairro,
+                cep: item.participanteCep,
               }
             : null,
+          participanteDocumento: item.participanteDocumento,
           textoComplementar: item.textoComplementar,
           codigoConta: item.codigoConta,
           valorItemIr: item.valorItemIr,
@@ -168,6 +240,20 @@ export class SpedInventarioService {
     await this.database.db.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${`sped-inventario:${input.clienteId}`}, 0))`,
+      );
+
+      const [configuration] = await tx
+        .select({ perfilEfd: spedConfiguracoes.perfilEfd })
+        .from(spedConfiguracoes)
+        .where(eq(spedConfiguracoes.clienteId, input.clienteId))
+        .limit(1);
+      assertInventoryAccountingAccounts(configuration?.perfilEfd, input.data);
+
+      await this.persistParticipants(
+        tx,
+        input.clienteId,
+        input.data.participantes ?? [],
+        now,
       );
 
       const participantIds = await this.resolveParticipants(
@@ -234,6 +320,14 @@ export class SpedInventarioService {
         const participantDocument = normalizeParticipantDocument(
           item.participanteDocumento,
         );
+        const participantId = participantDocument
+          ? participantIds.get(participantDocument)
+          : null;
+        if (participantDocument && !participantId) {
+          throw new ConflictException(
+            `O participante ${participantDocument} não foi resolvido para o inventário.`,
+          );
+        }
         return {
           inventarioId: inventory.id,
           spedItemId: catalogItem.id,
@@ -242,9 +336,7 @@ export class SpedInventarioService {
           valorUnitario: item.valorUnitario,
           valorItem: item.valorItem,
           indicadorPropriedade: item.indicadorPropriedade,
-          participanteId: participantDocument
-            ? (participantIds.get(participantDocument) ?? null)
-            : null,
+          participanteId: participantId,
           textoComplementar: item.textoComplementar?.trim() || null,
           codigoConta: item.codigoConta?.trim() || null,
           valorItemIr: item.valorItemIr ?? null,
@@ -305,6 +397,86 @@ export class SpedInventarioService {
       );
     }
     return result;
+  }
+
+  private async persistParticipants(
+    db: DatabaseExecutor,
+    clienteId: string,
+    participants: SpedInventarioParticipanteDto[],
+    now: Date,
+  ) {
+    if (participants.length === 0) return;
+
+    const values = [...groupParticipantInputs(participants).values()].map(
+      (participant) => ({
+        clienteId,
+        codigo: stableInventoryParticipantCode(participant.documento),
+        documento: participant.documento,
+        tipoDocumento: participant.tipoDocumento,
+        nome: participant.nome.trim(),
+        codigoPais: participant.codigoPais,
+        inscricaoEstadual: participant.inscricaoEstadual?.trim() || null,
+        codigoMunicipioIbge: participant.codigoMunicipioIbge,
+        suframa: participant.suframa?.trim() || null,
+        logradouro: participant.logradouro.trim(),
+        numero: participant.numero.trim(),
+        complemento: participant.complemento?.trim() || null,
+        bairro: participant.bairro.trim(),
+        cep: participant.cep?.trim() || null,
+        atualizadoEm: now,
+      }),
+    );
+
+    for (const batch of batches(values, BATCH_SIZE)) {
+      const codeRows = await db
+        .select({
+          codigo: spedParticipantes.codigo,
+          documento: spedParticipantes.documento,
+        })
+        .from(spedParticipantes)
+        .where(
+          and(
+            eq(spedParticipantes.clienteId, clienteId),
+            inArray(
+              spedParticipantes.codigo,
+              batch.map((participant) => participant.codigo),
+            ),
+          ),
+        );
+      const documentsByCode = new Map(
+        batch.map((participant) => [participant.codigo, participant.documento]),
+      );
+      if (
+        codeRows.some(
+          (row) => documentsByCode.get(row.codigo) !== row.documento,
+        )
+      ) {
+        throw new ConflictException(
+          'Foi detectada uma colisão de código no cadastro de participantes SPED.',
+        );
+      }
+
+      await db
+        .insert(spedParticipantes)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [spedParticipantes.clienteId, spedParticipantes.documento],
+          set: {
+            tipoDocumento: sql`excluded.tipo_documento`,
+            nome: sql`excluded.nome`,
+            codigoPais: sql`excluded.codigo_pais`,
+            inscricaoEstadual: sql`coalesce(excluded.inscricao_estadual, ${spedParticipantes.inscricaoEstadual})`,
+            codigoMunicipioIbge: sql`excluded.codigo_municipio_ibge`,
+            suframa: sql`coalesce(excluded.suframa, ${spedParticipantes.suframa})`,
+            logradouro: sql`excluded.logradouro`,
+            numero: sql`excluded.numero`,
+            complemento: sql`coalesce(excluded.complemento, ${spedParticipantes.complemento})`,
+            bairro: sql`excluded.bairro`,
+            cep: sql`coalesce(excluded.cep, ${spedParticipantes.cep})`,
+            atualizadoEm: now,
+          },
+        });
+    }
   }
 
   private async persistUnits(
@@ -463,9 +635,15 @@ export class SpedInventarioService {
 }
 
 export function assertInventoryPayload(data: AtualizarInventarioSpedDto) {
-  if (data.status === 'FECHADO' && data.itens.length === 0) {
+  groupParticipantInputs(data.participantes ?? []);
+  if (!SPED_INVENTORY_REASONS.includes(data.motivo)) {
     throw new BadRequestException(
-      'Um inventário fechado precisa possuir ao menos um item.',
+      'O motivo do inventário deve estar entre 01 e 06.',
+    );
+  }
+  if (data.status === 'FECHADO' && data.motivo !== '01') {
+    throw new BadRequestException(
+      'Somente o inventário de motivo 01 pode ser fechado: os motivos 02 a 06 exigem registros complementares ainda não suportados.',
     );
   }
 
@@ -478,13 +656,16 @@ export function assertInventoryPayload(data: AtualizarInventarioSpedDto) {
     const externalCode = item.codigoExterno.trim();
     const unitCode = normalizeInventoryUnitCode(item.unidade);
     const unitDescription = item.descricaoUnidade?.trim() || unitCode;
-    if (!unitCode) {
+    if (!unitCode || unitCode.length > 6) {
       throw new BadRequestException(
-        `A unidade do item ${externalCode} não possui um código SPED válido.`,
+        `A unidade do item ${externalCode} deve possuir de 1 a 6 caracteres alfanuméricos no SPED.`,
       );
     }
 
-    const duplicateKey = `${externalCode}\u0000${item.indicadorPropriedade}`;
+    const participantDocument = normalizeParticipantDocument(
+      item.participanteDocumento,
+    );
+    const duplicateKey = `${externalCode}\u0000${item.indicadorPropriedade}\u0000${participantDocument ?? ''}`;
     if (uniqueInventoryItems.has(duplicateKey)) {
       throw new BadRequestException(
         `O item ${externalCode} está duplicado para o indicador de propriedade ${item.indicadorPropriedade}.`,
@@ -492,9 +673,6 @@ export function assertInventoryPayload(data: AtualizarInventarioSpedDto) {
     }
     uniqueInventoryItems.add(duplicateKey);
 
-    const participantDocument = normalizeParticipantDocument(
-      item.participanteDocumento,
-    );
     if (item.indicadorPropriedade === '0' && participantDocument) {
       throw new BadRequestException(
         `O item próprio ${externalCode} não deve informar participante.`,
@@ -506,8 +684,16 @@ export function assertInventoryPayload(data: AtualizarInventarioSpedDto) {
       );
     }
 
-    const quantity = toScaledInteger(item.quantidade, 4);
-    const unitValue = toScaledInteger(item.valorUnitario, 10);
+    if (
+      !INVENTORY_QUANTITY_PATTERN.test(item.quantidade) ||
+      !INVENTORY_UNIT_VALUE_PATTERN.test(item.valorUnitario)
+    ) {
+      throw new BadRequestException(
+        `O item ${externalCode} deve informar quantidade com até 3 casas e valor unitário com até 6 casas decimais.`,
+      );
+    }
+    const quantity = toScaledInteger(item.quantidade, 3);
+    const unitValue = toScaledInteger(item.valorUnitario, 6);
     const declaredItemValue = toScaledInteger(item.valorItem, 2);
     if (quantity < 0n || unitValue < 0n || declaredItemValue < 0n) {
       throw new BadRequestException(
@@ -559,24 +745,39 @@ export function assertInventoryPayload(data: AtualizarInventarioSpedDto) {
       `O valor total do inventário deve ser exatamente ${fromScaledInteger(itemsTotal)}.`,
     );
   }
+  if (declaredTotal === 0n && data.itens.length > 0) {
+    throw new BadRequestException(
+      'O registro H010 não pode ser informado quando o valor total do inventário é zero.',
+    );
+  }
+}
+
+export function assertInventoryAccountingAccounts(
+  profile: string | null | undefined,
+  data: AtualizarInventarioSpedDto,
+) {
+  if (data.status !== 'FECHADO' || (profile !== 'A' && profile !== 'B')) {
+    return;
+  }
+  const missingAccounts = data.itens
+    .filter((item) => !item.codigoConta?.trim())
+    .map((item) => item.codigoExterno);
+  if (missingAccounts.length > 0) {
+    const sample = missingAccounts.slice(0, 5).join(', ');
+    const suffix = missingAccounts.length > 5 ? ', ...' : '';
+    throw new BadRequestException(
+      `O código da conta contábil (COD_CTA) é obrigatório no H010 para os perfis A e B. Revise: ${sample}${suffix}.`,
+    );
+  }
 }
 
 export function calculateInventoryItemValue(
   quantity: string,
   unitValue: string,
 ) {
-  const product = toScaledInteger(quantity, 4) * toScaledInteger(unitValue, 10);
-  const divisor = 10n ** 12n;
+  const product = toScaledInteger(quantity, 3) * toScaledInteger(unitValue, 6);
+  const divisor = 10n ** 7n;
   return (product + divisor / 2n) / divisor;
-}
-
-export function normalizeInventoryUnitCode(value: string) {
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^0-9A-Za-z]/g, '')
-    .toUpperCase()
-    .slice(0, 6);
 }
 
 export function stableInventoryItemCode(externalCode: string) {
@@ -586,6 +787,18 @@ export function stableInventoryItemCode(externalCode: string) {
     .digest('hex')
     .toUpperCase();
   return `I${digest.slice(0, 15)}`;
+}
+
+export function stableInventoryParticipantCode(document: string) {
+  const normalized = normalizeParticipantDocument(document);
+  if (!normalized) {
+    throw new BadRequestException('O documento do participante é obrigatório.');
+  }
+  const digest = createHash('sha256')
+    .update(normalized, 'utf8')
+    .digest('hex')
+    .toUpperCase();
+  return `P${digest.slice(0, 15)}`;
 }
 
 function groupCatalogInputs(items: SpedInventarioItemDto[]) {
@@ -601,6 +814,76 @@ function groupCatalogInputs(items: SpedInventarioItemDto[]) {
     }
   }
   return result;
+}
+
+function groupParticipantInputs(participants: SpedInventarioParticipanteDto[]) {
+  const result = new Map<string, SpedInventarioParticipanteDto>();
+  for (const participant of participants) {
+    const document = normalizeParticipantDocument(participant.documento);
+    const validDocument =
+      participant.tipoDocumento === 'CPF'
+        ? /^\d{11}$/.test(document ?? '')
+        : participant.tipoDocumento === 'CNPJ' &&
+          /^[0-9A-Z]{12}\d{2}$/.test(document ?? '');
+    if (!document || !validDocument) {
+      throw new BadRequestException(
+        `O documento ${participant.documento || '(vazio)'} não corresponde ao tipo ${participant.tipoDocumento}.`,
+      );
+    }
+    const codigoPais = (participant.codigoPais || '01058')
+      .replace(/\D/g, '')
+      .slice(-5)
+      .padStart(5, '0');
+    if (
+      !/^\d{5}$/.test(codigoPais) ||
+      !/^\d{7}$/.test(participant.codigoMunicipioIbge ?? '') ||
+      !participant.nome?.trim() ||
+      !participant.logradouro?.trim() ||
+      !participant.numero?.trim() ||
+      !participant.bairro?.trim()
+    ) {
+      throw new BadRequestException(
+        `O participante ${document} precisa de nome, país, município IBGE e endereço completos para o registro 0150.`,
+      );
+    }
+    const normalized: SpedInventarioParticipanteDto = {
+      ...participant,
+      documento: document,
+      nome: participant.nome.trim(),
+      codigoPais,
+      codigoMunicipioIbge: participant.codigoMunicipioIbge,
+      logradouro: participant.logradouro.trim(),
+      numero: participant.numero.trim(),
+      bairro: participant.bairro.trim(),
+    };
+    const previous = result.get(document);
+    if (
+      previous &&
+      participantDefinition(previous) !== participantDefinition(normalized)
+    ) {
+      throw new BadRequestException(
+        `O participante ${document} foi informado com dados divergentes.`,
+      );
+    }
+    result.set(document, normalized);
+  }
+  return result;
+}
+
+function participantDefinition(participant: SpedInventarioParticipanteDto) {
+  return JSON.stringify({
+    tipoDocumento: participant.tipoDocumento,
+    nome: participant.nome.trim(),
+    codigoPais: participant.codigoPais,
+    inscricaoEstadual: participant.inscricaoEstadual?.trim() || null,
+    codigoMunicipioIbge: participant.codigoMunicipioIbge,
+    suframa: participant.suframa?.trim() || null,
+    logradouro: participant.logradouro.trim(),
+    numero: participant.numero.trim(),
+    complemento: participant.complemento?.trim() || null,
+    bairro: participant.bairro.trim(),
+    cep: participant.cep?.trim() || null,
+  });
 }
 
 function normalizeParticipantDocument(value: string | null | undefined) {
