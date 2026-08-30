@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import { normalizeFiscalTaxId } from './fiscal-identifier';
+import { normalizeFiscalCnpj } from './fiscal-identifier';
 
 type XmlRecord = Record<string, unknown>;
 
@@ -249,7 +249,7 @@ function parseItem(det: XmlRecord): ParsedNfeItem | null {
     nve: joinedText(prod.NVE),
     cest: limitedText(prod.CEST, 7),
     indEscala: limitedText(prod.indEscala, 1),
-    cnpjFabricante: taxId(prod.CNPJFab, 14),
+    cnpjFabricante: cnpj(prod.CNPJFab),
     codigoBeneficioFiscal: nullableText(prod.cBenef),
     cfop: cfop!,
     unidadeComercial,
@@ -326,7 +326,7 @@ function parseItem(det: XmlRecord): ParsedNfeItem | null {
     cstIpi: limitedText(ipiTributacao.CST, 2),
     classeEnquadramentoIpi: limitedText(ipi.clEnq, 5),
     codigoEnquadramentoIpi: limitedText(ipi.cEnq, 3),
-    cnpjProdutorIpi: taxId(ipi.CNPJProd, 14),
+    cnpjProdutorIpi: cnpj(ipi.CNPJProd),
     valorBcIpi: decimal(ipiTributacao.vBC, 15, 2),
     aliquotaIpi: decimal(ipiTributacao.pIPI, 7, 4),
     quantidadeUnidadeIpi: decimal(ipiTributacao.qUnid, 15, 4),
@@ -387,9 +387,8 @@ function limitedText(value: unknown, maxLength: number): string | null {
   return normalized && normalized.length <= maxLength ? normalized : null;
 }
 
-function taxId(value: unknown, length: number): string | null {
-  const normalized = normalizeFiscalTaxId(readText(value));
-  return normalized.length === length ? normalized : null;
+function cnpj(value: unknown): string | null {
+  return normalizeFiscalCnpj(readText(value)) || null;
 }
 
 function nullableText(value: unknown): string | null {

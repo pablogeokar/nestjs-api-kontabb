@@ -4,6 +4,8 @@ import { parseNfeItems, type ParsedNfeItem } from './nfe-item.parser';
 import {
   isValidFiscalAccessKey,
   normalizeFiscalAccessKey,
+  normalizeFiscalCnpj,
+  normalizeFiscalCpf,
   normalizeFiscalTaxId,
 } from './fiscal-identifier';
 import {
@@ -606,8 +608,8 @@ function extractTagValue(xml: string, tagName: string): string {
 
 function extractTaxId(xml: string): string {
   return (
-    normalizeFiscalTaxId(extractTagValue(xml, 'CNPJ')) ||
-    normalizeFiscalTaxId(extractTagValue(xml, 'CPF'))
+    normalizeFiscalCnpj(extractTagValue(xml, 'CNPJ')) ||
+    normalizeFiscalCpf(extractTagValue(xml, 'CPF'))
   );
 }
 
@@ -617,8 +619,8 @@ function parseParticipanteFiscal(
 ): ParsedParticipanteFiscal | null {
   if (!partyXml.trim()) return null;
 
-  const cnpj = normalizeFiscalTaxId(extractTagValue(partyXml, 'CNPJ'));
-  const cpf = normalizeFiscalTaxId(extractTagValue(partyXml, 'CPF'));
+  const cnpj = normalizeFiscalCnpj(extractTagValue(partyXml, 'CNPJ'));
+  const cpf = normalizeFiscalCpf(extractTagValue(partyXml, 'CPF'));
   const cnpjCpf = cnpj || cpf;
   const nome =
     extractTagValue(partyXml, 'xNome') || extractTagValue(partyXml, 'xFant');
@@ -627,8 +629,8 @@ function parseParticipanteFiscal(
 
   return {
     cnpjCpf,
-    cnpj: cnpj.length === 14 ? cnpj : '',
-    cpf: cpf.length === 11 ? cpf : '',
+    cnpj,
+    cpf,
     nome,
     ie: extractTagValue(partyXml, 'IE'),
     uf: extractTagValue(address, 'UF'),

@@ -313,6 +313,7 @@ export class EfdIcmsIpiService {
         telefone: spedConfiguracoes.telefone,
         fax: spedConfiguracoes.fax,
         inventarioObrigatorio: spedConfiguracoes.inventarioObrigatorio,
+        mesEntregaInventario: spedConfiguracoes.mesEntregaInventario,
         blocoKComMovimento: spedConfiguracoes.blocoKComMovimento,
         tipoItemPadrao: spedConfiguracoes.tipoItemPadrao,
         indicadores1010: spedConfiguracoes.indicadores1010,
@@ -667,7 +668,12 @@ export class EfdIcmsIpiService {
       });
     }
 
-    const inventario = company.inventarioObrigatorio
+    const inventarioDue = isInventoryDueForPeriod(
+      company.inventarioObrigatorio === true,
+      company.mesEntregaInventario,
+      period.start,
+    );
+    const inventario = inventarioDue
       ? await this.loadInventario(
           db,
           clienteId,
@@ -679,7 +685,7 @@ export class EfdIcmsIpiService {
           inconsistencias,
         )
       : null;
-    if (company.inventarioObrigatorio && !inventario) {
+    if (inventarioDue && !inventario) {
       inconsistencias.push({
         codigo: 'INVENTARIO_OBRIGATORIO_AUSENTE',
         severidade: 'ERRO',
@@ -789,11 +795,11 @@ export class EfdIcmsIpiService {
       }
     }
 
-    let counts = {
+    let counts: SpedPreview['contadores'] = {
       totalLinhas: 0,
       porBloco: {},
       porRegistro: {},
-    } as SpedPreview['contadores'];
+    };
     try {
       const file = buildSpedFile({ records: builtRecords.records });
       counts = {
@@ -1373,7 +1379,9 @@ export class EfdIcmsIpiService {
     );
     for (const row of apuracao.icmsStPorUf) {
       if (
-        toScaledInteger(row.debitos) > 0n &&
+        (toScaledInteger(row.debitos) > 0n ||
+          toScaledInteger(row.recolher) > 0n ||
+          toScaledInteger(row.debitosEspeciais) > 0n) &&
         !responsabilidades.some(
           (item) => item.tipo === 'ICMS_ST' && item.uf === row.uf,
         )
@@ -1395,7 +1403,10 @@ export class EfdIcmsIpiService {
     }
     for (const row of apuracao.difalFcpPorUf) {
       if (
-        toScaledInteger(row.recolher) > 0n &&
+        (toScaledInteger(row.difal) > 0n ||
+          toScaledInteger(row.fcp) > 0n ||
+          toScaledInteger(row.recolher) > 0n ||
+          toScaledInteger(row.debitosEspeciais) > 0n) &&
         !responsabilidades.some(
           (item) => item.tipo === 'DIFAL_FCP' && item.uf === row.uf,
         )
@@ -1669,6 +1680,22 @@ export class EfdIcmsIpiService {
 
 function isSpedProfile(value: string | null): value is 'A' | 'B' | 'C' {
   return value === 'A' || value === 'B' || value === 'C';
+}
+
+export function isInventoryDueForPeriod(
+  required: boolean,
+  configuredMonth: number | null | undefined,
+  periodStart: Date,
+) {
+  const deliveryMonth =
+    Number.isInteger(configuredMonth) &&
+    configuredMonth !== undefined &&
+    configuredMonth !== null &&
+    configuredMonth >= 1 &&
+    configuredMonth <= 12
+      ? configuredMonth
+      : 2;
+  return required && periodStart.getUTCMonth() + 1 === deliveryMonth;
 }
 
 function normalizeIdentifier(value: string): string {

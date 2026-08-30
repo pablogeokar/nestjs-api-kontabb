@@ -220,7 +220,7 @@ function parseEmployeeBlock(block: string): DadosFuncionarioFolha | null {
   // Cargo can contain parentheses like REPOSITOR(A), INST.DE MUSCULAÇÃO, etc.
   // After the cargo there may be vacation info ("Férias de ...") or "Salário Base"
   const cargoMatch = block.match(
-    /Fun[cç][aã]o\s*:\s*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\w\s.()\/\-]+?)(?=\s+F[eé]rias\s+de\s|\s+Sal[aá]rio\s+Base|\s+\d{1,3}(?:\.\d{3})*,\d{2})/i,
+    /Fun[cç][aã]o\s*:\s*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\w\s.()/-]+?)(?=\s+F[eé]rias\s+de\s|\s+Sal[aá]rio\s+Base|\s+\d{1,3}(?:\.\d{3})*,\d{2})/i,
   );
   const cargo = cargoMatch ? cargoMatch[1].trim() : null;
 
@@ -372,7 +372,7 @@ function extractRubricas(block: string): RubricaFolha[] {
   //   Code: exactly 3 digits at the end
 
   const rubricaRegex =
-    /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\d\s.%()\/\-,]*?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})(\d{3}:\d{2})?(\d{3})/g;
+    /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\d\s.%()/,-]*?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})(\d{3}:\d{2})?(\d{3})/g;
 
   let match: RegExpExecArray | null;
   while ((match = rubricaRegex.exec(rubricaSection)) !== null) {

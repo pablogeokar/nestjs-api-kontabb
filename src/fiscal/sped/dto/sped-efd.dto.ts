@@ -3,12 +3,15 @@ import {
   IsBoolean,
   IsEmail,
   IsIn,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
   Length,
+  Max,
   Matches,
+  Min,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -27,7 +30,13 @@ export class PreviewEfdIcmsIpiDto {
 
   @ApiPropertyOptional({ enum: SPED_FINALIDADES, default: '0' })
   @Transform(({ value }: { value: unknown }) =>
-    value === undefined || value === null || value === '' ? '0' : String(value),
+    value === undefined || value === null || value === ''
+      ? '0'
+      : value === 0
+        ? '0'
+        : value === 1
+          ? '1'
+          : value,
   )
   @IsIn(SPED_FINALIDADES)
   finalidade: (typeof SPED_FINALIDADES)[number] = '0';
@@ -185,6 +194,15 @@ export class AtualizarSpedConfiguracaoDto {
   @ApiPropertyOptional({ default: false })
   @IsBoolean()
   inventarioObrigatorio = false;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 12, default: 2 })
+  @Transform(({ value }: { value: unknown }) =>
+    value === undefined || value === null || value === '' ? 2 : Number(value),
+  )
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  mesEntregaInventario = 2;
 
   @ApiPropertyOptional({ default: false })
   @IsBoolean()

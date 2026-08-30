@@ -1,6 +1,28 @@
 const CPF_PATTERN = /^\d{11}$/;
-const CNPJ_PATTERN = /^[A-Z0-9]{12}\d{2}$/;
+const CNPJ_PATTERN = /^[0-9A-Z]{12}[0-9]{2}$/;
 const ACCESS_KEY_PATTERN = /^\d{6}[A-Z0-9]{12}\d{26}$/;
+
+function normalizeFiscalTaxIdCharacters(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[./\s-]/g, '');
+}
+
+/** Normaliza CPF, rejeitando qualquer caractere alfabético. */
+export function normalizeFiscalCpf(value: string): string {
+  const normalized = normalizeFiscalTaxIdCharacters(value);
+  return CPF_PATTERN.test(normalized) ? normalized : '';
+}
+
+/**
+ * Normaliza CNPJ alfanumérico. As doze primeiras posições aceitam 0-9/A-Z e
+ * as duas posições de dígito verificador permanecem estritamente numéricas.
+ */
+export function normalizeFiscalCnpj(value: string): string {
+  const normalized = normalizeFiscalTaxIdCharacters(value);
+  return CNPJ_PATTERN.test(normalized) ? normalized : '';
+}
 
 /**
  * Normaliza CPF/CNPJ sem converter o identificador em number. O CNPJ aceita o
@@ -8,13 +30,7 @@ const ACCESS_KEY_PATTERN = /^\d{6}[A-Z0-9]{12}\d{26}$/;
  * numéricos já emitidos nos XMLs atuais.
  */
 export function normalizeFiscalTaxId(value: string): string {
-  const normalized = value
-    .trim()
-    .toUpperCase()
-    .replace(/[./\s-]/g, '');
-  return CPF_PATTERN.test(normalized) || CNPJ_PATTERN.test(normalized)
-    ? normalized
-    : '';
+  return normalizeFiscalCpf(value) || normalizeFiscalCnpj(value);
 }
 
 /** Remove somente o prefixo XML e espaços de apresentação da chave. */

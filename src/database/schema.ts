@@ -605,7 +605,10 @@ export const certificadosDigitais = pgTable(
       'chk_certificados_status',
       sql`${table.status} IN ('ATIVO', 'EXPIRADO', 'PRESTES_A_EXPIRAR', 'REVOGADO')`,
     ),
-    check('chk_certificados_cnpj', sql`${table.cnpj} ~ '^[0-9]{14}$'`),
+    check(
+      'chk_certificados_cnpj',
+      sql`${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$'`,
+    ),
     check(
       'chk_certificados_validade',
       sql`${table.validadeInicio} < ${table.validadeFim}`,
@@ -1340,6 +1343,9 @@ export const spedConfiguracoes = pgTable(
     inventarioObrigatorio: boolean('inventario_obrigatorio')
       .notNull()
       .default(false),
+    mesEntregaInventario: integer('mes_entrega_inventario')
+      .notNull()
+      .default(2),
     blocoKComMovimento: boolean('bloco_k_com_movimento')
       .notNull()
       .default(false),
@@ -1377,6 +1383,10 @@ export const spedConfiguracoes = pgTable(
     check(
       'chk_sped_config_tipo_item_padrao',
       sql`${table.tipoItemPadrao} ~ '^[0-9]{2}$'`,
+    ),
+    check(
+      'chk_sped_config_mes_inventario',
+      sql`${table.mesEntregaInventario} BETWEEN 1 AND 12`,
     ),
     check(
       'chk_sped_config_indicadores_1010',

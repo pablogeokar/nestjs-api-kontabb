@@ -58,6 +58,9 @@ pertence à EFD-Contribuições.
   é omitido.
 - Perfil A/B/C vem da configuração estadual do estabelecimento, nunca do pedido
   de geração.
+- O Bloco H anual só é exigido na competência definida em
+  `mesEntregaInventario` (fevereiro por padrão). Nas demais competências, a
+  configuração anual não bloqueia a geração.
 - A data fiscal (`YYYY-MM-DD`) é preservada separadamente do instante do XML,
   evitando deslocamento de competência por fuso horário.
 - CNPJ e chaves de acesso aceitam o formato alfanumérico previsto para o novo
@@ -93,19 +96,69 @@ pertence à EFD-Contribuições.
    - cliente: `GET/PUT /api/fiscal/sped/configuracao`;
    - admin: `GET/PUT /api/admin/fiscal/sped/configuracao`.
 
+   Quando `inventarioObrigatorio` estiver ativo, confirme também
+   `mesEntregaInventario` entre 1 e 12. O valor padrão é `2` (fevereiro).
+
 4. Informe saldos anteriores, ajustes, obrigações e responsabilidades por UF:
 
    - cliente: `GET/PUT /api/fiscal/sped/contexto-apuracao`;
    - admin: `GET/PUT /api/admin/fiscal/sped/contexto-apuracao`.
 
-5. Consulte a prévia. Ela apresenta contadores, apuração e inconsistências
+   Use `E111` para ICMS próprio, `E220` para ICMS-ST por UF, `E311` para
+   DIFAL/FCP por UF e `E530` para IPI. O indicador
+   `DEBITO_ESPECIAL` corresponde à natureza `5` do código estadual. FCP próprio
+   e FCP-ST precisam ser conciliados com ajustes de débito dedicados antes da
+   geração.
+
+5. Na competência configurada para o Bloco H, cadastre e feche o inventário
+   pela interface web ou pelos endpoints:
+
+   - cliente: `GET/PUT /api/fiscal/sped/inventario?data=YYYY-MM-DD`;
+   - admin:
+     `GET/PUT /api/admin/fiscal/sped/inventario?clienteId=UUID&data=YYYY-MM-DD`.
+
+   Exemplo mínimo com estoque próprio:
+
+   ```json
+   {
+     "motivo": "01",
+     "valorTotal": "129.63",
+     "status": "FECHADO",
+     "participantes": [],
+     "itens": [
+       {
+         "codigoExterno": "SKU-0001",
+         "descricao": "Mercadoria para revenda",
+         "unidade": "UN",
+         "descricaoUnidade": "Unidade",
+         "tipoItem": "00",
+         "ncm": "22030000",
+         "quantidade": "10.500",
+         "valorUnitario": "12.345679",
+         "valorItem": "129.63",
+         "indicadorPropriedade": "0",
+         "codigoConta": "1.1.3.01"
+       }
+     ]
+   }
+   ```
+
+   Quantidade admite até 3 casas, valor unitário até 6 e os valores do item e
+   do inventário precisam fechar exatamente. Para indicadores de propriedade
+   `1` ou `2`, informe `participanteDocumento` no item e os dados completos do
+   participante no array `participantes`. Perfis A e B exigem `codigoConta` ao
+   fechar. Inventário sem estoque é fechado com `valorTotal: "0.00"` e sem
+   itens. Motivos 02 a 06 ficam restritos a rascunho enquanto H020/H030 não
+   estiverem implementados.
+
+6. Consulte a prévia. Ela apresenta contadores, apuração e inconsistências
    impeditivas:
 
    ```http
    GET /api/fiscal/sped/efd-icms-ipi/preview?competencia=2026-08&finalidade=0
    ```
 
-6. Gere somente quando `podeGerar` for `true`:
+7. Gere somente quando `podeGerar` for `true`:
 
    ```http
    POST /api/fiscal/sped/efd-icms-ipi/gerar

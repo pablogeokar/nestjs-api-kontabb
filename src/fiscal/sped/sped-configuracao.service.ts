@@ -41,6 +41,7 @@ export class SpedConfiguracaoService {
         telefone: spedConfiguracoes.telefone,
         fax: spedConfiguracoes.fax,
         inventarioObrigatorio: spedConfiguracoes.inventarioObrigatorio,
+        mesEntregaInventario: spedConfiguracoes.mesEntregaInventario,
         blocoKComMovimento: spedConfiguracoes.blocoKComMovimento,
         tipoItemPadrao: spedConfiguracoes.tipoItemPadrao,
         indicadores1010: spedConfiguracoes.indicadores1010,
@@ -91,6 +92,7 @@ export class SpedConfiguracaoService {
       telefone: row.telefone,
       fax: row.fax,
       inventarioObrigatorio: row.inventarioObrigatorio ?? false,
+      mesEntregaInventario: row.mesEntregaInventario ?? 2,
       blocoKComMovimento: row.blocoKComMovimento ?? false,
       tipoItemPadrao: row.tipoItemPadrao ?? '00',
       indicadores1010: row.indicadores1010 ?? {},
@@ -136,6 +138,7 @@ export class SpedConfiguracaoService {
 
     const now = new Date();
     const data = input.data;
+    const mesEntregaInventario = data.mesEntregaInventario ?? 2;
     await this.database.db.transaction(async (tx) => {
       await tx
         .insert(spedConfiguracoes)
@@ -153,6 +156,7 @@ export class SpedConfiguracaoService {
           telefone: data.telefone ?? null,
           fax: data.fax ?? null,
           inventarioObrigatorio: data.inventarioObrigatorio,
+          mesEntregaInventario,
           blocoKComMovimento: data.blocoKComMovimento,
           tipoItemPadrao: data.tipoItemPadrao,
           indicadores1010: this.normalizarIndicadores1010(data.indicadores1010),
@@ -174,6 +178,7 @@ export class SpedConfiguracaoService {
             telefone: data.telefone ?? null,
             fax: data.fax ?? null,
             inventarioObrigatorio: data.inventarioObrigatorio,
+            mesEntregaInventario,
             blocoKComMovimento: data.blocoKComMovimento,
             tipoItemPadrao: data.tipoItemPadrao,
             indicadores1010: this.normalizarIndicadores1010(

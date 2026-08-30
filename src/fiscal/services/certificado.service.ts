@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { eq, and, gte, inArray, lt, lte } from 'drizzle-orm';
+import forge from 'node-forge';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { AppLogger } from '../../common/logger.service';
@@ -22,6 +23,132 @@ export interface CertificadoMetadata {
 export interface DecryptedCertificate {
   buffer: Buffer;
   senha: string;
+}
+
+const CNPJ_PATTERN = /^[0-9A-Z]{12}[0-9]{2}$/;
+const CNPJ_IN_TEXT_PATTERN =
+  /(^|[^0-9A-Z])([0-9A-Z]{2}[.\s]?[0-9A-Z]{3}[.\s]?[0-9A-Z]{3}[/\s]?[0-9A-Z]{4}[-\s]?[0-9]{2})(?![0-9A-Z])/i;
+
+interface ExtractedCnpj {
+  cnpj: string;
+  index: number;
+}
+
+function normalizeCnpj(value: string): string | null {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[./\s-]/g, '');
+
+  return CNPJ_PATTERN.test(normalized) ? normalized : null;
+}
+
+function extractCnpjFromText(value: string): ExtractedCnpj | null {
+  const match = CNPJ_IN_TEXT_PATTERN.exec(value.toUpperCase());
+  if (!match) return null;
+
+  const cnpj = normalizeCnpj(match[2]);
+  if (!cnpj) return null;
+
+  return {
+    cnpj,
+    index: (match.index ?? 0) + match[1].length,
+  };
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '';
+}
+
+function getForgeText(value: unknown, depth = 0): string {
+  if (depth > 8) return '';
+
+  switch (typeof value) {
+    case 'string':
+      return value;
+    case 'number':
+    case 'bigint':
+    case 'boolean':
+      return value.toString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => getForgeText(item, depth + 1)).join(' ');
+  }
+
+  if (typeof value !== 'object' || value === null) return '';
+
+  const nestedValues: string[] = [];
+  if ('value' in value) {
+    nestedValues.push(getForgeText(value.value, depth + 1));
+  }
+  if ('utf8' in value) {
+    nestedValues.push(getForgeText(value.utf8, depth + 1));
+  }
+
+  return nestedValues.filter(Boolean).join(' ');
+}
+
+function getForgeAttributeValue(attribute: unknown): string | null {
+  if (
+    typeof attribute !== 'object' ||
+    attribute === null ||
+    !('value' in attribute) ||
+    typeof attribute.value !== 'string'
+  ) {
+    return null;
+  }
+
+  return attribute.value;
+}
+
+function getForgeExtensionName(extension: unknown): string | null {
+  if (
+    typeof extension !== 'object' ||
+    extension === null ||
+    !('name' in extension) ||
+    typeof extension.name !== 'string'
+  ) {
+    return null;
+  }
+
+  return extension.name;
+}
+
+function getForgeAltNames(extension: unknown): unknown[] {
+  if (
+    typeof extension !== 'object' ||
+    extension === null ||
+    !('altNames' in extension) ||
+    !Array.isArray(extension.altNames)
+  ) {
+    return [];
+  }
+
+  return extension.altNames as unknown[];
+}
+
+function getForgeAltNameValue(altName: unknown): string {
+  if (typeof altName !== 'object' || altName === null) {
+    return '';
+  }
+
+  const values: string[] = [];
+  if ('value' in altName && altName.value != null) {
+    values.push(getForgeText(altName.value));
+  }
+
+  if ('utf8' in altName && altName.utf8 != null) {
+    values.push(getForgeText(altName.utf8));
+  }
+
+  return values.filter(Boolean).join(' ');
+}
+
+function getForgeSubjectAttributeValue(
+  attribute: forge.pki.CertificateField,
+): string {
+  return getForgeText(attribute.value as unknown);
 }
 
 @Injectable()
@@ -52,13 +179,13 @@ export class CertificadoService {
       throw new NotFoundException('Cliente não encontrado.');
     }
 
-    const cnpjCliente = cliente[0].cnpj;
+    const cnpjCliente = normalizeCnpj(cliente[0].cnpj);
 
     // 2. Validar o certificado e extrair metadados
     let metadata: CertificadoMetadata;
     try {
       metadata = this.extractPfxMetadata(input.pfxBuffer, input.senha);
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error('certificate_validation_failed', error, {
         clienteId: input.clienteId,
         operation: 'upload_certificado',
@@ -69,9 +196,9 @@ export class CertificadoService {
     }
 
     // 3. Verificar se o CNPJ do certificado bate com o CNPJ do cliente
-    if (metadata.cnpj !== cnpjCliente) {
+    if (!cnpjCliente || metadata.cnpj !== cnpjCliente) {
       throw new BadRequestException(
-        `O CNPJ do certificado (${metadata.cnpj}) não corresponde ao CNPJ do cliente (${cnpjCliente}).`,
+        `O CNPJ do certificado (${metadata.cnpj}) não corresponde ao CNPJ do cliente (${cliente[0].cnpj}).`,
       );
     }
 
@@ -318,27 +445,24 @@ export class CertificadoService {
     pfxBuffer: Buffer,
     passphrase: string,
   ): CertificadoMetadata {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const forge = require('node-forge');
-
     // Converter buffer para DER string (binary) que forge espera
     const derString = pfxBuffer.toString('binary');
 
-    let p12Asn1: any;
-    let p12: any;
+    let p12: forge.pkcs12.Pkcs12Pfx;
     try {
-      p12Asn1 = forge.asn1.fromDer(derString);
+      const p12Asn1 = forge.asn1.fromDer(derString);
       p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, passphrase);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
       if (
-        error.message?.includes('Invalid password') ||
-        error.message?.includes('PKCS#12 MAC could not be verified') ||
-        error.message?.includes('bad decrypt')
+        message.includes('Invalid password') ||
+        message.includes('PKCS#12 MAC could not be verified') ||
+        message.includes('bad decrypt')
       ) {
         throw new Error('Senha do certificado incorreta.');
       }
       throw new Error(
-        `Falha ao ler o certificado PFX: ${error.message || 'formato inválido'}`,
+        `Falha ao ler o certificado PFX: ${message || 'formato inválido'}`,
       );
     }
 
@@ -364,41 +488,46 @@ export class CertificadoService {
     let razaoSocial = '';
 
     // Buscar no CN (Common Name)
-    const cnAttr = subject.getField('CN');
-    if (cnAttr) {
-      const cn = cnAttr.value as string;
-      // Formato típico ICP-Brasil: "RAZAO SOCIAL:12345678000195"
-      const cnpjMatch = cn.match(/(\d{14})/);
-      if (cnpjMatch) {
-        cnpj = cnpjMatch[1];
+    const cn = getForgeAttributeValue(subject.getField('CN') as unknown);
+    if (cn) {
+      // Formato típico ICP-Brasil: "RAZAO SOCIAL:12ABC34501DE35"
+      const extractedCnpj = extractCnpjFromText(cn);
+      if (extractedCnpj) {
+        cnpj = extractedCnpj.cnpj;
       }
-      // Extrair razão social (parte antes do ":" ou dos dígitos finais)
-      razaoSocial = cn.replace(/[:\d]+$/, '').trim();
+
+      // Extrair razão social (parte anterior ao CNPJ, quando presente)
+      razaoSocial = extractedCnpj
+        ? cn
+            .slice(0, extractedCnpj.index)
+            .replace(/[:\s]+$/, '')
+            .trim()
+        : cn.replace(/[:\d]+$/, '').trim();
       if (!razaoSocial) razaoSocial = cn.split(':')[0].trim();
     }
 
     // Buscar no campo serialNumber do subject (OID 2.5.4.5)
     if (!cnpj) {
       const serialAttr =
-        subject.getField('2.5.4.5') || subject.getField('serialNumber');
+        getForgeAttributeValue(subject.getField('2.5.4.5') as unknown) ??
+        getForgeAttributeValue(subject.getField('serialNumber') as unknown);
       if (serialAttr) {
-        const serial = serialAttr.value as string;
-        const match = serial.match(/(\d{14})/);
-        if (match) cnpj = match[1];
+        cnpj = extractCnpjFromText(serialAttr)?.cnpj ?? '';
       }
     }
 
     // Buscar nas extensões (subjectAltName / otherName com OID 2.16.76.1.3.3)
     if (!cnpj) {
-      const extensions = cert.extensions || [];
-      for (const ext of extensions) {
-        if (ext.name === 'subjectAltName' && ext.altNames) {
-          for (const altName of ext.altNames) {
+      const extensions = cert.extensions as unknown;
+      const extensionList = Array.isArray(extensions) ? extensions : [];
+      for (const ext of extensionList) {
+        if (getForgeExtensionName(ext) === 'subjectAltName') {
+          for (const altName of getForgeAltNames(ext)) {
             // otherName com OID ICP-Brasil para CNPJ
-            const value = altName.value || altName.utf8 || '';
-            const match = String(value).match(/(\d{14})/);
-            if (match) {
-              cnpj = match[1];
+            const value = getForgeAltNameValue(altName);
+            const extractedCnpj = extractCnpjFromText(value);
+            if (extractedCnpj) {
+              cnpj = extractedCnpj.cnpj;
               break;
             }
           }
@@ -410,10 +539,9 @@ export class CertificadoService {
     // Última tentativa: varrer todo o subject como string
     if (!cnpj) {
       const subjectStr = subject.attributes
-        .map((a: any) => String(a.value))
+        .map(getForgeSubjectAttributeValue)
         .join(' ');
-      const match = subjectStr.match(/(\d{14})/);
-      if (match) cnpj = match[1];
+      cnpj = extractCnpjFromText(subjectStr)?.cnpj ?? '';
     }
 
     if (!cnpj) {
@@ -424,8 +552,8 @@ export class CertificadoService {
     }
 
     // Extrair emissor
-    const issuerCn = cert.issuer.getField('CN');
-    const emissor = issuerCn ? (issuerCn.value as string) : 'N/A';
+    const emissor =
+      getForgeAttributeValue(cert.issuer.getField('CN') as unknown) ?? 'N/A';
 
     // Thumbprint (SHA-256 do DER do certificado)
     const certDer = forge.asn1

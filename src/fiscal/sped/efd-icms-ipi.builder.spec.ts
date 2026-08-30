@@ -277,7 +277,7 @@ function makeCte(
       criadoEm: new Date('2026-08-05T12:00:00.000Z'),
       atualizadoEm: new Date('2026-08-05T12:00:00.000Z'),
       ...cteOverrides,
-    } as unknown as CteRow,
+    },
   };
 }
 
