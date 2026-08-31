@@ -6,7 +6,7 @@ type CfopSeed = typeof cfops.$inferInsert;
 type EquivalenciaSeed = typeof cfopEquivalencias.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dados extraídos da tabela cfops (49 registros)
+// Catálogo mínimo usado pela escrituração (72 registros)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const CFOPS_SEED: CfopSeed[] = [
@@ -40,9 +40,41 @@ export const CFOPS_SEED: CfopSeed[] = [
     grupo: 'Devoluções',
   },
   {
+    codigo: '1206',
+    descricao:
+      'Anulação de valor relativo à prestação de serviço de transporte',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '1352',
+    descricao:
+      'Aquisição de serviço de transporte por estabelecimento industrial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
     codigo: '1353',
     descricao:
       'Aquisição de serviço de transporte por estabelecimento comercial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '1356',
+    descricao:
+      'Aquisição de serviço de transporte por estabelecimento de produtor rural',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '1360',
+    descricao:
+      'Aquisição de serviço de transporte por contribuinte substituto em relação ao serviço de transporte',
     tipoOperacao: 'ENTRADA',
     abrangencia: 'ESTADUAL',
     grupo: 'Transportes',
@@ -123,9 +155,41 @@ export const CFOPS_SEED: CfopSeed[] = [
     grupo: 'Devoluções',
   },
   {
+    codigo: '2206',
+    descricao:
+      'Anulação interestadual de valor relativo à prestação de serviço de transporte',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '2352',
+    descricao:
+      'Aquisição interestadual de serviço de transporte por estabelecimento industrial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
     codigo: '2353',
     descricao:
       'Aquisição interestadual de serviço de transporte por estabelecimento comercial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '2356',
+    descricao:
+      'Aquisição interestadual de serviço de transporte por estabelecimento de produtor rural',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '2360',
+    descricao:
+      'Aquisição interestadual de serviço de transporte por contribuinte substituto',
     tipoOperacao: 'ENTRADA',
     abrangencia: 'INTERESTADUAL',
     grupo: 'Transportes',
@@ -192,6 +256,38 @@ export const CFOPS_SEED: CfopSeed[] = [
     grupo: 'Compras',
   },
   {
+    codigo: '3206',
+    descricao:
+      'Anulação de valor relativo à prestação de serviço de transporte do exterior',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '3352',
+    descricao:
+      'Aquisição do exterior de serviço de transporte por estabelecimento industrial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '3353',
+    descricao:
+      'Aquisição do exterior de serviço de transporte por estabelecimento comercial',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '3356',
+    descricao:
+      'Aquisição do exterior de serviço de transporte por estabelecimento de produtor rural',
+    tipoOperacao: 'ENTRADA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Transportes',
+  },
+  {
     codigo: '3949',
     descricao: 'Outra entrada do exterior não especificada',
     tipoOperacao: 'ENTRADA',
@@ -229,8 +325,40 @@ export const CFOPS_SEED: CfopSeed[] = [
     grupo: 'Devoluções',
   },
   {
+    codigo: '5206',
+    descricao:
+      'Anulação de valor relativo à aquisição de serviço de transporte',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '5352',
+    descricao:
+      'Prestação de serviço de transporte a estabelecimento industrial',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
     codigo: '5353',
     descricao: 'Prestação de serviço de transporte a estabelecimento comercial',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '5356',
+    descricao:
+      'Prestação de serviço de transporte a estabelecimento de produtor rural',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'ESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '5360',
+    descricao:
+      'Prestação de serviço de transporte a contribuinte substituto em relação ao serviço de transporte',
     tipoOperacao: 'SAIDA',
     abrangencia: 'ESTADUAL',
     grupo: 'Transportes',
@@ -311,9 +439,41 @@ export const CFOPS_SEED: CfopSeed[] = [
     grupo: 'Devoluções',
   },
   {
+    codigo: '6206',
+    descricao:
+      'Anulação interestadual de valor relativo à aquisição de serviço de transporte',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '6352',
+    descricao:
+      'Prestação interestadual de serviço de transporte a estabelecimento industrial',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
     codigo: '6353',
     descricao:
       'Prestação interestadual de serviço de transporte a estabelecimento comercial',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '6356',
+    descricao:
+      'Prestação interestadual de serviço de transporte a estabelecimento de produtor rural',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'INTERESTADUAL',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '6360',
+    descricao:
+      'Prestação interestadual de serviço de transporte a contribuinte substituto',
     tipoOperacao: 'SAIDA',
     abrangencia: 'INTERESTADUAL',
     grupo: 'Transportes',
@@ -379,6 +539,21 @@ export const CFOPS_SEED: CfopSeed[] = [
     grupo: 'Vendas',
   },
   {
+    codigo: '7206',
+    descricao:
+      'Anulação de valor relativo à aquisição de serviço de transporte do exterior',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Transportes',
+  },
+  {
+    codigo: '7358',
+    descricao: 'Prestação de serviço de transporte para o exterior',
+    tipoOperacao: 'SAIDA',
+    abrangencia: 'EXTERIOR',
+    grupo: 'Transportes',
+  },
+  {
     codigo: '7949',
     descricao: 'Outra saída para o exterior não especificada',
     tipoOperacao: 'SAIDA',
@@ -388,7 +563,7 @@ export const CFOPS_SEED: CfopSeed[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Equivalências globais (clienteId = null) — 20 registros
+// Equivalências globais (clienteId = null) — 28 registros
 // Mapeiam CFOP de saída do fornecedor → CFOP de entrada para o destinatário
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -424,10 +599,38 @@ export const CFOP_EQUIVALENCIAS_SEED: EquivalenciaSeed[] = [
   },
   {
     clienteId: null,
+    cfopOrigem: '5206',
+    cfopDestino: '1206',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Anulação de aquisição para anulação de prestação de transporte',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5352',
+    cfopDestino: '1352',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Prestação para aquisição industrial de transporte estadual',
+  },
+  {
+    clienteId: null,
     cfopOrigem: '5353',
     cfopDestino: '1353',
     tipoOperacao: 'SAIDA_PARA_ENTRADA',
     descricao: 'Prestação para aquisição de transporte estadual',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5356',
+    cfopDestino: '1356',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Prestação para aquisição rural de transporte estadual',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '5360',
+    cfopDestino: '1360',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Prestação para aquisição de transporte por substituto',
   },
   {
     clienteId: null,
@@ -497,10 +700,41 @@ export const CFOP_EQUIVALENCIAS_SEED: EquivalenciaSeed[] = [
   },
   {
     clienteId: null,
+    cfopOrigem: '6206',
+    cfopDestino: '2206',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao:
+      'Anulação interestadual de aquisição para anulação de prestação de transporte',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6352',
+    cfopDestino: '2352',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao:
+      'Prestação para aquisição industrial de transporte interestadual',
+  },
+  {
+    clienteId: null,
     cfopOrigem: '6353',
     cfopDestino: '2353',
     tipoOperacao: 'SAIDA_PARA_ENTRADA',
     descricao: 'Prestação para aquisição de transporte interestadual',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6356',
+    cfopDestino: '2356',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao: 'Prestação para aquisição rural de transporte interestadual',
+  },
+  {
+    clienteId: null,
+    cfopOrigem: '6360',
+    cfopDestino: '2360',
+    tipoOperacao: 'SAIDA_PARA_ENTRADA',
+    descricao:
+      'Prestação para aquisição interestadual de transporte por substituto',
   },
   {
     clienteId: null,

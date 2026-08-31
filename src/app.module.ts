@@ -45,4 +45,4 @@ import { StorageAdminController } from './storage/storage.controller';
     StorageAdminController,
   ],
 })
-export class AppModule { }
+export class AppModule {}

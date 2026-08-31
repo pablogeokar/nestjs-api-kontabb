@@ -1,5 +1,5 @@
 {
-  "id": "449f68a9-7b58-444e-8815-0bdb8747867f",
+  "id": "3b6c5f4b-0ad3-410d-90a9-24a0cd20d893",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2272,8 +2272,8 @@
         }
       },
       "foreignKeys": {
-        "fk_df_itens_documento_fiscal": {
-          "name": "fk_df_itens_documento_fiscal",
+        "documentos_fiscais_itens_documento_fiscal_id_documentos_fiscais_id_fk": {
+          "name": "documentos_fiscais_itens_documento_fiscal_id_documentos_fiscais_id_fk",
           "tableFrom": "documentos_fiscais_itens",
           "tableTo": "documentos_fiscais",
           "columnsFrom": [
@@ -2285,8 +2285,8 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "fk_df_itens_cliente": {
-          "name": "fk_df_itens_cliente",
+        "documentos_fiscais_itens_cliente_id_clientes_id_fk": {
+          "name": "documentos_fiscais_itens_cliente_id_clientes_id_fk",
           "tableFrom": "documentos_fiscais_itens",
           "tableTo": "clientes",
           "columnsFrom": [

@@ -59,12 +59,14 @@ export class ClientesService {
   ) {}
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
-    const searchDigits = input.search.replace(/\D/g, '');
+    const searchDocument = input.search
+      .replace(/[^0-9A-Za-z]/g, '')
+      .toUpperCase();
     const where = input.search
       ? or(
           ilike(clientes.razaoSocial, `%${input.search}%`),
-          ilike(clientes.cnpj, `%${searchDigits}%`),
-          ilike(clientes.cpf, `%${searchDigits}%`),
+          ilike(clientes.cnpj, `%${searchDocument}%`),
+          ilike(clientes.cpf, `%${searchDocument}%`),
         )
       : undefined;
 
@@ -364,7 +366,7 @@ export class ClientesService {
             'consultaSimplesAtualizada', true,
             'optanteSimplesNacional', ${simplesNacionalUpdate.optanteSimplesNacional}::boolean,
             'simplesNacionalFonte', ${simplesNacionalUpdate.simplesNacionalFonte}::text
-          ) ELSE NULL END
+          ) ELSE '{}'::jsonb END
         FROM updated_client
         RETURNING id
       )

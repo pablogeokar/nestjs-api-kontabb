@@ -29,6 +29,13 @@ Eventos, resumos, CT-e OS e outros modelos são descartados. XML malformado,
 sem protocolo válido, com DTD/entidade, chave inválida ou associação indevida
 ao cliente retorna erro individual sem interromper os demais arquivos do lote.
 
+No CT-e, participar do documento não basta para produzir fato fiscal. O XML é
+armazenado para todos os clientes-alvo encontrados, mas a escrituração só é
+ativada quando o CNPJ/CPF do cliente coincide com o tomador resolvido por
+`toma3` ou `toma4`. A decisão e o motivo ficam disponíveis nas consultas de
+CT-e; remetente, expedidor, recebedor ou destinatário que não seja o tomador
+permanece fora da apuração.
+
 ## Idempotência e storage
 
 A unicidade `(cliente_id, chave_acesso)` continua sendo a autoridade contra
@@ -39,6 +46,11 @@ ser substituído pelo XML completo, e o objeto anterior é limpo após a gravaç
 A importação manual usa `nsu = 0` e não altera o controle de NSU da distribuição
 automática. Cada documento importado gera o evento de auditoria
 `DOCUMENTO_FISCAL_XML_IMPORTADO`.
+
+Cada CT-e também gera `CTE_ESCRITURADO` ou `CTE_NAO_ESCRITURAVEL`. A linha
+fiscal é idempotente por documento e vive em
+`documentos_fiscais_cte_escrituracao`, separada dos itens de mercadoria de
+NF-e/NFC-e.
 
 ## Resposta
 

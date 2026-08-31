@@ -97,7 +97,38 @@ describe('CfopService', () => {
       cfop: '2949',
       revisaoNecessaria: true,
       origemResolucao: 'FALLBACK',
+      motivoRevisao: 'CFOP_DESTINO_NAO_CADASTRADO',
+      cfopSugerido: '2999',
     });
+  });
+
+  it('devolve diagnóstico por item quando o CFOP de destino não está cadastrado', async () => {
+    const service = createServiceWithQueryResults([[], [], []]);
+
+    const result = await service.prepararItensEscrituracao({
+      clienteId: 'cliente-1',
+      clienteCnpjCpf: '12345678000195',
+      emitenteCnpjCpf: '98765432000110',
+      tpNfXml: '1',
+      itens: [
+        {
+          numeroItem: 7,
+          descricao: 'Brinde',
+          cfop: '5910',
+        },
+      ],
+    });
+
+    expect(result.revisoes).toEqual([
+      {
+        numeroItem: 7,
+        descricao: 'Brinde',
+        cfopXml: '5910',
+        cfopAplicado: '1949',
+        cfopSugerido: '1910',
+        motivo: 'CFOP_DESTINO_NAO_CADASTRADO',
+      },
+    ]);
   });
 
   it('mantém CFOP ativo que já corresponde ao sentido da escrituração', async () => {

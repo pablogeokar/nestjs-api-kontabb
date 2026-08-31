@@ -27,6 +27,17 @@ export interface CfopResolvido {
   cfop: string;
   revisaoNecessaria: boolean;
   origemResolucao: 'MANTIDO' | 'CLIENTE' | 'GLOBAL' | 'ALGORITMO' | 'FALLBACK';
+  motivoRevisao?: 'CFOP_NAO_CADASTRADO' | 'CFOP_DESTINO_NAO_CADASTRADO';
+  cfopSugerido?: string;
+}
+
+export interface CfopItemRevisao {
+  numeroItem: number;
+  descricao: string | null;
+  cfopXml: string;
+  cfopAplicado: string;
+  cfopSugerido: string;
+  motivo: NonNullable<CfopResolvido['motivoRevisao']>;
 }
 
 interface CfopMutation {
@@ -63,7 +74,9 @@ export class CfopService {
     return tpNfXml === '0' ? 'ENTRADA' : 'SAIDA';
   }
 
-  async prepararItensEscrituracao<T extends { cfop: string }>(params: {
+  async prepararItensEscrituracao<
+    T extends { cfop: string; numeroItem?: number; descricao?: string },
+  >(params: {
     clienteId: string;
     clienteCnpjCpf: string;
     emitenteCnpjCpf: string;
@@ -87,21 +100,39 @@ export class CfopService {
       );
     }
 
+    const revisoes: CfopItemRevisao[] = [];
+    const itens = params.itens.map((item, index) => {
+      const resolvido = resolvidos.get(item.cfop);
+      if (!resolvido) {
+        throw new Error(`CFOP ${item.cfop} não foi resolvido.`);
+      }
+      if (
+        resolvido.revisaoNecessaria &&
+        resolvido.motivoRevisao &&
+        resolvido.cfopSugerido
+      ) {
+        revisoes.push({
+          numeroItem: item.numeroItem ?? index + 1,
+          descricao: item.descricao ?? null,
+          cfopXml: item.cfop,
+          cfopAplicado: resolvido.cfop,
+          cfopSugerido: resolvido.cfopSugerido,
+          motivo: resolvido.motivoRevisao,
+        });
+      }
+      return {
+        ...item,
+        cfopXml: item.cfop,
+        cfop: resolvido.cfop,
+        tipoOperacaoEscriturada,
+        cfopRevisaoNecessaria: resolvido.revisaoNecessaria,
+      };
+    });
+
     return {
       tipoOperacaoEscriturada,
-      itens: params.itens.map((item) => {
-        const resolvido = resolvidos.get(item.cfop);
-        if (!resolvido) {
-          throw new Error(`CFOP ${item.cfop} não foi resolvido.`);
-        }
-        return {
-          ...item,
-          cfopXml: item.cfop,
-          cfop: resolvido.cfop,
-          tipoOperacaoEscriturada,
-          cfopRevisaoNecessaria: resolvido.revisaoNecessaria,
-        };
-      }),
+      itens,
+      revisoes,
     };
   }
 
@@ -179,6 +210,11 @@ export class CfopService {
       cfop: fallbackCfop(primeiroDigito, params.tipoOperacaoEscriturada),
       revisaoNecessaria: true,
       origemResolucao: 'FALLBACK',
+      motivoRevisao:
+        convertido === cfopXml
+          ? 'CFOP_NAO_CADASTRADO'
+          : 'CFOP_DESTINO_NAO_CADASTRADO',
+      cfopSugerido: convertido,
     };
   }
 
@@ -497,7 +533,7 @@ export class CfopService {
 }
 
 function normalizeTaxId(value: string) {
-  return value.replace(/\D/g, '');
+  return value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
 }
 
 function normalizeCfop(value: string) {

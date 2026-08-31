@@ -1,6 +1,21 @@
 import { gunzipSync } from 'node:zlib';
 import { XMLValidator } from 'fast-xml-parser';
 import { parseNfeItems, type ParsedNfeItem } from './nfe-item.parser';
+import {
+  isValidFiscalAccessKey,
+  normalizeFiscalAccessKey,
+  normalizeFiscalCnpj,
+  normalizeFiscalCpf,
+} from './fiscal-identifier';
+import {
+  conferirIntegridadeDocumentoFiscal,
+  somarValoresFiscais,
+  type RelatorioIntegridadeDocumentoFiscal,
+} from './dfe-document.integrity';
+import {
+  parseCteEscrituracaoXml,
+  type CteEscrituracaoParseData,
+} from './dacte.parser';
 
 export type TipoConsultaDfe = 'NFE' | 'CTE';
 
@@ -17,6 +32,74 @@ export interface DfeResponseMetadata {
   motivo: string;
 }
 
+export interface ParsedParticipanteFiscal {
+  cnpjCpf: string;
+  cnpj: string;
+  cpf: string;
+  nome: string;
+  ie: string;
+  uf: string;
+  codMun: string;
+  endereco: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cep: string;
+  suframa: string;
+  codPais: string;
+  pais: string;
+}
+
+/**
+ * Campos do grupo ICMSTot mantidos com os nomes canônicos do leiaute da NF-e.
+ * `camposAdicionais` preserva campos introduzidos por notas técnicas futuras
+ * sem exigir conversão numérica ou perda de precisão.
+ */
+export interface ParsedNfeIcmsTot {
+  vBC: string;
+  vICMS: string;
+  vICMSDeson: string;
+  vFCPUFDest: string;
+  vICMSUFDest: string;
+  vICMSUFRemet: string;
+  vFCP: string;
+  vBCST: string;
+  vST: string;
+  vFCPST: string;
+  vFCPSTRet: string;
+  vProd: string;
+  vFrete: string;
+  vSeg: string;
+  vDesc: string;
+  vII: string;
+  vIPI: string;
+  vIPIDevol: string;
+  vPIS: string;
+  vCOFINS: string;
+  vOutro: string;
+  vNF: string;
+  vTotTrib: string;
+  qBCMono: string;
+  vICMSMono: string;
+  qBCMonoReten: string;
+  vICMSMonoReten: string;
+  qBCMonoRet: string;
+  vICMSMonoRet: string;
+  camposAdicionais: Readonly<Record<string, string>>;
+}
+
+export interface ParsedNfePisCofinsTotais {
+  vPIS: string;
+  vCOFINS: string;
+  vPISST: string;
+  vCOFINSST: string;
+}
+
+export interface ParsedInformacoesComplementares {
+  contribuinte: string;
+  fisco: string;
+}
+
 export interface ParsedDocumentoFiscal {
   chaveAcesso: string;
   nsu: number;
@@ -28,12 +111,25 @@ export interface ParsedDocumentoFiscal {
   emitenteRazaoSocial: string;
   destinatarioCnpjCpf: string;
   destinatarioRazaoSocial: string;
+  emitente: ParsedParticipanteFiscal;
+  destinatario: ParsedParticipanteFiscal | null;
+  tomador: ParsedParticipanteFiscal | null;
   dataEmissao: Date;
+  dataEmissaoFiscal: string;
+  dataEntradaSaida: Date | null;
+  dataEntradaSaidaFiscal: string | null;
+  modalidadeFrete: string | null;
   valorTotal: string;
   tpNfXml: '0' | '1';
   situacao: 'AUTORIZADA' | 'CANCELADA' | 'DENEGADA';
   participantesCnpjCpf: string[];
   itens: ParsedNfeItem[];
+  quantidadeItensDeclarada: number;
+  icmsTot: ParsedNfeIcmsTot | null;
+  pisCofinsTotais: ParsedNfePisCofinsTotais | null;
+  informacoesComplementares: ParsedInformacoesComplementares;
+  integridade: RelatorioIntegridadeDocumentoFiscal;
+  cteEscrituracao: CteEscrituracaoParseData | null;
   xmlContent: string;
 }
 
@@ -309,12 +405,14 @@ function parseFiscalXml(
   if (!infElement) return null;
 
   const chaveId = readElementId(infElement.openingTag, idPrefix);
-  const chaveProtocolo = extractTagValue(xml, chaveTag);
+  const chaveProtocolo = normalizeFiscalAccessKey(
+    extractTagValue(xml, chaveTag),
+  );
   const chaveAcesso = chaveId || chaveProtocolo;
   if (
     !chaveAcesso ||
     (chaveId && chaveProtocolo && chaveId !== chaveProtocolo) ||
-    !isValidAccessKey(chaveAcesso)
+    !isValidFiscalAccessKey(chaveAcesso)
   ) {
     return null;
   }
@@ -342,7 +440,9 @@ function parseFiscalXml(
     extractTagValue(infElement.content, 'dhEmi') ||
     extractTagValue(infElement.content, 'dEmi');
   const dataEmissao = new Date(dataValue);
-  if (!dataValue || Number.isNaN(dataEmissao.getTime())) return null;
+  const dataEmissaoFiscal = parseFiscalCalendarDate(dataValue);
+  if (!dataValue || Number.isNaN(dataEmissao.getTime()) || !dataEmissaoFiscal)
+    return null;
 
   const valorTotal = extractTagValue(infElement.content, valorTag);
   if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(valorTotal)) return null;
@@ -350,8 +450,12 @@ function parseFiscalXml(
   const emitente = extractElement(infElement.content, 'emit')?.content ?? '';
   const destinatario =
     extractElement(infElement.content, 'dest')?.content ?? '';
-  const emitenteCnpjCpf = extractTaxId(emitente);
-  if (!emitenteCnpjCpf) return null;
+  const emitenteParticipante = parseParticipanteFiscal(emitente, 'enderEmit');
+  const destinatarioParticipante = parseParticipanteFiscal(
+    destinatario,
+    'enderDest',
+  );
+  if (!emitenteParticipante?.cnpjCpf) return null;
 
   const protocolElement = extractElement(
     xml,
@@ -375,19 +479,71 @@ function parseFiscalXml(
     tipoConsulta === 'NFE' ? extractTagValue(infElement.content, 'tpNF') : '1';
   const tpNfXml: ParsedDocumentoFiscal['tpNfXml'] =
     tpNfValue === '0' ? '0' : '1';
+  let cteEscrituracao: CteEscrituracaoParseData | null = null;
+  if (tipoConsulta === 'CTE') {
+    try {
+      cteEscrituracao = parseCteEscrituracaoXml(xml);
+    } catch {
+      return null;
+    }
+  }
 
-  return {
+  const itens = tipoConsulta === 'NFE' ? parseNfeItems(xml) : [];
+  const quantidadeItensDeclarada =
+    tipoConsulta === 'NFE'
+      ? extractElements(infElement.content, 'det').length
+      : 0;
+  const icmsTot =
+    tipoConsulta === 'NFE'
+      ? parseIcmsTot(
+          extractElement(infElement.content, 'ICMSTot')?.content ?? '',
+        )
+      : null;
+  const pisCofinsTotais = icmsTot
+    ? {
+        vPIS: icmsTot.vPIS,
+        vCOFINS: icmsTot.vCOFINS,
+        vPISST: somarValoresFiscais(itens.map((item) => item.valorPisSt)),
+        vCOFINSST: somarValoresFiscais(itens.map((item) => item.valorCofinsSt)),
+      }
+    : null;
+  const tomador =
+    tipoConsulta === 'CTE'
+      ? parseTomadorCteParticipante(infElement.content)
+      : null;
+  const dataEntradaSaidaValue =
+    tipoConsulta === 'NFE'
+      ? extractTagValue(infElement.content, 'dhSaiEnt') ||
+        extractTagValue(infElement.content, 'dSaiEnt')
+      : '';
+  const documentoSemIntegridade: Omit<ParsedDocumentoFiscal, 'integridade'> = {
     chaveAcesso,
     nsu,
     tipoDocumento,
     modelo,
     serie,
     numeroDocumento,
-    emitenteCnpjCpf,
-    emitenteRazaoSocial: extractTagValue(emitente, 'xNome'),
-    destinatarioCnpjCpf: extractTaxId(destinatario),
-    destinatarioRazaoSocial: extractTagValue(destinatario, 'xNome'),
+    emitenteCnpjCpf: emitenteParticipante.cnpjCpf,
+    emitenteRazaoSocial: emitenteParticipante.nome,
+    destinatarioCnpjCpf: destinatarioParticipante?.cnpjCpf ?? '',
+    destinatarioRazaoSocial: destinatarioParticipante?.nome ?? '',
+    emitente: emitenteParticipante,
+    destinatario: destinatarioParticipante,
+    tomador,
     dataEmissao,
+    dataEmissaoFiscal,
+    dataEntradaSaida:
+      tipoConsulta === 'NFE'
+        ? parseOptionalFiscalDate(dataEntradaSaidaValue)
+        : null,
+    dataEntradaSaidaFiscal: parseFiscalCalendarDate(dataEntradaSaidaValue),
+    modalidadeFrete:
+      tipoConsulta === 'NFE'
+        ? extractTagValue(
+            extractElement(infElement.content, 'transp')?.content ?? '',
+            'modFrete',
+          ) || null
+        : null,
     valorTotal,
     tpNfXml,
     situacao,
@@ -395,8 +551,20 @@ function parseFiscalXml(
       infElement.content,
       tipoConsulta,
     ),
-    itens: tipoConsulta === 'NFE' ? parseNfeItems(xml) : [],
+    itens,
+    quantidadeItensDeclarada,
+    icmsTot,
+    pisCofinsTotais,
+    informacoesComplementares: parseInformacoesComplementares(
+      infElement.content,
+      tipoConsulta,
+    ),
+    cteEscrituracao,
     xmlContent: xml,
+  };
+  return {
+    ...documentoSemIntegridade,
+    integridade: conferirIntegridadeDocumentoFiscal(documentoSemIntegridade),
   };
 }
 
@@ -418,17 +586,198 @@ function extractElement(
   return match ? { openingTag: match[1], content: match[2] } : null;
 }
 
+function extractElements(
+  xml: string,
+  tagName: string,
+): Array<{ openingTag: string; content: string }> {
+  const pattern = new RegExp(
+    `(<(?:[A-Za-z_][\\w.-]*:)?${tagName}\\b[^>]*>)([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${tagName}\\s*>`,
+    'gi',
+  );
+  return [...xml.matchAll(pattern)].map((match) => ({
+    openingTag: match[1],
+    content: match[2],
+  }));
+}
+
 function extractTagValue(xml: string, tagName: string): string {
   const element = extractElement(xml, tagName);
   return element ? decodeXmlText(element.content).trim() : '';
 }
 
 function extractTaxId(xml: string): string {
-  const cnpj = extractTagValue(xml, 'CNPJ');
-  if (/^\d{14}$/.test(cnpj)) return cnpj;
+  return (
+    normalizeFiscalCnpj(extractTagValue(xml, 'CNPJ')) ||
+    normalizeFiscalCpf(extractTagValue(xml, 'CPF'))
+  );
+}
 
-  const cpf = extractTagValue(xml, 'CPF');
-  return /^\d{11}$/.test(cpf) ? cpf : '';
+function parseParticipanteFiscal(
+  partyXml: string,
+  addressTag: string,
+): ParsedParticipanteFiscal | null {
+  if (!partyXml.trim()) return null;
+
+  const cnpj = normalizeFiscalCnpj(extractTagValue(partyXml, 'CNPJ'));
+  const cpf = normalizeFiscalCpf(extractTagValue(partyXml, 'CPF'));
+  const cnpjCpf = cnpj || cpf;
+  const nome =
+    extractTagValue(partyXml, 'xNome') || extractTagValue(partyXml, 'xFant');
+  const address = extractElement(partyXml, addressTag)?.content ?? '';
+  if (!cnpjCpf && !nome && !address) return null;
+
+  return {
+    cnpjCpf,
+    cnpj,
+    cpf,
+    nome,
+    ie: extractTagValue(partyXml, 'IE'),
+    uf: extractTagValue(address, 'UF'),
+    codMun: extractTagValue(address, 'cMun'),
+    endereco: extractTagValue(address, 'xLgr'),
+    numero: extractTagValue(address, 'nro'),
+    complemento: extractTagValue(address, 'xCpl'),
+    bairro: extractTagValue(address, 'xBairro'),
+    cep: extractTagValue(address, 'CEP'),
+    suframa: extractTagValue(partyXml, 'ISUF'),
+    codPais: extractTagValue(address, 'cPais'),
+    pais: extractTagValue(address, 'xPais'),
+  };
+}
+
+function parseTomadorCteParticipante(
+  infCte: string,
+): ParsedParticipanteFiscal | null {
+  const ide = extractElement(infCte, 'ide')?.content ?? '';
+  const toma4 = extractElement(ide, 'toma4')?.content;
+  if (toma4) return parseParticipanteFiscal(toma4, 'enderToma');
+
+  const tomaCode = extractTagValue(
+    extractElement(ide, 'toma3')?.content ?? '',
+    'toma',
+  );
+  const sourceByCode: Record<string, [string, string]> = {
+    '0': ['rem', 'enderReme'],
+    '1': ['exped', 'enderExped'],
+    '2': ['receb', 'enderReceb'],
+    '3': ['dest', 'enderDest'],
+  };
+  const source = sourceByCode[tomaCode];
+  if (!source) return null;
+  return parseParticipanteFiscal(
+    extractElement(infCte, source[0])?.content ?? '',
+    source[1],
+  );
+}
+
+const ICMS_TOT_FIELDS = [
+  'vBC',
+  'vICMS',
+  'vICMSDeson',
+  'vFCPUFDest',
+  'vICMSUFDest',
+  'vICMSUFRemet',
+  'vFCP',
+  'vBCST',
+  'vST',
+  'vFCPST',
+  'vFCPSTRet',
+  'vProd',
+  'vFrete',
+  'vSeg',
+  'vDesc',
+  'vII',
+  'vIPI',
+  'vIPIDevol',
+  'vPIS',
+  'vCOFINS',
+  'vOutro',
+  'vNF',
+  'vTotTrib',
+  'qBCMono',
+  'vICMSMono',
+  'qBCMonoReten',
+  'vICMSMonoReten',
+  'qBCMonoRet',
+  'vICMSMonoRet',
+] as const;
+
+function parseIcmsTot(xml: string): ParsedNfeIcmsTot | null {
+  const values = extractDirectTagValues(xml);
+  if (Object.keys(values).length === 0) return null;
+
+  const knownFields = Object.fromEntries(
+    ICMS_TOT_FIELDS.map((field) => [field, values[field] ?? '']),
+  ) as unknown as Omit<ParsedNfeIcmsTot, 'camposAdicionais'>;
+  const known = new Set<string>(ICMS_TOT_FIELDS);
+  const camposAdicionais = Object.fromEntries(
+    Object.entries(values).filter(([field]) => !known.has(field)),
+  );
+  return { ...knownFields, camposAdicionais };
+}
+
+function extractDirectTagValues(xml: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  const pattern =
+    /<(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b[^>]*>([^<]*)<\/(?:[A-Za-z_][\w.-]*:)?\1\s*>/gi;
+  for (const match of xml.matchAll(pattern)) {
+    result[match[1]] = decodeXmlText(match[2]).trim();
+  }
+  return result;
+}
+
+function parseInformacoesComplementares(
+  fiscalInfo: string,
+  tipoConsulta: TipoConsultaDfe,
+): ParsedInformacoesComplementares {
+  if (tipoConsulta === 'NFE') {
+    const infAdic = extractElement(fiscalInfo, 'infAdic')?.content ?? '';
+    return {
+      contribuinte: extractTagValue(infAdic, 'infCpl'),
+      fisco: extractTagValue(infAdic, 'infAdFisco'),
+    };
+  }
+
+  const compl = extractElement(fiscalInfo, 'compl')?.content ?? '';
+  const contributorNotes = [
+    ...extractElements(compl, 'xObs').map((item) =>
+      decodeXmlText(item.content).trim(),
+    ),
+    ...extractElements(compl, 'ObsCont').map(formatCteObservation),
+  ].filter(Boolean);
+  const taxNotes = extractElements(compl, 'ObsFisco')
+    .map(formatCteObservation)
+    .filter(Boolean);
+  return {
+    contribuinte: contributorNotes.join('\n'),
+    fisco: taxNotes.join('\n'),
+  };
+}
+
+function formatCteObservation(element: {
+  openingTag: string;
+  content: string;
+}): string {
+  const field = readAttribute(element.openingTag, 'xCampo');
+  const text = extractTagValue(element.content, 'xTexto');
+  return [field, text].filter(Boolean).join(': ');
+}
+
+function parseOptionalFiscalDate(value: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseFiscalCalendarDate(value: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value.trim());
+  if (!match) return null;
+  const normalized = `${match[1]}-${match[2]}-${match[3]}`;
+  const parsed = new Date(`${normalized}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.valueOf()) &&
+    parsed.toISOString().slice(0, 10) === normalized
+    ? normalized
+    : null;
 }
 
 function extractParticipantTaxIds(
@@ -449,8 +798,9 @@ function extractParticipantTaxIds(
 
 function readElementId(openingTag: string, prefix: string): string {
   const id = readAttribute(openingTag, 'Id');
-  const match = id.match(new RegExp(`^${prefix}(\\d{44})$`));
-  return match?.[1] ?? '';
+  return id.toUpperCase().startsWith(prefix.toUpperCase())
+    ? normalizeFiscalAccessKey(id)
+    : '';
 }
 
 function readAttribute(attributes: string, name: string): string {
@@ -459,21 +809,6 @@ function readAttribute(attributes: string, name: string): string {
     new RegExp(`(?:^|\\s)${escapedName}\\s*=\\s*(["'])(.*?)\\1`, 'i'),
   );
   return match ? decodeXmlText(match[2]).trim() : '';
-}
-
-function isValidAccessKey(chave: string): boolean {
-  if (!/^\d{44}$/.test(chave)) return false;
-
-  let weight = 2;
-  let sum = 0;
-  for (let index = 42; index >= 0; index--) {
-    sum += Number(chave[index]) * weight;
-    weight = weight === 9 ? 2 : weight + 1;
-  }
-  const remainder = sum % 11;
-  const calculatedDigit =
-    remainder === 0 || remainder === 1 ? 0 : 11 - remainder;
-  return calculatedDigit === Number(chave[43]);
 }
 
 function parseNonNegativeInteger(value: unknown): number {

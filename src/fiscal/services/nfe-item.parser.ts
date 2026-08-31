@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { normalizeFiscalCnpj } from './fiscal-identifier';
 
 type XmlRecord = Record<string, unknown>;
 
@@ -50,6 +51,15 @@ export interface ParsedNfeItem {
   valorBcFcpSt: string | null;
   aliquotaFcpSt: string | null;
   valorFcpSt: string | null;
+  valorBcFcpStRetido: string | null;
+  aliquotaFcpStRetido: string | null;
+  valorFcpStRetido: string | null;
+  quantidadeBcIcmsMonofasico: string | null;
+  valorIcmsMonofasico: string | null;
+  quantidadeBcIcmsMonofasicoRetido: string | null;
+  valorIcmsMonofasicoRetido: string | null;
+  quantidadeBcIcmsMonofasicoRetidoAnteriormente: string | null;
+  valorIcmsMonofasicoRetidoAnteriormente: string | null;
   motivoDesoneracaoIcms: string | null;
   valorIcmsDesonerado: string | null;
   percentualDiferimento: string | null;
@@ -78,6 +88,7 @@ export interface ParsedNfeItem {
   quantidadeUnidadeIpi: string | null;
   valorUnidadeIpi: string | null;
   valorIpi: string | null;
+  valorIpiDevolvido: string | null;
   cstPis: string | null;
   valorBcPis: string | null;
   aliquotaPisPercentual: string | null;
@@ -105,12 +116,16 @@ export interface ParsedNfeItem {
 
 const ICMS_GROUPS = [
   'ICMS00',
+  'ICMS02',
   'ICMS10',
+  'ICMS15',
   'ICMS20',
   'ICMS30',
   'ICMS40',
   'ICMS51',
+  'ICMS53',
   'ICMS60',
+  'ICMS61',
   'ICMS70',
   'ICMS90',
   'ICMSPart',
@@ -222,6 +237,8 @@ function parseItem(det: XmlRecord): ParsedNfeItem | null {
     ]) ?? {};
   const cofinsSt = asRecord(imposto.COFINSST) ?? {};
   const ii = asRecord(imposto.II) ?? {};
+  const impostoDevol = asRecord(det.impostoDevol) ?? {};
+  const ipiDevolvido = asRecord(impostoDevol.IPI) ?? {};
 
   return {
     numeroItem,
@@ -232,7 +249,7 @@ function parseItem(det: XmlRecord): ParsedNfeItem | null {
     nve: joinedText(prod.NVE),
     cest: limitedText(prod.CEST, 7),
     indEscala: limitedText(prod.indEscala, 1),
-    cnpjFabricante: taxId(prod.CNPJFab, 14),
+    cnpjFabricante: cnpj(prod.CNPJFab),
     codigoBeneficioFiscal: nullableText(prod.cBenef),
     cfop: cfop!,
     unidadeComercial,
@@ -272,6 +289,19 @@ function parseItem(det: XmlRecord): ParsedNfeItem | null {
     valorBcFcpSt: decimal(icms.vBCFCPST, 15, 2),
     aliquotaFcpSt: decimal(icms.pFCPST, 7, 4),
     valorFcpSt: decimal(icms.vFCPST, 15, 2),
+    valorBcFcpStRetido: decimal(icms.vBCFCPSTRet, 15, 2),
+    aliquotaFcpStRetido: decimal(icms.pFCPSTRet, 7, 4),
+    valorFcpStRetido: decimal(icms.vFCPSTRet, 15, 2),
+    quantidadeBcIcmsMonofasico: decimal(icms.qBCMono, 15, 4),
+    valorIcmsMonofasico: decimal(icms.vICMSMono, 15, 2),
+    quantidadeBcIcmsMonofasicoRetido: decimal(icms.qBCMonoReten, 15, 4),
+    valorIcmsMonofasicoRetido: decimal(icms.vICMSMonoReten, 15, 2),
+    quantidadeBcIcmsMonofasicoRetidoAnteriormente: decimal(
+      icms.qBCMonoRet,
+      15,
+      4,
+    ),
+    valorIcmsMonofasicoRetidoAnteriormente: decimal(icms.vICMSMonoRet, 15, 2),
     motivoDesoneracaoIcms: limitedText(icms.motDesICMS, 2),
     valorIcmsDesonerado: decimal(icms.vICMSDeson, 15, 2),
     percentualDiferimento: decimal(icms.pDif, 7, 4),
@@ -296,12 +326,13 @@ function parseItem(det: XmlRecord): ParsedNfeItem | null {
     cstIpi: limitedText(ipiTributacao.CST, 2),
     classeEnquadramentoIpi: limitedText(ipi.clEnq, 5),
     codigoEnquadramentoIpi: limitedText(ipi.cEnq, 3),
-    cnpjProdutorIpi: taxId(ipi.CNPJProd, 14),
+    cnpjProdutorIpi: cnpj(ipi.CNPJProd),
     valorBcIpi: decimal(ipiTributacao.vBC, 15, 2),
     aliquotaIpi: decimal(ipiTributacao.pIPI, 7, 4),
     quantidadeUnidadeIpi: decimal(ipiTributacao.qUnid, 15, 4),
     valorUnidadeIpi: decimal(ipiTributacao.vUnid, 15, 4),
     valorIpi: decimal(ipiTributacao.vIPI, 15, 2),
+    valorIpiDevolvido: decimal(ipiDevolvido.vIPIDevol, 15, 2),
 
     cstPis: limitedText(pis.CST, 2),
     valorBcPis: decimal(pis.vBC, 15, 2),
@@ -356,9 +387,8 @@ function limitedText(value: unknown, maxLength: number): string | null {
   return normalized && normalized.length <= maxLength ? normalized : null;
 }
 
-function taxId(value: unknown, length: number): string | null {
-  const normalized = readText(value).replace(/\D/g, '');
-  return normalized.length === length ? normalized : null;
+function cnpj(value: unknown): string | null {
+  return normalizeFiscalCnpj(readText(value)) || null;
 }
 
 function nullableText(value: unknown): string | null {

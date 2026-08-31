@@ -13,8 +13,7 @@ import { Injectable } from '@nestjs/common';
  */
 @Injectable()
 export class MailLayoutService {
-  private readonly logoUrl =
-    'https://www.kontabb.com.br/imgs/kontabb-logo.png';
+  private readonly logoUrl = 'https://www.kontabb.com.br/imgs/kontabb-logo.png';
 
   /**
    * Envolve o conteúdo HTML do corpo do e-mail com o layout padrão:

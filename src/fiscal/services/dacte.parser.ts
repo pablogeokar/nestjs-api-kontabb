@@ -1,4 +1,9 @@
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import {
+  isValidFiscalAccessKey,
+  normalizeFiscalAccessKey,
+  normalizeFiscalTaxId,
+} from './fiscal-identifier';
 
 type XmlRecord = Record<string, unknown>;
 
@@ -52,6 +57,29 @@ export interface DacteData {
   observacoes: string[];
 }
 
+export type TomadorCtePapel =
+  'REMETENTE' | 'EXPEDIDOR' | 'RECEBEDOR' | 'DESTINATARIO' | 'TERCEIRO';
+
+export interface CteEscrituracaoParseData {
+  tomadorCnpjCpf: string;
+  tomadorPapel: TomadorCtePapel;
+  tpCte: '0' | '1' | '2' | '3';
+  tpServ: '0' | '1' | '2' | '3' | '4';
+  modal: string;
+  cfop: string;
+  valorTotalServico: string;
+  valorReceber: string;
+  cstIcms: string | null;
+  csosnIcms: string | null;
+  valorBcIcms: string | null;
+  aliquotaIcms: string | null;
+  valorIcms: string | null;
+  valorTotalTributos: string | null;
+  chaveCteReferenciado: string | null;
+  codigoMunicipioOrigem: string | null;
+  codigoMunicipioDestino: string | null;
+}
+
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -79,8 +107,9 @@ export function parseDacteXml(xml: string): DacteData {
   }
 
   const chaveAcesso =
-    digits(text(infCte['@_Id'])) || digits(text(protocolo.chCTe));
-  if (!/^\d{44}$/.test(chaveAcesso)) {
+    normalizeFiscalAccessKey(text(infCte['@_Id'])) ||
+    normalizeFiscalAccessKey(text(protocolo.chCTe));
+  if (!chaveAcesso) {
     throw new Error('Chave de acesso do CT-e inválida.');
   }
 
@@ -135,7 +164,7 @@ export function parseDacteXml(xml: string): DacteData {
     emitente,
     remetente: readParty(infCte.rem, 'enderReme'),
     destinatario: readParty(infCte.dest, 'enderDest'),
-    tomador: readTomador(infCte, ide),
+    tomador: readTomador(infCte, ide).party,
     produtoPredominante: text(carga.proPred) || '-',
     outrasCaracteristicas: text(carga.xOutCat) || '-',
     valorCarga: formatMoney(text(carga.vCarga)),
@@ -147,6 +176,101 @@ export function parseDacteXml(xml: string): DacteData {
     documentosOriginarios: readDocumentosOriginarios(normal.infDoc),
     modalInfo: readModalInfo(normal.infModal),
     observacoes: readObservacoes(infCte.compl),
+  };
+}
+
+/**
+ * Extrai somente os campos necessários à escrituração fiscal. A resolução do
+ * tomador é a mesma usada pelo DACTE, evitando divergência entre visualização e
+ * apuração.
+ */
+export function parseCteEscrituracaoXml(xml: string): CteEscrituracaoParseData {
+  const normalized = xml.replace(/^\uFEFF/, '').trim();
+  if (!normalized.startsWith('<') || normalized.length > 10 * 1024 * 1024) {
+    throw new Error('XML de CT-e inválido.');
+  }
+  if (/<!DOCTYPE\b|<!ENTITY\b/i.test(normalized)) {
+    throw new Error('XML de CT-e com DTD ou entidade não é aceito.');
+  }
+  if (XMLValidator.validate(normalized) !== true) {
+    throw new Error('XML de CT-e malformado.');
+  }
+
+  const parsed = asRecord(xmlParser.parse(normalized));
+  const cteProc = asRecord(parsed.cteProc);
+  const cte = asRecord(cteProc.CTe);
+  const infCte = asRecord(cte.infCte);
+  const ide = asRecord(infCte.ide);
+  const protocolo = asRecord(asRecord(cteProc.protCTe).infProt);
+  if (
+    Object.keys(cteProc).length === 0 ||
+    Object.keys(cte).length === 0 ||
+    text(ide.mod) !== '57'
+  ) {
+    throw new Error('O XML informado não é um cteProc modelo 57.');
+  }
+
+  const chaveAcesso =
+    normalizeFiscalAccessKey(text(infCte['@_Id'])) ||
+    normalizeFiscalAccessKey(text(protocolo.chCTe));
+  const chaveProtocolo = normalizeFiscalAccessKey(text(protocolo.chCTe));
+  if (
+    !isValidFiscalAccessKey(chaveAcesso) ||
+    (chaveProtocolo && chaveAcesso !== chaveProtocolo)
+  ) {
+    throw new Error('Chave de acesso do CT-e inválida.');
+  }
+
+  const tomador = readTomador(infCte, ide);
+  const tomadorCnpjCpf = normalizeFiscalTaxId(tomador.party.documento);
+  if (!tomadorCnpjCpf) {
+    throw new Error('Tomador do serviço de transporte não encontrado.');
+  }
+
+  const tpCte = text(ide.tpCTe);
+  const tpServ = text(ide.tpServ);
+  const modal = text(ide.modal).padStart(2, '0');
+  const cfop = text(ide.CFOP);
+  if (!['0', '1', '2', '3'].includes(tpCte)) {
+    throw new Error('Tipo do CT-e inválido para escrituração.');
+  }
+  if (!['0', '1', '2', '3', '4'].includes(tpServ)) {
+    throw new Error('Tipo de serviço do CT-e inválido para escrituração.');
+  }
+  if (!/^\d{2}$/.test(modal) || !/^[123567]\d{3}$/.test(cfop)) {
+    throw new Error('Modal ou CFOP do CT-e inválido para escrituração.');
+  }
+
+  const prestacao = asRecord(infCte.vPrest);
+  const valorTotalServico = fiscalDecimal(prestacao.vTPrest);
+  const valorReceber = fiscalDecimal(prestacao.vRec) ?? valorTotalServico;
+  if (!valorTotalServico || !valorReceber) {
+    throw new Error('Valores da prestação do CT-e inválidos.');
+  }
+
+  const imposto = asRecord(infCte.imp);
+  const icmsContainer = asRecord(imposto.ICMS);
+  const icms = asRecord(Object.values(icmsContainer)[0]);
+  const normal = asRecord(infCte.infCTeNorm);
+
+  return {
+    tomadorCnpjCpf,
+    tomadorPapel: tomador.papel,
+    tpCte: tpCte as CteEscrituracaoParseData['tpCte'],
+    tpServ: tpServ as CteEscrituracaoParseData['tpServ'],
+    modal,
+    cfop,
+    valorTotalServico,
+    valorReceber,
+    cstIcms: fiscalCode(icms.CST, 3),
+    csosnIcms: fiscalCode(icms.CSOSN, 4),
+    valorBcIcms: fiscalDecimal(icms.vBC),
+    aliquotaIcms: fiscalDecimal(icms.pICMS, 4),
+    valorIcms: fiscalDecimal(icms.vICMS),
+    valorTotalTributos: fiscalDecimal(imposto.vTotTrib),
+    chaveCteReferenciado: readReferencedCteKey(infCte, normal, chaveAcesso),
+    codigoMunicipioOrigem: municipalityCode(ide.cMunIni),
+    codigoMunicipioDestino: municipalityCode(ide.cMunFim),
   };
 }
 
@@ -173,19 +297,52 @@ function readParty(value: unknown, addressKey: string): DacteParty {
   };
 }
 
-function readTomador(infCte: XmlRecord, ide: XmlRecord) {
+function readTomador(
+  infCte: XmlRecord,
+  ide: XmlRecord,
+): { party: DacteParty; papel: TomadorCtePapel } {
   const toma4 = asRecord(ide.toma4);
-  if (Object.keys(toma4).length > 0) return readParty(toma4, 'enderToma');
+  if (Object.keys(toma4).length > 0) {
+    return { party: readParty(toma4, 'enderToma'), papel: 'TERCEIRO' };
+  }
 
   const code = text(asRecord(ide.toma3).toma);
-  const partyByCode: Record<string, [unknown, string]> = {
-    '0': [infCte.rem, 'enderReme'],
-    '1': [infCte.exped, 'enderExped'],
-    '2': [infCte.receb, 'enderReceb'],
-    '3': [infCte.dest, 'enderDest'],
+  const partyByCode: Record<string, [unknown, string, TomadorCtePapel]> = {
+    '0': [infCte.rem, 'enderReme', 'REMETENTE'],
+    '1': [infCte.exped, 'enderExped', 'EXPEDIDOR'],
+    '2': [infCte.receb, 'enderReceb', 'RECEBEDOR'],
+    '3': [infCte.dest, 'enderDest', 'DESTINATARIO'],
   };
   const party = partyByCode[code];
-  return party ? readParty(party[0], party[1]) : emptyParty();
+  return party
+    ? { party: readParty(party[0], party[1]), papel: party[2] }
+    : { party: emptyParty(), papel: 'TERCEIRO' };
+}
+
+function readReferencedCteKey(
+  infCte: XmlRecord,
+  normal: XmlRecord,
+  currentKey: string,
+) {
+  const groups = [
+    infCte.infCteComp,
+    infCte.infCteAnu,
+    infCte.infCteSub,
+    infCte.infCTeSub,
+    normal.infCteSub,
+    normal.infCTeSub,
+    asRecord(normal.infDoc).infCTe,
+  ];
+  for (const group of groups.flatMap(toArray)) {
+    const record = asRecord(group);
+    for (const key of ['chCTe', 'chCte', 'refCte', 'refCteAnu']) {
+      const candidate = normalizeFiscalAccessKey(text(record[key]));
+      if (candidate !== currentKey && isValidFiscalAccessKey(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
 }
 
 function readComponentes(value: unknown): DacteValueItem[] {
@@ -227,8 +384,8 @@ function readQuantidades(value: unknown): DacteValueItem[] {
 function readDocumentosOriginarios(value: unknown) {
   const documentos = asRecord(value);
   const chavesNfe = toArray(documentos.infNFe)
-    .map((item) => text(asRecord(item).chave))
-    .filter((key) => /^\d{44}$/.test(key))
+    .map((item) => normalizeFiscalAccessKey(text(asRecord(item).chave)))
+    .filter(Boolean)
     .map((key) => `NF-e ${formatAccessKey(key)}`);
   const notas = toArray(documentos.infNF)
     .map((item) => asRecord(item))
@@ -279,7 +436,7 @@ function readObservacoes(value: unknown) {
 }
 
 export function formatAccessKey(key: string) {
-  return key.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  return key.replace(/([A-Z0-9]{4})(?=[A-Z0-9])/gi, '$1 ').trim();
 }
 
 function emptyParty(): DacteParty {
@@ -316,6 +473,24 @@ function digits(value: string) {
   return value.replace(/\D/g, '');
 }
 
+function fiscalCode(value: unknown, maxLength: number) {
+  const normalized = text(value);
+  return /^\d+$/.test(normalized) && normalized.length <= maxLength
+    ? normalized
+    : null;
+}
+
+function fiscalDecimal(value: unknown, maxScale = 2) {
+  const normalized = text(value);
+  const pattern = new RegExp(`^\\d{1,12}(?:\\.\\d{1,${maxScale}})?$`);
+  return pattern.test(normalized) ? normalized : null;
+}
+
+function municipalityCode(value: unknown) {
+  const normalized = digits(text(value));
+  return /^\d{7}$/.test(normalized) ? normalized : null;
+}
+
 function mapValue(value: string, values: Record<string, string>) {
   return values[value] || value || '-';
 }
@@ -325,10 +500,10 @@ function joinNonEmpty(first: string, second: string, separator: string) {
 }
 
 function formatTaxId(value: string) {
-  const normalized = digits(value);
+  const normalized = normalizeFiscalTaxId(value);
   if (normalized.length === 14) {
     return normalized.replace(
-      /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+      /^([A-Z0-9]{2})([A-Z0-9]{3})([A-Z0-9]{3})([A-Z0-9]{4})(\d{2})$/,
       '$1.$2.$3/$4-$5',
     );
   }

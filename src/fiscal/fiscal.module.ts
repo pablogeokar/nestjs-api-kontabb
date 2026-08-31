@@ -19,6 +19,15 @@ import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.ser
 import { FiscalItensService } from './services/fiscal-itens.service';
 import { CfopService } from './services/cfop.service';
 import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.service';
+import { FiscalCteService } from './services/fiscal-cte.service';
+import {
+  AdminSpedEfdController,
+  ClienteSpedEfdController,
+} from './sped/sped-efd.controller';
+import { EfdIcmsIpiService } from './sped/efd-icms-ipi.service';
+import { SpedConfiguracaoService } from './sped/sped-configuracao.service';
+import { SpedApuracaoContextoService } from './sped/sped-apuracao-contexto.service';
+import { SpedInventarioService } from './sped/sped-inventario.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -28,6 +37,8 @@ import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.servic
     AdminCfopController,
     ClienteCfopController,
     AdminEscrituracaoFiscalController,
+    AdminSpedEfdController,
+    ClienteSpedEfdController,
   ],
   providers: [
     CertificadoService,
@@ -39,7 +50,12 @@ import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.servic
     ImportacaoXmlFiscalService,
     FiscalItensService,
     CfopService,
+    FiscalCteService,
     EscrituracaoFiscalService,
+    EfdIcmsIpiService,
+    SpedConfiguracaoService,
+    SpedApuracaoContextoService,
+    SpedInventarioService,
   ],
   exports: [
     CertificadoService,

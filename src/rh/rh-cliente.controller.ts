@@ -35,7 +35,7 @@ export class RhClienteController {
   constructor(
     private readonly rhService: RhService,
     private readonly clientesService: ClientesService,
-  ) { }
+  ) {}
 
   @Get('folhas')
   @ApiOperation({ summary: 'Listar folhas do cliente autenticado' })
@@ -126,7 +126,7 @@ export class RhClienteController {
     const recibos = await this.rhService.getAllRecibosByFolha(folhaId);
 
     // Record view (marks folha as "lido" for the admin listing)
-    this.rhService.recordFolhaView(folhaId, currentUser.id).catch(() => { });
+    this.rhService.recordFolhaView(folhaId, currentUser.id).catch(() => {});
 
     return { recibos };
   }

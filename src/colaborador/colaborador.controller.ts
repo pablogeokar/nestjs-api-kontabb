@@ -111,7 +111,7 @@ export class ColaboradorController {
   @Post('auth/logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout do colaborador' })
-  async logout(@Res({ passthrough: true }) res: Response) {
+  logout(@Res({ passthrough: true }) res: Response) {
     this.sessionService.clearCookie(res);
     return { success: true };
   }
@@ -119,7 +119,7 @@ export class ColaboradorController {
   @Get('auth/session')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Obter sessão do colaborador' })
-  async getSession(@Req() req: Request) {
+  getSession(@Req() req: Request) {
     const payload = this.sessionService.extractFromRequest(req);
     if (!payload) {
       return { user: null };

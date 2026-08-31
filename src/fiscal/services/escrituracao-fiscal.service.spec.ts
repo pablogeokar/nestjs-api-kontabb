@@ -66,6 +66,7 @@ describe('EscrituracaoFiscalService', () => {
       { db: { select, transaction } } as never,
       storage as never,
       cfopService as never,
+      {} as never,
     );
 
     await expect(
@@ -75,6 +76,9 @@ describe('EscrituracaoFiscalService', () => {
       itensAtualizados: 1,
       itensParaRevisao: 0,
       documentosComTpNfInferido: 0,
+      documentosComFalhaIntegridade: 1,
+      ctesAtualizados: 0,
+      ctesComFalha: 0,
       sucesso: true,
     });
     expect(updates).toHaveLength(2);
@@ -82,6 +86,9 @@ describe('EscrituracaoFiscalService', () => {
     expect(updates[0].values).toMatchObject({
       tpNfXml: '1',
       tipoOperacaoEscriturada: 'ENTRADA',
+      escrituracaoStatus: 'PENDENTE_REVISAO',
+      integridadeConferida: false,
+      integridadeStatus: 'NAO_CONFERIDA',
     });
     expect(updates[1].table).toBe(documentosFiscaisItens);
     expect(updates[1].values).toMatchObject({
@@ -90,6 +97,6 @@ describe('EscrituracaoFiscalService', () => {
       tipoOperacaoEscriturada: 'ENTRADA',
       cfopRevisaoNecessaria: false,
     });
-    expect(storage.download).not.toHaveBeenCalled();
+    expect(storage.download).toHaveBeenCalledWith('documento.xml');
   });
 });

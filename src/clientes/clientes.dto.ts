@@ -68,10 +68,14 @@ export class ClientCnaeDto {
 
 export class LookupCnpjParamsDto {
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+    typeof value === 'string'
+      ? value.replace(/[^0-9A-Za-z]/g, '').toUpperCase()
+      : value,
   )
   @IsString()
-  @Matches(/^\d{14}$/, { message: 'CNPJ deve conter 14 dígitos.' })
+  @Matches(/^[0-9A-Z]{12}[0-9]{2}$/, {
+    message: 'CNPJ deve conter 14 caracteres e dois dígitos verificadores.',
+  })
   cnpj: string;
 }
 
@@ -94,12 +98,17 @@ export class CreateClientDto {
   company_name: string;
 
   @ApiPropertyOptional({
-    description: 'CNPJ com 14 dígitos (obrigatório se PJ)',
+    description: 'CNPJ com 14 caracteres (obrigatório se PJ)',
     example: '12345678000190',
   })
   @ValidateIf((dto: CreateClientDto) => dto.tipo_pessoa === 'PJ')
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value.replace(/[^0-9A-Za-z]/g, '').toUpperCase()
+      : value,
+  )
   @IsString()
-  @Matches(/^\d{14}$/, { message: 'CNPJ deve conter 14 dígitos.' })
+  @Matches(/^[0-9A-Z]{12}[0-9]{2}$/, { message: 'CNPJ inválido.' })
   cnpj?: string;
 
   @ApiPropertyOptional({
@@ -266,11 +275,16 @@ export class UpdateClientDto {
 
 export class BatchClientItemDto {
   @ApiProperty({
-    description: 'CNPJ com 14 dígitos',
+    description: 'CNPJ com 14 caracteres',
     example: '12345678000190',
   })
   @IsString()
-  @Matches(/^\d{14}$/, { message: 'CNPJ deve conter 14 dígitos.' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value.replace(/[^0-9A-Za-z]/g, '').toUpperCase()
+      : value,
+  )
+  @Matches(/^[0-9A-Z]{12}[0-9]{2}$/, { message: 'CNPJ inválido.' })
   cnpj: string;
 
   @ApiProperty({ description: 'Razão social', minLength: 1, maxLength: 160 })

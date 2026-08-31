@@ -1,6 +1,38 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { NFeWizard as NFeWizardInstance } from 'nfewizard-io';
 import { CertificadoService } from './certificado.service';
+
+type ManifestacaoTipoEvento = '210210' | '210200' | '210220' | '210240';
+
+interface ManifestacaoPayload {
+  idLote: number;
+  evento: Array<{
+    cOrgao: number;
+    tpAmb: number;
+    CNPJ: string;
+    chNFe: string;
+    dhEvento: string;
+    tpEvento: ManifestacaoTipoEvento;
+    nSeqEvento: number;
+    verEvento: string;
+    detEvento: {
+      descEvento: string;
+      xJust?: string;
+    };
+  }>;
+}
+
+type ManifestacaoMethodName =
+  | 'NFE_CienciaDaOperacao'
+  | 'NFE_ConfirmacaoDaOperacao'
+  | 'NFE_DesconhecimentoDaOperacao'
+  | 'NFE_OperacaoNaoRealizada';
+
+type ManifestacaoWizard = Record<
+  ManifestacaoMethodName,
+  (payload: ManifestacaoPayload) => Promise<unknown>
+>;
 
 export interface ManifestacaoSefazResult {
   status: number;
@@ -69,7 +101,7 @@ export class NfeWizardService {
     clienteId: string,
     uf: string = 'SP',
     cnpj: string = '',
-  ) {
+  ): Promise<NFeWizardInstance> {
     const certData =
       await this.certificadoService.getDecryptedCertificate(clienteId);
     if (!certData) {
@@ -121,7 +153,7 @@ export class NfeWizardService {
     cnpj: string;
     uf: string;
     ultimoNsu: number;
-  }) {
+  }): Promise<unknown> {
     try {
       const wizard = await this.getClientWizardInstance(
         input.clienteId,
@@ -135,7 +167,7 @@ export class NfeWizardService {
         `Consultando DistribuicaoDFe para CNPJ ${input.cnpj} a partir do NSU ${ultNSU}`,
       );
 
-      const resposta = await wizard.NFE_DistribuicaoDFePorUltNSU({
+      const resposta: unknown = await wizard.NFE_DistribuicaoDFePorUltNSU({
         cUFAutor: this.getCodigoUF(input.uf),
         CNPJ: input.cnpj,
         distNSU: {
@@ -144,11 +176,8 @@ export class NfeWizardService {
       });
 
       return resposta;
-    } catch (error: any) {
-      this.logger.error(
-        `Erro ao consultar DistribuicaoDFe: ${error.message}`,
-        error.stack,
-      );
+    } catch (error: unknown) {
+      this.logError('Erro ao consultar DistribuicaoDFe', error);
       throw error;
     }
   }
@@ -161,7 +190,7 @@ export class NfeWizardService {
     cnpj: string;
     uf: string;
     ultimoNsu: number;
-  }) {
+  }): Promise<unknown> {
     const certData = await this.certificadoService.getDecryptedCertificate(
       input.clienteId,
     );
@@ -178,7 +207,7 @@ export class NfeWizardService {
         this.configService.get<string>('SEFAZ_AMBIENTE') === 'PRODUCAO' ? 1 : 2;
 
       const cteWizard = new CTEWizard();
-      await (cteWizard as any).NFE_LoadEnvironment({
+      await cteWizard.NFE_LoadEnvironment({
         config: {
           dfe: {
             UF: input.uf,
@@ -208,7 +237,7 @@ export class NfeWizardService {
         `Consultando DistribuicaoCTe para CNPJ ${input.cnpj} a partir do NSU ${ultNSU}`,
       );
 
-      const resposta = await (cteWizard as any).CTE_DistribuicaoDFePorUltNSU({
+      const resposta: unknown = await cteWizard.CTE_DistribuicaoDFePorUltNSU({
         cUFAutor: this.getCodigoUF(input.uf),
         CNPJ: input.cnpj,
         distNSU: {
@@ -217,11 +246,8 @@ export class NfeWizardService {
       });
 
       return resposta;
-    } catch (error: any) {
-      this.logger.error(
-        `Erro ao consultar DistribuicaoCTe: ${error.message}`,
-        error.stack,
-      );
+    } catch (error: unknown) {
+      this.logError('Erro ao consultar DistribuicaoCTe', error);
       throw error;
     }
   }
@@ -234,7 +260,7 @@ export class NfeWizardService {
     cnpj: string;
     uf: string;
     chaveAcesso: string;
-    tipoEvento: '210210' | '210200' | '210220' | '210240';
+    tipoEvento: ManifestacaoTipoEvento;
     sequencia?: number;
     justificativa?: string;
   }): Promise<ManifestacaoSefazResult> {
@@ -249,7 +275,7 @@ export class NfeWizardService {
         `Enviando manifestação ${input.tipoEvento} para chave ${input.chaveAcesso}`,
       );
 
-      const payload = {
+      const payload: ManifestacaoPayload = {
         idLote: Date.now(),
         evento: [
           {
@@ -261,7 +287,7 @@ export class NfeWizardService {
             CNPJ: input.cnpj,
             chNFe: input.chaveAcesso,
             dhEvento: new Date().toISOString(),
-            tpEvento: input.tipoEvento as any,
+            tpEvento: input.tipoEvento,
             nSeqEvento: input.sequencia ?? 1,
             verEvento: '1.00',
             detEvento: {
@@ -270,16 +296,17 @@ export class NfeWizardService {
             },
           },
         ],
-      } as any;
+      };
 
-      const methods: Record<string, string> = {
+      const methods: Record<ManifestacaoTipoEvento, ManifestacaoMethodName> = {
         '210210': 'NFE_CienciaDaOperacao',
         '210200': 'NFE_ConfirmacaoDaOperacao',
         '210220': 'NFE_DesconhecimentoDaOperacao',
         '210240': 'NFE_OperacaoNaoRealizada',
       };
       const method = methods[input.tipoEvento];
-      const rawResult = await (wizard as any)[method](payload);
+      const manifestacaoWizard = wizard as unknown as ManifestacaoWizard;
+      const rawResult: unknown = await manifestacaoWizard[method](payload);
       const result = extractManifestacaoSefazResult(rawResult);
 
       if (!result) {
@@ -292,11 +319,8 @@ export class NfeWizardService {
       }
 
       return result;
-    } catch (error: any) {
-      this.logger.error(
-        `Erro ao enviar manifestação: ${error.message}`,
-        error.stack,
-      );
+    } catch (error: unknown) {
+      this.logError('Erro ao enviar manifestação', error);
       throw error;
     }
   }
@@ -309,7 +333,7 @@ export class NfeWizardService {
     cnpj: string;
     uf: string;
     chaveAcesso: string;
-  }) {
+  }): Promise<unknown> {
     try {
       const wizard = await this.getClientWizardInstance(
         input.clienteId,
@@ -317,7 +341,7 @@ export class NfeWizardService {
         input.cnpj,
       );
 
-      const resposta = await wizard.NFE_DistribuicaoDFePorChave({
+      const resposta: unknown = await wizard.NFE_DistribuicaoDFePorChave({
         cUFAutor: this.getCodigoUF(input.uf),
         CNPJ: input.cnpj,
         consChNFe: {
@@ -326,16 +350,24 @@ export class NfeWizardService {
       });
 
       return resposta;
-    } catch (error: any) {
-      this.logger.error(
-        `Erro ao consultar por chave: ${error.message}`,
-        error.stack,
-      );
+    } catch (error: unknown) {
+      this.logError('Erro ao consultar por chave', error);
       throw error;
     }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private logError(context: string, error: unknown): void {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : 'Erro desconhecido';
+    const stack = error instanceof Error ? error.stack : undefined;
+    this.logger.error(`${context}: ${message}`, stack);
+  }
 
   private getCodigoUF(uf: string): number {
     const codigos: Record<string, number> = {

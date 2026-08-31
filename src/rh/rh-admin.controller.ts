@@ -38,7 +38,7 @@ export class RhAdminController {
     private readonly rhService: RhService,
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   @Get('folhas')
   @ApiOperation({ summary: 'Listar todas as folhas de pagamento' })

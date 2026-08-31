@@ -4,7 +4,7 @@ import { RateLimitService } from './rate-limit.service';
 
 @Global()
 @Module({
-    providers: [AppLogger, RateLimitService],
-    exports: [AppLogger, RateLimitService],
+  providers: [AppLogger, RateLimitService],
+  exports: [AppLogger, RateLimitService],
 })
-export class CommonModule { }
+export class CommonModule {}

@@ -7,17 +7,28 @@ import {
   documentosFiscaisItens,
 } from '../../database/schema';
 import { StorageService } from '../../storage/storage.service';
-import { parseManualFiscalXml } from './dfe-document.parser';
+import {
+  parseManualFiscalXml,
+  type ParsedDocumentoFiscal,
+} from './dfe-document.parser';
 import {
   CfopService,
   type CfopResolvido,
   type TipoOperacaoEscriturada,
 } from './cfop.service';
+import { FiscalCteService } from './fiscal-cte.service';
+import type { RegimeTributario } from '../../clientes/clientes.types';
+import {
+  buildDocumentoFiscalSpedMetadata,
+  documentoNfePrecisaRevisao,
+} from './documento-fiscal-sped-metadata';
 
 interface DocumentoReprocessado {
   id: string;
+  chaveAcesso: string;
   emitenteCnpjCpf: string;
   modelo: string;
+  situacao: string;
   tpNfXml: string | null;
   xmlKey: string;
 }
@@ -28,6 +39,7 @@ export class EscrituracaoFiscalService {
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
     private readonly cfopService: CfopService,
+    private readonly fiscalCteService: FiscalCteService,
   ) {}
 
   async reprocessar(input: {
@@ -36,7 +48,12 @@ export class EscrituracaoFiscalService {
     dataFim?: Date;
   }) {
     const clienteRows = await this.database.db
-      .select({ id: clientes.id, cnpj: clientes.cnpj })
+      .select({
+        id: clientes.id,
+        cnpj: clientes.cnpj,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+      })
       .from(clientes)
       .where(eq(clientes.id, input.clienteId))
       .limit(1);
@@ -55,8 +72,10 @@ export class EscrituracaoFiscalService {
     const documentos = await this.database.db
       .select({
         id: documentosFiscais.id,
+        chaveAcesso: documentosFiscais.chaveAcesso,
         emitenteCnpjCpf: documentosFiscais.emitenteCnpjCpf,
         modelo: documentosFiscais.modelo,
+        situacao: documentosFiscais.situacao,
         tpNfXml: documentosFiscais.tpNfXml,
         xmlKey: documentosFiscais.xmlKey,
       })
@@ -69,6 +88,9 @@ export class EscrituracaoFiscalService {
         itensAtualizados: 0,
         itensParaRevisao: 0,
         documentosComTpNfInferido: 0,
+        documentosComFalhaIntegridade: 0,
+        ctesAtualizados: 0,
+        ctesComFalha: 0,
         sucesso: true as const,
       };
     }
@@ -105,10 +127,39 @@ export class EscrituracaoFiscalService {
         cfopXml: string;
         resolvido: CfopResolvido;
       }>;
+      parsed: ParsedDocumentoFiscal | null;
     }> = [];
+    const ctesPreparadas: Array<{
+      documento: DocumentoReprocessado;
+      parsed: ParsedDocumentoFiscal;
+      preparada: Awaited<ReturnType<FiscalCteService['prepararEscrituracao']>>;
+    }> = [];
+    let ctesComFalha = 0;
 
     for (const documento of documentos) {
-      const parsed = await this.parseStoredDocumentIfNeeded(documento);
+      if (documento.modelo === '57') {
+        const parsed = await this.parseStoredCte(documento);
+        if (!parsed?.cteEscrituracao) {
+          ctesComFalha += 1;
+          continue;
+        }
+        ctesPreparadas.push({
+          documento,
+          parsed,
+          preparada: await this.fiscalCteService.prepararEscrituracao({
+            clienteId: input.clienteId,
+            clienteCnpjCpf: cliente.cnpj,
+            regimeTributario:
+              (cliente.regimeTributario as RegimeTributario | null) ?? null,
+            apuraIcms: cliente.apuraIcms ?? false,
+            situacao: documento.situacao as
+              'AUTORIZADA' | 'CANCELADA' | 'DENEGADA' | 'RESUMIDA',
+            cte: parsed.cteEscrituracao,
+          }),
+        });
+        continue;
+      }
+      const parsed = await this.parseStoredDocument(documento);
       const tpNfXml = isTpNf(documento.tpNfXml)
         ? documento.tpNfXml
         : (parsed?.tpNfXml ?? '1');
@@ -143,17 +194,37 @@ export class EscrituracaoFiscalService {
         tipoOperacao,
         tpNfInferido: !isTpNf(documento.tpNfXml) && !parsed,
         itens: itensPreparados,
+        parsed,
       });
     }
 
     let itensParaRevisao = 0;
     await this.database.db.transaction(async (tx) => {
       for (const preparado of documentosPreparados) {
+        const pendingReview =
+          !preparado.parsed ||
+          preparado.itens.some((item) => item.resolvido.revisaoNecessaria) ||
+          documentoNfePrecisaRevisao(
+            preparado.parsed,
+            preparado.itens.map((item) => ({
+              cfopRevisaoNecessaria: item.resolvido.revisaoNecessaria,
+            })),
+          );
         await tx
           .update(documentosFiscais)
           .set({
             tpNfXml: preparado.tpNfXml,
             tipoOperacaoEscriturada: preparado.tipoOperacao,
+            escriturado: true,
+            escrituracaoStatus: pendingReview
+              ? 'PENDENTE_REVISAO'
+              : 'ESCRITURADO',
+            ...(preparado.parsed
+              ? buildDocumentoFiscalSpedMetadata(preparado.parsed)
+              : {
+                  integridadeConferida: false,
+                  integridadeStatus: 'NAO_CONFERIDA' as const,
+                }),
             atualizadoEm: new Date(),
           })
           .where(eq(documentosFiscais.id, preparado.documento.id));
@@ -171,25 +242,59 @@ export class EscrituracaoFiscalService {
             .where(eq(documentosFiscaisItens.id, item.id));
         }
       }
+      for (const cte of ctesPreparadas) {
+        await tx
+          .update(documentosFiscais)
+          .set({
+            tpNfXml: '1',
+            ...buildDocumentoFiscalSpedMetadata(cte.parsed),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(documentosFiscais.id, cte.documento.id));
+        await this.fiscalCteService.persistirEscrituracao(tx, {
+          documentoFiscalId: cte.documento.id,
+          clienteId: input.clienteId,
+          chaveAcesso: cte.documento.chaveAcesso,
+          preparada: cte.preparada,
+        });
+      }
     });
 
     return {
-      documentosProcessados: documentosPreparados.length,
+      documentosProcessados:
+        documentosPreparados.length + ctesPreparadas.length,
       itensAtualizados: itens.length,
       itensParaRevisao,
       documentosComTpNfInferido: documentosPreparados.filter(
         (item) => item.tpNfInferido,
       ).length,
+      documentosComFalhaIntegridade: documentosPreparados.filter(
+        (item) => !item.parsed,
+      ).length,
+      ctesAtualizados: ctesPreparadas.length,
+      ctesComFalha,
       sucesso: true as const,
     };
   }
 
-  private async parseStoredDocumentIfNeeded(documento: DocumentoReprocessado) {
-    if (isTpNf(documento.tpNfXml) || documento.modelo === '57') return null;
+  private async parseStoredDocument(documento: DocumentoReprocessado) {
     try {
       const xml = await this.storage.download(documento.xmlKey);
       const parsed = parseManualFiscalXml(xml.toString('utf8'));
       return parsed.status === 'DOCUMENTO' ? parsed.documento : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async parseStoredCte(documento: DocumentoReprocessado) {
+    try {
+      const xml = await this.storage.download(documento.xmlKey);
+      const parsed = parseManualFiscalXml(xml.toString('utf8'));
+      return parsed.status === 'DOCUMENTO' &&
+        parsed.documento.tipoDocumento === 'CTE'
+        ? parsed.documento
+        : null;
     } catch {
       return null;
     }

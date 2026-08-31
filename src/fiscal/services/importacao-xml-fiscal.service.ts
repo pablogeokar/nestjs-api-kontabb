@@ -6,6 +6,7 @@ import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   documentosFiscais,
+  documentosFiscaisCteEscrituracao,
   documentosFiscaisItens,
   eventosAuditoria,
 } from '../../database/schema';
@@ -15,6 +16,16 @@ import {
   type ParsedDocumentoFiscal,
 } from './dfe-document.parser';
 import { CfopService } from './cfop.service';
+import {
+  FiscalCteService,
+  type CteEscrituracaoPreparada,
+} from './fiscal-cte.service';
+import type { RegimeTributario } from '../../clientes/clientes.types';
+import {
+  buildDocumentoFiscalSpedMetadata,
+  documentoNfePrecisaRevisao,
+} from './documento-fiscal-sped-metadata';
+import type { CfopItemRevisao } from './cfop.service';
 
 const MAX_XML_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_XML_MIMES = new Set([
@@ -32,12 +43,38 @@ interface ImportTarget {
   id: string;
   cnpj: string;
   razaoSocial: string;
+  regimeTributario?: string | null;
+  apuraIcms?: boolean;
 }
 
 interface TargetResult {
   cliente_id: string;
   razao_social: string;
   status: TargetStatus;
+  pendente_revisao: boolean;
+}
+
+export interface FiscalXmlReviewItem {
+  numero_item: number;
+  descricao: string | null;
+  cfop_xml: string;
+  cfop_aplicado: string;
+  cfop_sugerido: string;
+}
+
+export interface FiscalXmlReviewIssue {
+  codigo:
+    | 'CFOP_NAO_CADASTRADO'
+    | 'CFOP_DESTINO_NAO_CADASTRADO'
+    | 'INTEGRIDADE_XML_DIVERGENTE'
+    | 'CTE_PENDENTE_REVISAO';
+  mensagem: string;
+  acao_recomendada: string;
+  cliente_id: string;
+  razao_social: string;
+  numero_documento: string;
+  chave_acesso: string;
+  itens: FiscalXmlReviewItem[];
 }
 
 export interface FiscalXmlFileResult {
@@ -50,6 +87,7 @@ export interface FiscalXmlFileResult {
   duplicados: number;
   erros: number;
   clientes: TargetResult[];
+  revisoes: FiscalXmlReviewIssue[];
 }
 
 export interface FiscalXmlImportResult {
@@ -58,7 +96,13 @@ export interface FiscalXmlImportResult {
   duplicados: number;
   ignorados: number;
   erros: number;
+  pendentes_revisao: number;
   resultados: FiscalXmlFileResult[];
+}
+
+interface PersistDocumentResult {
+  status: 'IMPORTADO' | 'DUPLICADO';
+  revisoes: FiscalXmlReviewIssue[];
 }
 
 @Injectable()
@@ -68,6 +112,7 @@ export class ImportacaoXmlFiscalService {
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
     private readonly cfopService: CfopService,
+    private readonly fiscalCteService: FiscalCteService,
   ) {}
 
   async importar(input: {
@@ -100,6 +145,12 @@ export class ImportacaoXmlFiscalService {
       duplicados: resultados.reduce((sum, item) => sum + item.duplicados, 0),
       ignorados: resultados.filter((item) => item.status === 'IGNORADO').length,
       erros: resultados.reduce((sum, item) => sum + item.erros, 0),
+      pendentes_revisao: resultados.reduce(
+        (sum, item) =>
+          sum +
+          item.clientes.filter((cliente) => cliente.pendente_revisao).length,
+        0,
+      ),
       resultados,
     };
   }
@@ -134,6 +185,7 @@ export class ImportacaoXmlFiscalService {
         duplicados: 0,
         erros: 0,
         clientes: [],
+        revisoes: [],
       };
     }
     if (parsed.status === 'INVALIDO') {
@@ -143,7 +195,9 @@ export class ImportacaoXmlFiscalService {
     const documento = parsed.documento;
     let targets: ImportTarget[];
     if (context.fixedTarget) {
-      const targetTaxId = context.fixedTarget.cnpj.replace(/\D/g, '');
+      const targetTaxId = context.fixedTarget.cnpj
+        .replace(/[^0-9A-Za-z]/g, '')
+        .toUpperCase();
       if (!documento.participantesCnpjCpf.includes(targetTaxId)) {
         return this.errorResult(
           arquivo,
@@ -168,23 +222,27 @@ export class ImportacaoXmlFiscalService {
           duplicados: 0,
           erros: 0,
           clientes: [],
+          revisoes: [],
         };
       }
     }
 
     const clientesResult: TargetResult[] = [];
+    const revisoes: FiscalXmlReviewIssue[] = [];
     for (const target of targets) {
       try {
-        const status = await this.persistirDocumento({
+        const result = await this.persistirDocumento({
           target,
           documento,
           actorUserId: context.actorUserId,
           requestId: context.requestId,
         });
+        revisoes.push(...result.revisoes);
         clientesResult.push({
           cliente_id: target.id,
           razao_social: target.razaoSocial,
-          status,
+          status: result.status,
+          pendente_revisao: result.revisoes.length > 0,
         });
       } catch (error: unknown) {
         this.logger.error('fiscal_xml_import_failed', error, {
@@ -199,6 +257,7 @@ export class ImportacaoXmlFiscalService {
           cliente_id: target.id,
           razao_social: target.razaoSocial,
           status: 'ERRO',
+          pendente_revisao: false,
         });
       }
     }
@@ -225,6 +284,7 @@ export class ImportacaoXmlFiscalService {
       duplicados,
       erros,
       clientes: clientesResult,
+      revisoes,
     };
   }
 
@@ -281,6 +341,8 @@ export class ImportacaoXmlFiscalService {
         id: clientes.id,
         cnpj: clientes.cnpj,
         razaoSocial: clientes.razaoSocial,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
       })
       .from(clientes)
       .where(eq(clientes.id, clienteId))
@@ -295,6 +357,8 @@ export class ImportacaoXmlFiscalService {
         id: clientes.id,
         cnpj: clientes.cnpj,
         razaoSocial: clientes.razaoSocial,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
       })
       .from(clientes)
       .where(inArray(clientes.cnpj, participantIds));
@@ -305,14 +369,45 @@ export class ImportacaoXmlFiscalService {
     documento: ParsedDocumentoFiscal;
     actorUserId: string;
     requestId: string;
-  }): Promise<'IMPORTADO' | 'DUPLICADO'> {
+  }): Promise<PersistDocumentResult> {
     const { target, documento } = input;
-    const escrituracao = await this.cfopService.prepararItensEscrituracao({
-      clienteId: target.id,
-      clienteCnpjCpf: target.cnpj,
-      emitenteCnpjCpf: documento.emitenteCnpjCpf,
-      tpNfXml: documento.tpNfXml,
-      itens: documento.itens,
+    const ctePreparada = documento.cteEscrituracao
+      ? await this.fiscalCteService.prepararEscrituracao({
+          clienteId: target.id,
+          clienteCnpjCpf: target.cnpj,
+          regimeTributario:
+            (target.regimeTributario as RegimeTributario | null) ?? null,
+          apuraIcms: target.apuraIcms ?? false,
+          situacao: documento.situacao,
+          cte: documento.cteEscrituracao,
+        })
+      : null;
+    if (documento.tipoDocumento === 'CTE' && !ctePreparada) {
+      throw new Error('Dados de escrituração do CT-e não foram extraídos.');
+    }
+    const escrituracao =
+      documento.tipoDocumento === 'CTE'
+        ? {
+            tipoOperacaoEscriturada: 'ENTRADA' as const,
+            itens: [],
+            revisoes: [] as CfopItemRevisao[],
+          }
+        : await this.cfopService.prepararItensEscrituracao({
+            clienteId: target.id,
+            clienteCnpjCpf: target.cnpj,
+            emitenteCnpjCpf: documento.emitenteCnpjCpf,
+            tpNfXml: documento.tpNfXml,
+            itens: documento.itens,
+          });
+    const spedMetadata = buildDocumentoFiscalSpedMetadata(documento);
+    const nfePendenteRevisao =
+      documento.tipoDocumento !== 'CTE' &&
+      documentoNfePrecisaRevisao(documento, escrituracao.itens);
+    const revisoes = this.buildReviewIssues({
+      target,
+      documento,
+      cfopRevisoes: escrituracao.revisoes,
+      ctePreparada,
     });
     const existingRows = await this.database.db
       .select({
@@ -337,6 +432,13 @@ export class ImportacaoXmlFiscalService {
           .set({
             tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
             tpNfXml: documento.tpNfXml,
+            ...spedMetadata,
+            ...(documento.tipoDocumento !== 'CTE' && {
+              escriturado: true,
+              escrituracaoStatus: nfePendenteRevisao
+                ? ('PENDENTE_REVISAO' as const)
+                : ('ESCRITURADO' as const),
+            }),
             atualizadoEm: new Date(),
           })
           .where(eq(documentosFiscais.id, existing.id));
@@ -356,8 +458,25 @@ export class ImportacaoXmlFiscalService {
             })),
           );
         }
+        if (ctePreparada) {
+          await this.fiscalCteService.persistirEscrituracao(tx, {
+            documentoFiscalId: existing.id,
+            clienteId: target.id,
+            chaveAcesso: documento.chaveAcesso,
+            preparada: ctePreparada,
+          });
+        } else {
+          await tx
+            .delete(documentosFiscaisCteEscrituracao)
+            .where(
+              eq(
+                documentosFiscaisCteEscrituracao.documentoFiscalId,
+                existing.id,
+              ),
+            );
+        }
       });
-      return 'DUPLICADO';
+      return { status: 'DUPLICADO', revisoes };
     }
 
     const year = String(documento.dataEmissao.getUTCFullYear());
@@ -396,9 +515,17 @@ export class ImportacaoXmlFiscalService {
       destinatarioRazaoSocial: documento.destinatarioRazaoSocial,
       dataEmissao: documento.dataEmissao,
       valorTotal: documento.valorTotal,
+      ...spedMetadata,
       situacao: documento.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: documento.tpNfXml,
+      escriturado: documento.tipoDocumento !== 'CTE',
+      escrituracaoStatus:
+        documento.tipoDocumento === 'CTE'
+          ? ('NAO_ESCRITURAVEL' as const)
+          : nfePendenteRevisao
+            ? ('PENDENTE_REVISAO' as const)
+            : ('ESCRITURADO' as const),
       xmlKey,
       danfeKey: null,
       atualizadoEm: new Date(),
@@ -406,6 +533,7 @@ export class ImportacaoXmlFiscalService {
 
     try {
       let persisted: Array<{ id: string }> = [];
+      let ctePersistedStatus: CteEscrituracaoPreparadaStatus | undefined;
       await this.database.db.transaction(async (tx) => {
         if (existing) {
           persisted = await tx
@@ -453,12 +581,22 @@ export class ImportacaoXmlFiscalService {
               })),
             );
           }
+          if (ctePreparada) {
+            const ctePersistida =
+              await this.fiscalCteService.persistirEscrituracao(tx, {
+                documentoFiscalId,
+                clienteId: target.id,
+                chaveAcesso: documento.chaveAcesso,
+                preparada: ctePreparada,
+              });
+            ctePersistedStatus = ctePersistida.status;
+          }
         }
       });
 
       if (persisted.length === 0) {
         await this.deleteUploadedXml(xmlKey, input);
-        return 'DUPLICADO';
+        return { status: 'DUPLICADO', revisoes };
       }
 
       await this.registrarAuditoria({
@@ -468,6 +606,8 @@ export class ImportacaoXmlFiscalService {
         chaveAcesso: documento.chaveAcesso,
         tipoDocumento: documento.tipoDocumento,
         clienteId: target.id,
+        cteEscrituracaoStatus:
+          ctePersistedStatus ?? ctePreparada?.escrituracaoStatus,
       });
 
       if (existing) {
@@ -478,7 +618,7 @@ export class ImportacaoXmlFiscalService {
           input,
         );
       }
-      return 'IMPORTADO';
+      return { status: 'IMPORTADO', revisoes };
     } catch (error: unknown) {
       await this.deleteUploadedXml(xmlKey, input);
       throw error;
@@ -492,20 +632,41 @@ export class ImportacaoXmlFiscalService {
     chaveAcesso: string;
     tipoDocumento: string;
     clienteId: string;
+    cteEscrituracaoStatus?: CteEscrituracaoPreparadaStatus;
   }) {
     try {
-      await this.database.db.insert(eventosAuditoria).values({
-        atorUserId: input.actorUserId,
-        acao: 'DOCUMENTO_FISCAL_XML_IMPORTADO',
-        entidadeTipo: 'DOCUMENTO_FISCAL',
-        entidadeId: input.documentoId,
-        dados: {
-          origem: 'UPLOAD_MANUAL',
-          tipoDocumento: input.tipoDocumento,
-          chaveAcesso: input.chaveAcesso,
-          clienteId: input.clienteId,
+      await this.database.db.insert(eventosAuditoria).values([
+        {
+          atorUserId: input.actorUserId,
+          acao: 'DOCUMENTO_FISCAL_XML_IMPORTADO',
+          entidadeTipo: 'DOCUMENTO_FISCAL',
+          entidadeId: input.documentoId,
+          dados: {
+            origem: 'UPLOAD_MANUAL',
+            tipoDocumento: input.tipoDocumento,
+            chaveAcesso: input.chaveAcesso,
+            clienteId: input.clienteId,
+          },
         },
-      });
+        ...(input.cteEscrituracaoStatus
+          ? [
+              {
+                atorUserId: input.actorUserId,
+                acao:
+                  input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
+                    ? 'CTE_NAO_ESCRITURAVEL'
+                    : 'CTE_ESCRITURADO',
+                entidadeTipo: 'DOCUMENTO_FISCAL',
+                entidadeId: input.documentoId,
+                dados: {
+                  origem: 'UPLOAD_MANUAL',
+                  clienteId: input.clienteId,
+                  escrituracaoStatus: input.cteEscrituracaoStatus,
+                },
+              },
+            ]
+          : []),
+      ]);
     } catch (error: unknown) {
       this.logger.error('fiscal_xml_import_audit_failed', error, {
         requestId: input.requestId,
@@ -551,6 +712,96 @@ export class ImportacaoXmlFiscalService {
     }
   }
 
+  private buildReviewIssues(input: {
+    target: ImportTarget;
+    documento: ParsedDocumentoFiscal;
+    cfopRevisoes: CfopItemRevisao[];
+    ctePreparada: CteEscrituracaoPreparada | null;
+  }): FiscalXmlReviewIssue[] {
+    const common = {
+      cliente_id: input.target.id,
+      razao_social: input.target.razaoSocial,
+      numero_documento: input.documento.numeroDocumento,
+      chave_acesso: input.documento.chaveAcesso,
+    };
+    const issues: FiscalXmlReviewIssue[] = [];
+    const groupedCfops = new Map<
+      CfopItemRevisao['motivo'],
+      CfopItemRevisao[]
+    >();
+
+    for (const revisao of input.cfopRevisoes) {
+      const current = groupedCfops.get(revisao.motivo) ?? [];
+      current.push(revisao);
+      groupedCfops.set(revisao.motivo, current);
+    }
+
+    for (const [codigo, revisoes] of groupedCfops) {
+      const mappings = Array.from(
+        new Set(
+          revisoes.map((item) => `${item.cfopXml} → ${item.cfopSugerido}`),
+        ),
+      ).join(', ');
+      const missingCfops = Array.from(
+        new Set(revisoes.map((item) => item.cfopSugerido)),
+      ).join(', ');
+      issues.push({
+        codigo,
+        mensagem:
+          codigo === 'CFOP_DESTINO_NAO_CADASTRADO'
+            ? `A conversão de CFOP necessária para a entrada (${mappings}) não encontrou um destino ativo no catálogo. Um CFOP genérico foi aplicado temporariamente.`
+            : `O CFOP ${missingCfops} não está ativo no catálogo da escrituração. Um CFOP genérico foi aplicado temporariamente.`,
+        acao_recomendada:
+          'Cadastre ou ative o CFOP sugerido em Fiscal > Regras CFOP e reprocese o período antes de gerar o SPED.',
+        ...common,
+        itens: revisoes.map((item) => ({
+          numero_item: item.numeroItem,
+          descricao: item.descricao,
+          cfop_xml: item.cfopXml,
+          cfop_aplicado: item.cfopAplicado,
+          cfop_sugerido: item.cfopSugerido,
+        })),
+      });
+    }
+
+    if (input.documento.integridade.status === 'DIVERGENTE') {
+      issues.push({
+        codigo: 'INTEGRIDADE_XML_DIVERGENTE',
+        mensagem:
+          'Os totais ou a quantidade de itens calculados não conferem com os valores declarados no XML.',
+        acao_recomendada:
+          'Revise as divergências do documento antes de incluí-lo na escrituração e no SPED.',
+        ...common,
+        itens: [],
+      });
+    }
+
+    if (input.ctePreparada?.escrituracaoStatus === 'PENDENTE_REVISAO') {
+      const values = input.ctePreparada.values;
+      issues.push({
+        codigo: 'CTE_PENDENTE_REVISAO',
+        mensagem:
+          'O CT-e foi importado, mas sua classificação fiscal exige revisão antes de compor o SPED.',
+        acao_recomendada:
+          'Revise o tipo de serviço e o CFOP do CT-e e reprocese o período.',
+        ...common,
+        itens: values.cfopRevisaoNecessaria
+          ? [
+              {
+                numero_item: 1,
+                descricao: 'Prestação de serviço de transporte',
+                cfop_xml: values.cfopXml,
+                cfop_aplicado: values.cfop,
+                cfop_sugerido: values.cfop,
+              },
+            ]
+          : [],
+      });
+    }
+
+    return issues;
+  }
+
   private errorResult(
     arquivo: string,
     mensagem: string,
@@ -568,6 +819,7 @@ export class ImportacaoXmlFiscalService {
       duplicados: 0,
       erros: 1,
       clientes: [],
+      revisoes: [],
     };
   }
 
@@ -587,3 +839,6 @@ export class ImportacaoXmlFiscalService {
     return parts.join(', ') || 'Nenhum registro processado.';
   }
 }
+
+type CteEscrituracaoPreparadaStatus =
+  'ESCRITURADO' | 'NAO_ESCRITURAVEL' | 'PENDENTE_REVISAO';

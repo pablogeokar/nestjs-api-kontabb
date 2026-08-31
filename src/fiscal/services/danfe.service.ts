@@ -31,14 +31,15 @@ export class DanfeService {
   ) {}
 
   /**
-   * Gera ou retorna o PDF da DANFE para um documento fiscal.
-   * Se a DANFE já foi gerada (danfeKey presente), retorna presigned URL.
-   * Caso contrário, gera a partir do XML e salva no R2.
+   * Gera o PDF da DANFE/DACTE para um documento fiscal totalmente em memória.
+   * O XML autorizado é lido e o PDF é montado on-the-fly, sem persistir o
+   * arquivo no R2. O buffer resultante é retornado para ser transmitido
+   * diretamente ao usuário.
    */
   async getDanfePdf(
     documentoId: string,
     clienteId?: string,
-  ): Promise<{ url: string } | { buffer: Buffer; contentType: string }> {
+  ): Promise<{ buffer: Buffer; contentType: string }> {
     const conditions: SQL[] = [eq(documentosFiscais.id, documentoId)];
     if (clienteId) {
       conditions.push(eq(documentosFiscais.clienteId, clienteId));
@@ -48,7 +49,6 @@ export class DanfeService {
       .select({
         id: documentosFiscais.id,
         xmlKey: documentosFiscais.xmlKey,
-        danfeKey: documentosFiscais.danfeKey,
         chaveAcesso: documentosFiscais.chaveAcesso,
         tipoDocumento: documentosFiscais.tipoDocumento,
       })
@@ -60,13 +60,8 @@ export class DanfeService {
       throw new NotFoundException('Documento fiscal não encontrado.');
     }
 
-    // Se a DANFE já foi gerada, retornar URL assinada
-    if (doc[0].danfeKey) {
-      const url = await this.storage.getSignedUrl(doc[0].danfeKey, 600);
-      return { url };
-    }
-
-    // Gerar o documento auxiliar correspondente a partir do XML autorizado.
+    // Gerar o documento auxiliar correspondente a partir do XML autorizado,
+    // inteiramente em memória.
     try {
       const xmlBuffer = await this.storage.download(doc[0].xmlKey);
       const xmlContent = xmlBuffer.toString('utf-8');
@@ -80,19 +75,7 @@ export class DanfeService {
               doc[0].tipoDocumento,
             );
 
-      // Salvar no R2
-      const danfeKey = doc[0].xmlKey.replace('.xml', '.pdf');
-      await this.storage.upload(danfeKey, pdfBuffer, 'application/pdf');
-
-      // Atualizar registro no banco
-      await this.database.db
-        .update(documentosFiscais)
-        .set({ danfeKey, atualizadoEm: new Date() })
-        .where(eq(documentosFiscais.id, doc[0].id));
-
-      // Retornar URL assinada do PDF recém-gerado
-      const url = await this.storage.getSignedUrl(danfeKey, 600);
-      return { url };
+      return { buffer: pdfBuffer, contentType: 'application/pdf' };
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'erro desconhecido';

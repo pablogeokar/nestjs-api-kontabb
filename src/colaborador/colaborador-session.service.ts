@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import type { Request, Response } from 'express';
 
 const COOKIE_NAME = 'kontabb-colaborador-session';
@@ -26,8 +26,7 @@ export class ColaboradorSessionService {
 
   constructor(configService: ConfigService) {
     this.secret = configService.getOrThrow<string>('BETTER_AUTH_SECRET');
-    this.isProduction =
-      configService.get<string>('NODE_ENV') === 'production';
+    this.isProduction = configService.get<string>('NODE_ENV') === 'production';
   }
 
   /**

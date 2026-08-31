@@ -14,4 +14,4 @@ import { MailModule } from '../mail/mail.module';
   providers: [RhService],
   exports: [RhService],
 })
-export class RhModule { }
+export class RhModule {}

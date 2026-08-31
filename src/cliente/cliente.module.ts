@@ -5,8 +5,8 @@ import { AuthModule } from '../auth/auth.module';
 import { ClientesModule } from '../clientes/clientes.module';
 
 @Module({
-    imports: [AuthModule, ClientesModule],
-    controllers: [ClienteController, ClientesMeController],
-    providers: [ClienteService],
+  imports: [AuthModule, ClientesModule],
+  controllers: [ClienteController, ClientesMeController],
+  providers: [ClienteService],
 })
-export class ClienteModule { }
+export class ClienteModule {}
