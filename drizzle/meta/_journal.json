@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1787747908722,
-      "tag": "0000_base_de_dados_inicial",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1788015743728,
-      "tag": "0001_escrituracao_cte_bloco_d",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1788107980102,
-      "tag": "0002_sped_efd_icms_ipi_2026",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1788108685270,
-      "tag": "0003_cnpj_alfanumerico_certificado",
+      "when": 1788180109399,
+      "tag": "0000_base_inicial",
       "breakpoints": true
     }
   ]
