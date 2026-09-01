@@ -7,6 +7,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Matches,
   ValidateIf,
@@ -168,6 +169,16 @@ export class CreateClientDto {
   @IsOptional()
   @IsIn(FONTES_CONSULTA_CNPJ)
   simples_nacional_fonte?: FonteConsultaCnpj | null;
+
+  @ApiPropertyOptional({
+    description: 'Contador responsável pelo cliente',
+    format: 'uuid',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_dto: CreateClientDto, value: unknown) => value !== null)
+  @IsUUID('4')
+  contador_id?: string | null;
 }
 
 export class UpdateClientDto {
@@ -271,6 +282,16 @@ export class UpdateClientDto {
     message: 'Formato de IE inválido.',
   })
   inscricao_estadual?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Contador responsável pelo cliente',
+    format: 'uuid',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_dto: UpdateClientDto, value: unknown) => value !== null)
+  @IsUUID('4')
+  contador_id?: string | null;
 }
 
 export class BatchClientItemDto {

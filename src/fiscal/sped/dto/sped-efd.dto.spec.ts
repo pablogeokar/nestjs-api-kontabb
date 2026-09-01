@@ -11,12 +11,6 @@ function validConfiguration(overrides: Record<string, unknown> = {}) {
     inventarioObrigatorio: true,
     blocoKComMovimento: false,
     tipoItemPadrao: '00',
-    contabilista: {
-      nome: 'Maria Contadora',
-      cpf: '12345678901',
-      crc: 'BA-12345',
-      codigoMunicipioIbge: '2927408',
-    },
     ...overrides,
   };
 }

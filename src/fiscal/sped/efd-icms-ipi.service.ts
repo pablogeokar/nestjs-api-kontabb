@@ -28,7 +28,6 @@ import {
   spedAjustesApuracao,
   spedArquivosGerados,
   spedConfiguracoes,
-  spedContabilistas,
   spedInventarioItens,
   spedInventarios,
   spedItens,
@@ -38,6 +37,7 @@ import {
   spedSaldosApuracao,
   spedUnidades,
 } from '../../database/schema';
+import { resolverContadorDoCliente } from '../../cadastros/contadores/contador-resolver';
 import { StorageService } from '../../storage/storage.service';
 import { buildSpedFile, validateSpedFile } from './core';
 import {
@@ -300,6 +300,7 @@ export class EfdIcmsIpiService {
         uf: clientes.uf,
         regimeTributario: clientes.regimeTributario,
         inscricaoEstadual: clientes.inscricaoEstadual,
+        contadorId: clientes.contadorId,
         configuracaoId: spedConfiguracoes.id,
         obrigadoEfdIcmsIpi: spedConfiguracoes.obrigadoEfdIcmsIpi,
         perfilEfd: spedConfiguracoes.perfilEfd,
@@ -317,28 +318,35 @@ export class EfdIcmsIpiService {
         blocoKComMovimento: spedConfiguracoes.blocoKComMovimento,
         tipoItemPadrao: spedConfiguracoes.tipoItemPadrao,
         indicadores1010: spedConfiguracoes.indicadores1010,
-        contabilistaId: spedContabilistas.id,
-        contabilistaNome: spedContabilistas.nome,
-        contabilistaCpf: spedContabilistas.cpf,
-        contabilistaCrc: spedContabilistas.crc,
-        contabilistaCnpj: spedContabilistas.cnpj,
-        contabilistaCep: spedContabilistas.cep,
-        contabilistaLogradouro: spedContabilistas.logradouro,
-        contabilistaNumero: spedContabilistas.numero,
-        contabilistaComplemento: spedContabilistas.complemento,
-        contabilistaBairro: spedContabilistas.bairro,
-        contabilistaTelefone: spedContabilistas.telefone,
-        contabilistaFax: spedContabilistas.fax,
-        contabilistaEmail: spedContabilistas.email,
-        contabilistaCodigoMunicipioIbge: spedContabilistas.codigoMunicipioIbge,
       })
       .from(clientes)
       .leftJoin(spedConfiguracoes, eq(spedConfiguracoes.clienteId, clientes.id))
-      .leftJoin(spedContabilistas, eq(spedContabilistas.clienteId, clientes.id))
       .where(eq(clientes.id, clienteId))
       .limit(1);
-    const company = companyRows[0];
-    if (!company) throw new NotFoundException('Empresa não encontrada.');
+    const companyRow = companyRows[0];
+    if (!companyRow) throw new NotFoundException('Empresa não encontrada.');
+    const contadorResolvido = await resolverContadorDoCliente(
+      db,
+      companyRow.contadorId,
+    );
+    const company = {
+      ...companyRow,
+      contabilistaId: contadorResolvido?.contador.id ?? null,
+      contabilistaNome: contadorResolvido?.contador.nome ?? null,
+      contabilistaCpf: contadorResolvido?.contador.cpf ?? null,
+      contabilistaCrc: contadorResolvido?.contador.crc ?? null,
+      contabilistaCnpj: contadorResolvido?.contador.cnpj ?? null,
+      contabilistaCep: contadorResolvido?.contador.cep ?? null,
+      contabilistaLogradouro: contadorResolvido?.contador.logradouro ?? null,
+      contabilistaNumero: contadorResolvido?.contador.numero ?? null,
+      contabilistaComplemento: contadorResolvido?.contador.complemento ?? null,
+      contabilistaBairro: contadorResolvido?.contador.bairro ?? null,
+      contabilistaTelefone: contadorResolvido?.contador.telefone ?? null,
+      contabilistaFax: contadorResolvido?.contador.fax ?? null,
+      contabilistaEmail: contadorResolvido?.contador.email ?? null,
+      contabilistaCodigoMunicipioIbge:
+        contadorResolvido?.contador.codigoMunicipioIbge ?? null,
+    };
 
     this.validarConfiguracao(company, inconsistencias);
     const profile = isSpedProfile(company.perfilEfd) ? company.perfilEfd : null;
@@ -353,6 +361,16 @@ export class EfdIcmsIpiService {
         preview: {
           ...empty.preview,
           perfil: profile,
+          auditabilidade: {
+            contador: contadorResolvido
+              ? {
+                  id: contadorResolvido.contador.id,
+                  nome: contadorResolvido.contador.nome,
+                  origem: contadorResolvido.origem,
+                }
+              : null,
+            apuracao: [],
+          },
           inconsistencias,
           podeGerar: false,
         },
@@ -850,6 +868,16 @@ export class EfdIcmsIpiService {
         cte: cteDocuments.length,
       },
       apuracao: builtRecords.apuracao,
+      auditabilidade: {
+        contador: contadorResolvido
+          ? {
+              id: contadorResolvido.contador.id,
+              nome: contadorResolvido.contador.nome,
+              origem: contadorResolvido.origem,
+            }
+          : null,
+        apuracao: buildApuracaoAuditTrail(saldos, ajustes, obrigacoes),
+      },
       inconsistencias,
     };
 
@@ -1371,6 +1399,7 @@ export class EfdIcmsIpiService {
     issues: SpedInconsistencia[],
   ) {
     issues.push(...validateFcpAdjustments(taxSignals, ajustes));
+    issues.push(...validateAdjustmentAuditTrail(ajustes));
 
     this.validarObrigacao(
       'ICMS_PROPRIO',
@@ -1437,8 +1466,18 @@ export class EfdIcmsIpiService {
     obrigacoes: Array<typeof spedObrigacoesRecolhimento.$inferSelect>,
     issues: SpedInconsistencia[],
   ) {
-    if (toScaledInteger(valorCalculado) <= 0n) return;
     const row = obrigacoes.find((item) => item.tipo === tipo && item.uf === uf);
+    if (toScaledInteger(valorCalculado) <= 0n) {
+      if (row && toScaledInteger(row.valor) > 0n) {
+        issues.push({
+          codigo: `OBRIGACAO_${tipo}_SEM_SALDO_APURADO`,
+          severidade: 'ERRO',
+          mensagem: `A obrigação informada (${row.valor}) não possui saldo a recolher correspondente na apuração. Revise o contexto antes de gerar.`,
+          campo: uf ?? tipo,
+        });
+      }
+      return;
+    }
     if (!row) {
       issues.push({
         codigo: `OBRIGACAO_${tipo}_AUSENTE`,
@@ -1648,6 +1687,7 @@ export class EfdIcmsIpiService {
           cte: 0,
         },
         apuracao: EMPTY_APURACAO,
+        auditabilidade: { contador: null, apuracao: [] },
         inconsistencias,
       },
     };
@@ -1702,6 +1742,76 @@ export function pendingDocumentReviewMessage(
   ).join(', ');
   const itemLabel = pendingItems.length === 1 ? 'item possui' : 'itens possuem';
   return `${pendingItems.length} ${itemLabel} CFOP sem equivalência confirmada (${mappings}). Corrija as Regras CFOP e reprocesse o período antes de gerar a EFD.`;
+}
+
+export function buildApuracaoAuditTrail(
+  saldos: Array<typeof spedSaldosApuracao.$inferSelect>,
+  ajustes: Array<typeof spedAjustesApuracao.$inferSelect>,
+  obrigacoes: Array<typeof spedObrigacoesRecolhimento.$inferSelect>,
+): SpedPreview['auditabilidade']['apuracao'] {
+  const trail: SpedPreview['auditabilidade']['apuracao'] = [
+    {
+      codigo: 'ICMS_DOCUMENTOS',
+      descricao:
+        'Débitos e créditos de ICMS calculados a partir dos documentos escriturados e elegíveis do período.',
+      origem: 'DOCUMENTOS_ESCRITURADOS',
+      fundamento:
+        'CST/CSOSN, direção da operação e regras de apropriação do leiaute EFD ICMS/IPI 2026.',
+    },
+    {
+      codigo: 'IPI_DOCUMENTOS',
+      descricao:
+        'Débitos e créditos de IPI inferidos dos itens escriturados quando a atividade e o CST permitem apropriação segura.',
+      origem: 'DOCUMENTOS_ESCRITURADOS',
+      fundamento:
+        'Registros E500/E510/E520 e CST de IPI compatíveis com débito ou crédito.',
+    },
+  ];
+  trail.push({
+    codigo: 'SALDOS_ANTERIORES',
+    descricao: saldos.length
+      ? `${saldos.length} saldo(s) credor(es) anterior(es) informado(s) pelo usuário.`
+      : 'Nenhum saldo credor anterior informado; a apuração usa zero.',
+    origem: saldos.length ? 'INFORMADO' : 'PADRAO_ZERO',
+    fundamento:
+      'Saldo anterior não é criado a partir de hipótese: deve vir da escrituração fiscal precedente confirmada.',
+  });
+  if (ajustes.length) {
+    trail.push({
+      codigo: 'AJUSTES',
+      descricao: `${ajustes.length} ajuste(s) fiscal(is) informado(s) e conciliado(s) separadamente dos documentos.`,
+      origem: 'INFORMADO',
+      fundamento:
+        'Códigos de ajuste estaduais e lastro documental permanecem sob confirmação do responsável fiscal.',
+    });
+  }
+  if (obrigacoes.length) {
+    trail.push({
+      codigo: 'OBRIGACOES',
+      descricao: `${obrigacoes.length} obrigação(ões) de recolhimento informada(s) e confrontada(s) com o saldo apurado.`,
+      origem: 'INFORMADO',
+      fundamento:
+        'Código de receita, vencimento e referência dependem da obrigação estadual aplicável.',
+    });
+  }
+  return trail;
+}
+
+export function validateAdjustmentAuditTrail(
+  ajustes: Array<typeof spedAjustesApuracao.$inferSelect>,
+): SpedInconsistencia[] {
+  return ajustes.flatMap((ajuste) =>
+    ajuste.descricao?.trim() || ajuste.numeroDocumento?.trim()
+      ? []
+      : [
+          {
+            codigo: 'AJUSTE_SEM_LASTRO_DOCUMENTAL',
+            severidade: 'ERRO' as const,
+            mensagem: `O ajuste ${ajuste.codigoAjuste} (${ajuste.registro}) precisa de descrição ou documento de suporte para manter a trilha de auditoria.`,
+            campo: `ajustes.${ajuste.id}`,
+          },
+        ],
+  );
 }
 
 function isSpedProfile(value: string | null): value is 'A' | 'B' | 'C' {

@@ -1,7 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes } from '../database/schema';
+import { clientes, contadores } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageService } from '../storage/storage.service';
@@ -104,6 +108,8 @@ export class ClientesService {
           isFirstLogin: clientes.primeiroLogin,
           authUserId: clientes.userId,
           createdAt: clientes.criadoEm,
+          contadorId: clientes.contadorId,
+          contadorNome: contadores.nome,
           certStatus: sql<string | null>`(
             SELECT cd.status FROM certificados_digitais cd
             WHERE cd.cliente_id = clientes.id
@@ -120,6 +126,7 @@ export class ClientesService {
           )`.as('cert_validade_fim'),
         })
         .from(clientes)
+        .leftJoin(contadores, eq(contadores.id, clientes.contadorId))
         .where(where)
         .orderBy(asc(clientes.razaoSocial))
         .limit(input.pagination.limit)
@@ -160,6 +167,8 @@ export class ClientesService {
         is_first_login: client.isFirstLogin,
         auth_user_id: client.authUserId,
         created_at: client.createdAt.toISOString(),
+        contador_id: client.contadorId,
+        contador_nome: client.contadorNome,
         certificado: client.certStatus
           ? {
               status: client.certStatus as
@@ -189,6 +198,7 @@ export class ClientesService {
     secondaryActivities?: StoredCnae[];
     optanteSimplesNacional?: boolean | null;
     simplesNacionalFonte?: FonteConsultaCnpj | null;
+    contadorId?: string | null;
   }) {
     const simplesNacional = this.normalizeSimplesNacionalRegistration(
       input.tipoPessoa,
@@ -198,6 +208,10 @@ export class ClientesService {
     const authEmail = `${authIdentifier}@kontabb.local`;
     const hashedPassword = await this.authService.hashPassword('123456');
     const authUserId = crypto.randomUUID();
+    const contadorId =
+      input.tipoPessoa === 'PJ'
+        ? await this.resolveContadorId(input.contadorId)
+        : null;
 
     try {
       // Create auth user + account directly (matching better-auth structure)
@@ -233,7 +247,7 @@ export class ClientesService {
             cnae_principal_codigo, cnae_principal_descricao, cnaes_secundarios,
             regime_tributario, apura_icms, optante_simples_nacional,
             simples_nacional_fonte, simples_nacional_consultado_em,
-            primeiro_login, user_id
+            primeiro_login, user_id, contador_id
           )
           SELECT
             ${input.tipoPessoa}, ${input.companyName}, ${cnpjValue}, ${cpfValue}, ${emails},
@@ -252,7 +266,7 @@ export class ClientesService {
             ${simplesNacional.optanteSimplesNacional}::boolean,
             ${simplesNacional.simplesNacionalFonte}::text,
             CASE WHEN ${simplesNacional.optanteSimplesNacional}::boolean IS NULL THEN NULL ELSE now() END,
-            true, id
+            true, id, ${contadorId}::uuid
           FROM inserted_user
           RETURNING id
         ),
@@ -300,7 +314,9 @@ export class ClientesService {
     tipoContribuinteIcms?: TipoContribuinteIcms | null;
     optanteSimplesNacional?: boolean | null;
     simplesNacionalFonte?: FonteConsultaCnpj | null;
+    contadorId?: string | null;
   }) {
+    if (input.contadorId) await this.assertContador(input.contadorId);
     const existingRows = await this.database.db
       .select({
         tipoPessoa: clientes.tipoPessoa,
@@ -328,6 +344,7 @@ export class ClientesService {
     const hasAddress = input.address !== undefined;
     const hasPrimaryActivity = input.primaryActivity !== undefined;
     const hasSecondaryActivities = input.secondaryActivities !== undefined;
+    const hasContadorId = input.contadorId !== undefined;
     const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
     const result = await this.database.db.execute(sql`
       WITH updated_client AS (
@@ -355,7 +372,8 @@ export class ClientesService {
             WHEN ${simplesNacionalUpdate.writeConsultation} AND ${simplesNacionalUpdate.optanteSimplesNacional}::boolean IS NULL THEN NULL
             WHEN ${simplesNacionalUpdate.writeConsultation} THEN now()
             ELSE simples_nacional_consultado_em
-          END
+          END,
+          contador_id = CASE WHEN ${hasContadorId} THEN ${input.contadorId ?? null}::uuid ELSE contador_id END
         WHERE id = ${input.clientId}::uuid
         RETURNING id
       ),
@@ -509,8 +527,11 @@ export class ClientesService {
         simplesNacionalFonte: clientes.simplesNacionalFonte,
         simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
         logoKey: clientes.logoKey,
+        contadorId: clientes.contadorId,
+        contadorNome: contadores.nome,
       })
       .from(clientes)
+      .leftJoin(contadores, eq(contadores.id, clientes.contadorId))
       .where(eq(clientes.id, clientId))
       .limit(1);
     const client = result[0];
@@ -542,6 +563,8 @@ export class ClientesService {
       logo_url: client.logoKey
         ? await this.storage.getSignedUrl(client.logoKey)
         : null,
+      contador_id: client.contadorId,
+      contador_nome: client.contadorNome,
     };
   }
 
@@ -947,6 +970,28 @@ export class ClientesService {
         },
       ];
     });
+  }
+
+  private async resolveContadorId(requested: string | null | undefined) {
+    if (requested !== undefined) {
+      if (requested) await this.assertContador(requested);
+      return requested;
+    }
+    const rows = await this.database.db
+      .select({ id: contadores.id })
+      .from(contadores)
+      .orderBy(asc(contadores.nome), asc(contadores.id))
+      .limit(2);
+    return rows.length === 1 ? rows[0].id : null;
+  }
+
+  private async assertContador(id: string) {
+    const rows = await this.database.db
+      .select({ id: contadores.id })
+      .from(contadores)
+      .where(eq(contadores.id, id))
+      .limit(1);
+    if (!rows[0]) throw new NotFoundException('Contador não encontrado.');
   }
 
   private isUniqueViolation(error: unknown) {

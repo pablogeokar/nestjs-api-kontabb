@@ -62,32 +62,42 @@ pnpm start:prod
 
 ### Admin — Clientes (Staff)
 
-| Método | Rota                                 | Descrição                         |
-| ------ | ------------------------------------ | --------------------------------- |
-| GET    | `/api/admin/clientes`                | Listar clientes (paginado, busca) |
+| Método | Rota                                      | Descrição                                                                  |
+| ------ | ----------------------------------------- | -------------------------------------------------------------------------- |
+| GET    | `/api/admin/clientes`                     | Listar clientes (paginado, busca)                                          |
 | GET    | `/api/admin/clientes/consulta-cnpj/:cnpj` | Consultar razão social, endereço e CNAEs (OpenCNPJ com fallback ReceitaWS) |
-| GET    | `/api/admin/clientes/:id`            | Obter dados de um cliente         |
-| POST   | `/api/admin/clientes`                | Criar cliente                     |
-| POST   | `/api/admin/clientes/batch`          | Criar clientes em lote            |
-| PATCH  | `/api/admin/clientes/:id`            | Atualizar cliente                 |
-| DELETE | `/api/admin/clientes/:id`            | Excluir cliente                   |
-| GET    | `/api/admin/clientes/:id/guias`      | Guias do cliente                  |
+| GET    | `/api/admin/clientes/:id`                 | Obter dados de um cliente                                                  |
+| POST   | `/api/admin/clientes`                     | Criar cliente                                                              |
+| POST   | `/api/admin/clientes/batch`               | Criar clientes em lote                                                     |
+| PATCH  | `/api/admin/clientes/:id`                 | Atualizar cliente                                                          |
+| DELETE | `/api/admin/clientes/:id`                 | Excluir cliente                                                            |
+| GET    | `/api/admin/clientes/:id/guias`           | Guias do cliente                                                           |
+
+### Admin — Contadores (Staff)
+
+| Método | Rota                                  | Descrição                                  |
+| ------ | ------------------------------------- | ------------------------------------------ |
+| GET    | `/api/admin/cadastros/contadores`     | Listar catálogo global (paginado, busca)   |
+| GET    | `/api/admin/cadastros/contadores/:id` | Obter contador e quantidade de vínculos    |
+| POST   | `/api/admin/cadastros/contadores`     | Cadastrar contador                         |
+| PATCH  | `/api/admin/cadastros/contadores/:id` | Atualizar contador                         |
+| DELETE | `/api/admin/cadastros/contadores/:id` | Excluir somente quando não houver vínculos |
 
 ### Admin — Guias (Staff)
 
-| Método | Rota                                    | Descrição                        |
-| ------ | --------------------------------------- | -------------------------------- |
-| GET    | `/api/admin/guias`                      | Listar guias (paginado, filtros) |
-| DELETE | `/api/admin/guias/:id`                  | Excluir guia                     |
-| POST   | `/api/admin/guias/:id/notificar`        | Enviar notificação por e-mail    |
-| GET    | `/api/admin/guias/:id/visualizacoes`    | Histórico de visualizações       |
+| Método | Rota                                 | Descrição                        |
+| ------ | ------------------------------------ | -------------------------------- |
+| GET    | `/api/admin/guias`                   | Listar guias (paginado, filtros) |
+| DELETE | `/api/admin/guias/:id`               | Excluir guia                     |
+| POST   | `/api/admin/guias/:id/notificar`     | Enviar notificação por e-mail    |
+| GET    | `/api/admin/guias/:id/visualizacoes` | Histórico de visualizações       |
 
 ### Admin — Upload (Staff)
 
-| Método | Rota                         | Descrição                       |
-| ------ | ---------------------------- | ------------------------------- |
-| POST   | `/api/admin/upload`          | Upload de guias PDF (FormData)  |
-| POST   | `/api/admin/upload/validate` | Pré-validação de PDFs           |
+| Método | Rota                         | Descrição                      |
+| ------ | ---------------------------- | ------------------------------ |
+| POST   | `/api/admin/upload`          | Upload de guias PDF (FormData) |
+| POST   | `/api/admin/upload/validate` | Pré-validação de PDFs          |
 
 ### Admin — Usuários (Admin)
 
@@ -108,18 +118,18 @@ pnpm start:prod
 
 ### Cliente
 
-| Método | Rota                       | Descrição                |
-| ------ | -------------------------- | ------------------------ |
-| GET    | `/api/cliente/guias`       | Listar guias próprias    |
-| PATCH  | `/api/cliente/first-login` | Completar primeiro acesso|
+| Método | Rota                       | Descrição                 |
+| ------ | -------------------------- | ------------------------- |
+| GET    | `/api/cliente/guias`       | Listar guias próprias     |
+| PATCH  | `/api/cliente/first-login` | Completar primeiro acesso |
 
 ### Guias (Autenticado)
 
-| Método | Rota                          | Descrição                         |
-| ------ | ----------------------------- | --------------------------------- |
-| GET    | `/api/guias/:id`              | Obter URL assinada do arquivo     |
-| GET    | `/api/guias/:id/comprovante`  | Obter URL assinada do comprovante |
-| PATCH  | `/api/guias/:id/pagar`        | Confirmar pagamento               |
+| Método | Rota                         | Descrição                         |
+| ------ | ---------------------------- | --------------------------------- |
+| GET    | `/api/guias/:id`             | Obter URL assinada do arquivo     |
+| GET    | `/api/guias/:id/comprovante` | Obter URL assinada do comprovante |
+| PATCH  | `/api/guias/:id/pagar`       | Confirmar pagamento               |
 
 ## Autenticação
 

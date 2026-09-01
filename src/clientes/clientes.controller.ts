@@ -234,6 +234,7 @@ export class ClientesController {
       ),
       optanteSimplesNacional: dto.optante_simples_nacional,
       simplesNacionalFonte: dto.simples_nacional_fonte,
+      contadorId: dto.contador_id,
     });
 
     if (!result.ok) {
@@ -352,6 +353,7 @@ export class ClientesController {
       tipoContribuinteIcms: dto.tipo_contribuinte_icms,
       optanteSimplesNacional: dto.optante_simples_nacional,
       simplesNacionalFonte: dto.simples_nacional_fonte,
+      contadorId: dto.contador_id,
     });
     if (!updated) throw new NotFoundException('Cliente não encontrado.');
     return { success: true };

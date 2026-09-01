@@ -67,6 +67,45 @@ pertence à EFD-Contribuições.
 - CNPJ e chaves de acesso aceitam o formato alfanumérico previsto para o novo
   CNPJ. O cadastro e a leitura do certificado A1 também aceitam as 12 primeiras
   posições alfanuméricas e mantêm os dois dígitos verificadores numéricos.
+- Ajustes `E111/E220/E311/E530` sem descrição ou número de documento de suporte
+  bloqueiam a geração. Obrigações informadas também são confrontadas com o
+  saldo calculado, inclusive quando a apuração resulta em zero.
+
+## Catálogo de contadores e registro 0100
+
+O contador é uma entidade global do escritório na tabela `contadores`. O vínculo
+fica em `clientes.contador_id`, portanto o mesmo profissional pode atender várias
+empresas. O CRUD `/api/admin/cadastros/contadores` é exclusivo de staff e impede
+a exclusão enquanto houver clientes vinculados.
+
+A migration `0001_contadores_catalogo_sped.sql` copia os registros legados de
+`sped_contabilistas`, deduplica por CPF/CNPJ + CRC e preenche o vínculo sem
+apagar a origem. O conteúdo do registro 0100 permanece idêntico; muda somente a
+fonte cadastral.
+
+Na preparação da EFD, a resolução segue esta ordem:
+
+1. contador explicitamente vinculado ao cliente;
+2. único contador existente no catálogo global;
+3. inconsistência impeditiva quando não há contador ou há várias opções sem
+   vínculo.
+
+A prévia retorna a origem (`VINCULO_EXPLICITO` ou `CONTADOR_UNICO`) para
+auditoria. A escolha automática não grava uma hipótese escondida no cadastro e
+continua permitindo que o staff defina outro contador depois.
+
+## Inferências e trilha da apuração
+
+Débitos e créditos seguros são calculados dos documentos escriturados, mantendo
+as restrições de CST/CSOSN, regime, direção da operação e CT-e creditável. Saldos
+anteriores, códigos de ajuste, obrigações e vencimentos estaduais não são
+inventados: permanecem informados pelo responsável fiscal e são conciliados com
+o cálculo automático.
+
+O objeto `auditabilidade` da prévia separa cada fonte em
+`DOCUMENTOS_ESCRITURADOS`, `INFORMADO` ou `PADRAO_ZERO`, com descrição e
+fundamento. Assim, reduzir entrada manual não elimina a confirmação humana nas
+decisões que dependem da legislação estadual ou de escrituração precedente.
 
 ## Fluxo operacional
 
@@ -92,8 +131,8 @@ pertence à EFD-Contribuições.
 
    `documentosComFalhaIntegridade` deve ser zero antes de prosseguir.
 
-3. Preencha a configuração do estabelecimento e do contabilista pela interface
-   web ou pelos endpoints:
+3. Cadastre o contador em **Cadastros → Contadores**, vincule-o ao cliente e
+   preencha a configuração do estabelecimento pela interface web ou endpoints:
 
    - cliente: `GET/PUT /api/fiscal/sped/configuracao`;
    - admin: `GET/PUT /api/admin/fiscal/sped/configuracao`.
@@ -153,8 +192,8 @@ pertence à EFD-Contribuições.
    itens. Motivos 02 a 06 ficam restritos a rascunho enquanto H020/H030 não
    estiverem implementados.
 
-6. Consulte a prévia. Ela apresenta contadores, apuração e inconsistências
-   impeditivas:
+6. Consulte a prévia. Ela apresenta contadores, apuração, origem dos valores e
+   inconsistências impeditivas:
 
    ```http
    GET /api/fiscal/sped/efd-icms-ipi/preview?competencia=2026-08&finalidade=0

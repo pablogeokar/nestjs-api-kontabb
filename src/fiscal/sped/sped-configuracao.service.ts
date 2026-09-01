@@ -1,11 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import {
-  clientes,
-  spedConfiguracoes,
-  spedContabilistas,
-} from '../../database/schema';
+import { clientes, spedConfiguracoes } from '../../database/schema';
+import { resolverContadorDoCliente } from '../../cadastros/contadores/contador-resolver';
 import type { AtualizarSpedConfiguracaoDto } from './dto/sped-efd.dto';
 
 @Injectable()
@@ -28,6 +25,7 @@ export class SpedConfiguracaoService {
         bairro: clientes.bairro,
         municipio: clientes.municipio,
         emails: clientes.emails,
+        contadorId: clientes.contadorId,
         configuracaoId: spedConfiguracoes.id,
         obrigadoEfdIcmsIpi: spedConfiguracoes.obrigadoEfdIcmsIpi,
         perfilEfd: spedConfiguracoes.perfilEfd,
@@ -45,29 +43,19 @@ export class SpedConfiguracaoService {
         blocoKComMovimento: spedConfiguracoes.blocoKComMovimento,
         tipoItemPadrao: spedConfiguracoes.tipoItemPadrao,
         indicadores1010: spedConfiguracoes.indicadores1010,
-        contabilistaId: spedContabilistas.id,
-        contabilistaNome: spedContabilistas.nome,
-        contabilistaCpf: spedContabilistas.cpf,
-        contabilistaCrc: spedContabilistas.crc,
-        contabilistaCnpj: spedContabilistas.cnpj,
-        contabilistaCep: spedContabilistas.cep,
-        contabilistaLogradouro: spedContabilistas.logradouro,
-        contabilistaNumero: spedContabilistas.numero,
-        contabilistaComplemento: spedContabilistas.complemento,
-        contabilistaBairro: spedContabilistas.bairro,
-        contabilistaTelefone: spedContabilistas.telefone,
-        contabilistaFax: spedContabilistas.fax,
-        contabilistaEmail: spedContabilistas.email,
-        contabilistaCodigoMunicipioIbge: spedContabilistas.codigoMunicipioIbge,
       })
       .from(clientes)
       .leftJoin(spedConfiguracoes, eq(spedConfiguracoes.clienteId, clientes.id))
-      .leftJoin(spedContabilistas, eq(spedContabilistas.clienteId, clientes.id))
       .where(eq(clientes.id, clienteId))
       .limit(1);
 
     const row = rows[0];
     if (!row) throw new NotFoundException('Empresa não encontrada.');
+    const resolucao = await resolverContadorDoCliente(
+      this.database.db,
+      row.contadorId,
+    );
+    const contador = resolucao?.contador ?? null;
 
     return {
       cliente: {
@@ -79,7 +67,7 @@ export class SpedConfiguracaoService {
         uf: row.uf,
         municipio: row.municipio,
       },
-      configurado: Boolean(row.configuracaoId && row.contabilistaId),
+      configurado: Boolean(row.configuracaoId && contador),
       obrigadoEfdIcmsIpi: row.obrigadoEfdIcmsIpi ?? false,
       perfilEfd: row.perfilEfd,
       indAtiv: row.indAtiv,
@@ -96,23 +84,13 @@ export class SpedConfiguracaoService {
       blocoKComMovimento: row.blocoKComMovimento ?? false,
       tipoItemPadrao: row.tipoItemPadrao ?? '00',
       indicadores1010: row.indicadores1010 ?? {},
-      contabilista: row.contabilistaId
+      contabilista: contador
         ? {
-            nome: row.contabilistaNome,
-            cpf: row.contabilistaCpf,
-            crc: row.contabilistaCrc,
-            cnpj: row.contabilistaCnpj,
-            cep: row.contabilistaCep,
-            logradouro: row.contabilistaLogradouro,
-            numero: row.contabilistaNumero,
-            complemento: row.contabilistaComplemento,
-            bairro: row.contabilistaBairro,
-            telefone: row.contabilistaTelefone,
-            fax: row.contabilistaFax,
-            email: row.contabilistaEmail,
-            codigoMunicipioIbge: row.contabilistaCodigoMunicipioIbge,
+            ...contador,
           }
         : null,
+      contadorOrigem: resolucao?.origem ?? null,
+      contadorAssumidoAutomaticamente: resolucao?.origem === 'CONTADOR_UNICO',
       dadosCadastrais: {
         cep: row.cep,
         logradouro: row.logradouro,
@@ -184,48 +162,6 @@ export class SpedConfiguracaoService {
             indicadores1010: this.normalizarIndicadores1010(
               data.indicadores1010,
             ),
-            atualizadoPor: input.actorUserId,
-            atualizadoEm: now,
-          },
-        });
-
-      const contabilista = data.contabilista;
-      await tx
-        .insert(spedContabilistas)
-        .values({
-          clienteId: input.clienteId,
-          nome: contabilista.nome,
-          cpf: contabilista.cpf ?? null,
-          crc: contabilista.crc,
-          cnpj: contabilista.cnpj ?? null,
-          cep: contabilista.cep ?? null,
-          logradouro: contabilista.logradouro ?? null,
-          numero: contabilista.numero ?? null,
-          complemento: contabilista.complemento ?? null,
-          bairro: contabilista.bairro ?? null,
-          telefone: contabilista.telefone ?? null,
-          fax: contabilista.fax ?? null,
-          email: contabilista.email ?? null,
-          codigoMunicipioIbge: contabilista.codigoMunicipioIbge,
-          atualizadoPor: input.actorUserId,
-          atualizadoEm: now,
-        })
-        .onConflictDoUpdate({
-          target: spedContabilistas.clienteId,
-          set: {
-            nome: contabilista.nome,
-            cpf: contabilista.cpf ?? null,
-            crc: contabilista.crc,
-            cnpj: contabilista.cnpj ?? null,
-            cep: contabilista.cep ?? null,
-            logradouro: contabilista.logradouro ?? null,
-            numero: contabilista.numero ?? null,
-            complemento: contabilista.complemento ?? null,
-            bairro: contabilista.bairro ?? null,
-            telefone: contabilista.telefone ?? null,
-            fax: contabilista.fax ?? null,
-            email: contabilista.email ?? null,
-            codigoMunicipioIbge: contabilista.codigoMunicipioIbge,
             atualizadoPor: input.actorUserId,
             atualizadoEm: now,
           },

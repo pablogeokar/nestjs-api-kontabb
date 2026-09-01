@@ -5,6 +5,8 @@ import {
   isInventoryDueForPeriod,
   pendingDocumentReviewMessage,
   validateFcpAdjustments,
+  buildApuracaoAuditTrail,
+  validateAdjustmentAuditTrail,
   type SpedFcpTaxSignals,
 } from './efd-icms-ipi.service';
 
@@ -136,5 +138,34 @@ describe('diagnóstico de documento pendente na EFD', () => {
     expect(message).toContain('5910 → 1949');
     expect(message).toContain('Regras CFOP');
     expect(message).toContain('reprocesse o período');
+  });
+});
+
+describe('auditabilidade da apuração', () => {
+  it('distingue valores automáticos, informados e o padrão seguro zero', () => {
+    const trail = buildApuracaoAuditTrail([], [], []);
+
+    expect(trail).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ origem: 'DOCUMENTOS_ESCRITURADOS' }),
+        expect.objectContaining({
+          codigo: 'SALDOS_ANTERIORES',
+          origem: 'PADRAO_ZERO',
+        }),
+      ]),
+    );
+  });
+
+  it('bloqueia ajuste sem descrição nem documento de suporte', () => {
+    const issues = validateAdjustmentAuditTrail([
+      adjustment({ id: '4bcb1fd7-8882-47a4-9bcd-e063b73a82f0' }),
+    ]);
+
+    expect(issues).toEqual([
+      expect.objectContaining({
+        codigo: 'AJUSTE_SEM_LASTRO_DOCUMENTAL',
+        severidade: 'ERRO',
+      }),
+    ]);
   });
 });

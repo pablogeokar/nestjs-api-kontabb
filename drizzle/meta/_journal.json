@@ -8,6 +8,13 @@
       "when": 1788180109399,
       "tag": "0000_base_inicial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788220727066,
+      "tag": "0001_contadores_catalogo_sped",
+      "breakpoints": true
     }
   ]
 }
