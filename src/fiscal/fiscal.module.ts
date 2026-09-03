@@ -20,6 +20,14 @@ import { FiscalItensService } from './services/fiscal-itens.service';
 import { CfopService } from './services/cfop.service';
 import { FiscalRuleEngineService } from './services/fiscal-rule-engine.service';
 import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.service';
+import { CiapService } from './services/ciap.service';
+import { DifalEntradaService } from './services/difal-entrada.service';
+import { FiscalGuiasService } from './services/fiscal-guias.service';
+import { PisCofinsService } from './services/pis-cofins.service';
+import {
+  AdminFiscalApuracaoController,
+  ClienteFiscalApuracaoController,
+} from './controllers/fiscal-apuracao.controller';
 import { FiscalCteService } from './services/fiscal-cte.service';
 import {
   AdminSpedEfdController,
@@ -40,6 +48,8 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     AdminEscrituracaoFiscalController,
     AdminSpedEfdController,
     ClienteSpedEfdController,
+    AdminFiscalApuracaoController,
+    ClienteFiscalApuracaoController,
   ],
   providers: [
     CertificadoService,
@@ -58,6 +68,10 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     SpedConfiguracaoService,
     SpedApuracaoContextoService,
     SpedInventarioService,
+    CiapService,
+    DifalEntradaService,
+    FiscalGuiasService,
+    PisCofinsService,
   ],
   exports: [
     CertificadoService,
@@ -65,6 +79,10 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     FiscalCronService,
     CfopService,
     FiscalRuleEngineService,
+    CiapService,
+    DifalEntradaService,
+    FiscalGuiasService,
+    PisCofinsService,
   ],
 })
 export class FiscalModule {}
