@@ -1,4 +1,5 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { cfopEquivalencias, cfops } from '../schema';
 
@@ -1353,11 +1354,39 @@ export async function seedCfops(databaseUrl: string) {
   const database = drizzle(client);
   try {
     await database.transaction(async (tx) => {
-      await tx.insert(cfops).values(CFOPS_SEED).onConflictDoNothing();
+      // Upsert dos CFOPs: em conflito de PK (codigo), atualiza os campos
+      // descritivos/fiscais com os valores do seed, preservando criadoEm.
+      await tx
+        .insert(cfops)
+        .values(CFOPS_SEED)
+        .onConflictDoUpdate({
+          target: cfops.codigo,
+          set: {
+            descricao: sql`excluded.descricao`,
+            tipoOperacao: sql`excluded.tipo_operacao`,
+            abrangencia: sql`excluded.abrangencia`,
+            grupo: sql`excluded.grupo`,
+            categoriaFiscal: sql`excluded.categoria_fiscal`,
+            geraCreditoIcmsPadrao: sql`excluded.gera_credito_icms_padrao`,
+            atualizadoEm: new Date(),
+          },
+        });
+
+      // Upsert das equivalências globais/por cliente: o conflito é pela chave
+      // única (cliente_id, cfop_origem). Atualiza destino/tipo/descrição/ativo.
       await tx
         .insert(cfopEquivalencias)
         .values(CFOP_EQUIVALENCIAS_SEED)
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: [cfopEquivalencias.clienteId, cfopEquivalencias.cfopOrigem],
+          set: {
+            cfopDestino: sql`excluded.cfop_destino`,
+            tipoOperacao: sql`excluded.tipo_operacao`,
+            descricao: sql`excluded.descricao`,
+            ativo: sql`excluded.ativo`,
+            atualizadoEm: new Date(),
+          },
+        });
     });
   } finally {
     await client.end({ timeout: 5 });
