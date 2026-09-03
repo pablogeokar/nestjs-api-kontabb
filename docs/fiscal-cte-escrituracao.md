@@ -1,16 +1,20 @@
 # Escrituração fiscal de CT-e
 
-O CT-e modelo 57 é armazenado como documento fiscal, mas só produz
-escrituração para a empresa que contratou o transporte. O tomador é resolvido
-no grupo `ide`: `toma3` aponta para remetente, expedidor, recebedor ou
-destinatário; `toma4` identifica um terceiro. CNPJ e CPF são comparados somente
-após normalização para dígitos.
+O CT-e modelo 57 é armazenado como documento fiscal e é escriturado quando a
+empresa é o **tomador** (contratou o frete) ou o **prestador** (emitiu o próprio
+CT-e). O tomador é resolvido no grupo `ide`: `toma3` aponta para remetente,
+expedidor, recebedor ou destinatário; `toma4` identifica um terceiro. O emitente
+vem do grupo `emit`. CNPJ e CPF são comparados somente após normalização para
+dígitos.
 
 ## Decisão fiscal
 
-- cliente diferente do tomador: `NAO_ESCRITURAVEL`, motivo
-  `CLIENTE_NAO_E_TOMADOR`;
-- cliente tomador: entrada de serviço de transporte;
+- cliente é o emitente/prestador: **saída** (prestação do serviço de
+  transporte), com débito de ICMS sobre a prestação tributada;
+- cliente é o tomador: **entrada** de serviço de transporte, com crédito
+  restrito conforme CST/CSOSN e regime;
+- cliente não é tomador nem prestador: `NAO_ESCRITURAVEL`, motivo
+  `CLIENTE_NAO_E_TOMADOR_NEM_PRESTADOR`;
 - Simples Nacional sem apuração separada: documento escriturado, crédito zero;
 - subcontratação e redespacho (`tpServ` 1, 2 ou 3):
   `PENDENTE_REVISAO`, sem crédito automático;

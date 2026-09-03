@@ -26,21 +26,48 @@ O arquivo sempre contém os shells dos blocos na ordem oficial
 `0, B, C, D, E, G, H, K, 1, 9`.
 
 - Bloco 0: `0000`, `0002` quando industrial, `0005`, `0100`, `0150`, `0190`,
-  `0200` e `0450`.
-- Bloco C: NF-e 55 e NFC-e 65 em `C100`, `C101`, `C110`, `C170` conforme
-  perfil/modelo/emissão e `C190` por documento.
-- Bloco D: CT-e 57 escriturável em `D100` e `D190` por documento.
+  `0200`, `0220` (fator de conversão de unidade, quando a unidade tributável
+  diverge da comercial) e `0450`.
+- Bloco C: NF-e 55 e NFC-e 65 em `C100`, `C101`, `C110`, `C113` (documentos
+  referenciados em devolução/remessa, a partir do grupo `<NFref>`), `C170`
+  conforme perfil/modelo/emissão e `C190` por documento.
+- Bloco D: CT-e 57 escriturável em `D100` e `D190` por documento. O CT-e pode
+  ser escriturado como **entrada** (cliente é o tomador) ou **saída** (cliente é
+  o emitente/prestador do serviço de transporte).
 - Bloco E: ICMS próprio (`E100/E110/E111/E116`), ICMS-ST
   (`E200/E210/E250`), DIFAL/FCP (`E300/E310/E316`) e IPI para estabelecimento
   industrial (`E500/E510/E520/E530`).
+- Bloco G: `G110/G125` (CIAP) quando há bens do ativo em apropriação. O crédito
+  de 1/48 apropriado no período realimenta a apuração do ICMS por um ajuste
+  `E111` de crédito gerado automaticamente.
 - Bloco H: `H005/H010` para inventário fechado e motivo `01`.
 - Bloco 1: `1010` com os 13 indicadores do leiaute.
 - Bloco 9: totalizadores `9900`, `9990` e `9999` calculados depois de todos os
   demais registros.
 
 Os valores de PIS e COFINS do XML são informados nos campos documentais que os
-exigem, mas **não são apurados** nesta escrituração. A apuração desses tributos
-pertence à EFD-Contribuições.
+exigem, mas **não são apurados nesta escrituração** (EFD ICMS/IPI). A apuração de
+PIS/COFINS pertence à EFD-Contribuições e é oferecida em serviço próprio —
+consulte `fiscal-apuracao-multitributaria.md`.
+
+### Identificadores estáveis de participantes
+
+O código do participante (registro `0150`) é reutilizado da tabela
+`sped_participantes` quando o documento já foi visto em competências anteriores.
+Só quando o participante ainda não existe é gerado um código determinístico por
+hash. Isso preserva a continuidade histórica exigida pelo SPED entre meses, mesmo
+que a razão social do fornecedor mude minimamente.
+
+### Registros 0220 e C113
+
+- **0220** é emitido subordinado ao `0200` quando o item traz unidade tributável
+  diferente da comercial; o fator de conversão é `quantidadeTributavel /
+quantidadeComercial`.
+- **C113** é emitido subordinado ao `C100` quando o documento referencia outra
+  nota (`<NFref>` com `refNFe`/`refCTe`). A captura ocorre no parser da NF-e e é
+  persistida em `documentos_fiscais.documentos_referenciados`. Referências sem
+  chave de acesso de 44 dígitos (NF modelo 1/1A, produtor rural) são
+  armazenadas, mas não geram C113 por não possuírem `CHV_DOCe`.
 
 ## Regras de segurança fiscal
 
@@ -53,7 +80,14 @@ pertence à EFD-Contribuições.
   R$ 0,02.
 - Crédito automático de ICMS de entrada fica limitado aos CST 00/10/20/70 e ao
   crédito destacado dos CSOSN 101/201. Situações ambíguas são bloqueadas para
-  revisão humana.
+  revisão humana. Além do CST, o **CFOP escriturado** veda o crédito quando a
+  operação é de uso/consumo (`x556/x557/x407`), de mercadoria recebida como
+  substituído (`x401/x403/x405/x406`) ou de ativo imobilizado (`x551/x552`, cujo
+  crédito é apropriado via CIAP, não integral) — sem gerar falso positivo de
+  revisão.
+- O IPI apura débito na faixa de CST de saída (50) e crédito na faixa de entrada
+  (00/01); os demais CSTs válidos não geram débito/crédito e não bloqueiam a
+  geração. Apenas CSTs fora das faixas oficiais disparam revisão.
 - Simples Nacional só pode gerar quando a configuração afirmar obrigação
   estadual. Nesse caso, `E100/E110` são emitidos zerados; o bloco de apuração não
   é omitido.
@@ -224,11 +258,20 @@ pnpm build
 pnpm drizzle-kit check
 ```
 
-A validação interna verifica encoding, CRLF, delimitadores, ordem dos blocos,
-quantidade oficial de campos, shells e todos os totalizadores. Ela não substitui
-o PVA oficial. Antes da primeira entrega de cada combinação UF/perfil/regime,
-importe um arquivo de homologação no PVA 6.1.1 e registre o recibo/resultado da
-validação operacional.
+A validação interna tem duas camadas:
+
+1. **Estrutural** (`validateSpedFile`): encoding, CRLF, delimitadores, ordem dos
+   blocos, quantidade oficial de campos por registro (incluindo `0220`, `C113`,
+   `G110`, `G125`), shells e todos os totalizadores.
+2. **Semântica pré-PVA** (`runPreflightPva`): regras cruzadas do Guia Prático —
+   `0150` completo, unidades/itens referenciados existentes nos catálogos
+   (`0190`/`0200`), `C113` apontando participante do `0150`, aviso de devolução
+   sem `C113` e parcela do CIAP dentro do limite de 48. As inconsistências pré-PVA
+   entram na mesma lista `inconsistencias` da prévia (severidade `ERRO`/`AVISO`).
+
+Nenhuma das camadas substitui o PVA oficial. Antes da primeira entrega de cada
+combinação UF/perfil/regime, importe um arquivo de homologação no PVA 6.1.1 e
+registre o recibo/resultado da validação operacional.
 
 ## Limitações impeditivas explícitas
 
@@ -243,3 +286,9 @@ O sistema bloqueia a geração, em vez de produzir arquivo incompleto, quando:
 
 Essas situações exigem implementação/configuração específica e validação com a
 legislação da UF antes da liberação.
+
+O Bloco G (CIAP) é populado a partir das fichas de `ciap_ativo_permanente`. A
+apropriação da parcela (1/48) só é efetivada — e o ajuste `E111` de crédito
+gerado — quando o usuário executa a apropriação da competência pelo serviço de
+CIAP (ver `fiscal-apuracao-multitributaria.md`). Sem fichas ativas, o Bloco G
+fica vazio e o arquivo permanece válido.

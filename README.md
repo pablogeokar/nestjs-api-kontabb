@@ -131,6 +131,20 @@ pnpm start:prod
 | GET    | `/api/guias/:id/comprovante` | Obter URL assinada do comprovante |
 | PATCH  | `/api/guias/:id/pagar`       | Confirmar pagamento               |
 
+### Fiscal — Módulo tributário
+
+Escrituração de DF-e, motor de regras de CFOP, apuração multitributária e
+geração da EFD ICMS/IPI (SPED Fiscal). Endpoints de cliente em `/api/fiscal/*`
+(empresa resolvida pela sessão) e de staff em `/api/admin/fiscal/*`.
+
+| Área                                   | Rotas principais                                                        | Documento                                          |
+| -------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------- |
+| Documentos e escrituração              | `/api/fiscal/documentos*`, `/api/admin/fiscal/reprocessar-escrituracao` | `docs/fiscal-xml-import.md`, `docs/fiscal-sync.md` |
+| CT-e                                   | `/api/fiscal/relatorios/d100`, `d190`                                   | `docs/fiscal-cte-escrituracao.md`                  |
+| Motor de regras e CFOP                 | `/api/fiscal/cfops*`, `/api/fiscal/regras*`                             | `docs/fiscal-motor-de-regras-cfop.md`              |
+| Apuração (CIAP/DIFAL/PIS-COFINS/guias) | `/api/fiscal/apuracao/*`                                                | `docs/fiscal-apuracao-multitributaria.md`          |
+| SPED EFD ICMS/IPI                      | `/api/fiscal/sped/efd-icms-ipi/*`                                       | `docs/fiscal-sped-efd-icms-ipi.md`                 |
+
 ## Autenticação
 
 A API é responsável por todo o fluxo de autenticação:
