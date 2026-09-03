@@ -100,6 +100,18 @@ export interface ParsedInformacoesComplementares {
   fisco: string;
 }
 
+/**
+ * Documento fiscal referenciado (grupo <NFref> do <ide> da NF-e). Base para o
+ * registro C113 da EFD em operações de devolução/remessa.
+ */
+export interface ParsedDocumentoReferenciado {
+  // 'NFE' (refNFe, chave de 44 díg.), 'NF' (refNF, modelo 1/1A),
+  // 'NFP' (refNFP, produtor rural), 'CTE' (refCTe) ou 'ECF'.
+  tipo: 'NFE' | 'NF' | 'NFP' | 'CTE' | 'ECF';
+  // Chave de acesso (44 díg.) quando disponível.
+  chaveAcesso: string | null;
+}
+
 export interface ParsedDocumentoFiscal {
   chaveAcesso: string;
   nsu: number;
@@ -128,6 +140,7 @@ export interface ParsedDocumentoFiscal {
   icmsTot: ParsedNfeIcmsTot | null;
   pisCofinsTotais: ParsedNfePisCofinsTotais | null;
   informacoesComplementares: ParsedInformacoesComplementares;
+  documentosReferenciados: ParsedDocumentoReferenciado[];
   integridade: RelatorioIntegridadeDocumentoFiscal;
   cteEscrituracao: CteEscrituracaoParseData | null;
   xmlContent: string;
@@ -559,6 +572,10 @@ function parseFiscalXml(
       infElement.content,
       tipoConsulta,
     ),
+    documentosReferenciados:
+      tipoConsulta === 'NFE'
+        ? parseDocumentosReferenciados(infElement.content)
+        : [],
     cteEscrituracao,
     xmlContent: xml,
   };
@@ -761,6 +778,49 @@ function formatCteObservation(element: {
   const field = readAttribute(element.openingTag, 'xCampo');
   const text = extractTagValue(element.content, 'xTexto');
   return [field, text].filter(Boolean).join(': ');
+}
+
+/**
+ * Lê os documentos referenciados do grupo <ide>/<NFref> da NF-e. Cada NFref
+ * pode conter refNFe (chave 44 díg.), refNF/refNFP (NF antiga) ou refCTe.
+ */
+function parseDocumentosReferenciados(
+  infNfe: string,
+): ParsedDocumentoReferenciado[] {
+  const ide = extractElement(infNfe, 'ide')?.content ?? '';
+  const referencias: ParsedDocumentoReferenciado[] = [];
+  const vistas = new Set<string>();
+
+  for (const nfRef of extractElements(ide, 'NFref')) {
+    const conteudo = nfRef.content;
+    const refNFe = normalizeFiscalAccessKey(
+      extractTagValue(conteudo, 'refNFe'),
+    );
+    const refCTe = normalizeFiscalAccessKey(
+      extractTagValue(conteudo, 'refCTe'),
+    );
+    if (refNFe && isValidFiscalAccessKey(refNFe)) {
+      if (vistas.has(refNFe)) continue;
+      vistas.add(refNFe);
+      referencias.push({ tipo: 'NFE', chaveAcesso: refNFe });
+      continue;
+    }
+    if (refCTe && isValidFiscalAccessKey(refCTe)) {
+      if (vistas.has(refCTe)) continue;
+      vistas.add(refCTe);
+      referencias.push({ tipo: 'CTE', chaveAcesso: refCTe });
+      continue;
+    }
+    // refNF (modelo 1/1A) e refNFP (produtor) não têm chave de 44 dígitos.
+    if (extractElement(conteudo, 'refNFP')) {
+      referencias.push({ tipo: 'NFP', chaveAcesso: null });
+    } else if (extractElement(conteudo, 'refNF')) {
+      referencias.push({ tipo: 'NF', chaveAcesso: null });
+    } else if (extractElement(conteudo, 'refECF')) {
+      referencias.push({ tipo: 'ECF', chaveAcesso: null });
+    }
+  }
+  return referencias;
 }
 
 function parseOptionalFiscalDate(value: string): Date | null {

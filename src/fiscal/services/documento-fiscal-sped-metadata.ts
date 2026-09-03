@@ -38,6 +38,13 @@ export function buildDocumentoFiscalSpedMetadata(
       : null,
     informacoesComplementares:
       documento.informacoesComplementares.contribuinte || null,
+    documentosReferenciados:
+      documento.documentosReferenciados.length > 0
+        ? documento.documentosReferenciados.map((referencia) => ({
+            tipo: referencia.tipo,
+            chaveAcesso: referencia.chaveAcesso,
+          }))
+        : null,
   };
 }
 

@@ -93,4 +93,90 @@ describe('CiapService', () => {
     expect(result.coeficiente_saidas_tributadas).toBe('1.0000');
     expect(result.quantidade_bens).toBe(0);
   });
+
+  it('apropriarCompetencia gera ajuste E111 de crédito com código UF+02CIAP', async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const bens = [
+      {
+        id: 'b1',
+        codigoBem: 'BEM-1',
+        identificacaoBem: 'Maquina',
+        valorIcmsTotal: '4800.00',
+        valorIcmsFrete: '0',
+        valorIcmsDifal: '0',
+        quantidadeParcelas: 48,
+        parcelasApropriadas: 0,
+        saldoCredorRestante: '4800.00',
+      },
+    ];
+    const tx = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(bens),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(undefined),
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
+          inserted.push(v);
+          return Promise.resolve(undefined);
+        }),
+      }),
+    };
+    const db = {
+      // coeficiente (join) e getUfCliente (limit) compartilham o select.
+      select: jest
+        .fn()
+        .mockImplementation((selection: Record<string, unknown>) => {
+          if (selection && 'uf' in selection) {
+            return {
+              from: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockResolvedValue([{ uf: 'SP' }]),
+                }),
+              }),
+            };
+          }
+          return {
+            from: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest
+                  .fn()
+                  .mockResolvedValue([
+                    { totais: '10000.00', tributadas: '10000.00' },
+                  ]),
+              }),
+            }),
+          };
+        }),
+      transaction: jest
+        .fn()
+        .mockImplementation((cb: (t: unknown) => unknown) => cb(tx)),
+    };
+    const service = new CiapService({ db } as never);
+
+    const result = await service.apropriarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+
+    expect(result.total_credito_apropriado).toBe('100.00');
+    expect(result.ajuste_e111_gerado).toBe('SP02CIAP');
+    // Um E111 de crédito de 100,00 deve ter sido inserido.
+    expect(inserted).toEqual([
+      expect.objectContaining({
+        registro: 'E111',
+        codigoAjuste: 'SP02CIAP',
+        indicador: 'CREDITO',
+        valor: '100.00',
+      }),
+    ]);
+  });
 });

@@ -844,6 +844,10 @@ export const documentosFiscais = pgTable(
     emitenteDados: jsonb('emitente_dados').$type<Record<string, unknown>>(),
     destinatarioDados:
       jsonb('destinatario_dados').$type<Record<string, unknown>>(),
+    // Documentos referenciados (grupo <NFref>) para o registro C113 da EFD.
+    documentosReferenciados: jsonb('documentos_referenciados').$type<
+      Array<{ tipo: string; chaveAcesso: string | null }>
+    >(),
     situacao: text('situacao').notNull().default('AUTORIZADA'),
     manifestacaoStatus: text('manifestacao_status')
       .notNull()

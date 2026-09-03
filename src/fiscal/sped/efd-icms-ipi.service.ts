@@ -48,6 +48,7 @@ import {
   type SpedContabilistaBuilderData,
   type SpedDocumentoCteBuilderData,
   type SpedDocumentoNfeBuilderData,
+  type SpedDocumentoReferenciadoBuilderData,
   type SpedEfdBuilderInput,
   type SpedEmpresaBuilderData,
   type SpedItemCatalogoBuilderData,
@@ -698,6 +699,10 @@ export class EfdIcmsIpiService {
         participanteUf: participant?.uf ?? null,
         itens: preparedItems,
         codigoInformacaoComplementar: informationCode,
+        referencias: buildReferenciasC113(
+          document.documentosReferenciados,
+          participant?.codigo ?? null,
+        ),
       });
     }
 
@@ -1996,6 +2001,34 @@ function uniqueUnitCode(
     code = stableCode('U', raw, 6);
   }
   return code;
+}
+
+/**
+ * Mapeia os documentos referenciados persistidos (grupo <NFref>) para os
+ * registros C113 da EFD. Só referências com chave de acesso (NF-e/CT-e)
+ * geram C113 completo; as demais (NF/NFP/ECF sem chave) são ignoradas por não
+ * possuírem chave para o campo CHV_DOCe.
+ */
+function buildReferenciasC113(
+  referencias:
+    Array<{ tipo: string; chaveAcesso: string | null }> | null | undefined,
+  participanteCodigo: string | null,
+): SpedDocumentoReferenciadoBuilderData[] {
+  if (!referencias || referencias.length === 0) return [];
+  const modeloPorTipo: Record<string, string> = { NFE: '55', CTE: '57' };
+  return referencias
+    .filter((ref) => ref.chaveAcesso && ref.chaveAcesso.length === 44)
+    .map((ref) => ({
+      // IND_EMIT do documento referenciado: em devolução, a nota original é
+      // de terceiros ('1').
+      indicadorTipo: '1',
+      chaveOuNumero: ref.chaveAcesso!,
+      participanteCodigo,
+      codigoModelo: modeloPorTipo[ref.tipo] ?? null,
+      serie: null,
+      numero: null,
+      data: null,
+    }));
 }
 
 /**

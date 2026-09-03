@@ -10,6 +10,7 @@ import {
   clientes,
   documentosFiscais,
   documentosFiscaisItens,
+  spedAjustesApuracao,
 } from '../../database/schema';
 import {
   fromScaledInteger,
@@ -248,6 +249,7 @@ export class CiapService {
       fim,
     });
     const coefScaled = toScaledInteger(coeficiente, COEFICIENTE_SCALE);
+    const uf = await this.getUfCliente(input.clienteId);
 
     return this.database.db.transaction(async (tx) => {
       const bens = await tx
@@ -291,13 +293,59 @@ export class CiapService {
         bensApropriados += 1;
       }
 
+      // Reflete o crédito apropriado como ajuste E111 (CREDITO) na apuração do
+      // ICMS da competência. O código UF+02CIAP satisfaz o check de coerência
+      // (E111, natureza 2 = crédito → indicador CREDITO). Regeneramos o ajuste
+      // do CIAP a cada apropriação (delete-then-insert) para ser idempotente.
+      const competenciaDate = competencia;
+      await tx
+        .delete(spedAjustesApuracao)
+        .where(
+          and(
+            eq(spedAjustesApuracao.clienteId, input.clienteId),
+            eq(spedAjustesApuracao.competencia, competenciaDate),
+            eq(spedAjustesApuracao.registro, 'E111'),
+            eq(spedAjustesApuracao.codigoAjuste, `${uf}02CIAP`),
+          ),
+        );
+      if (totalCredito > 0n) {
+        await tx.insert(spedAjustesApuracao).values({
+          clienteId: input.clienteId,
+          competencia: competenciaDate,
+          registro: 'E111',
+          codigoAjuste: `${uf}02CIAP`,
+          descricao:
+            'Crédito de ICMS do ativo permanente (CIAP - 1/48) apropriado no período.',
+          valor: fromScaledInteger(totalCredito),
+          indicador: 'CREDITO',
+          uf: null,
+          numeroDocumento: null,
+        });
+      }
+
       return {
         competencia,
         coeficiente_saidas_tributadas: coeficiente,
         bens_apropriados: bensApropriados,
         total_credito_apropriado: fromScaledInteger(totalCredito),
+        ajuste_e111_gerado: totalCredito > 0n ? `${uf}02CIAP` : null,
       };
     });
+  }
+
+  private async getUfCliente(clienteId: string): Promise<string> {
+    const rows = await this.database.db
+      .select({ uf: clientes.uf })
+      .from(clientes)
+      .where(eq(clientes.id, clienteId))
+      .limit(1);
+    const uf = (rows[0]?.uf ?? '').toUpperCase();
+    if (!/^[A-Z]{2}$/.test(uf)) {
+      throw new BadRequestException(
+        'A UF da empresa é obrigatória para gerar o ajuste E111 do CIAP.',
+      );
+    }
+    return uf;
   }
 
   /**

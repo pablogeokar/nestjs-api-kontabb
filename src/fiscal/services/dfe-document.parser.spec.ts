@@ -249,6 +249,30 @@ describe('DF-e document parser', () => {
     }
   });
 
+  it('captura o refNFe do grupo NFref para o registro C113', () => {
+    const refChave = buildAccessKey('55', '98765432000110');
+    const xml = buildNfeProc('55').replace(
+      '<mod>55</mod>',
+      `<NFref><refNFe>${refChave}</refNFe></NFref><mod>55</mod>`,
+    );
+    const result = parseManualFiscalXml(xml);
+
+    expect(result.status).toBe('DOCUMENTO');
+    if (result.status === 'DOCUMENTO') {
+      expect(result.documento.documentosReferenciados).toEqual([
+        { tipo: 'NFE', chaveAcesso: refChave },
+      ]);
+    }
+  });
+
+  it('não gera referências para NF-e sem NFref', () => {
+    const result = parseManualFiscalXml(buildNfeProc('55'));
+    expect(result.status).toBe('DOCUMENTO');
+    if (result.status === 'DOCUMENTO') {
+      expect(result.documento.documentosReferenciados).toEqual([]);
+    }
+  });
+
   it('aceita somente cteProc modelo 57 na distribuicao de CT-e', () => {
     const parsed = parseDfeDocZip(docZip(buildCteProc('57'), 'procCTe'), 'CTE');
 
