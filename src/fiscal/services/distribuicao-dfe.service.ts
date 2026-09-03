@@ -459,6 +459,7 @@ export class DistribuicaoDfeService {
     dataInicio?: Date;
     dataFim?: Date;
     search?: string;
+    revisaoNecessaria?: boolean;
     pagination: PaginationParams;
   }) {
     const conditions: SQL[] = [];
@@ -494,6 +495,22 @@ export class DistribuicaoDfeService {
       );
       if (searchCondition) conditions.push(searchCondition);
     }
+    if (input.revisaoNecessaria !== undefined) {
+      const possuiRevisao = sql<boolean>`(
+        EXISTS (
+          SELECT 1 FROM documentos_fiscais_itens itens_revisao
+          WHERE itens_revisao.documento_fiscal_id = ${documentosFiscais.id}
+            AND itens_revisao.cfop_revisao_necessaria = true
+        ) OR EXISTS (
+          SELECT 1 FROM documentos_fiscais_cte_escrituracao cte_revisao
+          WHERE cte_revisao.documento_fiscal_id = ${documentosFiscais.id}
+            AND cte_revisao.cfop_revisao_necessaria = true
+        )
+      )`;
+      conditions.push(
+        input.revisaoNecessaria ? possuiRevisao : sql`NOT ${possuiRevisao}`,
+      );
+    }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -514,6 +531,31 @@ export class DistribuicaoDfeService {
           numeroDocumento: documentosFiscais.numeroDocumento,
           emitenteCnpjCpf: documentosFiscais.emitenteCnpjCpf,
           emitenteRazaoSocial: documentosFiscais.emitenteRazaoSocial,
+          emitenteUf: sql<string | null>`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
+          cfopsEscriturados: sql<string[]>`CASE
+            WHEN ${documentosFiscais.modelo} = '57' THEN COALESCE((
+              SELECT array_agg(DISTINCT cte_cfop.cfop ORDER BY cte_cfop.cfop)
+              FROM documentos_fiscais_cte_escrituracao cte_cfop
+              WHERE cte_cfop.documento_fiscal_id = ${documentosFiscais.id}
+            ), ARRAY[]::varchar[])
+            ELSE COALESCE((
+              SELECT array_agg(DISTINCT item_cfop.cfop ORDER BY item_cfop.cfop)
+              FROM documentos_fiscais_itens item_cfop
+              WHERE item_cfop.documento_fiscal_id = ${documentosFiscais.id}
+            ), ARRAY[]::varchar[])
+          END`,
+          cfopRevisaoPendente: sql<boolean>`CASE
+            WHEN ${documentosFiscais.modelo} = '57' THEN COALESCE((
+              SELECT bool_or(cte_revisao.cfop_revisao_necessaria)
+              FROM documentos_fiscais_cte_escrituracao cte_revisao
+              WHERE cte_revisao.documento_fiscal_id = ${documentosFiscais.id}
+            ), false)
+            ELSE COALESCE((
+              SELECT bool_or(item_revisao.cfop_revisao_necessaria)
+              FROM documentos_fiscais_itens item_revisao
+              WHERE item_revisao.documento_fiscal_id = ${documentosFiscais.id}
+            ), false)
+          END`,
           destinatarioCnpjCpf: documentosFiscais.destinatarioCnpjCpf,
           destinatarioRazaoSocial: documentosFiscais.destinatarioRazaoSocial,
           dataEmissao: documentosFiscais.dataEmissao,
@@ -544,6 +586,9 @@ export class DistribuicaoDfeService {
       numero_documento: row.numeroDocumento,
       emitente_cnpj_cpf: row.emitenteCnpjCpf,
       emitente_razao_social: row.emitenteRazaoSocial,
+      emitente_uf: row.emitenteUf,
+      cfops_escriturados: row.cfopsEscriturados,
+      cfop_revisao_pendente: row.cfopRevisaoPendente,
       destinatario_cnpj_cpf: row.destinatarioCnpjCpf,
       destinatario_razao_social: row.destinatarioRazaoSocial,
       data_emissao: row.dataEmissao.toISOString(),
@@ -810,6 +855,7 @@ export class DistribuicaoDfeService {
           apuraIcms: fiscalConfig.apuraIcms,
           situacao: parsed.situacao,
           cte: parsed.cteEscrituracao,
+          emitenteUf: parsed.emitente.uf || null,
         })
       : null;
     if (parsed.tipoDocumento === 'CTE' && !ctePreparada) {
@@ -822,6 +868,7 @@ export class DistribuicaoDfeService {
             clienteId,
             clienteCnpjCpf: cnpj,
             emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+            emitenteUf: parsed.emitente.uf || null,
             tpNfXml: parsed.tpNfXml,
             itens: parsed.itens,
           });

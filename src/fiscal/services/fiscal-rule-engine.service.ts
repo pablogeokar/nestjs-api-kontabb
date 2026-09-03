@@ -45,6 +45,8 @@ export interface RuleEvaluationResult {
   cfopEscriturado: string;
   cstIcmsEscriturado?: string | null;
   csosnEscriturado?: string | null;
+  cstPisEscriturado?: string | null;
+  cstCofinsEscriturado?: string | null;
   apropriaCreditoIcms: boolean;
   apropriaCreditoIpi: boolean;
   exigeCiap: boolean;
@@ -139,6 +141,24 @@ export class FiscalRuleEngineService {
     };
   }
 
+  /**
+   * Deriva os efeitos tributários de um CFOP escolhido manualmente, sem
+   * reaplicar regras que poderiam substituir a decisão explícita do contador.
+   */
+  async evaluateManualCfop(
+    codigo: string,
+  ): Promise<RuleEvaluationResult | null> {
+    const normalized = normalizeCfop(codigo);
+    const row = await this.getCfop(normalized);
+    if (!row?.ativo) return null;
+    return this.buildFromCatalog(
+      normalized,
+      row,
+      'MANTIDO',
+      'CFOP definido manualmente pelo responsável fiscal.',
+    );
+  }
+
   private async findMatchingRule(
     input: RuleEvaluationInput,
     cfopXml: string,
@@ -231,6 +251,8 @@ export class FiscalRuleEngineService {
       cfopEscriturado: regra.cfopDestino,
       cstIcmsEscriturado: regra.cstIcmsDestino,
       csosnEscriturado: regra.csosnDestino,
+      cstPisEscriturado: regra.cstPisDestino,
+      cstCofinsEscriturado: regra.cstCofinsDestino,
       apropriaCreditoIcms:
         creditoIcms && (destino ? destino.geraCreditoIcmsPadrao : true),
       apropriaCreditoIpi: regra.apropriaCreditoIpi,

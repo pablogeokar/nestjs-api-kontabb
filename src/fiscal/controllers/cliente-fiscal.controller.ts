@@ -294,6 +294,7 @@ export class ClienteFiscalController {
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
       search: query.search?.trim(),
+      revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
@@ -331,6 +332,7 @@ export class ClienteFiscalController {
       codigoProduto: query.codigoProduto,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
+      revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
@@ -391,6 +393,7 @@ export class ClienteFiscalController {
       codigoProduto: query.codigoProduto,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
+      revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);

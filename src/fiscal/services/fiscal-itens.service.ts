@@ -12,6 +12,7 @@ import {
   type RegimeTributario,
 } from '../../clientes/clientes.types';
 import { FiscalCteService } from './fiscal-cte.service';
+import { convertDirection } from './cfop.service';
 
 const SIMPLES_SEM_APURACAO_OBSERVACAO =
   'Cliente optante pelo Simples Nacional — ICMS recolhido via DAS. Apuração de débito/crédito não aplicável.';
@@ -34,6 +35,7 @@ interface ItemFilters {
   codigoProduto?: string;
   dataInicio?: Date;
   dataFim?: Date;
+  revisaoNecessaria?: boolean;
 }
 
 @Injectable()
@@ -364,6 +366,14 @@ export class FiscalItensService {
         eq(documentosFiscaisItens.codigoProduto, input.codigoProduto),
       );
     }
+    if (input.revisaoNecessaria !== undefined) {
+      conditions.push(
+        eq(
+          documentosFiscaisItens.cfopRevisaoNecessaria,
+          input.revisaoNecessaria,
+        ),
+      );
+    }
     if (input.dataInicio) {
       conditions.push(gte(documentosFiscais.dataEmissao, input.dataInicio));
     }
@@ -393,6 +403,13 @@ export class FiscalItensService {
         cfop_xml: item.cfopXml,
         cfop: item.cfop,
         revisao_necessaria: item.cfopRevisaoNecessaria,
+        cfop_sugerido:
+          item.cfopRevisaoNecessaria && item.cfopXml
+            ? convertDirection(
+                item.cfopXml,
+                item.tipoOperacaoEscriturada as 'ENTRADA' | 'SAIDA',
+              )
+            : null,
         destinacao_mercadoria: item.destinacaoMercadoria,
       },
       produto: {

@@ -179,6 +179,7 @@ export class FiscalCteService {
     apuraIcms: boolean;
     situacao: SituacaoDocumentoCte;
     cte: CteEscrituracaoParseData;
+    emitenteUf?: string | null;
   }): Promise<CteEscrituracaoPreparada> {
     const decisao = decidirEscrituracaoCte({
       clienteCnpjCpf: input.clienteCnpjCpf,
@@ -196,6 +197,10 @@ export class FiscalCteService {
       clienteId: input.clienteId,
       cfopXml: input.cte.cfop,
       tipoOperacaoEscriturada: decisao.tipoOperacao,
+      emitenteCnpjCpf: input.cte.emitenteCnpjCpf,
+      emitenteUf: input.emitenteUf,
+      cstIcmsXml: input.cte.cstIcms,
+      csosnXml: input.cte.csosnIcms,
     });
     const referenciaObrigatoria = ['1', '2', '3'].includes(input.cte.tpCte);
     const revisaoNecessaria =
@@ -203,7 +208,8 @@ export class FiscalCteService {
       cfop.revisaoNecessaria ||
       (referenciaObrigatoria && !input.cte.chaveCteReferenciado);
     const sign = input.cte.tpCte === '2' ? -1 : 1;
-    const valorIcmsCreditavel = decisao.creditaIcms
+    const valorIcmsCreditavel =
+      decisao.creditaIcms && (cfop.apropriaCreditoIcms ?? true)
       ? signedDecimal(input.cte.valorIcms ?? '0', sign)
       : '0.00';
 
@@ -221,8 +227,16 @@ export class FiscalCteService {
         cfop: cfop.cfop,
         cfopRevisaoNecessaria: cfop.revisaoNecessaria,
         revisaoNecessaria,
-        cstIcms: input.cte.cstIcms,
-        csosnIcms: input.cte.csosnIcms,
+        cstIcms: cfop.cstIcmsEscriturado
+          ? cfop.cstIcmsEscriturado
+          : cfop.csosnEscriturado
+            ? null
+            : input.cte.cstIcms,
+        csosnIcms: cfop.csosnEscriturado
+          ? cfop.csosnEscriturado
+          : cfop.cstIcmsEscriturado
+            ? null
+            : input.cte.csosnIcms,
         valorTotalServico: signedDecimal(input.cte.valorTotalServico, sign),
         valorReceber: signedDecimal(input.cte.valorReceber, sign),
         valorBcIcms: signedNullableDecimal(input.cte.valorBcIcms, sign),

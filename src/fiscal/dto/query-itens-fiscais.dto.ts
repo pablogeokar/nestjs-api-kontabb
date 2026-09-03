@@ -89,4 +89,12 @@ export class QueryItensFiscaisDto {
   @IsString()
   @MaxLength(120)
   codigoProduto?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar itens por pendência de revisão do CFOP',
+    enum: ['true', 'false'],
+  })
+  @IsOptional()
+  @Matches(/^(true|false)$/)
+  revisaoNecessaria?: string;
 }

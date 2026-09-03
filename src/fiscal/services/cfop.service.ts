@@ -48,6 +48,10 @@ export interface CfopResolvido {
   exigeCiap?: boolean;
   exigeDifalEntrada?: boolean;
   regraAplicadaId?: string;
+  cstIcmsEscriturado?: string | null;
+  csosnEscriturado?: string | null;
+  cstPisEscriturado?: string | null;
+  cstCofinsEscriturado?: string | null;
 }
 
 export interface CfopItemRevisao {
@@ -97,11 +101,21 @@ export class CfopService {
   }
 
   async prepararItensEscrituracao<
-    T extends { cfop: string; numeroItem?: number; descricao?: string },
+    T extends {
+      cfop: string;
+      numeroItem?: number;
+      descricao?: string;
+      ncm?: string | null;
+      cstIcms?: string | null;
+      csosnIcms?: string | null;
+      cstPis?: string | null;
+      cstCofins?: string | null;
+    },
   >(params: {
     clienteId: string;
     clienteCnpjCpf: string;
     emitenteCnpjCpf: string;
+    emitenteUf?: string | null;
     tpNfXml: string;
     itens: T[];
   }) {
@@ -110,23 +124,35 @@ export class CfopService {
       params.emitenteCnpjCpf,
       params.tpNfXml,
     );
-    const resolvidos = new Map<string, CfopResolvido>();
-    for (const cfopXml of new Set(params.itens.map((item) => item.cfop))) {
-      resolvidos.set(
-        cfopXml,
-        await this.resolverCfopEquivalenteDetalhado({
-          clienteId: params.clienteId,
-          cfopXml,
-          tipoOperacaoEscriturada,
-        }),
-      );
-    }
-
     const revisoes: CfopItemRevisao[] = [];
-    const itens = params.itens.map((item, index) => {
-      const resolvido = resolvidos.get(item.cfop);
+    const resolvidos = new Map<string, CfopResolvido>();
+    const itens = [] as Array<T & {
+      cfopXml: string;
+      cfop: string;
+      tipoOperacaoEscriturada: TipoOperacaoEscriturada;
+      cfopRevisaoNecessaria: boolean;
+    }>;
+    for (const [index, item] of params.itens.entries()) {
+      const cacheKey = [
+        item.cfop,
+        item.ncm ?? '',
+        item.cstIcms ?? '',
+        item.csosnIcms ?? '',
+        params.emitenteUf ?? '',
+      ].join(':');
+      let resolvido = resolvidos.get(cacheKey);
       if (!resolvido) {
-        throw new Error(`CFOP ${item.cfop} não foi resolvido.`);
+        resolvido = await this.resolverCfopEquivalenteDetalhado({
+          clienteId: params.clienteId,
+          cfopXml: item.cfop,
+          tipoOperacaoEscriturada,
+          ncm: item.ncm,
+          emitenteCnpjCpf: params.emitenteCnpjCpf,
+          emitenteUf: params.emitenteUf,
+          cstIcmsXml: item.cstIcms,
+          csosnXml: item.csosnIcms,
+        });
+        resolvidos.set(cacheKey, resolvido);
       }
       if (
         resolvido.revisaoNecessaria &&
@@ -142,14 +168,32 @@ export class CfopService {
           motivo: resolvido.motivoRevisao,
         });
       }
-      return {
+      itens.push({
         ...item,
         cfopXml: item.cfop,
         cfop: resolvido.cfop,
+        // Precedência dos códigos: regra do cliente > regra global > XML.
+        ...(resolvido.cstIcmsEscriturado
+          ? {
+              cstIcms: resolvido.cstIcmsEscriturado,
+              csosnIcms: null,
+            }
+          : resolvido.csosnEscriturado
+            ? {
+                cstIcms: null,
+                csosnIcms: resolvido.csosnEscriturado,
+              }
+            : {}),
+        ...(resolvido.cstPisEscriturado
+          ? { cstPis: resolvido.cstPisEscriturado }
+          : {}),
+        ...(resolvido.cstCofinsEscriturado
+          ? { cstCofins: resolvido.cstCofinsEscriturado }
+          : {}),
         tipoOperacaoEscriturada,
         cfopRevisaoNecessaria: resolvido.revisaoNecessaria,
-      };
-    });
+      });
+    }
 
     return {
       tipoOperacaoEscriturada,
@@ -208,10 +252,34 @@ export class CfopService {
         exigeCiap: avaliacao.exigeCiap,
         exigeDifalEntrada: avaliacao.exigeDifalEntrada,
         regraAplicadaId: avaliacao.regraAplicadaId,
+        cstIcmsEscriturado: avaliacao.cstIcmsEscriturado,
+        csosnEscriturado: avaliacao.csosnEscriturado,
+        cstPisEscriturado: avaliacao.cstPisEscriturado,
+        cstCofinsEscriturado: avaliacao.cstCofinsEscriturado,
       };
     }
 
     return this.resolverCascataLegada(params);
+  }
+
+  async resolverCfopManual(params: {
+    cfop: string;
+    tipoOperacaoEscriturada: TipoOperacaoEscriturada;
+  }) {
+    const catalogo = await this.getCfop(params.cfop);
+    if (!catalogo.ativo) {
+      throw new BadRequestException('O CFOP informado está inativo no catálogo.');
+    }
+    if (catalogo.tipo_operacao !== params.tipoOperacaoEscriturada) {
+      throw new BadRequestException(
+        `O CFOP ${catalogo.codigo} é de ${catalogo.tipo_operacao === 'ENTRADA' ? 'entrada' : 'saída'} e não corresponde ao sentido escriturado.`,
+      );
+    }
+    const efeitos = await this.ruleEngine.evaluateManualCfop(catalogo.codigo);
+    if (!efeitos) {
+      throw new BadRequestException('O CFOP informado está inativo no catálogo.');
+    }
+    return { catalogo, efeitos };
   }
 
   private async resolverCascataLegada(params: {
@@ -624,7 +692,10 @@ function abrangenciaFromCodigo(codigo: string): AbrangenciaCfop {
   return 'EXTERIOR';
 }
 
-function convertDirection(cfop: string, tipoOperacao: TipoOperacaoEscriturada) {
+export function convertDirection(
+  cfop: string,
+  tipoOperacao: TipoOperacaoEscriturada,
+) {
   const mappings =
     tipoOperacao === 'ENTRADA'
       ? { '5': '1', '6': '2', '7': '3' }

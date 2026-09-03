@@ -124,10 +124,30 @@ export class CreateRegraFiscalDto {
   @IsBoolean()
   apropriaCreditoIcms?: boolean;
 
+  @ApiPropertyOptional({ example: '00' })
+  @IsOptional()
+  @Matches(/^\d{2,3}$/)
+  cstIcmsDestino?: string;
+
+  @ApiPropertyOptional({ example: '102' })
+  @IsOptional()
+  @Matches(/^\d{3,4}$/)
+  csosnDestino?: string;
+
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
   apropriaCreditoIpi?: boolean;
+
+  @ApiPropertyOptional({ example: '50' })
+  @IsOptional()
+  @Matches(/^\d{2}$/)
+  cstPisDestino?: string;
+
+  @ApiPropertyOptional({ example: '50' })
+  @IsOptional()
+  @Matches(/^\d{2}$/)
+  cstCofinsDestino?: string;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
@@ -207,10 +227,30 @@ export class UpdateRegraFiscalDto {
   @IsBoolean()
   apropriaCreditoIcms?: boolean;
 
+  @ApiPropertyOptional({ example: '00' })
+  @IsOptional()
+  @Matches(/^\d{2,3}$/)
+  cstIcmsDestino?: string;
+
+  @ApiPropertyOptional({ example: '102' })
+  @IsOptional()
+  @Matches(/^\d{3,4}$/)
+  csosnDestino?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   apropriaCreditoIpi?: boolean;
+
+  @ApiPropertyOptional({ example: '50' })
+  @IsOptional()
+  @Matches(/^\d{2}$/)
+  cstPisDestino?: string;
+
+  @ApiPropertyOptional({ example: '50' })
+  @IsOptional()
+  @Matches(/^\d{2}$/)
+  cstCofinsDestino?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

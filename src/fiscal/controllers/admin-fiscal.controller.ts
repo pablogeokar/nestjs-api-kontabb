@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -52,10 +53,12 @@ import { UploadCertificadoDto } from '../dto/upload-certificado.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
 import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
 import { QueryCteFiscalDto } from '../dto/query-cte-fiscal.dto';
+import { EditarCfopDto } from '../dto/editar-cfop.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
 import { FiscalItensService } from '../services/fiscal-itens.service';
 import { FiscalCteService } from '../services/fiscal-cte.service';
+import { RegrasFiscaisService } from '../services/regras-fiscais.service';
 import { getRequestId, type RequestWithId } from '../../common/request-id';
 
 @ApiTags('Fiscal (Admin)')
@@ -75,6 +78,7 @@ export class AdminFiscalController {
     private readonly rateLimit: RateLimitService,
     private readonly fiscalItensService: FiscalItensService,
     private readonly fiscalCteService: FiscalCteService,
+    private readonly regrasFiscaisService: RegrasFiscaisService,
   ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
@@ -353,6 +357,7 @@ export class AdminFiscalController {
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
       search: query.search?.trim(),
+      revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
@@ -381,9 +386,33 @@ export class AdminFiscalController {
       codigoProduto: query.codigoProduto,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
+      revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Patch('itens/:itemId/cfop')
+  @ApiOperation({ summary: 'Corrigir manualmente o CFOP escriturado de um item' })
+  async editarCfopItem(
+    @Param('itemId', new ParseUUIDPipe({ version: '4' })) itemId: string,
+    @Body() body: EditarCfopDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const data = await this.regrasFiscaisService.editarCfopItem({
+      itemId,
+      cfop: body.cfop,
+    });
+    this.logger.info('fiscal_cfop_item_editado', {
+      userId: user.id,
+      entityType: 'DOCUMENTO_FISCAL_ITEM',
+      entityId: itemId,
+      operation: 'editar_cfop',
+      cfopAnterior: data.cfop_anterior,
+      cfopNovo: data.cfop,
+      motivo: body.motivo?.trim() || null,
+    });
+    return { data };
   }
 
   @Get('cte')
@@ -402,6 +431,30 @@ export class AdminFiscalController {
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
+  }
+
+  @Patch('cte/:documentoId/cfop')
+  @ApiOperation({ summary: 'Corrigir manualmente o CFOP escriturado de um CT-e' })
+  async editarCfopCte(
+    @Param('documentoId', new ParseUUIDPipe({ version: '4' }))
+    documentoId: string,
+    @Body() body: EditarCfopDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const data = await this.regrasFiscaisService.editarCfopCte({
+      documentoId,
+      cfop: body.cfop,
+    });
+    this.logger.info('fiscal_cfop_cte_editado', {
+      userId: user.id,
+      entityType: 'DOCUMENTO_FISCAL_CTE',
+      entityId: documentoId,
+      operation: 'editar_cfop',
+      cfopAnterior: data.cfop_anterior,
+      cfopNovo: data.cfop,
+      motivo: body.motivo?.trim() || null,
+    });
+    return { data };
   }
 
   @Get('documentos/:id/itens')
@@ -427,6 +480,7 @@ export class AdminFiscalController {
       codigoProduto: query.codigoProduto,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
+      revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
       pagination,
     });
     return buildPaginatedResponse(result.data, result.total, pagination);
