@@ -24,10 +24,15 @@ import { CiapService } from './services/ciap.service';
 import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
 import { PisCofinsService } from './services/pis-cofins.service';
+import { RegrasFiscaisService } from './services/regras-fiscais.service';
 import {
   AdminFiscalApuracaoController,
   ClienteFiscalApuracaoController,
 } from './controllers/fiscal-apuracao.controller';
+import {
+  AdminRegrasFiscaisController,
+  ClienteRegrasFiscaisController,
+} from './controllers/regras-fiscais.controller';
 import { FiscalCteService } from './services/fiscal-cte.service';
 import {
   AdminSpedEfdController,
@@ -50,6 +55,8 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     ClienteSpedEfdController,
     AdminFiscalApuracaoController,
     ClienteFiscalApuracaoController,
+    ClienteRegrasFiscaisController,
+    AdminRegrasFiscaisController,
   ],
   providers: [
     CertificadoService,
@@ -72,6 +79,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     DifalEntradaService,
     FiscalGuiasService,
     PisCofinsService,
+    RegrasFiscaisService,
   ],
   exports: [
     CertificadoService,

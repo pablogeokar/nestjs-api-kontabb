@@ -975,6 +975,9 @@ export const documentosFiscaisItens = pgTable(
     cfopRevisaoNecessaria: boolean('cfop_revisao_necessaria')
       .notNull()
       .default(false),
+    // Destinação econômica atribuída pelo usuário (override manual) que
+    // realimenta o motor de regras para re-resolver o CFOP escriturado.
+    destinacaoMercadoria: varchar('destinacao_mercadoria', { length: 20 }),
     unidadeComercial: varchar('unidade_comercial', { length: 10 }).notNull(),
     quantidadeComercial: numeric('quantidade_comercial', {
       precision: 15,
@@ -1244,6 +1247,10 @@ export const documentosFiscaisItens = pgTable(
     check(
       'chk_item_operacao_escriturada',
       sql`${table.tipoOperacaoEscriturada} IN ('ENTRADA', 'SAIDA')`,
+    ),
+    check(
+      'chk_item_destinacao',
+      sql`${table.destinacaoMercadoria} IS NULL OR ${table.destinacaoMercadoria} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
     ),
   ],
 );

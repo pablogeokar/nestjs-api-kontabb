@@ -393,6 +393,7 @@ export class FiscalItensService {
         cfop_xml: item.cfopXml,
         cfop: item.cfop,
         revisao_necessaria: item.cfopRevisaoNecessaria,
+        destinacao_mercadoria: item.destinacaoMercadoria,
       },
       produto: {
         codigo_produto: item.codigoProduto,
