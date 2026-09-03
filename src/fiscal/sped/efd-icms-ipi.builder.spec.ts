@@ -1108,4 +1108,103 @@ describe('buildEfdIcmsIpiRecords', () => {
     expect(e110[11]).toBe('90,00');
     expect(result.apuracao.icmsProprio.saldoApurado).toBe('90.00');
   });
+
+  it('gera 0220 subordinado ao 0200 quando o item tem conversao de unidade', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        itensCatalogo: [
+          {
+            codigo: 'ITEM-1',
+            codigoExterno: 'P1',
+            descricao: 'Produto',
+            codigoBarras: null,
+            unidade: 'CX',
+            tipoItem: '00',
+            tipoItemInferido: false,
+            ncm: '12345678',
+            exIpi: null,
+            codigoGenero: '12',
+            codigoServico: null,
+            aliquotaIcms: null,
+            cest: null,
+            participanteOrigemCodigo: null,
+            conversoesUnidade: [
+              {
+                unidadeConversao: 'UN',
+                fatorConversao: '12.000000',
+                codigoBarrasConversao: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const bloco0 = regs(result.records, '0');
+    // O 0220 deve vir imediatamente após o 0200 do item.
+    const idx0200 = bloco0.indexOf('0200');
+    expect(bloco0[idx0200 + 1]).toBe('0220');
+    expect(lineFor(result.records, '0220')).toBe('|0220|UN|12,000000||');
+  });
+
+  it('gera C113 subordinado ao C100 para documento com referencia', () => {
+    const nfe = makeNfe({ id: 'dev-1', chaveAcesso: '7'.repeat(44) }, [
+      makeItem({ cfop: '1202' }),
+    ]);
+    nfe.referencias = [
+      {
+        indicadorTipo: '1',
+        chaveOuNumero: '9'.repeat(44),
+        participanteCodigo: 'PART-1',
+        codigoModelo: '55',
+      },
+    ];
+    const result = buildEfdIcmsIpiRecords(makeInput({ nfe: [nfe] }));
+    const blocoC = regs(result.records, 'C');
+    // C113 deve aparecer logo após o C100 e antes do C190.
+    expect(blocoC[0]).toBe('C100');
+    expect(blocoC[1]).toBe('C113');
+    const c113 = fieldsOf(lineFor(result.records, 'C113'));
+    // IND_OPER(0 entrada) | IND_EMIT(1 terceiros) | COD_PART | ... | CHV
+    expect(c113[0]).toBe('0');
+    expect(c113[1]).toBe('1');
+    expect(c113[2]).toBe('PART-1');
+    expect(c113[8]).toBe('9'.repeat(44));
+  });
+
+  it('gera Bloco G (G110/G125) a partir dos dados do CIAP', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        ciap: {
+          saldoInicial: '4800.00',
+          somaParcelas: '100.00',
+          valorTotalCredito: '100.00',
+          indicadorPeriodo: '0',
+          saidasTributadas: '10000.00',
+          saidasTotais: '10000.00',
+          bens: [
+            {
+              codigoIndividualizacao: 'BEM-1',
+              identificacaoBem: 'Maquina',
+              tipoMovimentacao: 'SI',
+              valorIcmsOperacao: '4800.00',
+              valorIcmsFrete: '0.00',
+              valorIcmsDifal: '0.00',
+              numeroParcela: 1,
+              valorParcelaIcms: '100.00',
+              valorParcelaFrete: '0.00',
+              valorParcelaDifal: '0.00',
+            },
+          ],
+        },
+      }),
+    );
+    const blocoG = regs(result.records, 'G');
+    expect(blocoG).toEqual(['G110', 'G125']);
+    const g110 = fieldsOf(lineFor(result.records, 'G110'));
+    expect(g110[7]).toBe('100,00'); // valor total do crédito
+    const file = buildSpedFile({ records: result.records });
+    expect(
+      validateSpedFile(file.bytes, { strictFieldCounts: true }),
+    ).toMatchObject({ valid: true });
+  });
 });

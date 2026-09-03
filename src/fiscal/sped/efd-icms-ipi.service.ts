@@ -21,6 +21,7 @@ import {
 import { AppLogger } from '../../common/logger.service';
 import { DatabaseService } from '../../database/database.service';
 import {
+  ciapAtivoPermanente,
   clientes,
   documentosFiscais,
   documentosFiscaisCteEscrituracao,
@@ -40,8 +41,10 @@ import {
 import { resolverContadorDoCliente } from '../../cadastros/contadores/contador-resolver';
 import { StorageService } from '../../storage/storage.service';
 import { buildSpedFile, validateSpedFile } from './core';
+import { runPreflightPva } from './sped-preflight-pva';
 import {
   buildEfdIcmsIpiRecords,
+  type SpedCiapBuilderData,
   type SpedContabilistaBuilderData,
   type SpedDocumentoCteBuilderData,
   type SpedDocumentoNfeBuilderData,
@@ -501,6 +504,14 @@ export class EfdIcmsIpiService {
       ctes.map((cte) => [cte.documentoFiscalId, cte]),
     );
 
+    // IDs estáveis: pré-carrega os códigos de participantes já persistidos
+    // (por documento) para reutilizá-los entre competências, garantindo a
+    // continuidade histórica exigida pelo SPED em vez de recomputar o hash.
+    const codigosParticipantesPersistidos = await this.loadCodigosParticipantes(
+      db,
+      clienteId,
+    );
+
     const participantes = new Map<string, CatalogParticipant>();
     const unidades = new Map<string, SpedUnidadeBuilderData>();
     const itensCatalogo = new Map<string, CatalogItem>();
@@ -580,6 +591,7 @@ export class EfdIcmsIpiService {
           company.cnpj,
           participantes,
           inconsistencias,
+          codigosParticipantesPersistidos,
         );
         if (!participant) {
           excluded += 1;
@@ -642,6 +654,7 @@ export class EfdIcmsIpiService {
         company.cnpj,
         participantes,
         inconsistencias,
+        codigosParticipantesPersistidos,
         document.modelo === '65',
       );
       if (document.modelo === '55' && !participant) {
@@ -793,6 +806,7 @@ export class EfdIcmsIpiService {
       inventario,
       indicadores1010: company.indicadores1010 ?? {},
       inconsistencias,
+      ciap: await this.loadCiap(db, clienteId, nfe),
     };
     const builtRecords = buildEfdIcmsIpiRecords(builderInput);
 
@@ -837,6 +851,8 @@ export class EfdIcmsIpiService {
           mensagem: issue.message,
         });
       }
+      // Validador semântico pré-PVA (regras do Guia Prático).
+      inconsistencias.push(...runPreflightPva(builtRecords.records));
     } catch (error: unknown) {
       inconsistencias.push({
         codigo: 'ERRO_MONTAGEM_SPED',
@@ -1042,11 +1058,110 @@ export class EfdIcmsIpiService {
     );
   }
 
+  /**
+   * Monta os dados do Bloco G (CIAP) para a competência: para cada bem ativo,
+   * a parcela 1/48 do ICMS ajustada pelo coeficiente de saídas tributadas
+   * (LC 87/96 art. 20 §5º). Retorna null quando não há bens ativos.
+   */
+  private async loadCiap(
+    db: DatabaseExecutor,
+    clienteId: string,
+    nfe: SpedDocumentoNfeBuilderData[],
+  ): Promise<SpedCiapBuilderData | null> {
+    const bens = await db
+      .select()
+      .from(ciapAtivoPermanente)
+      .where(
+        and(
+          eq(ciapAtivoPermanente.clienteId, clienteId),
+          eq(ciapAtivoPermanente.status, 'ATIVO'),
+        ),
+      );
+    if (bens.length === 0) return null;
+
+    // Coeficiente = saídas tributadas / saídas totais das NF-e da competência.
+    let saidasTotais = 0n;
+    let saidasTributadas = 0n;
+    for (const documento of nfe) {
+      if (documento.row.tipoOperacaoEscriturada !== 'SAIDA') continue;
+      for (const item of documento.itens) {
+        const valor =
+          toScaledInteger(item.row.valorBrutoProduto) -
+          toScaledInteger(item.row.valorDesconto);
+        saidasTotais += valor;
+        if (toScaledInteger(item.row.valorIcms) > 0n) {
+          saidasTributadas += valor;
+        }
+      }
+    }
+    const coefScaled =
+      saidasTotais > 0n
+        ? (saidasTributadas * 10n ** 4n) / saidasTotais
+        : 10n ** 4n;
+
+    let saldoInicial = 0n;
+    let somaParcelas = 0n;
+    let totalCredito = 0n;
+    const bensBuilder: SpedCiapBuilderData['bens'] = [];
+    for (const bem of bens) {
+      const baseScaled =
+        toScaledInteger(bem.valorIcmsTotal) +
+        toScaledInteger(bem.valorIcmsFrete) +
+        toScaledInteger(bem.valorIcmsDifal);
+      const parcela = baseScaled / BigInt(bem.quantidadeParcelas);
+      const credito = (parcela * coefScaled) / 10n ** 4n;
+      saldoInicial += toScaledInteger(bem.saldoCredorRestante);
+      somaParcelas += parcela;
+      totalCredito += credito;
+      bensBuilder.push({
+        codigoIndividualizacao: bem.codigoBem,
+        identificacaoBem: bem.identificacaoBem,
+        tipoMovimentacao: 'SI',
+        valorIcmsOperacao: bem.valorIcmsTotal,
+        valorIcmsFrete: bem.valorIcmsFrete ?? '0.00',
+        valorIcmsDifal: bem.valorIcmsDifal ?? '0.00',
+        numeroParcela: bem.parcelasApropriadas + 1,
+        valorParcelaIcms: fromScaledInteger(parcela),
+        valorParcelaFrete: '0.00',
+        valorParcelaDifal: '0.00',
+      });
+    }
+
+    return {
+      saldoInicial: fromScaledInteger(saldoInicial),
+      somaParcelas: fromScaledInteger(somaParcelas),
+      valorTotalCredito: fromScaledInteger(totalCredito),
+      indicadorPeriodo: '0',
+      saidasTributadas: fromScaledInteger(saidasTributadas),
+      saidasTotais: fromScaledInteger(saidasTotais),
+      bens: bensBuilder,
+    };
+  }
+
+  private async loadCodigosParticipantes(
+    db: DatabaseExecutor,
+    clienteId: string,
+  ): Promise<Map<string, string>> {
+    const rows = await db
+      .select({
+        documento: spedParticipantes.documento,
+        codigo: spedParticipantes.codigo,
+      })
+      .from(spedParticipantes)
+      .where(eq(spedParticipantes.clienteId, clienteId));
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      map.set(normalizeIdentifier(row.documento), row.codigo);
+    }
+    return map;
+  }
+
   private resolveParticipant(
     document: typeof documentosFiscais.$inferSelect,
     clientDocument: string,
     participants: Map<string, CatalogParticipant>,
     issues: SpedInconsistencia[],
+    codigosPersistidos: Map<string, string> = new Map(),
     allowAnonymous = false,
   ): CatalogParticipant | null {
     const ownEmission =
@@ -1094,7 +1209,10 @@ export class EfdIcmsIpiService {
     const existing = participants.get(identifier);
     if (existing) return existing;
     const participant: CatalogParticipant = {
-      codigo: stableCode('P', identifier, 16),
+      // Reutiliza o código persistido (estável entre competências); só gera
+      // um novo por hash quando o participante ainda não foi cadastrado.
+      codigo:
+        codigosPersistidos.get(identifier) ?? stableCode('P', identifier, 16),
       documento: identifier,
       tipoDocumento: identifier.length === 11 ? 'CPF' : 'CNPJ',
       nome: name || 'PARTICIPANTE SEM NOME',
@@ -1157,6 +1275,7 @@ export class EfdIcmsIpiService {
         aliquotaIcms: item.aliquotaIcms,
         cest: item.cest,
         participanteOrigemCodigo: originCode,
+        conversoesUnidade: buildConversoesUnidade(item, units),
       };
       if (declareCatalog) catalog.set(identity, catalogItem);
     }
@@ -1877,6 +1996,46 @@ function uniqueUnitCode(
     code = stableCode('U', raw, 6);
   }
   return code;
+}
+
+/**
+ * Deriva os registros 0220 (fator de conversão) de um item quando a unidade
+ * tributável difere da comercial. FAT_CONV = quantidadeTributavel /
+ * quantidadeComercial (6 casas). Registra a unidade tributável no 0190.
+ */
+function buildConversoesUnidade(
+  item: typeof documentosFiscaisItens.$inferSelect,
+  units: Map<string, SpedUnidadeBuilderData>,
+): SpedItemCatalogoBuilderData['conversoesUnidade'] {
+  const unidadeTrib = item.unidadeTributavel?.trim();
+  if (!unidadeTrib) return [];
+  if (
+    unidadeTrib.toUpperCase() === item.unidadeComercial.trim().toUpperCase()
+  ) {
+    return [];
+  }
+  const qCom = toScaledInteger(item.quantidadeComercial, 6);
+  const qTrib = toScaledInteger(item.quantidadeTributavel, 6);
+  if (qCom <= 0n || qTrib <= 0n) return [];
+
+  // fator = qTrib / qCom, com 6 casas decimais.
+  const fatorScaled = (qTrib * 10n ** 6n) / qCom;
+  const codigoUnidadeTrib = uniqueUnitCode(unidadeTrib, units);
+  units.set(codigoUnidadeTrib, {
+    codigo: codigoUnidadeTrib,
+    descricao: unidadeTrib,
+  });
+  return [
+    {
+      unidadeConversao: codigoUnidadeTrib,
+      fatorConversao: fromScaledInteger(fatorScaled, 6),
+      codigoBarrasConversao:
+        item.codigoEanTributavel &&
+        !/^SEM GTIN$/i.test(item.codigoEanTributavel)
+          ? item.codigoEanTributavel
+          : null,
+    },
+  ];
 }
 
 export interface SpedFcpTaxSignals {
