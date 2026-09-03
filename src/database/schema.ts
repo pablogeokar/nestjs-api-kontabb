@@ -195,6 +195,8 @@ export const clientes = pgTable(
     }),
     logoKey: text('logo_key'),
     primeiroLogin: boolean('primeiro_login').notNull().default(true),
+    suspenso: boolean('suspenso').notNull().default(false),
+    suspensoEm: timestamp('suspenso_em', { withTimezone: true }),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
     contadorId: uuid('contador_id').references(() => contadores.id, {
       onDelete: 'set null',
@@ -250,6 +252,10 @@ export const clientes = pgTable(
     check(
       'chk_clientes_documento_por_tipo',
       sql`(${table.tipoPessoa} = 'PJ' AND ${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$' AND ${table.cpf} IS NULL) OR (${table.tipoPessoa} = 'PF' AND ${table.cnpj} ~ '^[0-9]{11}$' AND ${table.cpf} = ${table.cnpj})`,
+    ),
+    check(
+      'chk_clientes_suspensao_coerencia',
+      sql`(${table.suspenso} = true AND ${table.suspensoEm} IS NOT NULL) OR (${table.suspenso} = false AND ${table.suspensoEm} IS NULL)`,
     ),
     index('idx_clientes_regime_tributario')
       .on(table.regimeTributario)

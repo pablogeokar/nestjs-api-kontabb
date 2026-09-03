@@ -43,6 +43,13 @@
       "when": 1788448941644,
       "tag": "0005_fearless_morph",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788479647753,
+      "tag": "0006_suspender_cliente",
+      "breakpoints": true
     }
   ]
 }

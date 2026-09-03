@@ -60,7 +60,7 @@ export class ClientesService {
     private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
-  ) {}
+  ) { }
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
     const searchDocument = input.search
@@ -68,10 +68,10 @@ export class ClientesService {
       .toUpperCase();
     const where = input.search
       ? or(
-          ilike(clientes.razaoSocial, `%${input.search}%`),
-          ilike(clientes.cnpj, `%${searchDocument}%`),
-          ilike(clientes.cpf, `%${searchDocument}%`),
-        )
+        ilike(clientes.razaoSocial, `%${input.search}%`),
+        ilike(clientes.cnpj, `%${searchDocument}%`),
+        ilike(clientes.cpf, `%${searchDocument}%`),
+      )
       : undefined;
 
     const [countResult, rows] = await Promise.all([
@@ -106,6 +106,8 @@ export class ClientesService {
           simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
           logoKey: clientes.logoKey,
           isFirstLogin: clientes.primeiroLogin,
+          suspenso: clientes.suspenso,
+          suspensoEm: clientes.suspensoEm,
           authUserId: clientes.userId,
           createdAt: clientes.criadoEm,
           contadorId: clientes.contadorId,
@@ -144,9 +146,9 @@ export class ClientesService {
         address: this.mapAddress(client),
         primary_activity: client.cnaePrincipalCodigo
           ? {
-              code: client.cnaePrincipalCodigo,
-              description: client.cnaePrincipalDescricao ?? '',
-            }
+            code: client.cnaePrincipalCodigo,
+            description: client.cnaePrincipalDescricao ?? '',
+          }
           : null,
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
@@ -165,16 +167,18 @@ export class ClientesService {
           ? await this.storage.getSignedUrl(client.logoKey)
           : null,
         is_first_login: client.isFirstLogin,
+        suspenso: client.suspenso,
+        suspenso_em: client.suspensoEm?.toISOString() ?? null,
         auth_user_id: client.authUserId,
         created_at: client.createdAt.toISOString(),
         contador_id: client.contadorId,
         contador_nome: client.contadorNome,
         certificado: client.certStatus
           ? {
-              status: client.certStatus as
-                'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
-              validade_fim: client.certValidadeFim!,
-            }
+            status: client.certStatus as
+              'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
+            validade_fim: client.certValidadeFim!,
+          }
           : null,
       })),
     );
@@ -458,6 +462,7 @@ export class ClientesService {
         cnpj: clientes.cnpj,
         uf: clientes.uf,
         primeiroLogin: clientes.primeiroLogin,
+        suspenso: clientes.suspenso,
         regimeTributario: clientes.regimeTributario,
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
@@ -501,6 +506,58 @@ export class ClientesService {
     return result[0]?.primeiroLogin ?? false;
   }
 
+  /**
+   * Returns whether the client bound to the given auth user is suspended.
+   * Used by the auth endpoints to surface a suspended flag to the frontend.
+   */
+  async isClientSuspended(userId: string): Promise<boolean> {
+    const result = await this.database.db
+      .select({ suspenso: clientes.suspenso })
+      .from(clientes)
+      .where(eq(clientes.userId, userId))
+      .limit(1);
+    return result[0]?.suspenso ?? false;
+  }
+
+  /**
+   * Suspend or reactivate a client. When suspended the client is blocked from
+   * the client area and stops receiving e-mail notifications. Keeps the
+   * suspenso/suspenso_em pair coherent and writes an audit event.
+   */
+  async setClientSuspension(input: {
+    clientId: string;
+    actorUserId: string;
+    suspenso: boolean;
+  }): Promise<boolean> {
+    const acao = input.suspenso ? 'CLIENTE_SUSPENSO' : 'CLIENTE_REATIVADO';
+    const result = await this.database.db.execute(sql`
+      WITH updated_client AS (
+        UPDATE clientes
+        SET
+          suspenso = ${input.suspenso}::boolean,
+          suspenso_em = CASE WHEN ${input.suspenso}::boolean THEN now() ELSE NULL END
+        WHERE id = ${input.clientId}::uuid
+          AND suspenso IS DISTINCT FROM ${input.suspenso}::boolean
+        RETURNING id, razao_social
+      ),
+      audit_event AS (
+        INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
+        SELECT ${input.actorUserId}, ${acao}, 'CLIENTE', id::text,
+          jsonb_build_object('razaoSocial', razao_social, 'suspenso', ${input.suspenso}::boolean)
+        FROM updated_client
+        RETURNING id
+      )
+      SELECT EXISTS (
+        SELECT 1 FROM clientes WHERE id = ${input.clientId}::uuid
+      ) AS exists,
+      EXISTS (SELECT 1 FROM updated_client) AS changed
+    `);
+    const row = resultRows<{ exists: boolean; changed: boolean }>(result)[0];
+    // Return false only when the client does not exist; a no-op (already in the
+    // requested state) is treated as success so the endpoint stays idempotent.
+    return Boolean(row?.exists);
+  }
+
   async getClientSummary(clientId: string) {
     const result = await this.database.db
       .select({
@@ -527,6 +584,8 @@ export class ClientesService {
         simplesNacionalFonte: clientes.simplesNacionalFonte,
         simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
         logoKey: clientes.logoKey,
+        suspenso: clientes.suspenso,
+        suspensoEm: clientes.suspensoEm,
         contadorId: clientes.contadorId,
         contadorNome: contadores.nome,
       })
@@ -545,9 +604,9 @@ export class ClientesService {
       address: this.mapAddress(client),
       primary_activity: client.cnaePrincipalCodigo
         ? {
-            code: client.cnaePrincipalCodigo,
-            description: client.cnaePrincipalDescricao ?? '',
-          }
+          code: client.cnaePrincipalCodigo,
+          description: client.cnaePrincipalDescricao ?? '',
+        }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
       regime_tributario: client.regimeTributario as RegimeTributario | null,
@@ -563,6 +622,8 @@ export class ClientesService {
       logo_url: client.logoKey
         ? await this.storage.getSignedUrl(client.logoKey)
         : null,
+      suspenso: client.suspenso,
+      suspenso_em: client.suspensoEm?.toISOString() ?? null,
       contador_id: client.contadorId,
       contador_nome: client.contadorNome,
     };
@@ -590,6 +651,7 @@ export class ClientesService {
         emails: clientes.emails,
         regimeTributario: clientes.regimeTributario,
         apuraIcms: clientes.apuraIcms,
+        suspenso: clientes.suspenso,
       })
       .from(clientes)
       .where(where)
@@ -603,9 +665,9 @@ export class ClientesService {
     const fullRows = (
       fullCnpjs.length
         ? await this.database.db
-            .select({ cnpj: clientes.cnpj })
-            .from(clientes)
-            .where(inArray(clientes.cnpj, fullCnpjs))
+          .select({ cnpj: clientes.cnpj })
+          .from(clientes)
+          .where(inArray(clientes.cnpj, fullCnpjs))
         : []
     ) as Array<{ cnpj: string }>;
     const rootRows = await Promise.all(
