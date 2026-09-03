@@ -18,6 +18,7 @@ import { DacteService } from './services/dacte.service';
 import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.service';
 import { FiscalItensService } from './services/fiscal-itens.service';
 import { CfopService } from './services/cfop.service';
+import { FiscalRuleEngineService } from './services/fiscal-rule-engine.service';
 import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.service';
 import { FiscalCteService } from './services/fiscal-cte.service';
 import {
@@ -50,6 +51,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     ImportacaoXmlFiscalService,
     FiscalItensService,
     CfopService,
+    FiscalRuleEngineService,
     FiscalCteService,
     EscrituracaoFiscalService,
     EfdIcmsIpiService,
@@ -62,6 +64,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     DistribuicaoDfeService,
     FiscalCronService,
     CfopService,
+    FiscalRuleEngineService,
   ],
 })
 export class FiscalModule {}

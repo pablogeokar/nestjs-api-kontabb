@@ -862,6 +862,34 @@ function calculateDifalFcpComponent(base: bigint, ajustes: AjusteRow[]) {
   };
 }
 
+// CSTs de IPI conforme Tabela 4.3.2 do RIPI (Decreto 7.212/2010).
+// Entrada: 00-49. Saída: 50-99.
+const IPI_CST_ENTRADA_CREDITO = new Set([
+  '00', // Entrada com recuperação de crédito
+  '01', // Entrada tributada com alíquota zero (mantém crédito quando destacado)
+]);
+const IPI_CST_ENTRADA_VALIDO = new Set([
+  '00',
+  '01',
+  '02',
+  '03',
+  '04',
+  '05',
+  '49',
+]);
+const IPI_CST_SAIDA_DEBITO = new Set([
+  '50', // Saída tributada
+]);
+const IPI_CST_SAIDA_VALIDO = new Set([
+  '50',
+  '51',
+  '52',
+  '53',
+  '54',
+  '55',
+  '99',
+]);
+
 function buildIpi(
   input: SpedEfdBuilderInput,
   records: SpedRecord[],
@@ -896,14 +924,25 @@ function buildIpi(
       group.ipi += ipi;
       groups.set(key, group);
       if (ipi <= 0n) continue;
+      const cst = (row.cstIpi ?? '').padStart(2, '0');
       if (documento.row.tipoOperacaoEscriturada === 'SAIDA') {
-        if (row.cstIpi === '50') debitos += ipi;
-        else
+        // Saída: CSTs 50-99 (RIPI). Débito para os tributados (50); os demais
+        // CSTs de saída válidos (51 alíq. zero, 52 isento, 53 não-tributado,
+        // 54 imune, 55 suspensão, 99 outras) não debitam e não são erro.
+        if (IPI_CST_SAIDA_DEBITO.has(cst)) {
+          debitos += ipi;
+        } else if (!IPI_CST_SAIDA_VALIDO.has(cst)) {
           reportAmbiguousIpi(documento, item, 'DEBITO', input.inconsistencias);
-      } else if (row.cstIpi === '00') {
-        creditos += ipi;
+        }
       } else {
-        reportAmbiguousIpi(documento, item, 'CREDITO', input.inconsistencias);
+        // Entrada: CSTs 00-49 (RIPI). Crédito para as entradas que recuperam
+        // crédito (00 entrada c/ recuperação, 01 entrada tributada); os demais
+        // CSTs de entrada válidos (02-49) não creditam e não são erro.
+        if (IPI_CST_ENTRADA_CREDITO.has(cst)) {
+          creditos += ipi;
+        } else if (!IPI_CST_ENTRADA_VALIDO.has(cst)) {
+          reportAmbiguousIpi(documento, item, 'CREDITO', input.inconsistencias);
+        }
       }
     }
   }
@@ -1121,6 +1160,13 @@ function totalIcmsDocumentos(
 
           const creditoIcms = toScaledInteger(row.valorIcms);
           const cst = row.cstIcms?.slice(-2) ?? null;
+          // Vedação legal: uso/consumo (LC 87/96 art. 33, I) e mercadoria
+          // recebida como substituído (Convênio ICMS 142/18) NÃO geram
+          // crédito de ICMS na entrada, ainda que o CST permita. O CFOP
+          // escriturado é a fonte de verdade da destinação.
+          if (creditoIcms > 0n && cfopVedaCreditoIcms(row.cfop)) {
+            return itemSum;
+          }
           if (
             creditoIcms > 0n &&
             ['00', '10', '20', '70'].includes(cst ?? '')
@@ -1134,6 +1180,37 @@ function totalIcmsDocumentos(
         }, 0n),
       0n,
     );
+}
+
+/**
+ * Indica se o CFOP de entrada veda a apropriação de crédito de ICMS.
+ * Classificação pela terminação (3 últimos dígitos), independente da
+ * abrangência (1xxx/2xxx/3xxx):
+ *  - 556/557: material de uso ou consumo (LC 87/96 art. 33, I) — sem crédito.
+ *  - 407: uso/consumo sujeito a ST — sem crédito.
+ *  - 403/405/406: aquisição como substituído tributário — sem crédito próprio.
+ *  - 551/552: ativo imobilizado — crédito NÃO integral (apropriação via CIAP,
+ *    1/48 no Bloco G); portanto não credita integralmente aqui.
+ */
+function cfopVedaCreditoIcms(cfop: string | null | undefined): boolean {
+  if (!cfop) return false;
+  const codigo = cfop.replace(/\D/g, '');
+  if (codigo.length !== 4) return false;
+  // Só se aplica a entradas (1xxx/2xxx/3xxx).
+  if (!['1', '2', '3'].includes(codigo[0])) return false;
+  const finais = codigo.slice(1);
+  const vedados = new Set([
+    '556',
+    '557',
+    '407',
+    '403',
+    '405',
+    '406',
+    '401',
+    '551',
+    '552',
+  ]);
+  return vedados.has(finais);
 }
 
 function reportAmbiguousCredit(

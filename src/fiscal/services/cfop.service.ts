@@ -18,6 +18,10 @@ import {
 import type { PaginationParams } from '../../common/types';
 import { DatabaseService } from '../../database/database.service';
 import { cfopEquivalencias, cfops, clientes } from '../../database/schema';
+import {
+  FiscalRuleEngineService,
+  type DestinacaoMercadoria,
+} from './fiscal-rule-engine.service';
 
 export type TipoOperacaoEscriturada = 'ENTRADA' | 'SAIDA';
 export type TipoEquivalencia = 'SAIDA_PARA_ENTRADA' | 'ENTRADA_PARA_SAIDA';
@@ -26,9 +30,24 @@ export type AbrangenciaCfop = 'ESTADUAL' | 'INTERESTADUAL' | 'EXTERIOR';
 export interface CfopResolvido {
   cfop: string;
   revisaoNecessaria: boolean;
-  origemResolucao: 'MANTIDO' | 'CLIENTE' | 'GLOBAL' | 'ALGORITMO' | 'FALLBACK';
+  origemResolucao:
+    | 'MANTIDO'
+    | 'CLIENTE'
+    | 'GLOBAL'
+    | 'ALGORITMO'
+    | 'FALLBACK'
+    | 'REGRA_CLIENTE'
+    | 'REGRA_GLOBAL'
+    | 'DESTINACAO_NCM';
   motivoRevisao?: 'CFOP_NAO_CADASTRADO' | 'CFOP_DESTINO_NAO_CADASTRADO';
   cfopSugerido?: string;
+  // Efeitos tributários resolvidos pelo motor de regras (opcionais para
+  // compatibilidade com chamadas legadas que só resolvem o código).
+  apropriaCreditoIcms?: boolean;
+  apropriaCreditoIpi?: boolean;
+  exigeCiap?: boolean;
+  exigeDifalEntrada?: boolean;
+  regraAplicadaId?: string;
 }
 
 export interface CfopItemRevisao {
@@ -61,7 +80,10 @@ interface EquivalenciaMutation {
 
 @Injectable()
 export class CfopService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly ruleEngine: FiscalRuleEngineService,
+  ) {}
 
   determinarTipoOperacaoEscriturada(
     clienteCnpjCpf: string,
@@ -145,6 +167,54 @@ export class CfopService {
   }
 
   async resolverCfopEquivalenteDetalhado(params: {
+    clienteId: string;
+    cfopXml: string;
+    tipoOperacaoEscriturada: TipoOperacaoEscriturada;
+    // Contexto opcional para o motor de regras. Quando presente, a resolução
+    // usa regras cadastradas + destinação econômica antes do algoritmo linear.
+    ncm?: string | null;
+    destinacaoMercadoria?: DestinacaoMercadoria | null;
+    emitenteCnpjCpf?: string | null;
+    emitenteUf?: string | null;
+    cstIcmsXml?: string | null;
+    csosnXml?: string | null;
+  }): Promise<CfopResolvido> {
+    // Nova esteira: consulta o motor de regras (regras do cliente/global +
+    // destinação econômica). Só recorre à cascata legada quando o motor não
+    // encontra correspondência segura.
+    const avaliacao = await this.ruleEngine.evaluate({
+      clienteId: params.clienteId,
+      tipoOperacaoEscriturada: params.tipoOperacaoEscriturada,
+      cfopXml: params.cfopXml,
+      ncm: params.ncm,
+      destinacaoMercadoria: params.destinacaoMercadoria,
+      emitenteCnpjCpf: params.emitenteCnpjCpf,
+      emitenteUf: params.emitenteUf,
+      cstIcmsXml: params.cstIcmsXml,
+      csosnXml: params.csosnXml,
+    });
+
+    if (
+      avaliacao.origemResolucao === 'REGRA_CLIENTE' ||
+      avaliacao.origemResolucao === 'REGRA_GLOBAL' ||
+      avaliacao.origemResolucao === 'DESTINACAO_NCM'
+    ) {
+      return {
+        cfop: avaliacao.cfopEscriturado,
+        revisaoNecessaria: false,
+        origemResolucao: avaliacao.origemResolucao,
+        apropriaCreditoIcms: avaliacao.apropriaCreditoIcms,
+        apropriaCreditoIpi: avaliacao.apropriaCreditoIpi,
+        exigeCiap: avaliacao.exigeCiap,
+        exigeDifalEntrada: avaliacao.exigeDifalEntrada,
+        regraAplicadaId: avaliacao.regraAplicadaId,
+      };
+    }
+
+    return this.resolverCascataLegada(params);
+  }
+
+  private async resolverCascataLegada(params: {
     clienteId: string;
     cfopXml: string;
     tipoOperacaoEscriturada: TipoOperacaoEscriturada;

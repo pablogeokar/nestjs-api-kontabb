@@ -562,6 +562,40 @@ describe('buildEfdIcmsIpiRecords', () => {
     );
   });
 
+  it('nao credita ICMS em compra de uso/consumo (1556) mesmo com CST 00', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        inconsistencias,
+        nfe: [
+          makeNfe({}, [
+            makeItem({ cfop: '1556', cstIcms: '00', valorIcms: '18.00' }),
+          ]),
+        ],
+      }),
+    );
+
+    // Vedação legal (LC 87/96 art. 33, I): sem crédito e sem falso positivo.
+    expect(result.apuracao.icmsProprio.creditos).toBe('0.00');
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'ICMS_CREDITO_EXIGE_REVISAO' }),
+    );
+  });
+
+  it('nao credita ICMS em aquisicao como substituido (1403) mesmo com CST 00', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        nfe: [
+          makeNfe({}, [
+            makeItem({ cfop: '1403', cstIcms: '00', valorIcms: '10.00' }),
+          ]),
+        ],
+      }),
+    );
+
+    expect(result.apuracao.icmsProprio.creditos).toBe('0.00');
+  });
+
   it('mantem o E110 integralmente zerado para optante do Simples obrigado a EFD', () => {
     const saida = makeNfe(
       {
@@ -647,7 +681,7 @@ describe('buildEfdIcmsIpiRecords', () => {
     });
   });
 
-  it('nao apropria credito de IPI de entrada com CST ambiguo', () => {
+  it('nao apropria credito de IPI de entrada com CST invalido/ambiguo', () => {
     const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
     const result = buildEfdIcmsIpiRecords(
       makeInput({
@@ -659,7 +693,8 @@ describe('buildEfdIcmsIpiRecords', () => {
         nfe: [
           makeNfe({}, [
             makeItem({
-              cstIpi: '49',
+              // CST 98 não pertence à faixa válida de entrada (00-49): ambíguo.
+              cstIpi: '98',
               valorBcIpi: '100.00',
               aliquotaIpi: '5.00',
               valorIpi: '5.00',
@@ -675,6 +710,50 @@ describe('buildEfdIcmsIpiRecords', () => {
         codigo: 'IPI_CREDITO_EXIGE_REVISAO',
         severidade: 'ERRO',
       }),
+    );
+  });
+
+  it('nao gera falso positivo de IPI para CSTs de entrada e saida validos', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const entrada = makeNfe({ id: 'ent-1', chaveAcesso: '4'.repeat(44) }, [
+      // CST 49 (outras entradas) é válido e não credita: sem erro.
+      makeItem({ cstIpi: '49', valorBcIpi: '100.00', valorIpi: '5.00' }),
+    ]);
+    const saida = makeNfe(
+      {
+        id: 'sai-1',
+        chaveAcesso: '5'.repeat(44),
+        tipoOperacaoEscriturada: 'SAIDA',
+        emitenteCnpjCpf: EMPRESA_CNPJ,
+      },
+      [
+        // CST 51 (alíquota zero) é válido e não debita: sem erro.
+        makeItem({
+          cfop: '5101',
+          cstIpi: '51',
+          valorBcIpi: '100.00',
+          valorIpi: '3.00',
+        }),
+      ],
+    );
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: {
+          indAtiv: '0',
+          classificacaoEstabelecimentoIndustrial: '2099',
+        },
+        inconsistencias,
+        nfe: [entrada, saida],
+      }),
+    );
+
+    expect(result.apuracao.ipi?.creditos).toBe('0.00');
+    expect(result.apuracao.ipi?.debitos).toBe('0.00');
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'IPI_CREDITO_EXIGE_REVISAO' }),
+    );
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'IPI_DEBITO_EXIGE_REVISAO' }),
     );
   });
 

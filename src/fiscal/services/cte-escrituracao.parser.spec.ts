@@ -20,6 +20,7 @@ describe('Parser fiscal de CT-e', () => {
 
   it('resolve toma4 como terceiro e extrai prestação, ICMS e municípios', () => {
     expect(parseCteEscrituracaoXml(buildCte({ toma4: true }))).toEqual({
+      emitenteCnpjCpf: '12345678000195',
       tomadorCnpjCpf: '55555555000191',
       tomadorPapel: 'TERCEIRO',
       tpCte: '0',

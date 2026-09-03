@@ -12,6 +12,7 @@ describe('FiscalCteService', () => {
     clienteCnpjCpf: '12.345.678/0001-95',
     regimeTributario: 'LUCRO_REAL' as const,
     apuraIcms: true,
+    emitenteCnpjCpf: '98765432000110',
     tomadorCnpjCpf: '12345678000195',
     situacao: 'AUTORIZADA' as const,
     tpCte: '0',
@@ -25,20 +26,43 @@ describe('FiscalCteService', () => {
       escrituravel: true,
       motivoNaoEscrituravel: null,
       tipoOperacao: 'ENTRADA',
+      papelCliente: 'TOMADOR',
       creditaIcms: true,
+      debitaIcms: false,
       revisaoNecessaria: false,
     });
   });
 
-  it('mantém armazenado, mas fora da escrituração, quando o cliente não é o tomador', () => {
+  it('escritura como saída (prestação) quando o cliente é o emitente/prestador', () => {
     expect(
       decidirEscrituracaoCte({
         ...baseDecision,
+        // Transportadora: o cliente é o próprio emitente do CT-e.
+        emitenteCnpjCpf: '12345678000195',
+        tomadorCnpjCpf: '98765432000110',
+      }),
+    ).toEqual({
+      escrituravel: true,
+      motivoNaoEscrituravel: null,
+      tipoOperacao: 'SAIDA',
+      papelCliente: 'PRESTADOR',
+      creditaIcms: false,
+      debitaIcms: true,
+      revisaoNecessaria: false,
+    });
+  });
+
+  it('mantém armazenado, mas fora da escrituração, quando o cliente não é tomador nem prestador', () => {
+    expect(
+      decidirEscrituracaoCte({
+        ...baseDecision,
+        emitenteCnpjCpf: '11111111000111',
         tomadorCnpjCpf: '98765432000110',
       }),
     ).toMatchObject({
       escrituravel: false,
-      motivoNaoEscrituravel: 'CLIENTE_NAO_E_TOMADOR',
+      motivoNaoEscrituravel: 'CLIENTE_NAO_E_TOMADOR_NEM_PRESTADOR',
+      papelCliente: 'NENHUM',
       creditaIcms: false,
     });
   });
@@ -212,6 +236,7 @@ function createService(
 
 function cteData(tpCte: '0' | '1' | '2' | '3') {
   return {
+    emitenteCnpjCpf: '98765432000110',
     tomadorCnpjCpf: '12345678000195',
     tomadorPapel: 'REMETENTE' as const,
     tpCte,
