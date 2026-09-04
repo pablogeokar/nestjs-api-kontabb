@@ -1,4 +1,4 @@
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
@@ -13,7 +13,6 @@ import {
   Matches,
   Min,
   ValidateIf,
-  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -217,11 +216,6 @@ export class AtualizarSpedConfiguracaoDto {
   @IsOptional()
   @IsObject()
   indicadores1010?: Record<string, 'S' | 'N'>;
-
-  @ApiProperty({ type: SpedContabilistaDto })
-  @ValidateNested()
-  @Type(() => SpedContabilistaDto)
-  contabilista: SpedContabilistaDto;
 }
 
 export class AdminAtualizarSpedConfiguracaoDto extends AtualizarSpedConfiguracaoDto {

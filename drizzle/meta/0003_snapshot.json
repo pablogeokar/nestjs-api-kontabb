@@ -1,6 +1,6 @@
 {
-  "id": "c3c1074f-f25d-452d-aa4a-2203fd8db8d2",
-  "prevId": "ac288aae-e088-4551-bcce-b9728c7b012c",
+  "id": "d71838b8-19f1-4687-b2f0-fd2234827c13",
+  "prevId": "9c3a0be2-2c85-451f-8548-9a8d744ddd65",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -611,6 +611,20 @@
           "primaryKey": false,
           "notNull": false
         },
+        "categoria_fiscal": {
+          "name": "categoria_fiscal",
+          "type": "varchar(30)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'OUTRAS'"
+        },
+        "gera_credito_icms_padrao": {
+          "name": "gera_credito_icms_padrao",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "descricao_detalhada": {
           "name": "descricao_detalhada",
           "type": "text",
@@ -669,6 +683,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_cfops_categoria": {
+          "name": "idx_cfops_categoria",
+          "columns": [
+            {
+              "expression": "categoria_fiscal",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -687,6 +716,244 @@
         "chk_cfops_abrangencia": {
           "name": "chk_cfops_abrangencia",
           "value": "\"cfops\".\"abrangencia\" IN ('ESTADUAL', 'INTERESTADUAL', 'EXTERIOR')"
+        },
+        "chk_cfops_categoria": {
+          "name": "chk_cfops_categoria",
+          "value": "\"cfops\".\"categoria_fiscal\" IN ('COMPRA_REVENDA', 'COMPRA_INSUMO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO', 'DEVOLUCAO', 'TRANSFERENCIA', 'REMESSA_RETORNO', 'PRESTACAO_SERVICO', 'OUTRAS')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.ciap_ativo_permanente": {
+      "name": "ciap_ativo_permanente",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "documento_fiscal_id": {
+          "name": "documento_fiscal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "documento_fiscal_item_id": {
+          "name": "documento_fiscal_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_bem": {
+          "name": "codigo_bem",
+          "type": "varchar(60)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "identificacao_bem": {
+          "name": "identificacao_bem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_entrada": {
+          "name": "data_entrada",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_icms_total": {
+          "name": "valor_icms_total",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_icms_frete": {
+          "name": "valor_icms_frete",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "valor_icms_difal": {
+          "name": "valor_icms_difal",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "quantidade_parcelas": {
+          "name": "quantidade_parcelas",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 48
+        },
+        "parcelas_apropriadas": {
+          "name": "parcelas_apropriadas",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "saldo_credor_restante": {
+          "name": "saldo_credor_restante",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ATIVO'"
+        },
+        "data_baixa": {
+          "name": "data_baixa",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_baixa": {
+          "name": "motivo_baixa",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_ciap_cliente": {
+          "name": "idx_ciap_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_ciap_status": {
+          "name": "idx_ciap_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_ciap_cliente_codigo_bem": {
+          "name": "uidx_ciap_cliente_codigo_bem",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "codigo_bem",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ciap_ativo_permanente_cliente_id_clientes_id_fk": {
+          "name": "ciap_ativo_permanente_cliente_id_clientes_id_fk",
+          "tableFrom": "ciap_ativo_permanente",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ciap_ativo_permanente_documento_fiscal_id_documentos_fiscais_id_fk": {
+          "name": "ciap_ativo_permanente_documento_fiscal_id_documentos_fiscais_id_fk",
+          "tableFrom": "ciap_ativo_permanente",
+          "tableTo": "documentos_fiscais",
+          "columnsFrom": [
+            "documento_fiscal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "ciap_ativo_permanente_documento_fiscal_item_id_documentos_fiscais_itens_id_fk": {
+          "name": "ciap_ativo_permanente_documento_fiscal_item_id_documentos_fiscais_itens_id_fk",
+          "tableFrom": "ciap_ativo_permanente",
+          "tableTo": "documentos_fiscais_itens",
+          "columnsFrom": [
+            "documento_fiscal_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_ciap_status": {
+          "name": "chk_ciap_status",
+          "value": "\"ciap_ativo_permanente\".\"status\" IN ('ATIVO', 'BAIXADO', 'CONCLUIDO')"
+        },
+        "chk_ciap_parcelas": {
+          "name": "chk_ciap_parcelas",
+          "value": "\"ciap_ativo_permanente\".\"quantidade_parcelas\" > 0 AND \"ciap_ativo_permanente\".\"parcelas_apropriadas\" >= 0 AND \"ciap_ativo_permanente\".\"parcelas_apropriadas\" <= \"ciap_ativo_permanente\".\"quantidade_parcelas\""
+        },
+        "chk_ciap_motivo_baixa": {
+          "name": "chk_ciap_motivo_baixa",
+          "value": "\"ciap_ativo_permanente\".\"motivo_baixa\" IS NULL OR \"ciap_ativo_permanente\".\"motivo_baixa\" IN ('01', '02', '03')"
         }
       },
       "isRLSEnabled": false
@@ -857,6 +1124,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "contador_id": {
+          "name": "contador_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "criado_em": {
           "name": "criado_em",
           "type": "timestamp",
@@ -896,6 +1169,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_clientes_contador_id": {
+          "name": "idx_clientes_contador_id",
+          "columns": [
+            {
+              "expression": "contador_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -905,6 +1193,19 @@
           "tableTo": "user",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "clientes_contador_id_contadores_id_fk": {
+          "name": "clientes_contador_id_contadores_id_fk",
+          "tableFrom": "clientes",
+          "tableTo": "contadores",
+          "columnsFrom": [
+            "contador_id"
           ],
           "columnsTo": [
             "id"
@@ -975,6 +1276,219 @@
         "chk_clientes_documento_por_tipo": {
           "name": "chk_clientes_documento_por_tipo",
           "value": "(\"clientes\".\"tipo_pessoa\" = 'PJ' AND \"clientes\".\"cnpj\" ~ '^[0-9A-Z]{12}[0-9]{2}$' AND \"clientes\".\"cpf\" IS NULL) OR (\"clientes\".\"tipo_pessoa\" = 'PF' AND \"clientes\".\"cnpj\" ~ '^[0-9]{11}$' AND \"clientes\".\"cpf\" = \"clientes\".\"cnpj\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.contadores": {
+      "name": "contadores",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "nome": {
+          "name": "nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cpf": {
+          "name": "cpf",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "crc": {
+          "name": "crc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "varchar(14)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cep": {
+          "name": "cep",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logradouro": {
+          "name": "logradouro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero": {
+          "name": "numero",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "complemento": {
+          "name": "complemento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bairro": {
+          "name": "bairro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telefone": {
+          "name": "telefone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fax": {
+          "name": "fax",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_contadores_cpf_crc": {
+          "name": "uidx_contadores_cpf_crc",
+          "columns": [
+            {
+              "expression": "cpf",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "crc",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"contadores\".\"cpf\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_contadores_cnpj_crc": {
+          "name": "uidx_contadores_cnpj_crc",
+          "columns": [
+            {
+              "expression": "cnpj",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "crc",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"contadores\".\"cnpj\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_contadores_nome": {
+          "name": "idx_contadores_nome",
+          "columns": [
+            {
+              "expression": "nome",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "contadores_atualizado_por_user_id_fk": {
+          "name": "contadores_atualizado_por_user_id_fk",
+          "tableFrom": "contadores",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_contadores_documento": {
+          "name": "chk_contadores_documento",
+          "value": "(\"contadores\".\"cpf\" IS NOT NULL AND \"contadores\".\"cpf\" ~ '^[0-9]{11}$') OR (\"contadores\".\"cnpj\" IS NOT NULL AND \"contadores\".\"cnpj\" ~ '^[0-9A-Z]{12}[0-9]{2}$')"
+        },
+        "chk_contadores_cep": {
+          "name": "chk_contadores_cep",
+          "value": "\"contadores\".\"cep\" IS NULL OR \"contadores\".\"cep\" ~ '^[0-9]{8}$'"
+        },
+        "chk_contadores_codigo_municipio": {
+          "name": "chk_contadores_codigo_municipio",
+          "value": "\"contadores\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        },
+        "chk_contadores_nome": {
+          "name": "chk_contadores_nome",
+          "value": "char_length(btrim(\"contadores\".\"nome\")) BETWEEN 2 AND 100"
+        },
+        "chk_contadores_crc": {
+          "name": "chk_contadores_crc",
+          "value": "char_length(btrim(\"contadores\".\"crc\")) BETWEEN 2 AND 30"
         }
       },
       "isRLSEnabled": false
@@ -1947,7 +2461,7 @@
         },
         "chk_cte_escrituracao_operacao": {
           "name": "chk_cte_escrituracao_operacao",
-          "value": "\"documentos_fiscais_cte_escrituracao\".\"tipo_operacao_escriturada\" = 'ENTRADA'"
+          "value": "\"documentos_fiscais_cte_escrituracao\".\"tipo_operacao_escriturada\" IN ('ENTRADA', 'SAIDA')"
         },
         "chk_cte_escrituracao_tp_cte": {
           "name": "chk_cte_escrituracao_tp_cte",
@@ -3142,6 +3656,201 @@
       },
       "isRLSEnabled": false
     },
+    "public.fiscal_apuracoes_guias": {
+      "name": "fiscal_apuracoes_guias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tributo": {
+          "name": "tributo",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uf_favorecida": {
+          "name": "uf_favorecida",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_guia": {
+          "name": "tipo_guia",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_receita": {
+          "name": "codigo_receita",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_vencimento": {
+          "name": "data_vencimento",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_principal": {
+          "name": "valor_principal",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_multa": {
+          "name": "valor_multa",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "valor_juros": {
+          "name": "valor_juros",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0'"
+        },
+        "valor_total": {
+          "name": "valor_total",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_barras": {
+          "name": "codigo_barras",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linha_digitavel": {
+          "name": "linha_digitavel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_pagamento": {
+          "name": "status_pagamento",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDENTE'"
+        },
+        "arquivo_guia_key": {
+          "name": "arquivo_guia_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_fiscal_guias_cliente_competencia": {
+          "name": "idx_fiscal_guias_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fiscal_guias_status": {
+          "name": "idx_fiscal_guias_status",
+          "columns": [
+            {
+              "expression": "status_pagamento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fiscal_apuracoes_guias_cliente_id_clientes_id_fk": {
+          "name": "fiscal_apuracoes_guias_cliente_id_clientes_id_fk",
+          "tableFrom": "fiscal_apuracoes_guias",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fiscal_guias_tributo": {
+          "name": "chk_fiscal_guias_tributo",
+          "value": "\"fiscal_apuracoes_guias\".\"tributo\" IN ('ICMS_PROPRIO', 'ICMS_ST', 'DIFAL_ENTRADA', 'DIFAL_SAIDA', 'FCP', 'IPI', 'PIS', 'COFINS', 'DAS_SIMPLES')"
+        },
+        "chk_fiscal_guias_tipo": {
+          "name": "chk_fiscal_guias_tipo",
+          "value": "\"fiscal_apuracoes_guias\".\"tipo_guia\" IN ('DAE', 'GNRE', 'DARF', 'DAS')"
+        },
+        "chk_fiscal_guias_status": {
+          "name": "chk_fiscal_guias_status",
+          "value": "\"fiscal_apuracoes_guias\".\"status_pagamento\" IN ('PENDENTE', 'PAGO', 'VENCIDO')"
+        },
+        "chk_fiscal_guias_uf": {
+          "name": "chk_fiscal_guias_uf",
+          "value": "\"fiscal_apuracoes_guias\".\"uf_favorecida\" ~ '^[A-Z]{2}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.folhas_pagamento": {
       "name": "folhas_pagamento",
       "schema": "",
@@ -4127,6 +4836,289 @@
       },
       "isRLSEnabled": false
     },
+    "public.regras_fiscais": {
+      "name": "regras_fiscais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prioridade": {
+          "name": "prioridade",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 100
+        },
+        "nome_regra": {
+          "name": "nome_regra",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_operacao_origem": {
+          "name": "tipo_operacao_origem",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cfop_origem": {
+          "name": "cfop_origem",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ncm": {
+          "name": "ncm",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cst_icms_origem": {
+          "name": "cst_icms_origem",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "csosn_origem": {
+          "name": "csosn_origem",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fornecedor_cnpj_cpf": {
+          "name": "fornecedor_cnpj_cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uf_origem": {
+          "name": "uf_origem",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destinacao_mercadoria": {
+          "name": "destinacao_mercadoria",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cfop_destino": {
+          "name": "cfop_destino",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cst_icms_destino": {
+          "name": "cst_icms_destino",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "csosn_destino": {
+          "name": "csosn_destino",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "apropria_credito_icms": {
+          "name": "apropria_credito_icms",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "percentual_reducao_bc_icms": {
+          "name": "percentual_reducao_bc_icms",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "apropria_credito_ipi": {
+          "name": "apropria_credito_ipi",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "apropria_credito_pis_cofins": {
+          "name": "apropria_credito_pis_cofins",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "cst_pis_destino": {
+          "name": "cst_pis_destino",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cst_cofins_destino": {
+          "name": "cst_cofins_destino",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "exige_ciap": {
+          "name": "exige_ciap",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "exige_difal_entrada": {
+          "name": "exige_difal_entrada",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "observacao_fiscal": {
+          "name": "observacao_fiscal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_regras_fiscais_cliente": {
+          "name": "idx_regras_fiscais_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_regras_fiscais_match": {
+          "name": "idx_regras_fiscais_match",
+          "columns": [
+            {
+              "expression": "tipo_operacao_origem",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "cfop_origem",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "prioridade",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_regras_fiscais_ncm": {
+          "name": "idx_regras_fiscais_ncm",
+          "columns": [
+            {
+              "expression": "ncm",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "regras_fiscais_cliente_id_clientes_id_fk": {
+          "name": "regras_fiscais_cliente_id_clientes_id_fk",
+          "tableFrom": "regras_fiscais",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "regras_fiscais_cfop_destino_cfops_codigo_fk": {
+          "name": "regras_fiscais_cfop_destino_cfops_codigo_fk",
+          "tableFrom": "regras_fiscais",
+          "tableTo": "cfops",
+          "columnsFrom": [
+            "cfop_destino"
+          ],
+          "columnsTo": [
+            "codigo"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_regras_fiscais_tipo_origem": {
+          "name": "chk_regras_fiscais_tipo_origem",
+          "value": "\"regras_fiscais\".\"tipo_operacao_origem\" IS NULL OR \"regras_fiscais\".\"tipo_operacao_origem\" IN ('ENTRADA', 'SAIDA')"
+        },
+        "chk_regras_fiscais_destinacao": {
+          "name": "chk_regras_fiscais_destinacao",
+          "value": "\"regras_fiscais\".\"destinacao_mercadoria\" IS NULL OR \"regras_fiscais\".\"destinacao_mercadoria\" IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')"
+        },
+        "chk_regras_fiscais_prioridade": {
+          "name": "chk_regras_fiscais_prioridade",
+          "value": "\"regras_fiscais\".\"prioridade\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.session": {
       "name": "session",
       "schema": "",
@@ -4919,8 +5911,8 @@
         }
       },
       "indexes": {
-        "uidx_sped_contabilista_cliente": {
-          "name": "uidx_sped_contabilista_cliente",
+        "idx_sped_contabilista_cliente": {
+          "name": "idx_sped_contabilista_cliente",
           "columns": [
             {
               "expression": "cliente_id",
@@ -4929,7 +5921,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": true,
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

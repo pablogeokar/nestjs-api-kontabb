@@ -71,7 +71,7 @@ export class ClientesController {
     private readonly cnpjLookupService: CnpjLookupService,
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   @Get()
   @ApiOperation({
@@ -234,6 +234,7 @@ export class ClientesController {
       ),
       optanteSimplesNacional: dto.optante_simples_nacional,
       simplesNacionalFonte: dto.simples_nacional_fonte,
+      contadorId: dto.contador_id,
     });
 
     if (!result.ok) {
@@ -352,9 +353,66 @@ export class ClientesController {
       tipoContribuinteIcms: dto.tipo_contribuinte_icms,
       optanteSimplesNacional: dto.optante_simples_nacional,
       simplesNacionalFonte: dto.simples_nacional_fonte,
+      contadorId: dto.contador_id,
     });
     if (!updated) throw new NotFoundException('Cliente não encontrado.');
     return { success: true };
+  }
+
+  @Post(':id/suspender')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Suspender cliente',
+    description:
+      'Suspende o atendimento do cliente. Enquanto suspenso, o cliente é bloqueado na Área do Cliente e não recebe notificações por e-mail.',
+  })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'ID do cliente',
+  })
+  @ApiResponse({ status: 200, description: 'Cliente suspenso com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  async suspend(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const ok = await this.clientesService.setClientSuspension({
+      clientId: id,
+      actorUserId: currentUser.id,
+      suspenso: true,
+    });
+    if (!ok) throw new NotFoundException('Cliente não encontrado.');
+    return { success: true, suspenso: true };
+  }
+
+  @Post(':id/reativar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reativar cliente',
+    description:
+      'Reativa o atendimento de um cliente suspenso, restaurando o acesso à Área do Cliente e as notificações por e-mail.',
+  })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'ID do cliente',
+  })
+  @ApiResponse({ status: 200, description: 'Cliente reativado com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  async reactivate(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const ok = await this.clientesService.setClientSuspension({
+      clientId: id,
+      actorUserId: currentUser.id,
+      suspenso: false,
+    });
+    if (!ok) throw new NotFoundException('Cliente não encontrado.');
+    return { success: true, suspenso: false };
   }
 
   @Delete(':id')

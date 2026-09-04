@@ -1,0 +1,2 @@
+ALTER TABLE "documentos_fiscais_itens" ADD COLUMN "destinacao_mercadoria" varchar(20);--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_itens" ADD CONSTRAINT "chk_item_destinacao" CHECK ("documentos_fiscais_itens"."destinacao_mercadoria" IS NULL OR "documentos_fiscais_itens"."destinacao_mercadoria" IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO'));

@@ -76,6 +76,19 @@ export interface SpedPreview {
     cte: number;
   };
   apuracao: SpedApuracaoPreview;
+  auditabilidade: {
+    contador: null | {
+      id: string;
+      nome: string;
+      origem: 'VINCULO_EXPLICITO' | 'CONTADOR_UNICO';
+    };
+    apuracao: Array<{
+      codigo: string;
+      descricao: string;
+      origem: 'DOCUMENTOS_ESCRITURADOS' | 'INFORMADO' | 'PADRAO_ZERO';
+      fundamento: string;
+    }>;
+  };
   inconsistencias: SpedInconsistencia[];
 }
 

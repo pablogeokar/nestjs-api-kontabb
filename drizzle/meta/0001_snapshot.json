@@ -1,6 +1,6 @@
 {
-  "id": "9df75754-da58-4859-ae4c-0d3d41f4b35e",
-  "prevId": "3b6c5f4b-0ad3-410d-90a9-24a0cd20d893",
+  "id": "1e9b4cad-cdc3-4db3-b736-6b0fd19ef40a",
+  "prevId": "38ce7f2a-d610-475b-8969-1920a0f5e9e4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -403,7 +403,7 @@
         },
         "chk_certificados_cnpj": {
           "name": "chk_certificados_cnpj",
-          "value": "\"certificados_digitais\".\"cnpj\" ~ '^[0-9]{14}$'"
+          "value": "\"certificados_digitais\".\"cnpj\" ~ '^[0-9A-Z]{12}[0-9]{2}$'"
         },
         "chk_certificados_validade": {
           "name": "chk_certificados_validade",
@@ -857,6 +857,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "contador_id": {
+          "name": "contador_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "criado_em": {
           "name": "criado_em",
           "type": "timestamp",
@@ -896,6 +902,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_clientes_contador_id": {
+          "name": "idx_clientes_contador_id",
+          "columns": [
+            {
+              "expression": "contador_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -905,6 +926,19 @@
           "tableTo": "user",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "clientes_contador_id_contadores_id_fk": {
+          "name": "clientes_contador_id_contadores_id_fk",
+          "tableFrom": "clientes",
+          "tableTo": "contadores",
+          "columnsFrom": [
+            "contador_id"
           ],
           "columnsTo": [
             "id"
@@ -974,7 +1008,220 @@
         },
         "chk_clientes_documento_por_tipo": {
           "name": "chk_clientes_documento_por_tipo",
-          "value": "(\"clientes\".\"tipo_pessoa\" = 'PJ' AND \"clientes\".\"cnpj\" ~ '^[0-9]{14}$' AND \"clientes\".\"cpf\" IS NULL) OR (\"clientes\".\"tipo_pessoa\" = 'PF' AND \"clientes\".\"cnpj\" ~ '^[0-9]{11}$' AND \"clientes\".\"cpf\" = \"clientes\".\"cnpj\")"
+          "value": "(\"clientes\".\"tipo_pessoa\" = 'PJ' AND \"clientes\".\"cnpj\" ~ '^[0-9A-Z]{12}[0-9]{2}$' AND \"clientes\".\"cpf\" IS NULL) OR (\"clientes\".\"tipo_pessoa\" = 'PF' AND \"clientes\".\"cnpj\" ~ '^[0-9]{11}$' AND \"clientes\".\"cpf\" = \"clientes\".\"cnpj\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.contadores": {
+      "name": "contadores",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "nome": {
+          "name": "nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cpf": {
+          "name": "cpf",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "crc": {
+          "name": "crc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "varchar(14)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cep": {
+          "name": "cep",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logradouro": {
+          "name": "logradouro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero": {
+          "name": "numero",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "complemento": {
+          "name": "complemento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bairro": {
+          "name": "bairro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telefone": {
+          "name": "telefone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fax": {
+          "name": "fax",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_contadores_cpf_crc": {
+          "name": "uidx_contadores_cpf_crc",
+          "columns": [
+            {
+              "expression": "cpf",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "crc",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"contadores\".\"cpf\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_contadores_cnpj_crc": {
+          "name": "uidx_contadores_cnpj_crc",
+          "columns": [
+            {
+              "expression": "cnpj",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "crc",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"contadores\".\"cnpj\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_contadores_nome": {
+          "name": "idx_contadores_nome",
+          "columns": [
+            {
+              "expression": "nome",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "contadores_atualizado_por_user_id_fk": {
+          "name": "contadores_atualizado_por_user_id_fk",
+          "tableFrom": "contadores",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_contadores_documento": {
+          "name": "chk_contadores_documento",
+          "value": "(\"contadores\".\"cpf\" IS NOT NULL AND \"contadores\".\"cpf\" ~ '^[0-9]{11}$') OR (\"contadores\".\"cnpj\" IS NOT NULL AND \"contadores\".\"cnpj\" ~ '^[0-9A-Z]{12}[0-9]{2}$')"
+        },
+        "chk_contadores_cep": {
+          "name": "chk_contadores_cep",
+          "value": "\"contadores\".\"cep\" IS NULL OR \"contadores\".\"cep\" ~ '^[0-9]{8}$'"
+        },
+        "chk_contadores_codigo_municipio": {
+          "name": "chk_contadores_codigo_municipio",
+          "value": "\"contadores\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        },
+        "chk_contadores_nome": {
+          "name": "chk_contadores_nome",
+          "value": "char_length(btrim(\"contadores\".\"nome\")) BETWEEN 2 AND 100"
+        },
+        "chk_contadores_crc": {
+          "name": "chk_contadores_crc",
+          "value": "char_length(btrim(\"contadores\".\"crc\")) BETWEEN 2 AND 30"
         }
       },
       "isRLSEnabled": false
@@ -1232,11 +1479,97 @@
           "primaryKey": false,
           "notNull": true
         },
+        "data_emissao_fiscal": {
+          "name": "data_emissao_fiscal",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_entrada_saida": {
+          "name": "data_entrada_saida",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_entrada_saida_fiscal": {
+          "name": "data_entrada_saida_fiscal",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "valor_total": {
           "name": "valor_total",
           "type": "numeric(14, 2)",
           "primaryKey": false,
           "notNull": true
+        },
+        "valor_total_declarado_xml": {
+          "name": "valor_total_declarado_xml",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "totais_declarados_xml": {
+          "name": "totais_declarados_xml",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantidade_itens_declarada_xml": {
+          "name": "quantidade_itens_declarada_xml",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "integridade_conferida": {
+          "name": "integridade_conferida",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "integridade_status": {
+          "name": "integridade_status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'NAO_CONFERIDA'"
+        },
+        "integridade_detalhes": {
+          "name": "integridade_detalhes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cod_situacao_sped": {
+          "name": "cod_situacao_sped",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "modalidade_frete": {
+          "name": "modalidade_frete",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "informacoes_complementares": {
+          "name": "informacoes_complementares",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emitente_dados": {
+          "name": "emitente_dados",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destinatario_dados": {
+          "name": "destinatario_dados",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "situacao": {
           "name": "situacao",
@@ -1373,6 +1706,33 @@
           "method": "btree",
           "with": {}
         },
+        "idx_docs_fiscais_cliente_competencia": {
+          "name": "idx_docs_fiscais_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "data_emissao_fiscal",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_docs_fiscais_nsu": {
           "name": "idx_docs_fiscais_nsu",
           "columns": [
@@ -1481,6 +1841,30 @@
         "chk_docs_fiscais_valor": {
           "name": "chk_docs_fiscais_valor",
           "value": "\"documentos_fiscais\".\"valor_total\" >= 0"
+        },
+        "chk_docs_fiscais_valor_declarado": {
+          "name": "chk_docs_fiscais_valor_declarado",
+          "value": "\"documentos_fiscais\".\"valor_total_declarado_xml\" IS NULL OR \"documentos_fiscais\".\"valor_total_declarado_xml\" >= 0"
+        },
+        "chk_docs_fiscais_quantidade_itens_declarada": {
+          "name": "chk_docs_fiscais_quantidade_itens_declarada",
+          "value": "\"documentos_fiscais\".\"quantidade_itens_declarada_xml\" IS NULL OR \"documentos_fiscais\".\"quantidade_itens_declarada_xml\" >= 0"
+        },
+        "chk_docs_fiscais_integridade_status": {
+          "name": "chk_docs_fiscais_integridade_status",
+          "value": "\"documentos_fiscais\".\"integridade_status\" IN ('NAO_CONFERIDA', 'OK', 'DIVERGENTE')"
+        },
+        "chk_docs_fiscais_integridade_coerencia": {
+          "name": "chk_docs_fiscais_integridade_coerencia",
+          "value": "(\"documentos_fiscais\".\"integridade_conferida\" = false AND \"documentos_fiscais\".\"integridade_status\" = 'NAO_CONFERIDA') OR (\"documentos_fiscais\".\"integridade_conferida\" = true AND \"documentos_fiscais\".\"integridade_status\" IN ('OK', 'DIVERGENTE'))"
+        },
+        "chk_docs_fiscais_cod_situacao_sped": {
+          "name": "chk_docs_fiscais_cod_situacao_sped",
+          "value": "\"documentos_fiscais\".\"cod_situacao_sped\" IS NULL OR \"documentos_fiscais\".\"cod_situacao_sped\" ~ '^[0-9]{2}$'"
+        },
+        "chk_docs_fiscais_modalidade_frete": {
+          "name": "chk_docs_fiscais_modalidade_frete",
+          "value": "\"documentos_fiscais\".\"modalidade_frete\" IS NULL OR \"documentos_fiscais\".\"modalidade_frete\" ~ '^[0-9]$'"
         },
         "chk_docs_fiscais_xml_key": {
           "name": "chk_docs_fiscais_xml_key",
@@ -1802,7 +2186,7 @@
         },
         "chk_cte_escrituracao_tomador_documento": {
           "name": "chk_cte_escrituracao_tomador_documento",
-          "value": "\"documentos_fiscais_cte_escrituracao\".\"tomador_cnpj_cpf\" ~ '^[0-9]{11}([0-9]{3})?$'"
+          "value": "\"documentos_fiscais_cte_escrituracao\".\"tomador_cnpj_cpf\" ~ '^[0-9]{11}$|^[0-9A-Z]{12}[0-9]{2}$'"
         },
         "chk_cte_escrituracao_tomador_papel": {
           "name": "chk_cte_escrituracao_tomador_papel",
@@ -1834,7 +2218,7 @@
         },
         "chk_cte_escrituracao_referencia": {
           "name": "chk_cte_escrituracao_referencia",
-          "value": "\"documentos_fiscais_cte_escrituracao\".\"chave_cte_referenciado\" IS NULL OR \"documentos_fiscais_cte_escrituracao\".\"chave_cte_referenciado\" ~ '^[0-9]{44}$'"
+          "value": "\"documentos_fiscais_cte_escrituracao\".\"chave_cte_referenciado\" IS NULL OR \"documentos_fiscais_cte_escrituracao\".\"chave_cte_referenciado\" ~ '^[0-9A-Z]{44}$'"
         },
         "chk_cte_escrituracao_municipio_origem": {
           "name": "chk_cte_escrituracao_municipio_origem",
@@ -2048,6 +2432,18 @@
         },
         "informacoes_adicionais": {
           "name": "informacoes_adicionais",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cod_obs_sped": {
+          "name": "cod_obs_sped",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cod_cta_sped": {
+          "name": "cod_cta_sped",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -4061,6 +4457,2191 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sped_ajustes_apuracao": {
+      "name": "sped_ajustes_apuracao",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registro": {
+          "name": "registro",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_ajuste": {
+          "name": "codigo_ajuste",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor": {
+          "name": "valor",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "indicador": {
+          "name": "indicador",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uf": {
+          "name": "uf",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero_documento": {
+          "name": "numero_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sped_ajuste_cliente_competencia": {
+          "name": "idx_sped_ajuste_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_ajustes_apuracao_cliente_id_clientes_id_fk": {
+          "name": "sped_ajustes_apuracao_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_ajustes_apuracao",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_ajustes_apuracao_atualizado_por_user_id_fk": {
+          "name": "sped_ajustes_apuracao_atualizado_por_user_id_fk",
+          "tableFrom": "sped_ajustes_apuracao",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_ajuste_registro": {
+          "name": "chk_sped_ajuste_registro",
+          "value": "\"sped_ajustes_apuracao\".\"registro\" IN ('E111', 'E220', 'E311', 'E530')"
+        },
+        "chk_sped_ajuste_indicador": {
+          "name": "chk_sped_ajuste_indicador",
+          "value": "\"sped_ajustes_apuracao\".\"indicador\" IN ('DEBITO', 'CREDITO', 'ESTORNO_DEBITO', 'ESTORNO_CREDITO', 'DEDUCAO', 'DEBITO_ESPECIAL')"
+        },
+        "chk_sped_ajuste_valor": {
+          "name": "chk_sped_ajuste_valor",
+          "value": "\"sped_ajustes_apuracao\".\"valor\" >= 0"
+        },
+        "chk_sped_ajuste_uf": {
+          "name": "chk_sped_ajuste_uf",
+          "value": "\"sped_ajustes_apuracao\".\"uf\" IS NULL OR \"sped_ajustes_apuracao\".\"uf\" ~ '^[A-Z]{2}$'"
+        },
+        "chk_sped_ajuste_coerencia": {
+          "name": "chk_sped_ajuste_coerencia",
+          "value": "(\n        (\"sped_ajustes_apuracao\".\"registro\" = 'E111' AND \"sped_ajustes_apuracao\".\"uf\" IS NULL AND \"sped_ajustes_apuracao\".\"codigo_ajuste\" ~ '^[A-Z]{2}0[0-5][A-Z0-9]{4}$')\n        OR (\"sped_ajustes_apuracao\".\"registro\" = 'E220' AND \"sped_ajustes_apuracao\".\"uf\" IS NOT NULL AND \"sped_ajustes_apuracao\".\"codigo_ajuste\" ~ ('^' || \"sped_ajustes_apuracao\".\"uf\" || '1[0-5][A-Z0-9]{4}$'))\n        OR (\"sped_ajustes_apuracao\".\"registro\" = 'E311' AND \"sped_ajustes_apuracao\".\"uf\" IS NOT NULL AND \"sped_ajustes_apuracao\".\"codigo_ajuste\" ~ ('^' || \"sped_ajustes_apuracao\".\"uf\" || '[23][0-5][A-Z0-9]{4}$'))\n        OR (\"sped_ajustes_apuracao\".\"registro\" = 'E530' AND \"sped_ajustes_apuracao\".\"uf\" IS NULL AND \"sped_ajustes_apuracao\".\"codigo_ajuste\" ~ '^[A-Z0-9]{1,3}$' AND \"sped_ajustes_apuracao\".\"indicador\" IN ('DEBITO', 'CREDITO'))\n      )"
+        },
+        "chk_sped_ajuste_natureza_indicador": {
+          "name": "chk_sped_ajuste_natureza_indicador",
+          "value": "\"sped_ajustes_apuracao\".\"registro\" = 'E530' OR CASE substring(\"sped_ajustes_apuracao\".\"codigo_ajuste\" FROM 4 FOR 1)\n        WHEN '0' THEN \"sped_ajustes_apuracao\".\"indicador\" = 'DEBITO'\n        WHEN '1' THEN \"sped_ajustes_apuracao\".\"indicador\" = 'ESTORNO_CREDITO'\n        WHEN '2' THEN \"sped_ajustes_apuracao\".\"indicador\" = 'CREDITO'\n        WHEN '3' THEN \"sped_ajustes_apuracao\".\"indicador\" = 'ESTORNO_DEBITO'\n        WHEN '4' THEN \"sped_ajustes_apuracao\".\"indicador\" = 'DEDUCAO'\n        WHEN '5' THEN \"sped_ajustes_apuracao\".\"indicador\" = 'DEBITO_ESPECIAL'\n        ELSE false\n      END"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_arquivos_gerados": {
+      "name": "sped_arquivos_gerados",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finalidade": {
+          "name": "finalidade",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cod_versao": {
+          "name": "cod_versao",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "perfil": {
+          "name": "perfil",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hash_sha256": {
+          "name": "hash_sha256",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_nome": {
+          "name": "arquivo_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tamanho_bytes": {
+          "name": "tamanho_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contadores": {
+          "name": "contadores",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inconsistencias": {
+          "name": "inconsistencias",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "erro": {
+          "name": "erro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gerado_por": {
+          "name": "gerado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "concluido_em": {
+          "name": "concluido_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_sped_arquivo_cliente_competencia": {
+          "name": "idx_sped_arquivo_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sped_arquivo_status": {
+          "name": "idx_sped_arquivo_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_arquivos_gerados_cliente_id_clientes_id_fk": {
+          "name": "sped_arquivos_gerados_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_arquivos_gerados",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_arquivos_gerados_gerado_por_user_id_fk": {
+          "name": "sped_arquivos_gerados_gerado_por_user_id_fk",
+          "tableFrom": "sped_arquivos_gerados",
+          "tableTo": "user",
+          "columnsFrom": [
+            "gerado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_arquivo_finalidade": {
+          "name": "chk_sped_arquivo_finalidade",
+          "value": "\"sped_arquivos_gerados\".\"finalidade\" IN ('0', '1')"
+        },
+        "chk_sped_arquivo_perfil": {
+          "name": "chk_sped_arquivo_perfil",
+          "value": "\"sped_arquivos_gerados\".\"perfil\" IN ('A', 'B', 'C')"
+        },
+        "chk_sped_arquivo_status": {
+          "name": "chk_sped_arquivo_status",
+          "value": "\"sped_arquivos_gerados\".\"status\" IN ('PROCESSANDO', 'GERADO', 'FALHOU')"
+        },
+        "chk_sped_arquivo_hash": {
+          "name": "chk_sped_arquivo_hash",
+          "value": "\"sped_arquivos_gerados\".\"hash_sha256\" IS NULL OR \"sped_arquivos_gerados\".\"hash_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "chk_sped_arquivo_tamanho": {
+          "name": "chk_sped_arquivo_tamanho",
+          "value": "\"sped_arquivos_gerados\".\"tamanho_bytes\" IS NULL OR \"sped_arquivos_gerados\".\"tamanho_bytes\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_configuracoes": {
+      "name": "sped_configuracoes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "obrigado_efd_icms_ipi": {
+          "name": "obrigado_efd_icms_ipi",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "perfil_efd": {
+          "name": "perfil_efd",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ind_ativ": {
+          "name": "ind_ativ",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "classificacao_estabelecimento_industrial": {
+          "name": "classificacao_estabelecimento_industrial",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nome_fantasia": {
+          "name": "nome_fantasia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricao_municipal": {
+          "name": "inscricao_municipal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suframa": {
+          "name": "suframa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telefone": {
+          "name": "telefone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fax": {
+          "name": "fax",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inventario_obrigatorio": {
+          "name": "inventario_obrigatorio",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "mes_entrega_inventario": {
+          "name": "mes_entrega_inventario",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 2
+        },
+        "bloco_k_com_movimento": {
+          "name": "bloco_k_com_movimento",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "tipo_item_padrao": {
+          "name": "tipo_item_padrao",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'00'"
+        },
+        "indicadores_1010": {
+          "name": "indicadores_1010",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_sped_config_cliente": {
+          "name": "uidx_sped_config_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_configuracoes_cliente_id_clientes_id_fk": {
+          "name": "sped_configuracoes_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_configuracoes",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_configuracoes_atualizado_por_user_id_fk": {
+          "name": "sped_configuracoes_atualizado_por_user_id_fk",
+          "tableFrom": "sped_configuracoes",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_config_perfil": {
+          "name": "chk_sped_config_perfil",
+          "value": "\"sped_configuracoes\".\"perfil_efd\" IS NULL OR \"sped_configuracoes\".\"perfil_efd\" IN ('A', 'B', 'C')"
+        },
+        "chk_sped_config_ind_ativ": {
+          "name": "chk_sped_config_ind_ativ",
+          "value": "\"sped_configuracoes\".\"ind_ativ\" IS NULL OR \"sped_configuracoes\".\"ind_ativ\" IN ('0', '1')"
+        },
+        "chk_sped_config_clas_estab_ind": {
+          "name": "chk_sped_config_clas_estab_ind",
+          "value": "\"sped_configuracoes\".\"classificacao_estabelecimento_industrial\" IS NULL OR \"sped_configuracoes\".\"classificacao_estabelecimento_industrial\" ~ '^[0-9]{2}$'"
+        },
+        "chk_sped_config_codigo_municipio": {
+          "name": "chk_sped_config_codigo_municipio",
+          "value": "\"sped_configuracoes\".\"codigo_municipio_ibge\" IS NULL OR \"sped_configuracoes\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        },
+        "chk_sped_config_tipo_item_padrao": {
+          "name": "chk_sped_config_tipo_item_padrao",
+          "value": "\"sped_configuracoes\".\"tipo_item_padrao\" ~ '^[0-9]{2}$'"
+        },
+        "chk_sped_config_mes_inventario": {
+          "name": "chk_sped_config_mes_inventario",
+          "value": "\"sped_configuracoes\".\"mes_entrega_inventario\" BETWEEN 1 AND 12"
+        },
+        "chk_sped_config_indicadores_1010": {
+          "name": "chk_sped_config_indicadores_1010",
+          "value": "jsonb_typeof(\"sped_configuracoes\".\"indicadores_1010\") = 'object'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_contabilistas": {
+      "name": "sped_contabilistas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nome": {
+          "name": "nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cpf": {
+          "name": "cpf",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "crc": {
+          "name": "crc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "varchar(14)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cep": {
+          "name": "cep",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logradouro": {
+          "name": "logradouro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero": {
+          "name": "numero",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "complemento": {
+          "name": "complemento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bairro": {
+          "name": "bairro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telefone": {
+          "name": "telefone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fax": {
+          "name": "fax",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sped_contabilista_cliente": {
+          "name": "idx_sped_contabilista_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_contabilistas_cliente_id_clientes_id_fk": {
+          "name": "sped_contabilistas_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_contabilistas",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_contabilistas_atualizado_por_user_id_fk": {
+          "name": "sped_contabilistas_atualizado_por_user_id_fk",
+          "tableFrom": "sped_contabilistas",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_contabilista_documento": {
+          "name": "chk_sped_contabilista_documento",
+          "value": "(\"sped_contabilistas\".\"cpf\" IS NOT NULL AND \"sped_contabilistas\".\"cpf\" ~ '^[0-9]{11}$') OR (\"sped_contabilistas\".\"cnpj\" IS NOT NULL AND \"sped_contabilistas\".\"cnpj\" ~ '^[0-9A-Z]{12}[0-9]{2}$')"
+        },
+        "chk_sped_contabilista_cep": {
+          "name": "chk_sped_contabilista_cep",
+          "value": "\"sped_contabilistas\".\"cep\" IS NULL OR \"sped_contabilistas\".\"cep\" ~ '^[0-9]{8}$'"
+        },
+        "chk_sped_contabilista_codigo_municipio": {
+          "name": "chk_sped_contabilista_codigo_municipio",
+          "value": "\"sped_contabilistas\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_inventario_itens": {
+      "name": "sped_inventario_itens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "inventario_id": {
+          "name": "inventario_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sped_item_id": {
+          "name": "sped_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unidade": {
+          "name": "unidade",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantidade": {
+          "name": "quantidade",
+          "type": "numeric(15, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_unitario": {
+          "name": "valor_unitario",
+          "type": "numeric(21, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_item": {
+          "name": "valor_item",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "indicador_propriedade": {
+          "name": "indicador_propriedade",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "participante_id": {
+          "name": "participante_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "texto_complementar": {
+          "name": "texto_complementar",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_conta": {
+          "name": "codigo_conta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valor_item_ir": {
+          "name": "valor_item_ir",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sped_inventario_item_inventario": {
+          "name": "idx_sped_inventario_item_inventario",
+          "columns": [
+            {
+              "expression": "inventario_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_inventario_itens_inventario_id_sped_inventarios_id_fk": {
+          "name": "sped_inventario_itens_inventario_id_sped_inventarios_id_fk",
+          "tableFrom": "sped_inventario_itens",
+          "tableTo": "sped_inventarios",
+          "columnsFrom": [
+            "inventario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_inventario_itens_sped_item_id_sped_itens_id_fk": {
+          "name": "sped_inventario_itens_sped_item_id_sped_itens_id_fk",
+          "tableFrom": "sped_inventario_itens",
+          "tableTo": "sped_itens",
+          "columnsFrom": [
+            "sped_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "sped_inventario_itens_participante_id_sped_participantes_id_fk": {
+          "name": "sped_inventario_itens_participante_id_sped_participantes_id_fk",
+          "tableFrom": "sped_inventario_itens",
+          "tableTo": "sped_participantes",
+          "columnsFrom": [
+            "participante_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_sped_inventario_item_participante": {
+          "name": "uq_sped_inventario_item_participante",
+          "nullsNotDistinct": true,
+          "columns": [
+            "inventario_id",
+            "sped_item_id",
+            "indicador_propriedade",
+            "participante_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_inventario_item_qtd": {
+          "name": "chk_sped_inventario_item_qtd",
+          "value": "\"sped_inventario_itens\".\"quantidade\" >= 0"
+        },
+        "chk_sped_inventario_item_valor_unitario": {
+          "name": "chk_sped_inventario_item_valor_unitario",
+          "value": "\"sped_inventario_itens\".\"valor_unitario\" >= 0"
+        },
+        "chk_sped_inventario_item_valor": {
+          "name": "chk_sped_inventario_item_valor",
+          "value": "\"sped_inventario_itens\".\"valor_item\" >= 0"
+        },
+        "chk_sped_inventario_item_calculo": {
+          "name": "chk_sped_inventario_item_calculo",
+          "value": "\"sped_inventario_itens\".\"valor_item\" = round(\"sped_inventario_itens\".\"quantidade\" * \"sped_inventario_itens\".\"valor_unitario\", 2)"
+        },
+        "chk_sped_inventario_item_unidade": {
+          "name": "chk_sped_inventario_item_unidade",
+          "value": "\"sped_inventario_itens\".\"unidade\" ~ '^[0-9A-Z]{1,6}$'"
+        },
+        "chk_sped_inventario_item_ind_prop": {
+          "name": "chk_sped_inventario_item_ind_prop",
+          "value": "\"sped_inventario_itens\".\"indicador_propriedade\" IN ('0', '1', '2')"
+        },
+        "chk_sped_inventario_item_participante": {
+          "name": "chk_sped_inventario_item_participante",
+          "value": "(\"sped_inventario_itens\".\"indicador_propriedade\" = '0' AND \"sped_inventario_itens\".\"participante_id\" IS NULL) OR (\"sped_inventario_itens\".\"indicador_propriedade\" IN ('1', '2') AND \"sped_inventario_itens\".\"participante_id\" IS NOT NULL)"
+        },
+        "chk_sped_inventario_item_valor_ir": {
+          "name": "chk_sped_inventario_item_valor_ir",
+          "value": "\"sped_inventario_itens\".\"valor_item_ir\" IS NULL OR \"sped_inventario_itens\".\"valor_item_ir\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_inventarios": {
+      "name": "sped_inventarios",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_inventario": {
+          "name": "data_inventario",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "motivo": {
+          "name": "motivo",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_total": {
+          "name": "valor_total",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'RASCUNHO'"
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_sped_inventario_cliente_data_motivo": {
+          "name": "uidx_sped_inventario_cliente_data_motivo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "data_inventario",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "motivo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sped_inventario_cliente_data": {
+          "name": "idx_sped_inventario_cliente_data",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "data_inventario",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_inventarios_cliente_id_clientes_id_fk": {
+          "name": "sped_inventarios_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_inventarios",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_inventarios_atualizado_por_user_id_fk": {
+          "name": "sped_inventarios_atualizado_por_user_id_fk",
+          "tableFrom": "sped_inventarios",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_inventario_motivo": {
+          "name": "chk_sped_inventario_motivo",
+          "value": "\"sped_inventarios\".\"motivo\" IN ('01', '02', '03', '04', '05', '06')"
+        },
+        "chk_sped_inventario_status": {
+          "name": "chk_sped_inventario_status",
+          "value": "\"sped_inventarios\".\"status\" IN ('RASCUNHO', 'FECHADO')"
+        },
+        "chk_sped_inventario_valor": {
+          "name": "chk_sped_inventario_valor",
+          "value": "\"sped_inventarios\".\"valor_total\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_itens": {
+      "name": "sped_itens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "participante_origem_id": {
+          "name": "participante_origem_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo": {
+          "name": "codigo",
+          "type": "varchar(60)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_externo": {
+          "name": "codigo_externo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_barras": {
+          "name": "codigo_barras",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unidade_id": {
+          "name": "unidade_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_item": {
+          "name": "tipo_item",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'00'"
+        },
+        "tipo_item_inferido": {
+          "name": "tipo_item_inferido",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "ncm": {
+          "name": "ncm",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ex_ipi": {
+          "name": "ex_ipi",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_genero": {
+          "name": "codigo_genero",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_servico": {
+          "name": "codigo_servico",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aliquota_icms": {
+          "name": "aliquota_icms",
+          "type": "numeric(7, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cest": {
+          "name": "cest",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_sped_item_codigo": {
+          "name": "uidx_sped_item_codigo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "codigo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sped_item_cliente": {
+          "name": "idx_sped_item_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_itens_cliente_id_clientes_id_fk": {
+          "name": "sped_itens_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_itens",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_itens_participante_origem_id_sped_participantes_id_fk": {
+          "name": "sped_itens_participante_origem_id_sped_participantes_id_fk",
+          "tableFrom": "sped_itens",
+          "tableTo": "sped_participantes",
+          "columnsFrom": [
+            "participante_origem_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "sped_itens_unidade_id_sped_unidades_id_fk": {
+          "name": "sped_itens_unidade_id_sped_unidades_id_fk",
+          "tableFrom": "sped_itens",
+          "tableTo": "sped_unidades",
+          "columnsFrom": [
+            "unidade_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_sped_item_origem_externo": {
+          "name": "uq_sped_item_origem_externo",
+          "nullsNotDistinct": true,
+          "columns": [
+            "cliente_id",
+            "participante_origem_id",
+            "codigo_externo"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_item_tipo": {
+          "name": "chk_sped_item_tipo",
+          "value": "\"sped_itens\".\"tipo_item\" ~ '^[0-9]{2}$'"
+        },
+        "chk_sped_item_ncm": {
+          "name": "chk_sped_item_ncm",
+          "value": "\"sped_itens\".\"ncm\" IS NULL OR \"sped_itens\".\"ncm\" ~ '^[0-9]{8}$'"
+        },
+        "chk_sped_item_cest": {
+          "name": "chk_sped_item_cest",
+          "value": "\"sped_itens\".\"cest\" IS NULL OR \"sped_itens\".\"cest\" ~ '^[0-9]{7}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_obrigacoes_recolhimento": {
+      "name": "sped_obrigacoes_recolhimento",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uf": {
+          "name": "uf",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_obrigacao": {
+          "name": "codigo_obrigacao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor": {
+          "name": "valor",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_vencimento": {
+          "name": "data_vencimento",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_receita": {
+          "name": "codigo_receita",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero_processo": {
+          "name": "numero_processo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "indicador_processo": {
+          "name": "indicador_processo",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processo": {
+          "name": "processo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "texto_complementar": {
+          "name": "texto_complementar",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mes_referencia": {
+          "name": "mes_referencia",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sped_obrigacao_cliente_competencia": {
+          "name": "idx_sped_obrigacao_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_obrigacoes_recolhimento_cliente_id_clientes_id_fk": {
+          "name": "sped_obrigacoes_recolhimento_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_obrigacoes_recolhimento",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_obrigacoes_recolhimento_atualizado_por_user_id_fk": {
+          "name": "sped_obrigacoes_recolhimento_atualizado_por_user_id_fk",
+          "tableFrom": "sped_obrigacoes_recolhimento",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_sped_obrigacao_competencia": {
+          "name": "uq_sped_obrigacao_competencia",
+          "nullsNotDistinct": true,
+          "columns": [
+            "cliente_id",
+            "competencia",
+            "tipo",
+            "uf"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_obrigacao_tipo": {
+          "name": "chk_sped_obrigacao_tipo",
+          "value": "\"sped_obrigacoes_recolhimento\".\"tipo\" IN ('ICMS_PROPRIO', 'ICMS_ST', 'DIFAL_FCP')"
+        },
+        "chk_sped_obrigacao_valor": {
+          "name": "chk_sped_obrigacao_valor",
+          "value": "\"sped_obrigacoes_recolhimento\".\"valor\" >= 0"
+        },
+        "chk_sped_obrigacao_uf": {
+          "name": "chk_sped_obrigacao_uf",
+          "value": "\"sped_obrigacoes_recolhimento\".\"uf\" IS NULL OR \"sped_obrigacoes_recolhimento\".\"uf\" ~ '^[A-Z]{2}$'"
+        },
+        "chk_sped_obrigacao_mes_referencia": {
+          "name": "chk_sped_obrigacao_mes_referencia",
+          "value": "\"sped_obrigacoes_recolhimento\".\"mes_referencia\" IS NULL OR \"sped_obrigacoes_recolhimento\".\"mes_referencia\" ~ '^[0-9]{6}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_participantes": {
+      "name": "sped_participantes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo": {
+          "name": "codigo",
+          "type": "varchar(60)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "documento": {
+          "name": "documento",
+          "type": "varchar(14)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_documento": {
+          "name": "tipo_documento",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nome": {
+          "name": "nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_pais": {
+          "name": "codigo_pais",
+          "type": "varchar(5)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'01058'"
+        },
+        "inscricao_estadual": {
+          "name": "inscricao_estadual",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suframa": {
+          "name": "suframa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logradouro": {
+          "name": "logradouro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero": {
+          "name": "numero",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "complemento": {
+          "name": "complemento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bairro": {
+          "name": "bairro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cep": {
+          "name": "cep",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fonte_ultimo_documento_id": {
+          "name": "fonte_ultimo_documento_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_sped_participante_codigo": {
+          "name": "uidx_sped_participante_codigo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "codigo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_sped_participante_documento": {
+          "name": "uidx_sped_participante_documento",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "documento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sped_participante_cliente": {
+          "name": "idx_sped_participante_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_participantes_cliente_id_clientes_id_fk": {
+          "name": "sped_participantes_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_participantes",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_participantes_fonte_ultimo_documento_id_documentos_fiscais_id_fk": {
+          "name": "sped_participantes_fonte_ultimo_documento_id_documentos_fiscais_id_fk",
+          "tableFrom": "sped_participantes",
+          "tableTo": "documentos_fiscais",
+          "columnsFrom": [
+            "fonte_ultimo_documento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_participante_tipo_documento": {
+          "name": "chk_sped_participante_tipo_documento",
+          "value": "\"sped_participantes\".\"tipo_documento\" IN ('CNPJ', 'CPF')"
+        },
+        "chk_sped_participante_documento": {
+          "name": "chk_sped_participante_documento",
+          "value": "(\"sped_participantes\".\"tipo_documento\" = 'CPF' AND \"sped_participantes\".\"documento\" ~ '^[0-9]{11}$') OR (\"sped_participantes\".\"tipo_documento\" = 'CNPJ' AND \"sped_participantes\".\"documento\" ~ '^[0-9A-Z]{12}[0-9]{2}$')"
+        },
+        "chk_sped_participante_codigo_pais": {
+          "name": "chk_sped_participante_codigo_pais",
+          "value": "\"sped_participantes\".\"codigo_pais\" ~ '^[0-9]{5}$'"
+        },
+        "chk_sped_participante_codigo_municipio": {
+          "name": "chk_sped_participante_codigo_municipio",
+          "value": "\"sped_participantes\".\"codigo_municipio_ibge\" IS NULL OR \"sped_participantes\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_responsabilidades_tributarias": {
+      "name": "sped_responsabilidades_tributarias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uf": {
+          "name": "uf",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vigencia_inicio": {
+          "name": "vigencia_inicio",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vigencia_fim": {
+          "name": "vigencia_fim",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_sped_responsabilidade_vigencia": {
+          "name": "uidx_sped_responsabilidade_vigencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tipo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "uf",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "vigencia_inicio",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sped_responsabilidade_cliente": {
+          "name": "idx_sped_responsabilidade_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_responsabilidades_tributarias_cliente_id_clientes_id_fk": {
+          "name": "sped_responsabilidades_tributarias_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_responsabilidades_tributarias",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_responsabilidade_tipo": {
+          "name": "chk_sped_responsabilidade_tipo",
+          "value": "\"sped_responsabilidades_tributarias\".\"tipo\" IN ('ICMS_ST', 'DIFAL_FCP')"
+        },
+        "chk_sped_responsabilidade_uf": {
+          "name": "chk_sped_responsabilidade_uf",
+          "value": "\"sped_responsabilidades_tributarias\".\"uf\" ~ '^[A-Z]{2}$'"
+        },
+        "chk_sped_responsabilidade_vigencia": {
+          "name": "chk_sped_responsabilidade_vigencia",
+          "value": "\"sped_responsabilidades_tributarias\".\"vigencia_fim\" IS NULL OR \"sped_responsabilidades_tributarias\".\"vigencia_fim\" >= \"sped_responsabilidades_tributarias\".\"vigencia_inicio\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_saldos_apuracao": {
+      "name": "sped_saldos_apuracao",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uf": {
+          "name": "uf",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saldo_credor_anterior": {
+          "name": "saldo_credor_anterior",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sped_saldo_cliente_competencia": {
+          "name": "idx_sped_saldo_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_saldos_apuracao_cliente_id_clientes_id_fk": {
+          "name": "sped_saldos_apuracao_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_saldos_apuracao",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sped_saldos_apuracao_atualizado_por_user_id_fk": {
+          "name": "sped_saldos_apuracao_atualizado_por_user_id_fk",
+          "tableFrom": "sped_saldos_apuracao",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_sped_saldo_competencia": {
+          "name": "uq_sped_saldo_competencia",
+          "nullsNotDistinct": true,
+          "columns": [
+            "cliente_id",
+            "competencia",
+            "tipo",
+            "uf"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_saldo_tipo": {
+          "name": "chk_sped_saldo_tipo",
+          "value": "\"sped_saldos_apuracao\".\"tipo\" IN ('ICMS_PROPRIO', 'ICMS_ST', 'IPI')"
+        },
+        "chk_sped_saldo_uf": {
+          "name": "chk_sped_saldo_uf",
+          "value": "\"sped_saldos_apuracao\".\"uf\" IS NULL OR \"sped_saldos_apuracao\".\"uf\" ~ '^[A-Z]{2}$'"
+        },
+        "chk_sped_saldo_valor": {
+          "name": "chk_sped_saldo_valor",
+          "value": "\"sped_saldos_apuracao\".\"saldo_credor_anterior\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sped_unidades": {
+      "name": "sped_unidades",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo": {
+          "name": "codigo",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_sped_unidade_codigo": {
+          "name": "uidx_sped_unidade_codigo",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "codigo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sped_unidade_cliente": {
+          "name": "idx_sped_unidade_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sped_unidades_cliente_id_clientes_id_fk": {
+          "name": "sped_unidades_cliente_id_clientes_id_fk",
+          "tableFrom": "sped_unidades",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_sped_unidade_codigo": {
+          "name": "chk_sped_unidade_codigo",
+          "value": "btrim(\"sped_unidades\".\"codigo\") <> ''"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.storage_cleanup_jobs": {

@@ -93,6 +93,14 @@ export interface SpedUnidadeBuilderData {
   descricao: string;
 }
 
+export interface SpedUnidadeConversaoBuilderData {
+  // Unidade a ser convertida (tributável) e o fator de conversão para a
+  // unidade de estoque/comercial do 0200 (UNID_CONV / FAT_CONV do 0220).
+  unidadeConversao: string;
+  fatorConversao: string;
+  codigoBarrasConversao: string | null;
+}
+
 export interface SpedItemCatalogoBuilderData {
   codigo: string;
   codigoExterno: string;
@@ -108,6 +116,8 @@ export interface SpedItemCatalogoBuilderData {
   aliquotaIcms: string | null;
   cest: string | null;
   participanteOrigemCodigo: string | null;
+  // Registros 0220: fatores de conversão de unidade (opcional).
+  conversoesUnidade?: SpedUnidadeConversaoBuilderData[];
 }
 
 export interface SpedItemDocumentoBuilderData {
@@ -116,12 +126,27 @@ export interface SpedItemDocumentoBuilderData {
   codigoUnidade: string;
 }
 
+export interface SpedDocumentoReferenciadoBuilderData {
+  // Tipo do documento referenciado (COD_DOC_IMP / IND_DOC do C113): usamos os
+  // indicadores do C113 — '0' NF-e, '1' NF, '2' NF Produtor, etc.
+  indicadorTipo: string;
+  chaveOuNumero: string;
+  // Campos opcionais do C113 quando não há chave (modelo/série/número/data).
+  participanteCodigo?: string | null;
+  codigoModelo?: string | null;
+  serie?: string | null;
+  numero?: string | null;
+  data?: Date | null;
+}
+
 export interface SpedDocumentoNfeBuilderData {
   row: DocumentoRow;
   participanteCodigo: string | null;
   participanteUf: string | null;
   itens: SpedItemDocumentoBuilderData[];
   codigoInformacaoComplementar: string | null;
+  // Registros C113: documentos fiscais referenciados (devolução/remessa).
+  referencias?: SpedDocumentoReferenciadoBuilderData[];
 }
 
 export interface SpedDocumentoCteBuilderData {
@@ -160,6 +185,35 @@ export interface SpedEfdBuilderInput {
   inventario: SpedInventarioBuilderData | null;
   indicadores1010: Record<string, 'S' | 'N'>;
   inconsistencias: SpedInconsistencia[];
+  // Bloco G (CIAP): bens do ativo e a apropriação 1/48 da competência.
+  ciap?: SpedCiapBuilderData | null;
+}
+
+export interface SpedCiapBemBuilderData {
+  // Movimentação do bem no período (G125): SN saldo inicial, IM imobilização,
+  // BA baixa, AT alienação/transferência, etc. Padrão 'SI' quando em curso.
+  codigoIndividualizacao: string;
+  identificacaoBem: string;
+  tipoMovimentacao: string;
+  valorIcmsOperacao: string;
+  valorIcmsFrete: string;
+  valorIcmsDifal: string;
+  numeroParcela: number;
+  valorParcelaIcms: string;
+  valorParcelaFrete: string;
+  valorParcelaDifal: string;
+}
+
+export interface SpedCiapBuilderData {
+  // Saldos do ICMS do ativo (G110): saldo inicial, aquisições, alienações,
+  // saldo final e crédito apropriado no período.
+  saldoInicial: string;
+  somaParcelas: string;
+  valorTotalCredito: string;
+  indicadorPeriodo: string; // '0' padrão
+  saidasTributadas: string;
+  saidasTotais: string;
+  bens: SpedCiapBemBuilderData[];
 }
 
 export interface SpedEfdBuilderResult {
@@ -189,6 +243,7 @@ export function buildEfdIcmsIpiRecords(
   records.push(...buildBlocoD(input));
   const blocoE = buildBlocoE(input);
   records.push(...blocoE.records);
+  records.push(...buildBlocoG(input));
   records.push(...buildBlocoH(input));
   records.push(...buildBloco1(input.indicadores1010));
   return { records, apuracao: blocoE.apuracao };
@@ -302,6 +357,22 @@ function buildBloco0(input: SpedEfdBuilderInput): SpedRecord[] {
         item.cest,
       ),
     );
+    // Registro 0220: fatores de conversão de unidade (filho do 0200).
+    // Dedup por unidade de conversão para não repetir o mesmo par.
+    const conversoes = item.conversoesUnidade ?? [];
+    const vistas = new Set<string>();
+    for (const conversao of conversoes) {
+      if (vistas.has(conversao.unidadeConversao)) continue;
+      vistas.add(conversao.unidadeConversao);
+      records.push(
+        createSpedRecord(
+          '0220',
+          conversao.unidadeConversao,
+          decimalField(conversao.fatorConversao),
+          conversao.codigoBarrasConversao,
+        ),
+      );
+    }
   }
 
   for (const informacao of [...input.informacoesComplementares].sort((a, b) =>
@@ -370,6 +441,30 @@ function buildBlocoC(input: SpedEfdBuilderInput): SpedRecord[] {
     );
 
     if (!regular) continue;
+
+    // Registro C113: documentos fiscais referenciados (devolução/remessa).
+    // Layout: IND_OPER | IND_EMIT | COD_PART | COD_MOD | SER | SUB | NUM_DOC |
+    //         DT_DOC | CHV_DOCe  (9 campos após o REG).
+    for (const referencia of documento.referencias ?? []) {
+      const chave =
+        referencia.chaveOuNumero.length === 44
+          ? referencia.chaveOuNumero
+          : null;
+      records.push(
+        createSpedRecord(
+          'C113',
+          indOper,
+          referencia.indicadorTipo,
+          referencia.participanteCodigo ?? null,
+          referencia.codigoModelo ?? null,
+          referencia.serie ?? null,
+          null,
+          chave ? null : (referencia.numero ?? referencia.chaveOuNumero),
+          referencia.data ? dateField(referencia.data) : null,
+          chave,
+        ),
+      );
+    }
 
     const difal = sumDifal(documento.itens);
     if (difal.fcp !== 0n || difal.destino !== 0n || difal.remetente !== 0n) {
@@ -862,6 +957,34 @@ function calculateDifalFcpComponent(base: bigint, ajustes: AjusteRow[]) {
   };
 }
 
+// CSTs de IPI conforme Tabela 4.3.2 do RIPI (Decreto 7.212/2010).
+// Entrada: 00-49. Saída: 50-99.
+const IPI_CST_ENTRADA_CREDITO = new Set([
+  '00', // Entrada com recuperação de crédito
+  '01', // Entrada tributada com alíquota zero (mantém crédito quando destacado)
+]);
+const IPI_CST_ENTRADA_VALIDO = new Set([
+  '00',
+  '01',
+  '02',
+  '03',
+  '04',
+  '05',
+  '49',
+]);
+const IPI_CST_SAIDA_DEBITO = new Set([
+  '50', // Saída tributada
+]);
+const IPI_CST_SAIDA_VALIDO = new Set([
+  '50',
+  '51',
+  '52',
+  '53',
+  '54',
+  '55',
+  '99',
+]);
+
 function buildIpi(
   input: SpedEfdBuilderInput,
   records: SpedRecord[],
@@ -896,14 +1019,25 @@ function buildIpi(
       group.ipi += ipi;
       groups.set(key, group);
       if (ipi <= 0n) continue;
+      const cst = (row.cstIpi ?? '').padStart(2, '0');
       if (documento.row.tipoOperacaoEscriturada === 'SAIDA') {
-        if (row.cstIpi === '50') debitos += ipi;
-        else
+        // Saída: CSTs 50-99 (RIPI). Débito para os tributados (50); os demais
+        // CSTs de saída válidos (51 alíq. zero, 52 isento, 53 não-tributado,
+        // 54 imune, 55 suspensão, 99 outras) não debitam e não são erro.
+        if (IPI_CST_SAIDA_DEBITO.has(cst)) {
+          debitos += ipi;
+        } else if (!IPI_CST_SAIDA_VALIDO.has(cst)) {
           reportAmbiguousIpi(documento, item, 'DEBITO', input.inconsistencias);
-      } else if (row.cstIpi === '00') {
-        creditos += ipi;
+        }
       } else {
-        reportAmbiguousIpi(documento, item, 'CREDITO', input.inconsistencias);
+        // Entrada: CSTs 00-49 (RIPI). Crédito para as entradas que recuperam
+        // crédito (00 entrada c/ recuperação, 01 entrada tributada); os demais
+        // CSTs de entrada válidos (02-49) não creditam e não são erro.
+        if (IPI_CST_ENTRADA_CREDITO.has(cst)) {
+          creditos += ipi;
+        } else if (!IPI_CST_ENTRADA_VALIDO.has(cst)) {
+          reportAmbiguousIpi(documento, item, 'CREDITO', input.inconsistencias);
+        }
       }
     }
   }
@@ -975,6 +1109,45 @@ function buildIpi(
     recolher: fromScaledInteger(recolher),
     saldoCredorTransportar: fromScaledInteger(saldoCredor),
   };
+}
+
+function buildBlocoG(input: SpedEfdBuilderInput): SpedRecord[] {
+  const ciap = input.ciap;
+  if (!ciap || ciap.bens.length === 0) return [];
+  const records: SpedRecord[] = [];
+  // G110: identificação do período e saldos do ICMS do ativo permanente.
+  records.push(
+    createSpedRecord(
+      'G110',
+      dateField(input.inicio),
+      dateField(input.fim),
+      decimalField(ciap.saldoInicial),
+      decimalField(ciap.somaParcelas),
+      ciap.indicadorPeriodo,
+      decimalField(ciap.saidasTributadas),
+      decimalField(ciap.saidasTotais),
+      decimalField(ciap.valorTotalCredito),
+    ),
+  );
+  // G125: movimentação/apropriação por bem no período.
+  for (const bem of ciap.bens) {
+    records.push(
+      createSpedRecord(
+        'G125',
+        bem.codigoIndividualizacao,
+        dateField(input.inicio),
+        bem.tipoMovimentacao,
+        decimalField(bem.valorIcmsOperacao),
+        decimalField(bem.valorIcmsFrete),
+        decimalField(bem.valorIcmsDifal),
+        integerField(bem.numeroParcela),
+        decimalField(bem.valorParcelaIcms),
+        decimalField(bem.valorParcelaFrete),
+        decimalField(bem.valorParcelaDifal),
+      ),
+    );
+  }
+  return records;
 }
 
 function buildBlocoH(input: SpedEfdBuilderInput): SpedRecord[] {
@@ -1121,6 +1294,13 @@ function totalIcmsDocumentos(
 
           const creditoIcms = toScaledInteger(row.valorIcms);
           const cst = row.cstIcms?.slice(-2) ?? null;
+          // Vedação legal: uso/consumo (LC 87/96 art. 33, I) e mercadoria
+          // recebida como substituído (Convênio ICMS 142/18) NÃO geram
+          // crédito de ICMS na entrada, ainda que o CST permita. O CFOP
+          // escriturado é a fonte de verdade da destinação.
+          if (creditoIcms > 0n && cfopVedaCreditoIcms(row.cfop)) {
+            return itemSum;
+          }
           if (
             creditoIcms > 0n &&
             ['00', '10', '20', '70'].includes(cst ?? '')
@@ -1134,6 +1314,37 @@ function totalIcmsDocumentos(
         }, 0n),
       0n,
     );
+}
+
+/**
+ * Indica se o CFOP de entrada veda a apropriação de crédito de ICMS.
+ * Classificação pela terminação (3 últimos dígitos), independente da
+ * abrangência (1xxx/2xxx/3xxx):
+ *  - 556/557: material de uso ou consumo (LC 87/96 art. 33, I) — sem crédito.
+ *  - 407: uso/consumo sujeito a ST — sem crédito.
+ *  - 403/405/406: aquisição como substituído tributário — sem crédito próprio.
+ *  - 551/552: ativo imobilizado — crédito NÃO integral (apropriação via CIAP,
+ *    1/48 no Bloco G); portanto não credita integralmente aqui.
+ */
+function cfopVedaCreditoIcms(cfop: string | null | undefined): boolean {
+  if (!cfop) return false;
+  const codigo = cfop.replace(/\D/g, '');
+  if (codigo.length !== 4) return false;
+  // Só se aplica a entradas (1xxx/2xxx/3xxx).
+  if (!['1', '2', '3'].includes(codigo[0])) return false;
+  const finais = codigo.slice(1);
+  const vedados = new Set([
+    '556',
+    '557',
+    '407',
+    '403',
+    '405',
+    '406',
+    '401',
+    '551',
+    '552',
+  ]);
+  return vedados.has(finais);
 }
 
 function reportAmbiguousCredit(

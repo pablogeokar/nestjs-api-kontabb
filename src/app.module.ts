@@ -14,6 +14,7 @@ import { ClienteModule } from './cliente/cliente.module';
 import { RhModule } from './rh/rh.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { ColaboradorModule } from './colaborador/colaborador.module';
+import { ContadoresModule } from './cadastros/contadores/contadores.module';
 import { HealthController } from './health/health.controller';
 import { SetupController } from './health/setup.controller';
 import { DashboardController } from './health/dashboard.controller';
@@ -36,6 +37,7 @@ import { StorageAdminController } from './storage/storage.controller';
     RhModule,
     FiscalModule,
     ColaboradorModule,
+    ContadoresModule,
   ],
   controllers: [
     HealthController,

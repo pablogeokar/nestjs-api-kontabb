@@ -21,7 +21,7 @@ import {
   documentosFiscaisCteEscrituracao,
 } from '../../database/schema';
 import type { CteEscrituracaoParseData } from './dacte.parser';
-import { CfopService } from './cfop.service';
+import { CfopService, type TipoOperacaoEscriturada } from './cfop.service';
 
 type FiscalDatabase = DatabaseService['db'];
 type FiscalTransaction = Parameters<
@@ -35,8 +35,14 @@ export type SituacaoDocumentoCte =
 export interface DecisaoEscrituracaoCte {
   escrituravel: boolean;
   motivoNaoEscrituravel: string | null;
-  tipoOperacao: 'ENTRADA';
+  // ENTRADA: cliente é tomador (aquisição de frete).
+  // SAIDA: cliente é o emitente/prestador do serviço de transporte.
+  tipoOperacao: TipoOperacaoEscriturada;
+  // Papel do cliente na operação: TOMADOR ou PRESTADOR.
+  papelCliente: 'TOMADOR' | 'PRESTADOR' | 'NENHUM';
   creditaIcms: boolean;
+  // Débito de ICMS quando o cliente é o prestador (saída tributada).
+  debitaIcms: boolean;
   revisaoNecessaria: boolean;
 }
 
@@ -70,6 +76,7 @@ export function decidirEscrituracaoCte(input: {
   clienteCnpjCpf: string;
   regimeTributario: RegimeTributario | null;
   apuraIcms: boolean;
+  emitenteCnpjCpf?: string | null;
   tomadorCnpjCpf: string;
   situacao: SituacaoDocumentoCte;
   tpCte: string;
@@ -79,12 +86,25 @@ export function decidirEscrituracaoCte(input: {
 }): DecisaoEscrituracaoCte {
   const cliente = normalizeTaxId(input.clienteCnpjCpf);
   const tomador = normalizeTaxId(input.tomadorCnpjCpf);
-  if (!cliente || !tomador || cliente !== tomador) {
+  const emitente = input.emitenteCnpjCpf
+    ? normalizeTaxId(input.emitenteCnpjCpf)
+    : '';
+
+  // Determina o papel do cliente. O emitente (prestador) tem prioridade:
+  // transportadora que emite o próprio CT-e escritura como SAÍDA (prestação).
+  const clienteEhPrestador = Boolean(
+    cliente && emitente && cliente === emitente,
+  );
+  const clienteEhTomador = Boolean(cliente && tomador && cliente === tomador);
+
+  if (!clienteEhPrestador && !clienteEhTomador) {
     return {
       escrituravel: false,
-      motivoNaoEscrituravel: 'CLIENTE_NAO_E_TOMADOR',
+      motivoNaoEscrituravel: 'CLIENTE_NAO_E_TOMADOR_NEM_PRESTADOR',
       tipoOperacao: 'ENTRADA',
+      papelCliente: 'NENHUM',
       creditaIcms: false,
+      debitaIcms: false,
       revisaoNecessaria: false,
     };
   }
@@ -94,22 +114,41 @@ export function decidirEscrituracaoCte(input: {
     regimeTributario: input.regimeTributario,
     apuraIcms: input.apuraIcms,
   });
+  const documentoRegular = input.situacao === 'AUTORIZADA';
+  const anulacao = input.tpCte === '2';
+
+  // CT-e de SAÍDA: o cliente é o prestador do serviço de transporte.
+  if (clienteEhPrestador) {
+    return {
+      escrituravel: true,
+      motivoNaoEscrituravel: null,
+      tipoOperacao: 'SAIDA',
+      papelCliente: 'PRESTADOR',
+      creditaIcms: false,
+      // Débito de ICMS sobre a prestação tributada (exceto Simples sem
+      // apuração, anulação ou documento não autorizado).
+      debitaIcms: documentoRegular && !simplesSemApuracao && !anulacao,
+      revisaoNecessaria: servicoExigeRevisao,
+    };
+  }
+
+  // CT-e de ENTRADA: o cliente é o tomador (aquisição de frete).
   const cstPermiteCredito =
     (input.cstIcms !== null && CST_COM_CREDITO.has(input.cstIcms)) ||
     (input.csosnIcms !== null && CSOSN_COM_CREDITO.has(input.csosnIcms));
-  const documentoRegular = input.situacao === 'AUTORIZADA';
-  const anulacao = input.tpCte === '2';
 
   return {
     escrituravel: true,
     motivoNaoEscrituravel: null,
     tipoOperacao: 'ENTRADA',
+    papelCliente: 'TOMADOR',
     creditaIcms:
       documentoRegular &&
       !simplesSemApuracao &&
       !servicoExigeRevisao &&
       !anulacao &&
       cstPermiteCredito,
+    debitaIcms: false,
     revisaoNecessaria: servicoExigeRevisao,
   };
 }
@@ -140,11 +179,13 @@ export class FiscalCteService {
     apuraIcms: boolean;
     situacao: SituacaoDocumentoCte;
     cte: CteEscrituracaoParseData;
+    emitenteUf?: string | null;
   }): Promise<CteEscrituracaoPreparada> {
     const decisao = decidirEscrituracaoCte({
       clienteCnpjCpf: input.clienteCnpjCpf,
       regimeTributario: input.regimeTributario,
       apuraIcms: input.apuraIcms,
+      emitenteCnpjCpf: input.cte.emitenteCnpjCpf,
       tomadorCnpjCpf: input.cte.tomadorCnpjCpf,
       situacao: input.situacao,
       tpCte: input.cte.tpCte,
@@ -155,7 +196,11 @@ export class FiscalCteService {
     const cfop = await this.cfopService.resolverCfopEquivalenteDetalhado({
       clienteId: input.clienteId,
       cfopXml: input.cte.cfop,
-      tipoOperacaoEscriturada: 'ENTRADA',
+      tipoOperacaoEscriturada: decisao.tipoOperacao,
+      emitenteCnpjCpf: input.cte.emitenteCnpjCpf,
+      emitenteUf: input.emitenteUf,
+      cstIcmsXml: input.cte.cstIcms,
+      csosnXml: input.cte.csosnIcms,
     });
     const referenciaObrigatoria = ['1', '2', '3'].includes(input.cte.tpCte);
     const revisaoNecessaria =
@@ -163,7 +208,8 @@ export class FiscalCteService {
       cfop.revisaoNecessaria ||
       (referenciaObrigatoria && !input.cte.chaveCteReferenciado);
     const sign = input.cte.tpCte === '2' ? -1 : 1;
-    const valorIcmsCreditavel = decisao.creditaIcms
+    const valorIcmsCreditavel =
+      decisao.creditaIcms && (cfop.apropriaCreditoIcms ?? true)
       ? signedDecimal(input.cte.valorIcms ?? '0', sign)
       : '0.00';
 
@@ -173,7 +219,7 @@ export class FiscalCteService {
         motivoNaoEscrituravel: decisao.motivoNaoEscrituravel,
         tomadorCnpjCpf: input.cte.tomadorCnpjCpf,
         tomadorPapel: input.cte.tomadorPapel,
-        tipoOperacaoEscriturada: 'ENTRADA',
+        tipoOperacaoEscriturada: decisao.tipoOperacao,
         tpCte: input.cte.tpCte,
         tpServ: input.cte.tpServ,
         modal: input.cte.modal,
@@ -181,8 +227,16 @@ export class FiscalCteService {
         cfop: cfop.cfop,
         cfopRevisaoNecessaria: cfop.revisaoNecessaria,
         revisaoNecessaria,
-        cstIcms: input.cte.cstIcms,
-        csosnIcms: input.cte.csosnIcms,
+        cstIcms: cfop.cstIcmsEscriturado
+          ? cfop.cstIcmsEscriturado
+          : cfop.csosnEscriturado
+            ? null
+            : input.cte.cstIcms,
+        csosnIcms: cfop.csosnEscriturado
+          ? cfop.csosnEscriturado
+          : cfop.cstIcmsEscriturado
+            ? null
+            : input.cte.csosnIcms,
         valorTotalServico: signedDecimal(input.cte.valorTotalServico, sign),
         valorReceber: signedDecimal(input.cte.valorReceber, sign),
         valorBcIcms: signedNullableDecimal(input.cte.valorBcIcms, sign),
@@ -299,7 +353,7 @@ export class FiscalCteService {
       .set({
         escriturado: values.escrituravel,
         escrituracaoStatus: status,
-        tipoOperacaoEscriturada: 'ENTRADA',
+        tipoOperacaoEscriturada: values.tipoOperacaoEscriturada,
         atualizadoEm: new Date(),
       })
       .where(eq(documentosFiscais.id, input.documentoFiscalId));
@@ -468,11 +522,14 @@ export class FiscalCteService {
         const valorIcms = semValores
           ? '0.00'
           : absoluteDecimal(row.cte.valorIcms ?? '0');
+        const saida = row.cte.tipoOperacaoEscriturada === 'SAIDA';
         return {
           reg: 'D100',
           documento_fiscal_id: row.documentoId,
-          ind_oper: '0',
-          ind_emit: '1',
+          // ind_oper: 0=entrada (aquisição), 1=saída (prestação própria).
+          ind_oper: saida ? '1' : '0',
+          // ind_emit: 0=emissão própria, 1=terceiros.
+          ind_emit: saida ? '0' : '1',
           cod_part: row.emitenteCnpjCpf,
           cod_mod: '57',
           cod_sit: codSituacaoSpedCte(
@@ -562,7 +619,7 @@ export class FiscalCteService {
     return this.database.db
       .select({
         bloco: sql<string>`'D'`,
-        tipo_operacao: sql<string>`'ENTRADA'`,
+        tipo_operacao: documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
         cfop: documentosFiscaisCteEscrituracao.cfop,
         aliquota_icms: documentosFiscaisCteEscrituracao.aliquotaIcms,
         valor_servicos: sql<string>`COALESCE(SUM(${documentosFiscaisCteEscrituracao.valorTotalServico}), 0)`,
@@ -580,6 +637,7 @@ export class FiscalCteService {
       )
       .where(and(...conditions))
       .groupBy(
+        documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
         documentosFiscaisCteEscrituracao.cfop,
         documentosFiscaisCteEscrituracao.aliquotaIcms,
       )

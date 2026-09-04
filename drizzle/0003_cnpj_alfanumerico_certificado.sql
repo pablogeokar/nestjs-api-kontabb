@@ -1,2 +1,0 @@
-ALTER TABLE "certificados_digitais" DROP CONSTRAINT "chk_certificados_cnpj";--> statement-breakpoint
-ALTER TABLE "certificados_digitais" ADD CONSTRAINT "chk_certificados_cnpj" CHECK ("certificados_digitais"."cnpj" ~ '^[0-9A-Z]{12}[0-9]{2}$');

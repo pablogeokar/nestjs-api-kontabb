@@ -61,3 +61,26 @@ Até a homologação terminar, mantenha o banco antigo intacto. Para rollback,
 restaure a `DATABASE_URL` anterior e publique novamente a API. Não exclua o
 banco antigo nem os objetos do R2 antes de confirmar os fluxos e a contagem dos
 dados no banco novo.
+
+## Descompasso do tracker de migrações
+
+Em bancos que sofreram falhas parciais de `drizzle-kit migrate`, o tracker
+`drizzle.__drizzle_migrations` pode registrar uma migration como aplicada sem
+que o DDL correspondente tenha executado. O sintoma é a API retornando
+`relation "X" does not exist` ou `column "Y" does not exist` para objetos que já
+constam no `schema.ts` e nas migrations.
+
+Diagnóstico rápido: comparar `information_schema.tables`/`columns` com o schema
+e conferir a contagem em `drizzle.__drizzle_migrations`. Um `db:migrate` novo
+não corrige, pois o tracker considera tudo aplicado.
+
+Correção sem recriar o banco: aplicar o DDL faltante de forma **idempotente e
+aditiva** numa transação, espelhando exatamente as migrations afetadas
+(`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT
+EXISTS`, `ADD CONSTRAINT` guardado por `pg_constraint`). Rodar os backfills com
+`ON CONFLICT DO NOTHING`. Depois, validar que as queries de leitura afetadas
+voltam a funcionar.
+
+Correção definitiva: recriar o banco vazio e rodar `db:migrate` do zero, para
+que tracker e schema nasçam alinhados (procedimento acima). Enquanto o tracker
+permanecer furado, toda migration nova exigirá o reparo idempotente manual.

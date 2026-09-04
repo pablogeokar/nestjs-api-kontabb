@@ -1,0 +1,495 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, asc, count, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { DatabaseService } from '../../database/database.service';
+import {
+  clientes,
+  documentosFiscais,
+  documentosFiscaisCteEscrituracao,
+  documentosFiscaisItens,
+  regrasFiscais,
+} from '../../database/schema';
+import { CfopService } from './cfop.service';
+import {
+  FiscalRuleEngineService,
+  type DestinacaoMercadoria,
+} from './fiscal-rule-engine.service';
+
+type RegraRow = typeof regrasFiscais.$inferSelect;
+
+interface RegraMutation {
+  clienteId: string | null;
+  nomeRegra: string;
+  prioridade?: number;
+  tipoOperacaoOrigem?: string | null;
+  cfopOrigem?: string | null;
+  ncm?: string | null;
+  fornecedorCnpjCpf?: string | null;
+  ufOrigem?: string | null;
+  destinacaoMercadoria?: string | null;
+  cfopDestino: string;
+  cstIcmsDestino?: string | null;
+  csosnDestino?: string | null;
+  apropriaCreditoIcms?: boolean;
+  apropriaCreditoIpi?: boolean;
+  cstPisDestino?: string | null;
+  cstCofinsDestino?: string | null;
+  exigeCiap?: boolean;
+  exigeDifalEntrada?: boolean;
+  observacaoFiscal?: string | null;
+  ativo?: boolean;
+}
+
+@Injectable()
+export class RegrasFiscaisService {
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly ruleEngine: FiscalRuleEngineService,
+    private readonly cfopService: CfopService,
+  ) {}
+
+  /**
+   * Simula a resolução de CFOP do motor de regras sem persistir nada.
+   * Base do simulador em tempo real do painel de regras.
+   */
+  async simular(input: {
+    clienteId: string;
+    tipoOperacaoEscriturada: 'ENTRADA' | 'SAIDA';
+    cfopXml: string;
+    ncm?: string | null;
+    destinacaoMercadoria?: DestinacaoMercadoria | null;
+    emitenteCnpjCpf?: string | null;
+    emitenteUf?: string | null;
+    cstIcmsXml?: string | null;
+    csosnXml?: string | null;
+  }) {
+    return this.ruleEngine.evaluate(input);
+  }
+
+  async listar(input: { clienteId: string; includeGlobal?: boolean }) {
+    const escopo: SQL = input.includeGlobal
+      ? or(
+          eq(regrasFiscais.clienteId, input.clienteId),
+          isNull(regrasFiscais.clienteId),
+        )!
+      : eq(regrasFiscais.clienteId, input.clienteId);
+    const rows = await this.database.db
+      .select()
+      .from(regrasFiscais)
+      .where(escopo)
+      .orderBy(asc(regrasFiscais.prioridade), asc(regrasFiscais.nomeRegra));
+    return { data: rows.map((row) => this.toResponse(row)) };
+  }
+
+  async listarGlobais() {
+    const rows = await this.database.db
+      .select()
+      .from(regrasFiscais)
+      .where(isNull(regrasFiscais.clienteId))
+      .orderBy(asc(regrasFiscais.prioridade), asc(regrasFiscais.nomeRegra));
+    return { data: rows.map((row) => this.toResponse(row)) };
+  }
+
+  async criar(input: RegraMutation) {
+    await this.validar(input);
+    const rows = await this.database.db
+      .insert(regrasFiscais)
+      .values({
+        clienteId: input.clienteId,
+        nomeRegra: input.nomeRegra,
+        prioridade: input.prioridade ?? 100,
+        tipoOperacaoOrigem: input.tipoOperacaoOrigem ?? null,
+        cfopOrigem: input.cfopOrigem ?? null,
+        ncm: input.ncm ?? null,
+        fornecedorCnpjCpf: input.fornecedorCnpjCpf ?? null,
+        ufOrigem: input.ufOrigem?.toUpperCase() ?? null,
+        destinacaoMercadoria: input.destinacaoMercadoria ?? null,
+        cfopDestino: input.cfopDestino,
+        cstIcmsDestino: input.cstIcmsDestino ?? null,
+        csosnDestino: input.csosnDestino ?? null,
+        apropriaCreditoIcms: input.apropriaCreditoIcms ?? false,
+        apropriaCreditoIpi: input.apropriaCreditoIpi ?? false,
+        cstPisDestino: input.cstPisDestino ?? null,
+        cstCofinsDestino: input.cstCofinsDestino ?? null,
+        exigeCiap: input.exigeCiap ?? false,
+        exigeDifalEntrada: input.exigeDifalEntrada ?? false,
+        observacaoFiscal: input.observacaoFiscal ?? null,
+        ativo: input.ativo ?? true,
+      })
+      .returning();
+    return this.toResponse(rows[0]);
+  }
+
+  async atualizar(input: {
+    id: string;
+    clienteId: string | null;
+    patch: Partial<Omit<RegraMutation, 'clienteId'>>;
+  }) {
+    const atual = await this.buscarRegra(input.id, input.clienteId);
+    if (input.patch.cfopDestino) {
+      await this.assertCfopAtivo(input.patch.cfopDestino);
+    }
+    const rows = await this.database.db
+      .update(regrasFiscais)
+      .set({
+        ...this.sanitizePatch(input.patch),
+        atualizadoEm: new Date(),
+      })
+      .where(eq(regrasFiscais.id, atual.id))
+      .returning();
+    return this.toResponse(rows[0]);
+  }
+
+  async remover(input: { id: string; clienteId: string | null }) {
+    const atual = await this.buscarRegra(input.id, input.clienteId);
+    await this.database.db
+      .delete(regrasFiscais)
+      .where(eq(regrasFiscais.id, atual.id));
+  }
+
+  /**
+   * Define (ou limpa, com 'AUTOMATICA') a destinação de um item e re-resolve o
+   * CFOP escriturado via motor de regras. Retorna o item atualizado.
+   */
+  async definirDestinacaoItem(input: {
+    clienteId: string;
+    itemId: string;
+    destinacao: DestinacaoMercadoria | 'AUTOMATICA';
+  }) {
+    const itens = await this.database.db
+      .select({
+        item: documentosFiscaisItens,
+        emitenteCnpjCpf: documentosFiscais.emitenteCnpjCpf,
+        emitenteUf: sql<string | null>`${documentosFiscais.emitenteDados} ->> 'uf'`,
+      })
+      .from(documentosFiscaisItens)
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
+      .where(
+        and(
+          eq(documentosFiscaisItens.id, input.itemId),
+          eq(documentosFiscaisItens.clienteId, input.clienteId),
+        ),
+      )
+      .limit(1);
+    const registro = itens[0];
+    if (!registro) throw new NotFoundException('Item fiscal não encontrado.');
+    const item = registro.item;
+
+    const destinacao =
+      input.destinacao === 'AUTOMATICA' ? null : input.destinacao;
+    const cfopXml = item.cfopXml ?? item.cfop;
+
+    const resolvido = await this.cfopService.resolverCfopEquivalenteDetalhado({
+      clienteId: input.clienteId,
+      cfopXml,
+      tipoOperacaoEscriturada: item.tipoOperacaoEscriturada as
+        'ENTRADA' | 'SAIDA',
+      ncm: item.ncm,
+      destinacaoMercadoria: destinacao,
+      emitenteCnpjCpf: registro.emitenteCnpjCpf,
+      emitenteUf: registro.emitenteUf,
+      cstIcmsXml: item.cstIcms,
+      csosnXml: item.csosnIcms,
+    });
+
+    const rows = await this.database.db
+      .update(documentosFiscaisItens)
+      .set({
+        destinacaoMercadoria: destinacao,
+        cfop: resolvido.cfop,
+        ...(resolvido.cstIcmsEscriturado
+          ? { cstIcms: resolvido.cstIcmsEscriturado, csosnIcms: null }
+          : resolvido.csosnEscriturado
+            ? { cstIcms: null, csosnIcms: resolvido.csosnEscriturado }
+            : {}),
+        ...(resolvido.cstPisEscriturado
+          ? { cstPis: resolvido.cstPisEscriturado }
+          : {}),
+        ...(resolvido.cstCofinsEscriturado
+          ? { cstCofins: resolvido.cstCofinsEscriturado }
+          : {}),
+        cfopRevisaoNecessaria: resolvido.revisaoNecessaria,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(documentosFiscaisItens.id, item.id))
+      .returning();
+
+    return {
+      id: rows[0].id,
+      cfop: rows[0].cfop,
+      cfop_xml: rows[0].cfopXml,
+      destinacao_mercadoria: rows[0].destinacaoMercadoria,
+      cfop_revisao_necessaria: rows[0].cfopRevisaoNecessaria,
+      origem_resolucao: resolvido.origemResolucao,
+      apropria_credito_icms: resolvido.apropriaCreditoIcms ?? null,
+      apropria_credito_ipi: resolvido.apropriaCreditoIpi ?? null,
+      exige_ciap: resolvido.exigeCiap ?? null,
+      exige_difal_entrada: resolvido.exigeDifalEntrada ?? null,
+    };
+  }
+
+  /** Confirma manualmente o CFOP de um item e recalcula a aptidão do documento. */
+  async editarCfopItem(input: { itemId: string; cfop: string }) {
+    return this.database.db.transaction(async (tx) => {
+      const registros = await tx
+        .select({
+          item: documentosFiscaisItens,
+          situacao: documentosFiscais.situacao,
+          integridadeStatus: documentosFiscais.integridadeStatus,
+        })
+        .from(documentosFiscaisItens)
+        .innerJoin(
+          documentosFiscais,
+          eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+        )
+        .where(eq(documentosFiscaisItens.id, input.itemId))
+        .limit(1);
+      const registro = registros[0];
+      if (!registro) throw new NotFoundException('Item fiscal não encontrado.');
+
+      const anterior = registro.item.cfop;
+      const resolvido = await this.cfopService.resolverCfopManual({
+        cfop: input.cfop,
+        tipoOperacaoEscriturada: registro.item.tipoOperacaoEscriturada as
+          | 'ENTRADA'
+          | 'SAIDA',
+      });
+      const atualizados = await tx
+        .update(documentosFiscaisItens)
+        .set({
+          cfop: resolvido.catalogo.codigo,
+          cfopRevisaoNecessaria: false,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(documentosFiscaisItens.id, registro.item.id))
+        .returning();
+
+      const pendencias = await tx
+        .select({ total: count() })
+        .from(documentosFiscaisItens)
+        .where(
+          and(
+            eq(
+              documentosFiscaisItens.documentoFiscalId,
+              registro.item.documentoFiscalId,
+            ),
+            eq(documentosFiscaisItens.cfopRevisaoNecessaria, true),
+          ),
+        );
+      const escrituravel = registro.situacao === 'AUTORIZADA';
+      const apto =
+        escrituravel &&
+        registro.integridadeStatus === 'OK' &&
+        Number(pendencias[0]?.total ?? 0) === 0;
+      const status = !escrituravel
+        ? ('NAO_ESCRITURAVEL' as const)
+        : apto
+          ? ('ESCRITURADO' as const)
+          : ('PENDENTE_REVISAO' as const);
+      await tx
+        .update(documentosFiscais)
+        .set({
+          escriturado: escrituravel,
+          escrituracaoStatus: status,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(documentosFiscais.id, registro.item.documentoFiscalId));
+
+      const item = atualizados[0];
+      return {
+        id: item.id,
+        documento_fiscal_id: item.documentoFiscalId,
+        cfop_anterior: anterior,
+        cfop: item.cfop,
+        cfop_xml: item.cfopXml,
+        cfop_revisao_necessaria: item.cfopRevisaoNecessaria,
+        apropria_credito_icms: resolvido.efeitos.apropriaCreditoIcms,
+        apropria_credito_ipi: resolvido.efeitos.apropriaCreditoIpi,
+        exige_ciap: resolvido.efeitos.exigeCiap,
+        exige_difal_entrada: resolvido.efeitos.exigeDifalEntrada,
+        escrituracao_status: status,
+        documento_apto_sped: apto,
+      };
+    });
+  }
+
+  /** Confirma manualmente o CFOP do CT-e sem liberar outras revisões. */
+  async editarCfopCte(input: { documentoId: string; cfop: string }) {
+    return this.database.db.transaction(async (tx) => {
+      const registros = await tx
+        .select({
+          cte: documentosFiscaisCteEscrituracao,
+          situacao: documentosFiscais.situacao,
+          integridadeStatus: documentosFiscais.integridadeStatus,
+        })
+        .from(documentosFiscaisCteEscrituracao)
+        .innerJoin(
+          documentosFiscais,
+          eq(
+            documentosFiscais.id,
+            documentosFiscaisCteEscrituracao.documentoFiscalId,
+          ),
+        )
+        .where(
+          eq(
+            documentosFiscaisCteEscrituracao.documentoFiscalId,
+            input.documentoId,
+          ),
+        )
+        .limit(1);
+      const registro = registros[0];
+      if (!registro) throw new NotFoundException('CT-e fiscal não encontrado.');
+
+      const anterior = registro.cte.cfop;
+      const resolvido = await this.cfopService.resolverCfopManual({
+        cfop: input.cfop,
+        tipoOperacaoEscriturada: registro.cte.tipoOperacaoEscriturada as
+          | 'ENTRADA'
+          | 'SAIDA',
+      });
+      const outraRevisao =
+        registro.cte.revisaoNecessaria &&
+        !registro.cte.cfopRevisaoNecessaria;
+      const atualizados = await tx
+        .update(documentosFiscaisCteEscrituracao)
+        .set({
+          cfop: resolvido.catalogo.codigo,
+          cfopRevisaoNecessaria: false,
+          revisaoNecessaria: outraRevisao,
+          valorIcmsCreditavel:
+            resolvido.efeitos.apropriaCreditoIcms &&
+            registro.cte.tipoOperacaoEscriturada === 'ENTRADA'
+              ? registro.cte.valorIcmsCreditavel
+              : '0.00',
+          atualizadoEm: new Date(),
+        })
+        .where(eq(documentosFiscaisCteEscrituracao.id, registro.cte.id))
+        .returning();
+
+      const escrituravel =
+        registro.situacao === 'AUTORIZADA' && registro.cte.escrituravel;
+      const apto =
+        escrituravel &&
+        registro.integridadeStatus === 'OK' &&
+        !outraRevisao;
+      const status = !escrituravel
+        ? ('NAO_ESCRITURAVEL' as const)
+        : apto
+          ? ('ESCRITURADO' as const)
+          : ('PENDENTE_REVISAO' as const);
+      await tx
+        .update(documentosFiscais)
+        .set({
+          escriturado: escrituravel,
+          escrituracaoStatus: status,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(documentosFiscais.id, input.documentoId));
+
+      const cte = atualizados[0];
+      return {
+        id: cte.id,
+        documento_fiscal_id: cte.documentoFiscalId,
+        cfop_anterior: anterior,
+        cfop: cte.cfop,
+        cfop_xml: cte.cfopXml,
+        cfop_revisao_necessaria: cte.cfopRevisaoNecessaria,
+        revisao_necessaria: cte.revisaoNecessaria,
+        apropria_credito_icms: resolvido.efeitos.apropriaCreditoIcms,
+        apropria_credito_ipi: resolvido.efeitos.apropriaCreditoIpi,
+        exige_ciap: resolvido.efeitos.exigeCiap,
+        exige_difal_entrada: resolvido.efeitos.exigeDifalEntrada,
+        escrituracao_status: status,
+        documento_apto_sped: apto,
+      };
+    });
+  }
+
+  private async buscarRegra(
+    id: string,
+    clienteId: string | null,
+  ): Promise<RegraRow> {
+    const rows = await this.database.db
+      .select()
+      .from(regrasFiscais)
+      .where(eq(regrasFiscais.id, id))
+      .limit(1);
+    const regra = rows[0];
+    if (!regra) throw new NotFoundException('Regra fiscal não encontrada.');
+    // Cliente só administra as próprias regras; admin (clienteId null) só as
+    // globais quando o escopo assim exigir.
+    if (clienteId !== null && regra.clienteId !== clienteId) {
+      throw new NotFoundException('Regra fiscal não encontrada.');
+    }
+    if (clienteId === null && regra.clienteId !== null) {
+      throw new NotFoundException('Regra fiscal não encontrada.');
+    }
+    return regra;
+  }
+
+  private async validar(input: RegraMutation) {
+    await this.assertCfopAtivo(input.cfopDestino);
+    if (input.clienteId) {
+      const rows = await this.database.db
+        .select({ id: clientes.id })
+        .from(clientes)
+        .where(eq(clientes.id, input.clienteId))
+        .limit(1);
+      if (!rows[0]) throw new BadRequestException('Empresa não encontrada.');
+    }
+  }
+
+  private async assertCfopAtivo(codigo: string) {
+    // getCfop lança NotFound quando o CFOP não existe.
+    await this.cfopService.getCfop(codigo);
+  }
+
+  private sanitizePatch(patch: Partial<Omit<RegraMutation, 'clienteId'>>) {
+    const clean: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) continue;
+      clean[key] =
+        key === 'ufOrigem' && typeof value === 'string'
+          ? value.toUpperCase()
+          : value;
+    }
+    return clean;
+  }
+
+  private toResponse(row: RegraRow) {
+    return {
+      id: row.id,
+      cliente_id: row.clienteId,
+      escopo: row.clienteId ? ('CLIENTE' as const) : ('GLOBAL' as const),
+      prioridade: row.prioridade,
+      nome_regra: row.nomeRegra,
+      tipo_operacao_origem: row.tipoOperacaoOrigem,
+      cfop_origem: row.cfopOrigem,
+      ncm: row.ncm,
+      cst_icms_origem: row.cstIcmsOrigem,
+      csosn_origem: row.csosnOrigem,
+      fornecedor_cnpj_cpf: row.fornecedorCnpjCpf,
+      uf_origem: row.ufOrigem,
+      destinacao_mercadoria: row.destinacaoMercadoria,
+      cfop_destino: row.cfopDestino,
+      cst_icms_destino: row.cstIcmsDestino,
+      csosn_destino: row.csosnDestino,
+      apropria_credito_icms: row.apropriaCreditoIcms,
+      apropria_credito_ipi: row.apropriaCreditoIpi,
+      cst_pis_destino: row.cstPisDestino,
+      cst_cofins_destino: row.cstCofinsDestino,
+      exige_ciap: row.exigeCiap,
+      exige_difal_entrada: row.exigeDifalEntrada,
+      observacao_fiscal: row.observacaoFiscal,
+      ativo: row.ativo,
+      criado_em: row.criadoEm.toISOString(),
+      atualizado_em: row.atualizadoEm.toISOString(),
+    };
+  }
+}

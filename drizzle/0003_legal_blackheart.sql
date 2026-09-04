@@ -1,0 +1,2 @@
+ALTER TABLE "documentos_fiscais_cte_escrituracao" DROP CONSTRAINT "chk_cte_escrituracao_operacao";--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_cte_escrituracao" ADD CONSTRAINT "chk_cte_escrituracao_operacao" CHECK ("documentos_fiscais_cte_escrituracao"."tipo_operacao_escriturada" IN ('ENTRADA', 'SAIDA'));

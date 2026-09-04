@@ -106,6 +106,62 @@ export const verification = pgTable(
 // Tabelas da aplicação
 // ─────────────────────────────────────────────────────────────────────────────
 
+export const contadores = pgTable(
+  'contadores',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    nome: text('nome').notNull(),
+    cpf: varchar('cpf', { length: 11 }),
+    crc: text('crc').notNull(),
+    cnpj: varchar('cnpj', { length: 14 }),
+    cep: varchar('cep', { length: 8 }),
+    logradouro: text('logradouro'),
+    numero: text('numero'),
+    complemento: text('complemento'),
+    bairro: text('bairro'),
+    telefone: text('telefone'),
+    fax: text('fax'),
+    email: text('email'),
+    codigoMunicipioIbge: varchar('codigo_municipio_ibge', {
+      length: 7,
+    }).notNull(),
+    atualizadoPor: text('atualizado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_contadores_cpf_crc')
+      .on(table.cpf, table.crc)
+      .where(sql`${table.cpf} IS NOT NULL`),
+    uniqueIndex('uidx_contadores_cnpj_crc')
+      .on(table.cnpj, table.crc)
+      .where(sql`${table.cnpj} IS NOT NULL`),
+    index('idx_contadores_nome').on(table.nome),
+    check(
+      'chk_contadores_documento',
+      sql`(${table.cpf} IS NOT NULL AND ${table.cpf} ~ '^[0-9]{11}$') OR (${table.cnpj} IS NOT NULL AND ${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$')`,
+    ),
+    check(
+      'chk_contadores_cep',
+      sql`${table.cep} IS NULL OR ${table.cep} ~ '^[0-9]{8}$'`,
+    ),
+    check(
+      'chk_contadores_codigo_municipio',
+      sql`${table.codigoMunicipioIbge} ~ '^[0-9]{7}$'`,
+    ),
+    check(
+      'chk_contadores_nome',
+      sql`char_length(btrim(${table.nome})) BETWEEN 2 AND 100`,
+    ),
+    check(
+      'chk_contadores_crc',
+      sql`char_length(btrim(${table.crc})) BETWEEN 2 AND 30`,
+    ),
+  ],
+);
+
 export const clientes = pgTable(
   'clientes',
   {
@@ -139,7 +195,12 @@ export const clientes = pgTable(
     }),
     logoKey: text('logo_key'),
     primeiroLogin: boolean('primeiro_login').notNull().default(true),
+    suspenso: boolean('suspenso').notNull().default(false),
+    suspensoEm: timestamp('suspenso_em', { withTimezone: true }),
     userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    contadorId: uuid('contador_id').references(() => contadores.id, {
+      onDelete: 'set null',
+    }),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
   },
   (table) => [
@@ -192,9 +253,14 @@ export const clientes = pgTable(
       'chk_clientes_documento_por_tipo',
       sql`(${table.tipoPessoa} = 'PJ' AND ${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$' AND ${table.cpf} IS NULL) OR (${table.tipoPessoa} = 'PF' AND ${table.cnpj} ~ '^[0-9]{11}$' AND ${table.cpf} = ${table.cnpj})`,
     ),
+    check(
+      'chk_clientes_suspensao_coerencia',
+      sql`(${table.suspenso} = true AND ${table.suspensoEm} IS NOT NULL) OR (${table.suspenso} = false AND ${table.suspensoEm} IS NULL)`,
+    ),
     index('idx_clientes_regime_tributario')
       .on(table.regimeTributario)
       .where(sql`${table.regimeTributario} IS NOT NULL`),
+    index('idx_clientes_contador_id').on(table.contadorId),
   ],
 );
 
@@ -244,7 +310,7 @@ export const guias = pgTable(
     check('chk_guias_status', sql`${table.status} IN ('PENDENTE', 'PAGO')`),
     check(
       'chk_guias_email_status',
-      sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')`,
+      sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL', 'SUSPENSO')`,
     ),
     check(
       'chk_guias_periodo',
@@ -628,6 +694,16 @@ export const cfops = pgTable(
     tipoOperacao: varchar('tipo_operacao', { length: 10 }).notNull(),
     abrangencia: varchar('abrangencia', { length: 15 }).notNull(),
     grupo: text('grupo'),
+    // Categoria fiscal da destinação econômica da mercadoria/serviço.
+    // Base para o motor de regras decidir crédito de ICMS/IPI e CIAP.
+    categoriaFiscal: varchar('categoria_fiscal', { length: 30 })
+      .notNull()
+      .default('OUTRAS'),
+    // Indica se, em regra geral, o CFOP dá direito a crédito de ICMS na entrada.
+    // Uso/consumo (1556/2556) e ST-substituído (1403/1405) => false.
+    geraCreditoIcmsPadrao: boolean('gera_credito_icms_padrao')
+      .notNull()
+      .default(false),
     descricaoDetalhada: text('descricao_detalhada'),
     ativo: boolean('ativo').notNull().default(true),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
@@ -636,11 +712,16 @@ export const cfops = pgTable(
   (table) => [
     index('idx_cfops_tipo').on(table.tipoOperacao),
     index('idx_cfops_abrangencia').on(table.abrangencia),
+    index('idx_cfops_categoria').on(table.categoriaFiscal),
     check('chk_cfops_codigo', sql`${table.codigo} ~ '^[123567][0-9]{3}$'`),
     check('chk_cfops_tipo', sql`${table.tipoOperacao} IN ('ENTRADA', 'SAIDA')`),
     check(
       'chk_cfops_abrangencia',
       sql`${table.abrangencia} IN ('ESTADUAL', 'INTERESTADUAL', 'EXTERIOR')`,
+    ),
+    check(
+      'chk_cfops_categoria',
+      sql`${table.categoriaFiscal} IN ('COMPRA_REVENDA', 'COMPRA_INSUMO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO', 'DEVOLUCAO', 'TRANSFERENCIA', 'REMESSA_RETORNO', 'PRESTACAO_SERVICO', 'OUTRAS')`,
     ),
   ],
 );
@@ -769,6 +850,10 @@ export const documentosFiscais = pgTable(
     emitenteDados: jsonb('emitente_dados').$type<Record<string, unknown>>(),
     destinatarioDados:
       jsonb('destinatario_dados').$type<Record<string, unknown>>(),
+    // Documentos referenciados (grupo <NFref>) para o registro C113 da EFD.
+    documentosReferenciados: jsonb('documentos_referenciados').$type<
+      Array<{ tipo: string; chaveAcesso: string | null }>
+    >(),
     situacao: text('situacao').notNull().default('AUTORIZADA'),
     manifestacaoStatus: text('manifestacao_status')
       .notNull()
@@ -896,6 +981,9 @@ export const documentosFiscaisItens = pgTable(
     cfopRevisaoNecessaria: boolean('cfop_revisao_necessaria')
       .notNull()
       .default(false),
+    // Destinação econômica atribuída pelo usuário (override manual) que
+    // realimenta o motor de regras para re-resolver o CFOP escriturado.
+    destinacaoMercadoria: varchar('destinacao_mercadoria', { length: 20 }),
     unidadeComercial: varchar('unidade_comercial', { length: 10 }).notNull(),
     quantidadeComercial: numeric('quantidade_comercial', {
       precision: 15,
@@ -1166,6 +1254,10 @@ export const documentosFiscaisItens = pgTable(
       'chk_item_operacao_escriturada',
       sql`${table.tipoOperacaoEscriturada} IN ('ENTRADA', 'SAIDA')`,
     ),
+    check(
+      'chk_item_destinacao',
+      sql`${table.destinacaoMercadoria} IS NULL OR ${table.destinacaoMercadoria} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
+    ),
   ],
 );
 
@@ -1250,7 +1342,7 @@ export const documentosFiscaisCteEscrituracao = pgTable(
     ),
     check(
       'chk_cte_escrituracao_operacao',
-      sql`${table.tipoOperacaoEscriturada} = 'ENTRADA'`,
+      sql`${table.tipoOperacaoEscriturada} IN ('ENTRADA', 'SAIDA')`,
     ),
     check(
       'chk_cte_escrituracao_tp_cte',
@@ -1424,7 +1516,7 @@ export const spedContabilistas = pgTable(
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('uidx_sped_contabilista_cliente').on(table.clienteId),
+    index('idx_sped_contabilista_cliente').on(table.clienteId),
     check(
       'chk_sped_contabilista_documento',
       sql`(${table.cpf} IS NOT NULL AND ${table.cpf} ~ '^[0-9]{11}$') OR (${table.cnpj} IS NOT NULL AND ${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$')`,
@@ -1912,5 +2004,205 @@ export const spedArquivosGerados = pgTable(
       'chk_sped_arquivo_tamanho',
       sql`${table.tamanhoBytes} IS NULL OR ${table.tamanhoBytes} >= 0`,
     ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Motor de regras fiscais, CIAP (Bloco G) e guias de apuração
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Regras fiscais avançadas (Rule Engine). clienteId nulo = regra global.
+// Resolvem CFOP escriturado, CST/CSOSN e direito a crédito com base em
+// destinação da mercadoria, NCM, fornecedor, UF e CFOP de origem.
+export const regrasFiscais = pgTable(
+  'regras_fiscais',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id').references(() => clientes.id, {
+      onDelete: 'cascade',
+    }),
+    prioridade: integer('prioridade').notNull().default(100),
+    nomeRegra: text('nome_regra').notNull(),
+
+    // Critérios de correspondência (match)
+    tipoOperacaoOrigem: varchar('tipo_operacao_origem', { length: 10 }),
+    cfopOrigem: varchar('cfop_origem', { length: 4 }),
+    ncm: varchar('ncm', { length: 8 }),
+    cstIcmsOrigem: varchar('cst_icms_origem', { length: 3 }),
+    csosnOrigem: varchar('csosn_origem', { length: 4 }),
+    fornecedorCnpjCpf: text('fornecedor_cnpj_cpf'),
+    ufOrigem: varchar('uf_origem', { length: 2 }),
+    destinacaoMercadoria: varchar('destinacao_mercadoria', { length: 20 }),
+
+    // Ações resultantes (transform)
+    cfopDestino: varchar('cfop_destino', { length: 4 })
+      .notNull()
+      .references(() => cfops.codigo),
+    cstIcmsDestino: varchar('cst_icms_destino', { length: 3 }),
+    csosnDestino: varchar('csosn_destino', { length: 4 }),
+    apropriaCreditoIcms: boolean('apropria_credito_icms')
+      .notNull()
+      .default(false),
+    percentualReducaoBcIcms: numeric('percentual_reducao_bc_icms', {
+      precision: 7,
+      scale: 4,
+    }),
+    apropriaCreditoIpi: boolean('apropria_credito_ipi')
+      .notNull()
+      .default(false),
+    apropriaCreditoPisCofins: boolean('apropria_credito_pis_cofins')
+      .notNull()
+      .default(false),
+    cstPisDestino: varchar('cst_pis_destino', { length: 2 }),
+    cstCofinsDestino: varchar('cst_cofins_destino', { length: 2 }),
+    exigeCiap: boolean('exige_ciap').notNull().default(false),
+    exigeDifalEntrada: boolean('exige_difal_entrada').notNull().default(false),
+    observacaoFiscal: text('observacao_fiscal'),
+
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_regras_fiscais_cliente').on(table.clienteId),
+    index('idx_regras_fiscais_match').on(
+      table.tipoOperacaoOrigem,
+      table.cfopOrigem,
+      table.prioridade,
+    ),
+    index('idx_regras_fiscais_ncm').on(table.ncm),
+    check(
+      'chk_regras_fiscais_tipo_origem',
+      sql`${table.tipoOperacaoOrigem} IS NULL OR ${table.tipoOperacaoOrigem} IN ('ENTRADA', 'SAIDA')`,
+    ),
+    check(
+      'chk_regras_fiscais_destinacao',
+      sql`${table.destinacaoMercadoria} IS NULL OR ${table.destinacaoMercadoria} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
+    ),
+    check('chk_regras_fiscais_prioridade', sql`${table.prioridade} >= 0`),
+  ],
+);
+
+// CIAP — Controle de crédito do ICMS do ativo permanente (Bloco G / 1-48 avos)
+export const ciapAtivoPermanente = pgTable(
+  'ciap_ativo_permanente',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    documentoFiscalId: uuid('documento_fiscal_id').references(
+      () => documentosFiscais.id,
+      { onDelete: 'set null' },
+    ),
+    documentoFiscalItemId: uuid('documento_fiscal_item_id').references(
+      () => documentosFiscaisItens.id,
+      { onDelete: 'set null' },
+    ),
+
+    codigoBem: varchar('codigo_bem', { length: 60 }).notNull(),
+    identificacaoBem: text('identificacao_bem').notNull(),
+    dataEntrada: date('data_entrada').notNull(),
+    valorIcmsTotal: numeric('valor_icms_total', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    valorIcmsFrete: numeric('valor_icms_frete', {
+      precision: 15,
+      scale: 2,
+    }).default('0'),
+    valorIcmsDifal: numeric('valor_icms_difal', {
+      precision: 15,
+      scale: 2,
+    }).default('0'),
+    quantidadeParcelas: integer('quantidade_parcelas').notNull().default(48),
+    parcelasApropriadas: integer('parcelas_apropriadas').notNull().default(0),
+    saldoCredorRestante: numeric('saldo_credor_restante', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('ATIVO'),
+    dataBaixa: date('data_baixa'),
+    motivoBaixa: varchar('motivo_baixa', { length: 2 }),
+
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_ciap_cliente').on(table.clienteId),
+    index('idx_ciap_status').on(table.status),
+    uniqueIndex('uidx_ciap_cliente_codigo_bem').on(
+      table.clienteId,
+      table.codigoBem,
+    ),
+    check(
+      'chk_ciap_status',
+      sql`${table.status} IN ('ATIVO', 'BAIXADO', 'CONCLUIDO')`,
+    ),
+    check(
+      'chk_ciap_parcelas',
+      sql`${table.quantidadeParcelas} > 0 AND ${table.parcelasApropriadas} >= 0 AND ${table.parcelasApropriadas} <= ${table.quantidadeParcelas}`,
+    ),
+    check(
+      'chk_ciap_motivo_baixa',
+      sql`${table.motivoBaixa} IS NULL OR ${table.motivoBaixa} IN ('01', '02', '03')`,
+    ),
+  ],
+);
+
+// Guias e obrigações fiscais apuradas (DAE/GNRE/DARF/DAS)
+export const fiscalApuracoesGuias = pgTable(
+  'fiscal_apuracoes_guias',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    tributo: varchar('tributo', { length: 20 }).notNull(),
+    ufFavorecida: varchar('uf_favorecida', { length: 2 }).notNull(),
+    tipoGuia: varchar('tipo_guia', { length: 10 }).notNull(),
+    codigoReceita: text('codigo_receita').notNull(),
+    dataVencimento: date('data_vencimento').notNull(),
+    valorPrincipal: numeric('valor_principal', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    valorMulta: numeric('valor_multa', { precision: 15, scale: 2 }).default(
+      '0',
+    ),
+    valorJuros: numeric('valor_juros', { precision: 15, scale: 2 }).default(
+      '0',
+    ),
+    valorTotal: numeric('valor_total', { precision: 15, scale: 2 }).notNull(),
+    codigoBarras: text('codigo_barras'),
+    linhaDigitavel: text('linha_digitavel'),
+    statusPagamento: varchar('status_pagamento', { length: 20 })
+      .notNull()
+      .default('PENDENTE'),
+    arquivoGuiaKey: text('arquivo_guia_key'),
+
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_fiscal_guias_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    index('idx_fiscal_guias_status').on(table.statusPagamento),
+    check(
+      'chk_fiscal_guias_tributo',
+      sql`${table.tributo} IN ('ICMS_PROPRIO', 'ICMS_ST', 'DIFAL_ENTRADA', 'DIFAL_SAIDA', 'FCP', 'IPI', 'PIS', 'COFINS', 'DAS_SIMPLES')`,
+    ),
+    check(
+      'chk_fiscal_guias_tipo',
+      sql`${table.tipoGuia} IN ('DAE', 'GNRE', 'DARF', 'DAS')`,
+    ),
+    check(
+      'chk_fiscal_guias_status',
+      sql`${table.statusPagamento} IN ('PENDENTE', 'PAGO', 'VENCIDO')`,
+    ),
+    check('chk_fiscal_guias_uf', sql`${table.ufFavorecida} ~ '^[A-Z]{2}$'`),
   ],
 );

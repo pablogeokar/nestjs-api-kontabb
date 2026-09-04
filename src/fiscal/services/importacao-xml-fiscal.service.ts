@@ -380,6 +380,7 @@ export class ImportacaoXmlFiscalService {
           apuraIcms: target.apuraIcms ?? false,
           situacao: documento.situacao,
           cte: documento.cteEscrituracao,
+          emitenteUf: documento.emitente.uf || null,
         })
       : null;
     if (documento.tipoDocumento === 'CTE' && !ctePreparada) {
@@ -396,6 +397,7 @@ export class ImportacaoXmlFiscalService {
             clienteId: target.id,
             clienteCnpjCpf: target.cnpj,
             emitenteCnpjCpf: documento.emitenteCnpjCpf,
+            emitenteUf: documento.emitente.uf || null,
             tpNfXml: documento.tpNfXml,
             itens: documento.itens,
           });

@@ -87,4 +87,12 @@ export class QueryDocumentosFiscaisDto {
   @IsString()
   @MaxLength(120)
   search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar documentos com CFOP pendente de revisão',
+    enum: ['true', 'false'],
+  })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  revisaoNecessaria?: string;
 }

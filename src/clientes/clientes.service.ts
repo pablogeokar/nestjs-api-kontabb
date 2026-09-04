@@ -1,7 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes } from '../database/schema';
+import { clientes, contadores } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageService } from '../storage/storage.service';
@@ -56,7 +60,7 @@ export class ClientesService {
     private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
-  ) {}
+  ) { }
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
     const searchDocument = input.search
@@ -64,10 +68,10 @@ export class ClientesService {
       .toUpperCase();
     const where = input.search
       ? or(
-          ilike(clientes.razaoSocial, `%${input.search}%`),
-          ilike(clientes.cnpj, `%${searchDocument}%`),
-          ilike(clientes.cpf, `%${searchDocument}%`),
-        )
+        ilike(clientes.razaoSocial, `%${input.search}%`),
+        ilike(clientes.cnpj, `%${searchDocument}%`),
+        ilike(clientes.cpf, `%${searchDocument}%`),
+      )
       : undefined;
 
     const [countResult, rows] = await Promise.all([
@@ -102,8 +106,12 @@ export class ClientesService {
           simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
           logoKey: clientes.logoKey,
           isFirstLogin: clientes.primeiroLogin,
+          suspenso: clientes.suspenso,
+          suspensoEm: clientes.suspensoEm,
           authUserId: clientes.userId,
           createdAt: clientes.criadoEm,
+          contadorId: clientes.contadorId,
+          contadorNome: contadores.nome,
           certStatus: sql<string | null>`(
             SELECT cd.status FROM certificados_digitais cd
             WHERE cd.cliente_id = clientes.id
@@ -120,6 +128,7 @@ export class ClientesService {
           )`.as('cert_validade_fim'),
         })
         .from(clientes)
+        .leftJoin(contadores, eq(contadores.id, clientes.contadorId))
         .where(where)
         .orderBy(asc(clientes.razaoSocial))
         .limit(input.pagination.limit)
@@ -137,9 +146,9 @@ export class ClientesService {
         address: this.mapAddress(client),
         primary_activity: client.cnaePrincipalCodigo
           ? {
-              code: client.cnaePrincipalCodigo,
-              description: client.cnaePrincipalDescricao ?? '',
-            }
+            code: client.cnaePrincipalCodigo,
+            description: client.cnaePrincipalDescricao ?? '',
+          }
           : null,
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
@@ -158,14 +167,18 @@ export class ClientesService {
           ? await this.storage.getSignedUrl(client.logoKey)
           : null,
         is_first_login: client.isFirstLogin,
+        suspenso: client.suspenso,
+        suspenso_em: client.suspensoEm?.toISOString() ?? null,
         auth_user_id: client.authUserId,
         created_at: client.createdAt.toISOString(),
+        contador_id: client.contadorId,
+        contador_nome: client.contadorNome,
         certificado: client.certStatus
           ? {
-              status: client.certStatus as
-                'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
-              validade_fim: client.certValidadeFim!,
-            }
+            status: client.certStatus as
+              'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
+            validade_fim: client.certValidadeFim!,
+          }
           : null,
       })),
     );
@@ -189,6 +202,7 @@ export class ClientesService {
     secondaryActivities?: StoredCnae[];
     optanteSimplesNacional?: boolean | null;
     simplesNacionalFonte?: FonteConsultaCnpj | null;
+    contadorId?: string | null;
   }) {
     const simplesNacional = this.normalizeSimplesNacionalRegistration(
       input.tipoPessoa,
@@ -198,6 +212,10 @@ export class ClientesService {
     const authEmail = `${authIdentifier}@kontabb.local`;
     const hashedPassword = await this.authService.hashPassword('123456');
     const authUserId = crypto.randomUUID();
+    const contadorId =
+      input.tipoPessoa === 'PJ'
+        ? await this.resolveContadorId(input.contadorId)
+        : null;
 
     try {
       // Create auth user + account directly (matching better-auth structure)
@@ -233,7 +251,7 @@ export class ClientesService {
             cnae_principal_codigo, cnae_principal_descricao, cnaes_secundarios,
             regime_tributario, apura_icms, optante_simples_nacional,
             simples_nacional_fonte, simples_nacional_consultado_em,
-            primeiro_login, user_id
+            primeiro_login, user_id, contador_id
           )
           SELECT
             ${input.tipoPessoa}, ${input.companyName}, ${cnpjValue}, ${cpfValue}, ${emails},
@@ -252,7 +270,7 @@ export class ClientesService {
             ${simplesNacional.optanteSimplesNacional}::boolean,
             ${simplesNacional.simplesNacionalFonte}::text,
             CASE WHEN ${simplesNacional.optanteSimplesNacional}::boolean IS NULL THEN NULL ELSE now() END,
-            true, id
+            true, id, ${contadorId}::uuid
           FROM inserted_user
           RETURNING id
         ),
@@ -300,7 +318,9 @@ export class ClientesService {
     tipoContribuinteIcms?: TipoContribuinteIcms | null;
     optanteSimplesNacional?: boolean | null;
     simplesNacionalFonte?: FonteConsultaCnpj | null;
+    contadorId?: string | null;
   }) {
+    if (input.contadorId) await this.assertContador(input.contadorId);
     const existingRows = await this.database.db
       .select({
         tipoPessoa: clientes.tipoPessoa,
@@ -328,6 +348,7 @@ export class ClientesService {
     const hasAddress = input.address !== undefined;
     const hasPrimaryActivity = input.primaryActivity !== undefined;
     const hasSecondaryActivities = input.secondaryActivities !== undefined;
+    const hasContadorId = input.contadorId !== undefined;
     const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
     const result = await this.database.db.execute(sql`
       WITH updated_client AS (
@@ -355,7 +376,8 @@ export class ClientesService {
             WHEN ${simplesNacionalUpdate.writeConsultation} AND ${simplesNacionalUpdate.optanteSimplesNacional}::boolean IS NULL THEN NULL
             WHEN ${simplesNacionalUpdate.writeConsultation} THEN now()
             ELSE simples_nacional_consultado_em
-          END
+          END,
+          contador_id = CASE WHEN ${hasContadorId} THEN ${input.contadorId ?? null}::uuid ELSE contador_id END
         WHERE id = ${input.clientId}::uuid
         RETURNING id
       ),
@@ -440,6 +462,7 @@ export class ClientesService {
         cnpj: clientes.cnpj,
         uf: clientes.uf,
         primeiroLogin: clientes.primeiroLogin,
+        suspenso: clientes.suspenso,
         regimeTributario: clientes.regimeTributario,
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
@@ -483,6 +506,58 @@ export class ClientesService {
     return result[0]?.primeiroLogin ?? false;
   }
 
+  /**
+   * Returns whether the client bound to the given auth user is suspended.
+   * Used by the auth endpoints to surface a suspended flag to the frontend.
+   */
+  async isClientSuspended(userId: string): Promise<boolean> {
+    const result = await this.database.db
+      .select({ suspenso: clientes.suspenso })
+      .from(clientes)
+      .where(eq(clientes.userId, userId))
+      .limit(1);
+    return result[0]?.suspenso ?? false;
+  }
+
+  /**
+   * Suspend or reactivate a client. When suspended the client is blocked from
+   * the client area and stops receiving e-mail notifications. Keeps the
+   * suspenso/suspenso_em pair coherent and writes an audit event.
+   */
+  async setClientSuspension(input: {
+    clientId: string;
+    actorUserId: string;
+    suspenso: boolean;
+  }): Promise<boolean> {
+    const acao = input.suspenso ? 'CLIENTE_SUSPENSO' : 'CLIENTE_REATIVADO';
+    const result = await this.database.db.execute(sql`
+      WITH updated_client AS (
+        UPDATE clientes
+        SET
+          suspenso = ${input.suspenso}::boolean,
+          suspenso_em = CASE WHEN ${input.suspenso}::boolean THEN now() ELSE NULL END
+        WHERE id = ${input.clientId}::uuid
+          AND suspenso IS DISTINCT FROM ${input.suspenso}::boolean
+        RETURNING id, razao_social
+      ),
+      audit_event AS (
+        INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
+        SELECT ${input.actorUserId}, ${acao}, 'CLIENTE', id::text,
+          jsonb_build_object('razaoSocial', razao_social, 'suspenso', ${input.suspenso}::boolean)
+        FROM updated_client
+        RETURNING id
+      )
+      SELECT EXISTS (
+        SELECT 1 FROM clientes WHERE id = ${input.clientId}::uuid
+      ) AS exists,
+      EXISTS (SELECT 1 FROM updated_client) AS changed
+    `);
+    const row = resultRows<{ exists: boolean; changed: boolean }>(result)[0];
+    // Return false only when the client does not exist; a no-op (already in the
+    // requested state) is treated as success so the endpoint stays idempotent.
+    return Boolean(row?.exists);
+  }
+
   async getClientSummary(clientId: string) {
     const result = await this.database.db
       .select({
@@ -509,8 +584,13 @@ export class ClientesService {
         simplesNacionalFonte: clientes.simplesNacionalFonte,
         simplesNacionalConsultadoEm: clientes.simplesNacionalConsultadoEm,
         logoKey: clientes.logoKey,
+        suspenso: clientes.suspenso,
+        suspensoEm: clientes.suspensoEm,
+        contadorId: clientes.contadorId,
+        contadorNome: contadores.nome,
       })
       .from(clientes)
+      .leftJoin(contadores, eq(contadores.id, clientes.contadorId))
       .where(eq(clientes.id, clientId))
       .limit(1);
     const client = result[0];
@@ -524,9 +604,9 @@ export class ClientesService {
       address: this.mapAddress(client),
       primary_activity: client.cnaePrincipalCodigo
         ? {
-            code: client.cnaePrincipalCodigo,
-            description: client.cnaePrincipalDescricao ?? '',
-          }
+          code: client.cnaePrincipalCodigo,
+          description: client.cnaePrincipalDescricao ?? '',
+        }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
       regime_tributario: client.regimeTributario as RegimeTributario | null,
@@ -542,6 +622,10 @@ export class ClientesService {
       logo_url: client.logoKey
         ? await this.storage.getSignedUrl(client.logoKey)
         : null,
+      suspenso: client.suspenso,
+      suspenso_em: client.suspensoEm?.toISOString() ?? null,
+      contador_id: client.contadorId,
+      contador_nome: client.contadorNome,
     };
   }
 
@@ -567,6 +651,7 @@ export class ClientesService {
         emails: clientes.emails,
         regimeTributario: clientes.regimeTributario,
         apuraIcms: clientes.apuraIcms,
+        suspenso: clientes.suspenso,
       })
       .from(clientes)
       .where(where)
@@ -580,9 +665,9 @@ export class ClientesService {
     const fullRows = (
       fullCnpjs.length
         ? await this.database.db
-            .select({ cnpj: clientes.cnpj })
-            .from(clientes)
-            .where(inArray(clientes.cnpj, fullCnpjs))
+          .select({ cnpj: clientes.cnpj })
+          .from(clientes)
+          .where(inArray(clientes.cnpj, fullCnpjs))
         : []
     ) as Array<{ cnpj: string }>;
     const rootRows = await Promise.all(
@@ -947,6 +1032,28 @@ export class ClientesService {
         },
       ];
     });
+  }
+
+  private async resolveContadorId(requested: string | null | undefined) {
+    if (requested !== undefined) {
+      if (requested) await this.assertContador(requested);
+      return requested;
+    }
+    const rows = await this.database.db
+      .select({ id: contadores.id })
+      .from(contadores)
+      .orderBy(asc(contadores.nome), asc(contadores.id))
+      .limit(2);
+    return rows.length === 1 ? rows[0].id : null;
+  }
+
+  private async assertContador(id: string) {
+    const rows = await this.database.db
+      .select({ id: contadores.id })
+      .from(contadores)
+      .where(eq(contadores.id, id))
+      .limit(1);
+    if (!rows[0]) throw new NotFoundException('Contador não encontrado.');
   }
 
   private isUniqueViolation(error: unknown) {

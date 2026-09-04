@@ -12,7 +12,7 @@ describe('CfopService', () => {
     ['documento próprio de entrada', '12345678000195', '0', 'ENTRADA'],
     ['documento próprio de saída', '12345678000195', '1', 'SAIDA'],
   ])('classifica %s corretamente', (_scenario, emitente, tpNfXml, expected) => {
-    const service = new CfopService({} as never);
+    const service = new CfopService({} as never, {} as never);
 
     expect(
       service.determinarTipoOperacaoEscriturada(
@@ -159,5 +159,21 @@ function createServiceWithQueryResults(results: unknown[][]) {
       }),
     }),
   }));
-  return new CfopService({ db: { select } } as never);
+  // Motor de regras stub: sempre reporta PENDENTE_CLASSIFICACAO, forçando o
+  // fluxo a recorrer à cascata legada (equivalências + algoritmo) que estes
+  // testes cobrem. A resolução do motor tem cobertura própria em
+  // fiscal-rule-engine.service.spec.ts.
+  const ruleEngine = {
+    evaluate: jest.fn().mockResolvedValue({
+      cfopEscriturado: '',
+      apropriaCreditoIcms: false,
+      apropriaCreditoIpi: false,
+      exigeCiap: false,
+      exigeDifalEntrada: false,
+      pendenteClassificacao: true,
+      origemResolucao: 'PENDENTE_CLASSIFICACAO',
+      motivoResolucao: 'stub',
+    }),
+  };
+  return new CfopService({ db: { select } } as never, ruleEngine as never);
 }

@@ -61,6 +61,9 @@ export type TomadorCtePapel =
   'REMETENTE' | 'EXPEDIDOR' | 'RECEBEDOR' | 'DESTINATARIO' | 'TERCEIRO';
 
 export interface CteEscrituracaoParseData {
+  // CNPJ/CPF do emitente (prestador do serviço de transporte). Necessário para
+  // decidir se o cliente é o prestador (CT-e de SAÍDA) ou o tomador (ENTRADA).
+  emitenteCnpjCpf: string;
   tomadorCnpjCpf: string;
   tomadorPapel: TomadorCtePapel;
   tpCte: '0' | '1' | '2' | '3';
@@ -221,6 +224,12 @@ export function parseCteEscrituracaoXml(xml: string): CteEscrituracaoParseData {
     throw new Error('Chave de acesso do CT-e inválida.');
   }
 
+  const emitente = readParty(infCte.emit, 'enderEmit');
+  const emitenteCnpjCpf = normalizeFiscalTaxId(emitente.documento);
+  if (!emitenteCnpjCpf) {
+    throw new Error('Emitente do CT-e não encontrado.');
+  }
+
   const tomador = readTomador(infCte, ide);
   const tomadorCnpjCpf = normalizeFiscalTaxId(tomador.party.documento);
   if (!tomadorCnpjCpf) {
@@ -254,6 +263,7 @@ export function parseCteEscrituracaoXml(xml: string): CteEscrituracaoParseData {
   const normal = asRecord(infCte.infCTeNorm);
 
   return {
+    emitenteCnpjCpf,
     tomadorCnpjCpf,
     tomadorPapel: tomador.papel,
     tpCte: tpCte as CteEscrituracaoParseData['tpCte'],

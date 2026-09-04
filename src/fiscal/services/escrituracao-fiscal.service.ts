@@ -27,6 +27,7 @@ interface DocumentoReprocessado {
   id: string;
   chaveAcesso: string;
   emitenteCnpjCpf: string;
+  emitenteDados: Record<string, unknown> | null;
   modelo: string;
   situacao: string;
   tpNfXml: string | null;
@@ -74,6 +75,7 @@ export class EscrituracaoFiscalService {
         id: documentosFiscais.id,
         chaveAcesso: documentosFiscais.chaveAcesso,
         emitenteCnpjCpf: documentosFiscais.emitenteCnpjCpf,
+        emitenteDados: documentosFiscais.emitenteDados,
         modelo: documentosFiscais.modelo,
         situacao: documentosFiscais.situacao,
         tpNfXml: documentosFiscais.tpNfXml,
@@ -102,6 +104,11 @@ export class EscrituracaoFiscalService {
         numeroItem: documentosFiscaisItens.numeroItem,
         cfop: documentosFiscaisItens.cfop,
         cfopXml: documentosFiscaisItens.cfopXml,
+        ncm: documentosFiscaisItens.ncm,
+        cstIcms: documentosFiscaisItens.cstIcms,
+        csosnIcms: documentosFiscaisItens.csosnIcms,
+        cstPis: documentosFiscaisItens.cstPis,
+        cstCofins: documentosFiscaisItens.cstCofins,
       })
       .from(documentosFiscaisItens)
       .where(
@@ -126,6 +133,10 @@ export class EscrituracaoFiscalService {
         id: string;
         cfopXml: string;
         resolvido: CfopResolvido;
+        cstIcms: string | null;
+        csosnIcms: string | null;
+        cstPis: string | null;
+        cstCofins: string | null;
       }>;
       parsed: ParsedDocumentoFiscal | null;
     }> = [];
@@ -155,6 +166,7 @@ export class EscrituracaoFiscalService {
             situacao: documento.situacao as
               'AUTORIZADA' | 'CANCELADA' | 'DENEGADA' | 'RESUMIDA',
             cte: parsed.cteEscrituracao,
+            emitenteUf: parsed.emitente.uf || null,
           }),
         });
         continue;
@@ -171,22 +183,51 @@ export class EscrituracaoFiscalService {
       const parsedCfops = new Map(
         (parsed?.itens ?? []).map((item) => [item.numeroItem, item.cfop]),
       );
+      const parsedItens = new Map(
+        (parsed?.itens ?? []).map((item) => [item.numeroItem, item]),
+      );
+      const emitenteUf =
+        parsed?.emitente.uf || readUf(documento.emitenteDados);
       const itensPreparados: (typeof documentosPreparados)[number]['itens'] =
         [];
       for (const item of itensPorDocumento.get(documento.id) ?? []) {
+        const parsedItem = parsedItens.get(item.numeroItem);
         const cfopXml =
           item.cfopXml ?? parsedCfops.get(item.numeroItem) ?? item.cfop;
-        const cacheKey = `${input.clienteId}:${tipoOperacao}:${cfopXml}`;
+        const cstIcmsXml = parsedItem?.cstIcms ?? item.cstIcms;
+        const csosnXml = parsedItem?.csosnIcms ?? item.csosnIcms;
+        const cacheKey = [
+          input.clienteId,
+          tipoOperacao,
+          cfopXml,
+          item.ncm ?? '',
+          cstIcmsXml ?? '',
+          csosnXml ?? '',
+          emitenteUf ?? '',
+        ].join(':');
         let resolvido = resolucaoCache.get(cacheKey);
         if (!resolvido) {
           resolvido = await this.cfopService.resolverCfopEquivalenteDetalhado({
             clienteId: input.clienteId,
             cfopXml,
             tipoOperacaoEscriturada: tipoOperacao,
+            ncm: parsedItem?.ncm ?? item.ncm,
+            emitenteCnpjCpf: documento.emitenteCnpjCpf,
+            emitenteUf,
+            cstIcmsXml,
+            csosnXml,
           });
           resolucaoCache.set(cacheKey, resolvido);
         }
-        itensPreparados.push({ id: item.id, cfopXml, resolvido });
+        itensPreparados.push({
+          id: item.id,
+          cfopXml,
+          resolvido,
+          cstIcms: parsedItem?.cstIcms ?? item.cstIcms,
+          csosnIcms: parsedItem?.csosnIcms ?? item.csosnIcms,
+          cstPis: parsedItem?.cstPis ?? item.cstPis,
+          cstCofins: parsedItem?.cstCofins ?? item.cstCofins,
+        });
       }
       documentosPreparados.push({
         documento,
@@ -235,6 +276,20 @@ export class EscrituracaoFiscalService {
             .set({
               cfopXml: item.cfopXml,
               cfop: item.resolvido.cfop,
+              cstIcms: item.resolvido.cstIcmsEscriturado
+                ? item.resolvido.cstIcmsEscriturado
+                : item.resolvido.csosnEscriturado
+                  ? null
+                  : item.cstIcms,
+              csosnIcms: item.resolvido.csosnEscriturado
+                ? item.resolvido.csosnEscriturado
+                : item.resolvido.cstIcmsEscriturado
+                  ? null
+                  : item.csosnIcms,
+              cstPis:
+                item.resolvido.cstPisEscriturado ?? item.cstPis,
+              cstCofins:
+                item.resolvido.cstCofinsEscriturado ?? item.cstCofins,
               tipoOperacaoEscriturada: preparado.tipoOperacao,
               cfopRevisaoNecessaria: item.resolvido.revisaoNecessaria,
               atualizadoEm: new Date(),
@@ -299,6 +354,11 @@ export class EscrituracaoFiscalService {
       return null;
     }
   }
+}
+
+function readUf(value: Record<string, unknown> | null) {
+  const uf = value?.uf;
+  return typeof uf === 'string' && uf.trim() ? uf.trim().toUpperCase() : null;
 }
 
 function isTpNf(value: string | null): value is '0' | '1' {
