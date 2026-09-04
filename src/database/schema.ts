@@ -310,7 +310,7 @@ export const guias = pgTable(
     check('chk_guias_status', sql`${table.status} IN ('PENDENTE', 'PAGO')`),
     check(
       'chk_guias_email_status',
-      sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')`,
+      sql`${table.emailStatus} IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL', 'SUSPENSO')`,
     ),
     check(
       'chk_guias_periodo',

@@ -35,7 +35,7 @@ export class GuiasService {
     private readonly storageCleanup: StorageCleanupService,
     private readonly mail: MailService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   // ─── Admin: List all guias ───
   async listAdminGuias(input: {
@@ -142,10 +142,10 @@ export class GuiasService {
         numero_parcelamento: doc.installmentNumber,
         client: doc.client
           ? {
-              company_name: doc.client.companyName,
-              cnpj: doc.client.cnpj,
-              has_email: (doc.client.emails ?? []).length > 0,
-            }
+            company_name: doc.client.companyName,
+            cnpj: doc.client.cnpj,
+            has_email: (doc.client.emails ?? []).length > 0,
+          }
           : null,
         visualizado: doc.visualizado ?? false,
         primeira_visualizacao: doc.primeiraVisualizacao ?? null,
@@ -368,10 +368,10 @@ export class GuiasService {
       visualizado_em: view.viewedAt.toISOString(),
       usuario: view.viewer
         ? {
-            id: view.viewer.id,
-            nome: view.viewer.name,
-            email: view.viewer.email,
-          }
+          id: view.viewer.id,
+          nome: view.viewer.name,
+          email: view.viewer.email,
+        }
         : null,
     }));
   }
@@ -434,6 +434,7 @@ export class GuiasService {
       emails: string[] | null;
       regimeTributario: RegimeTributario | null;
       apuraIcms: boolean;
+      suspenso?: boolean;
     };
     bytes: Buffer;
     fileName: string;
@@ -469,9 +470,11 @@ export class GuiasService {
 
     try {
       const fileName = sanitizeFileName(input.fileName);
-      const emailStatus = input.client.emails?.length
-        ? 'PENDENTE'
-        : 'SEM_EMAIL';
+      const emailStatus = input.client.suspenso
+        ? 'SUSPENSO'
+        : input.client.emails?.length
+          ? 'PENDENTE'
+          : 'SEM_EMAIL';
       const insertResult = await this.database.db.execute(sql`
         WITH inserted_guia AS (
           INSERT INTO guias (id, cliente_id, tipo, periodo, vencimento, valor, arquivo_key, arquivo_nome, status, email_status, numero_parcelamento)
@@ -491,7 +494,7 @@ export class GuiasService {
         throw new Error('GUIA_INSERT_FAILED');
       }
     } catch (error) {
-      await this.storage.delete(r2Key).catch(() => {});
+      await this.storage.delete(r2Key).catch(() => { });
       this.logger.error('guia_upload_database_failed', error, {
         requestId: input.requestId,
         guiaId,
@@ -503,8 +506,9 @@ export class GuiasService {
       };
     }
 
-    // Send email notification (fire-and-forget)
-    if (input.client.emails?.length) {
+    // Send email notification (fire-and-forget).
+    // Suspended clients do not receive any e-mail notifications.
+    if (!input.client.suspenso && input.client.emails?.length) {
       this.mail
         .sendDocumentNotificationEmail({
           to: input.client.emails,
@@ -524,9 +528,9 @@ export class GuiasService {
             WHERE id = ${guiaId}::uuid
           `,
             )
-            .catch(() => {});
+            .catch(() => { });
         })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     return { ok: true as const, obligationId: guiaId, r2Key };
@@ -632,11 +636,11 @@ export class GuiasService {
       const updated = resultRows<{ updated: boolean }>(updateResult)[0]
         ?.updated;
       if (!updated) {
-        if (receiptKey) await this.storage.delete(receiptKey).catch(() => {});
+        if (receiptKey) await this.storage.delete(receiptKey).catch(() => { });
         return { ok: false as const, code: 'ALREADY_PAID' };
       }
     } catch (error) {
-      if (receiptKey) await this.storage.delete(receiptKey).catch(() => {});
+      if (receiptKey) await this.storage.delete(receiptKey).catch(() => { });
       this.logger.error('payment_database_failed', error, {
         requestId: input.requestId,
       });
@@ -658,7 +662,11 @@ export class GuiasService {
         type: guias.tipo,
         period: guias.periodo,
         dueDate: guias.vencimento,
-        client: { companyName: clientes.razaoSocial, emails: clientes.emails },
+        client: {
+          companyName: clientes.razaoSocial,
+          emails: clientes.emails,
+          suspenso: clientes.suspenso,
+        },
       })
       .from(guias)
       .leftJoin(clientes, eq(guias.clienteId, clientes.id))
@@ -667,6 +675,15 @@ export class GuiasService {
 
     const guia = rows[0];
     if (!guia) return { ok: false as const, code: 'GUIA_NOT_FOUND' };
+    if (guia.client?.suspenso) {
+      await this.updateNotificationStatus({
+        ...input,
+        status: 'SUSPENSO',
+        error: 'Cliente suspenso — notificações desativadas.',
+        action: 'NOTIFICACAO_CLIENTE_SUSPENSO',
+      });
+      return { ok: false as const, code: 'CLIENT_SUSPENDED' };
+    }
     if (!guia.client?.emails?.length) {
       await this.updateNotificationStatus({
         ...input,

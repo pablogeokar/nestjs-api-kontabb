@@ -60,7 +60,7 @@ export class UploadController {
     private readonly clientesService: ClientesService,
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
-  ) {}
+  ) { }
 
   @Post()
   @HttpCode(HttpStatus.OK)
@@ -385,6 +385,7 @@ export class UploadController {
         regimeTributario: client.regimeTributario as
           'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null,
         apuraIcms: client.apuraIcms,
+        suspenso: client.suspenso,
       },
       bytes: Buffer.from(file.buffer),
       fileName: file.originalname,

@@ -124,11 +124,14 @@ export class AuthController {
       role: result.role,
     });
 
-    // Include primeiroLogin flag for CLIENTE users
-    const primeiroLogin =
-      result.role === 'CLIENTE'
-        ? await this.clientesService.isFirstLogin(result.id)
-        : undefined;
+    // Include primeiroLogin + suspenso flags for CLIENTE users
+    const isCliente = result.role === 'CLIENTE';
+    const primeiroLogin = isCliente
+      ? await this.clientesService.isFirstLogin(result.id)
+      : undefined;
+    const suspenso = isCliente
+      ? await this.clientesService.isClientSuspended(result.id)
+      : undefined;
 
     return {
       user: {
@@ -137,6 +140,7 @@ export class AuthController {
         email: result.email,
         role: result.role,
         ...(primeiroLogin !== undefined && { primeiroLogin }),
+        ...(suspenso !== undefined && { suspenso }),
       },
       session: {
         token: sessionToken,
@@ -185,11 +189,14 @@ export class AuthController {
       return { session: null, user: null };
     }
 
-    // Include primeiroLogin flag for CLIENTE users
-    const primeiroLogin =
-      user.role === 'CLIENTE'
-        ? await this.clientesService.isFirstLogin(user.id)
-        : undefined;
+    // Include primeiroLogin + suspenso flags for CLIENTE users
+    const isCliente = user.role === 'CLIENTE';
+    const primeiroLogin = isCliente
+      ? await this.clientesService.isFirstLogin(user.id)
+      : undefined;
+    const suspenso = isCliente
+      ? await this.clientesService.isClientSuspended(user.id)
+      : undefined;
 
     return {
       session: { active: true },
@@ -199,6 +206,7 @@ export class AuthController {
         email: user.email,
         role: user.role,
         ...(primeiroLogin !== undefined && { primeiroLogin }),
+        ...(suspenso !== undefined && { suspenso }),
       },
     };
   }
@@ -317,6 +325,21 @@ export class AuthController {
       // from the clientes table instead of sending to the non-routable address.
       let deliveryEmail = email;
       if (email.endsWith('@kontabb.local')) {
+        // Suspended clients do not receive any e-mail notifications.
+        const suspended = await this.clientesService.isClientSuspended(
+          result.userId,
+        );
+        if (suspended) {
+          this.logger.warn('password_reset_client_suspended', {
+            email,
+            userId: result.userId,
+          });
+          return {
+            success: true,
+            message:
+              'Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.',
+          };
+        }
         const realEmail = await this.clientesService.getClientEmailByUserId(
           result.userId,
         );

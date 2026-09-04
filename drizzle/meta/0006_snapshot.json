@@ -1,5 +1,5 @@
 {
-  "id": "1ecf055b-30e5-437d-a930-28888d568a5c",
+  "id": "92a1a778-9aa4-4489-8841-696f61ab8687",
   "prevId": "c45a0e5e-e81a-456e-a9f8-8989ed181611",
   "version": "7",
   "dialect": "postgresql",
@@ -4550,7 +4550,7 @@
         },
         "chk_guias_email_status": {
           "name": "chk_guias_email_status",
-          "value": "\"guias\".\"email_status\" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')"
+          "value": "\"guias\".\"email_status\" IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL', 'SUSPENSO')"
         },
         "chk_guias_periodo": {
           "name": "chk_guias_periodo",

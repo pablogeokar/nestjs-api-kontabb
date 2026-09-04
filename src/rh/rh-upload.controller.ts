@@ -54,7 +54,7 @@ export class RhUploadController {
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
     private readonly mail: MailService,
-  ) {}
+  ) { }
 
   @Post('upload')
   @HttpCode(HttpStatus.OK)
@@ -225,7 +225,7 @@ export class RhUploadController {
 
     if (!result.ok) {
       // Cleanup R2 on failure
-      await this.storage.delete(r2Key).catch(() => {});
+      await this.storage.delete(r2Key).catch(() => { });
       const message =
         result.code === 'FOLHA_DUPLICADA'
           ? `Folha duplicada: já existe uma folha para a competência ${dados.competencia}.`
@@ -238,8 +238,9 @@ export class RhUploadController {
       };
     }
 
-    // Notify client via email (fire-and-forget)
-    if (client.emails && client.emails.length > 0) {
+    // Notify client via email (fire-and-forget).
+    // Suspended clients do not receive any e-mail notifications.
+    if (!client.suspenso && client.emails && client.emails.length > 0) {
       this.mail
         .sendFolhaPagamentoNotificationEmail({
           to: client.emails,
