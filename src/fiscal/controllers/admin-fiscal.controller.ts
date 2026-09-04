@@ -353,6 +353,7 @@ export class AdminFiscalController {
       clienteId: query.clienteId,
       tipoDocumento: query.tipoDocumento,
       situacao: query.situacao,
+      tipoOperacao: query.tipoOperacao,
       manifestacaoStatus: query.manifestacaoStatus,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
@@ -393,7 +394,9 @@ export class AdminFiscalController {
   }
 
   @Patch('itens/:itemId/cfop')
-  @ApiOperation({ summary: 'Corrigir manualmente o CFOP escriturado de um item' })
+  @ApiOperation({
+    summary: 'Corrigir manualmente o CFOP escriturado de um item',
+  })
   async editarCfopItem(
     @Param('itemId', new ParseUUIDPipe({ version: '4' })) itemId: string,
     @Body() body: EditarCfopDto,
@@ -434,7 +437,9 @@ export class AdminFiscalController {
   }
 
   @Patch('cte/:documentoId/cfop')
-  @ApiOperation({ summary: 'Corrigir manualmente o CFOP escriturado de um CT-e' })
+  @ApiOperation({
+    summary: 'Corrigir manualmente o CFOP escriturado de um CT-e',
+  })
   async editarCfopCte(
     @Param('documentoId', new ParseUUIDPipe({ version: '4' }))
     documentoId: string,

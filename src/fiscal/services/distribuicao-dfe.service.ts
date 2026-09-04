@@ -455,6 +455,7 @@ export class DistribuicaoDfeService {
     clienteId?: string;
     tipoDocumento?: string;
     situacao?: string;
+    tipoOperacao?: string;
     manifestacaoStatus?: string;
     dataInicio?: Date;
     dataFim?: Date;
@@ -472,6 +473,11 @@ export class DistribuicaoDfeService {
     }
     if (input.situacao) {
       conditions.push(eq(documentosFiscais.situacao, input.situacao));
+    }
+    if (input.tipoOperacao) {
+      conditions.push(
+        eq(documentosFiscais.tipoOperacaoEscriturada, input.tipoOperacao),
+      );
     }
     if (input.manifestacaoStatus) {
       conditions.push(
@@ -531,7 +537,9 @@ export class DistribuicaoDfeService {
           numeroDocumento: documentosFiscais.numeroDocumento,
           emitenteCnpjCpf: documentosFiscais.emitenteCnpjCpf,
           emitenteRazaoSocial: documentosFiscais.emitenteRazaoSocial,
-          emitenteUf: sql<string | null>`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
+          emitenteUf: sql<
+            string | null
+          >`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
           cfopsEscriturados: sql<string[]>`CASE
             WHEN ${documentosFiscais.modelo} = '57' THEN COALESCE((
               SELECT array_agg(DISTINCT cte_cfop.cfop ORDER BY cte_cfop.cfop)

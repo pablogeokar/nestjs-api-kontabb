@@ -290,6 +290,7 @@ export class ClienteFiscalController {
       clienteId: cliente.id,
       tipoDocumento: query.tipoDocumento,
       situacao: query.situacao,
+      tipoOperacao: query.tipoOperacao,
       manifestacaoStatus: query.manifestacaoStatus,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
