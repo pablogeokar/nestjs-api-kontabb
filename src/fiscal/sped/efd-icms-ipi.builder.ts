@@ -1,3 +1,4 @@
+import { descricaoCst } from '../services/cst-catalogo';
 import type {
   documentosFiscais,
   documentosFiscaisCteEscrituracao,
@@ -238,6 +239,37 @@ export function buildEfdIcmsIpiRecords(
   input: SpedEfdBuilderInput,
 ): SpedEfdBuilderResult {
   const records: SpedRecord[] = [];
+  for (const documento of input.nfe) {
+    for (const { row } of documento.itens) {
+      if (
+        row.tipoOperacaoEscriturada === 'ENTRADA' &&
+        !row.cstIcms &&
+        row.csosnIcms
+      ) {
+        input.inconsistencias.push({
+          codigo: 'CST_DECLARANTE_EXIGE_REVISAO',
+          severidade: 'ERRO',
+          mensagem: `Item ${row.numeroItem}: CSOSN do fornecedor requer definição do CST ICMS sob o enfoque do declarante.`,
+          documentoId: documento.row.id,
+          chaveAcesso: documento.row.chaveAcesso,
+          campo: `item.${row.numeroItem}.cstIcms`,
+        });
+      }
+      if (
+        !descricaoCst('ICMS', row.cstIcms) &&
+        !descricaoCst('CSOSN', row.csosnIcms)
+      ) {
+        input.inconsistencias.push({
+          codigo: 'CST_ICMS_AUSENTE_OU_INVALIDO',
+          severidade: 'ERRO',
+          mensagem: `Item ${row.numeroItem}: informe CST ICMS/CSOSN válido antes de gerar o SPED.`,
+          documentoId: documento.row.id,
+          chaveAcesso: documento.row.chaveAcesso,
+          campo: `item.${row.numeroItem}.cstIcms`,
+        });
+      }
+    }
+  }
   records.push(...buildBloco0(input));
   records.push(...buildBlocoC(input));
   records.push(...buildBlocoD(input));
@@ -1404,7 +1436,7 @@ function normalizeCstIcms(row: ItemRow): string {
       ? `${row.origemMercadoria ?? '0'}${row.cstIcms}`
       : row.cstIcms;
   }
-  return row.csosnIcms ?? '000';
+  return row.csosnIcms ?? '';
 }
 
 function normalizeCstCte(row: CteRow): string {

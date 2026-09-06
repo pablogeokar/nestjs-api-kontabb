@@ -1,8 +1,11 @@
+import { alias } from 'drizzle-orm/pg-core';
+import { descricaoCst } from './cst-catalogo';
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gte, lte, or, sql, type SQL } from 'drizzle-orm';
 import type { PaginationParams } from '../../common/types';
 import { DatabaseService } from '../../database/database.service';
 import {
+  cfops,
   clientes,
   documentosFiscais,
   documentosFiscaisItens,
@@ -13,6 +16,8 @@ import {
 } from '../../clientes/clientes.types';
 import { FiscalCteService } from './fiscal-cte.service';
 import { convertDirection } from './cfop.service';
+
+const cfopsXml = alias(cfops, 'cfops_xml_descricao');
 
 const SIMPLES_SEM_APURACAO_OBSERVACAO =
   'Cliente optante pelo Simples Nacional — ICMS recolhido via DAS. Apuração de débito/crédito não aplicável.';
@@ -62,12 +67,16 @@ export class FiscalItensService {
           dataEmissao: documentosFiscais.dataEmissao,
           chaveAcesso: documentosFiscais.chaveAcesso,
           modelo: documentosFiscais.modelo,
+          cfopDescricao: cfops.descricao,
+          cfopXmlDescricao: cfopsXml.descricao,
         })
         .from(documentosFiscaisItens)
         .innerJoin(
           documentosFiscais,
           eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
         )
+        .leftJoin(cfops, eq(cfops.codigo, documentosFiscaisItens.cfop))
+        .leftJoin(cfopsXml, eq(cfopsXml.codigo, documentosFiscaisItens.cfopXml))
         .where(where)
         .orderBy(
           desc(documentosFiscais.dataEmissao),
@@ -388,6 +397,8 @@ export class FiscalItensService {
     dataEmissao: Date;
     chaveAcesso: string;
     modelo: string;
+    cfopDescricao?: string | null;
+    cfopXmlDescricao?: string | null;
   }) {
     const item = row.item;
     return {
@@ -404,13 +415,28 @@ export class FiscalItensService {
         cfop: item.cfop,
         revisao_necessaria: item.cfopRevisaoNecessaria,
         cfop_sugerido:
-          item.cfopRevisaoNecessaria && item.cfopXml
+          item.cfopRevisaoNecessaria &&
+          item.cfopXml &&
+          item.cfopOrigemResolucao !== 'PENDENTE_CLASSIFICACAO'
             ? convertDirection(
                 item.cfopXml,
                 item.tipoOperacaoEscriturada as 'ENTRADA' | 'SAIDA',
               )
             : null,
         destinacao_mercadoria: item.destinacaoMercadoria,
+        destinacao_efetiva:
+          item.destinacaoMercadoria ??
+          (Number(item.destinacaoConfianca) >= 0.9
+            ? item.destinacaoInferida
+            : null),
+        destinacao_inferida: item.destinacaoInferida,
+        destinacao_origem: item.destinacaoOrigem,
+        destinacao_confianca: item.destinacaoConfianca,
+        destinacao_justificativa: item.destinacaoJustificativa,
+        origem_resolucao: item.cfopOrigemResolucao,
+        motivo_resolucao: item.cfopMotivoResolucao,
+        cfop_descricao: row.cfopDescricao ?? null,
+        cfop_xml_descricao: row.cfopXmlDescricao ?? null,
       },
       produto: {
         codigo_produto: item.codigoProduto,
@@ -443,8 +469,11 @@ export class FiscalItensService {
       },
       icms: {
         origem_mercadoria: item.origemMercadoria,
+        origem_descricao: descricaoCst('ORIGEM', item.origemMercadoria),
         cst: item.cstIcms,
+        cst_descricao: descricaoCst('ICMS', item.cstIcms),
         csosn: item.csosnIcms,
+        csosn_descricao: descricaoCst('CSOSN', item.csosnIcms),
         modalidade_bc: item.modalidadeBcIcms,
         percentual_reducao_bc: item.percentualReducaoBcIcms,
         valor_bc: item.valorBcIcms,
@@ -486,6 +515,7 @@ export class FiscalItensService {
       },
       ipi: {
         cst: item.cstIpi,
+        cst_descricao: descricaoCst('IPI', item.cstIpi),
         classe_enquadramento: item.classeEnquadramentoIpi,
         codigo_enquadramento: item.codigoEnquadramentoIpi,
         cnpj_produtor: item.cnpjProdutorIpi,
@@ -497,6 +527,7 @@ export class FiscalItensService {
       },
       pis: {
         cst: item.cstPis,
+        cst_descricao: descricaoCst('PIS', item.cstPis),
         valor_bc: item.valorBcPis,
         aliquota_percentual: item.aliquotaPisPercentual,
         quantidade_bc: item.quantidadeBcPis,
@@ -510,6 +541,7 @@ export class FiscalItensService {
       },
       cofins: {
         cst: item.cstCofins,
+        cst_descricao: descricaoCst('COFINS', item.cstCofins),
         valor_bc: item.valorBcCofins,
         aliquota_percentual: item.aliquotaCofinsPercentual,
         quantidade_bc: item.quantidadeBcCofins,

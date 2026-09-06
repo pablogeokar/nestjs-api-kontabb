@@ -153,6 +153,24 @@ export class ClienteRegrasFiscaisController {
 export class AdminRegrasFiscaisController {
   constructor(private readonly regras: RegrasFiscaisService) {}
 
+  @Patch('itens/:itemId/destinacao')
+  @ApiOperation({
+    summary: 'Confirmar destinação de um item da empresa selecionada',
+  })
+  async definirDestinacao(
+    @Param('itemId', new ParseUUIDPipe({ version: '4' })) itemId: string,
+    @Query('clienteId', new ParseUUIDPipe({ version: '4' })) clienteId: string,
+    @Body() body: DefinirDestinacaoItemDto,
+  ) {
+    return {
+      data: await this.regras.definirDestinacaoItem({
+        clienteId,
+        itemId,
+        destinacao: body.destinacaoMercadoria,
+      }),
+    };
+  }
+
   @Post('simular')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Simular a resolução de CFOP para uma empresa' })

@@ -428,56 +428,8 @@ export class ImportacaoXmlFiscalService {
       .limit(1);
     const existing = existingRows[0];
     if (existing && existing.situacao !== 'RESUMIDA') {
-      await this.database.db.transaction(async (tx) => {
-        await tx
-          .update(documentosFiscais)
-          .set({
-            tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
-            tpNfXml: documento.tpNfXml,
-            ...spedMetadata,
-            ...(documento.tipoDocumento !== 'CTE' && {
-              escriturado: true,
-              escrituracaoStatus: nfePendenteRevisao
-                ? ('PENDENTE_REVISAO' as const)
-                : ('ESCRITURADO' as const),
-            }),
-            atualizadoEm: new Date(),
-          })
-          .where(eq(documentosFiscais.id, existing.id));
-        await tx
-          .delete(documentosFiscaisItens)
-          .where(eq(documentosFiscaisItens.documentoFiscalId, existing.id));
-        for (
-          let offset = 0;
-          offset < escrituracao.itens.length;
-          offset += 300
-        ) {
-          await tx.insert(documentosFiscaisItens).values(
-            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
-              ...item,
-              documentoFiscalId: existing.id,
-              clienteId: target.id,
-            })),
-          );
-        }
-        if (ctePreparada) {
-          await this.fiscalCteService.persistirEscrituracao(tx, {
-            documentoFiscalId: existing.id,
-            clienteId: target.id,
-            chaveAcesso: documento.chaveAcesso,
-            preparada: ctePreparada,
-          });
-        } else {
-          await tx
-            .delete(documentosFiscaisCteEscrituracao)
-            .where(
-              eq(
-                documentosFiscaisCteEscrituracao.documentoFiscalId,
-                existing.id,
-              ),
-            );
-        }
-      });
+      // Reimportação idempotente: não apaga identidades, decisões ou evidências.
+      // Atualizações de escrituração passam pelo reprocessamento explícito.
       return { status: 'DUPLICADO', revisoes };
     }
 

@@ -984,6 +984,17 @@ export const documentosFiscaisItens = pgTable(
     // Destinação econômica atribuída pelo usuário (override manual) que
     // realimenta o motor de regras para re-resolver o CFOP escriturado.
     destinacaoMercadoria: varchar('destinacao_mercadoria', { length: 20 }),
+    destinacaoInferida: varchar('destinacao_inferida', { length: 20 }),
+    destinacaoOrigem: varchar('destinacao_origem', { length: 20 }),
+    destinacaoConfianca: numeric('destinacao_confianca', {
+      precision: 4,
+      scale: 3,
+    }),
+    destinacaoJustificativa: text('destinacao_justificativa'),
+    cfopManual: boolean('cfop_manual').notNull().default(false),
+    cfopOrigemResolucao: varchar('cfop_origem_resolucao', { length: 30 }),
+    cfopMotivoResolucao: text('cfop_motivo_resolucao'),
+
     unidadeComercial: varchar('unidade_comercial', { length: 10 }).notNull(),
     quantidadeComercial: numeric('quantidade_comercial', {
       precision: 15,
@@ -1235,6 +1246,18 @@ export const documentosFiscaisItens = pgTable(
     index('idx_item_cst_pis').on(table.cstPis),
     index('idx_item_cst_cofins').on(table.cstCofins),
     index('idx_item_ncm').on(table.ncm),
+    check(
+      'chk_item_destinacao_inferida',
+      sql`${table.destinacaoInferida} IS NULL OR ${table.destinacaoInferida} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
+    ),
+    check(
+      'chk_item_destinacao_confianca',
+      sql`${table.destinacaoConfianca} IS NULL OR ${table.destinacaoConfianca} BETWEEN 0 AND 1`,
+    ),
+    check(
+      'chk_item_destinacao_origem',
+      sql`${table.destinacaoOrigem} IS NULL OR ${table.destinacaoOrigem} IN ('MANUAL', 'HISTORICO', 'NCM_PERFIL', 'HEURISTICA', 'INDETERMINADO')`,
+    ),
     check('chk_item_numero', sql`${table.numeroItem} BETWEEN 1 AND 990`),
     check(
       'chk_item_ind_escala',
@@ -2204,5 +2227,40 @@ export const fiscalApuracoesGuias = pgTable(
       sql`${table.statusPagamento} IN ('PENDENTE', 'PAGO', 'VENCIDO')`,
     ),
     check('chk_fiscal_guias_uf', sql`${table.ufFavorecida} ~ '^[A-Z]{2}$'`),
+  ],
+);
+
+// Uma confirmação por item: retries não aumentam artificialmente a confiança.
+export const classificacaoDestinacaoAprendizado = pgTable(
+  'classificacao_destinacao_aprendizado',
+  {
+    itemId: uuid('item_id')
+      .primaryKey()
+      .references(() => documentosFiscaisItens.id, { onDelete: 'cascade' }),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    fornecedor: text('fornecedor').notNull(),
+    codigoProduto: text('codigo_produto').notNull(),
+    ncm: varchar('ncm', { length: 8 }).notNull(),
+    destinacao: varchar('destinacao', { length: 20 }).notNull(),
+    ultimaConfirmacaoEm: timestamp('ultima_confirmacao_em', {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('idx_aprendizado_contexto').on(
+      table.clienteId,
+      table.fornecedor,
+      table.codigoProduto,
+      table.ncm,
+    ),
+    check(
+      'chk_aprendizado_destinacao',
+      sql`${table.destinacao} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
+    ),
+    check('chk_aprendizado_ncm', sql`${table.ncm} ~ '^[0-9]{8}$'`),
   ],
 );

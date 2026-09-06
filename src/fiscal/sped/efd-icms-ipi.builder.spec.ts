@@ -1208,3 +1208,41 @@ describe('buildEfdIcmsIpiRecords', () => {
     ).toMatchObject({ valid: true });
   });
 });
+
+describe('proteções da classificação inteligente', () => {
+  it('não mascara CST ausente como 000 no C170/C190', () => {
+    const input = makeInput({
+      nfe: [makeNfe({}, [makeItem({ cstIcms: null, csosnIcms: null })])],
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+    expect(input.inconsistencias).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'CST_ICMS_AUSENTE_OU_INVALIDO',
+          severidade: 'ERRO',
+        }),
+      ]),
+    );
+    const analitico = result.records.find((r) => r.reg === 'C190');
+    expect(analitico?.fields[0]).not.toBe('000');
+  });
+  it('exige enfoque do declarante para entrada com CSOSN do fornecedor', () => {
+    const input = makeInput({
+      nfe: [
+        makeNfe({}, [
+          makeItem({
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cstIcms: null,
+            csosnIcms: '500',
+          }),
+        ]),
+      ],
+    });
+    buildEfdIcmsIpiRecords(input);
+    expect(input.inconsistencias).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ codigo: 'CST_DECLARANTE_EXIGE_REVISAO' }),
+      ]),
+    );
+  });
+});

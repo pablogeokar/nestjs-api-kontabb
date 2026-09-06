@@ -151,7 +151,7 @@ describe('ImportacaoXmlFiscalService', () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
-  it('reconcilia itens de documento duplicado em transação sem novo upload', async () => {
+  it('preserva itens e decisões de documento duplicado sem escrita ou novo upload', async () => {
     const existingLimit = jest.fn().mockResolvedValue([
       {
         id: 'doc-1',
@@ -214,18 +214,9 @@ describe('ImportacaoXmlFiscalService', () => {
     });
 
     expect(result).toEqual({ status: 'DUPLICADO', revisoes: [] });
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(tx.delete).toHaveBeenCalledWith(documentosFiscaisItens);
-    expect(itemValues).toHaveBeenCalledWith([
-      expect.objectContaining({
-        documentoFiscalId: 'doc-1',
-        clienteId: 'cliente-1',
-        numeroItem: 1,
-        cfopXml: '5102',
-        cfop: '5102',
-        tipoOperacaoEscriturada: 'SAIDA',
-      }),
-    ]);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(tx.delete).not.toHaveBeenCalled();
+    expect(itemValues).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
   });
 });

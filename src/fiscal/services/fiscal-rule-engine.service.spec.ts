@@ -25,11 +25,11 @@ function createEngine(queue: unknown[][]) {
 describe('FiscalRuleEngineService', () => {
   it('não aplica crédito de ICMS em compra de uso/consumo por destinação', async () => {
     const engine = createEngine([
-      [], // sem regras cadastradas
       [{ codigo: '1556' }], // isCfopAtivo(1556) -> ativo
       [
         {
           codigo: '1556',
+          ativo: true,
           categoriaFiscal: 'USO_CONSUMO',
           geraCreditoIcmsPadrao: false,
         },
@@ -50,7 +50,6 @@ describe('FiscalRuleEngineService', () => {
 
   it('marca CIAP e DIFAL em compra interestadual de ativo imobilizado', async () => {
     const engine = createEngine([
-      [],
       [{ codigo: '2551' }],
       [
         {
@@ -76,7 +75,6 @@ describe('FiscalRuleEngineService', () => {
 
   it('credita ICMS em compra para revenda por destinação', async () => {
     const engine = createEngine([
-      [],
       [{ codigo: '1102' }],
       [
         {
@@ -90,7 +88,7 @@ describe('FiscalRuleEngineService', () => {
     const result = await engine.evaluate({
       clienteId: 'c1',
       tipoOperacaoEscriturada: 'ENTRADA',
-      cfopXml: '5405',
+      cfopXml: '5102',
       destinacaoMercadoria: 'REVENDA',
     });
 
@@ -130,6 +128,7 @@ describe('FiscalRuleEngineService', () => {
       [
         {
           codigo: '1556',
+          ativo: true,
           categoriaFiscal: 'USO_CONSUMO',
           geraCreditoIcmsPadrao: false,
         },
@@ -165,5 +164,119 @@ describe('FiscalRuleEngineService', () => {
     expect(result.origemResolucao).toBe('PENDENTE_CLASSIFICACAO');
     expect(result.cfopEscriturado).toBe('1949');
     expect(result.cfopSugerido).toBe('1999');
+  });
+});
+
+describe('resolução contextual segura', () => {
+  it.each([
+    ['REVENDA', '5102', '60', '1403'],
+    ['INDUSTRIALIZACAO', '6101', '10', '2401'],
+    ['USO_CONSUMO', '5102', '30', '1407'],
+    ['ATIVO_IMOBILIZADO', '6102', '70', '2406'],
+    ['REVENDA', '7102', '00', '3102'],
+    ['INDUSTRIALIZACAO', '7101', '00', '3101'],
+  ])(
+    'resolve %s a partir de %s CST %s como %s',
+    async (destinacao, cfopXml, cst, esperado) => {
+      const engine = createEngine([
+        [{ codigo: esperado }],
+        [
+          {
+            codigo: esperado,
+            ativo: true,
+            categoriaFiscal:
+              destinacao === 'ATIVO_IMOBILIZADO'
+                ? 'ATIVO_IMOBILIZADO'
+                : 'COMPRA_REVENDA',
+            geraCreditoIcmsPadrao: true,
+          },
+        ],
+      ]);
+      const result = await engine.evaluate({
+        clienteId: 'c1',
+        tipoOperacaoEscriturada: 'ENTRADA',
+        cfopXml,
+        cstIcmsXml: cst,
+        destinacaoMercadoria: destinacao as 'REVENDA',
+      });
+      expect(result.cfopEscriturado).toBe(esperado);
+      if (cst !== '00') expect(result.apropriaCreditoIcms).toBe(false);
+      if (destinacao === 'ATIVO_IMOBILIZADO')
+        expect(result.exigeCiap).toBe(true);
+      expect(result.classificacao?.origem).toBe('MANUAL');
+    },
+  );
+  it.each(['5910', '5901', '5202', '5152', '5656'])(
+    'não transforma operação especial %s em compra',
+    async (cfopXml) => {
+      const result = await createEngine([]).evaluate({
+        clienteId: 'c1',
+        cfopXml,
+        tipoOperacaoEscriturada: 'ENTRADA',
+        destinacaoMercadoria: 'REVENDA',
+      });
+      expect(result).toMatchObject({
+        cfopEscriturado: cfopXml,
+        pendenteClassificacao: true,
+        bloqueiaFallback: true,
+      });
+    },
+  );
+  it('não converte ST em uma importação genérica sem revisão', async () => {
+    expect(
+      await createEngine([]).evaluate({
+        clienteId: 'c1',
+        cfopXml: '7102',
+        tipoOperacaoEscriturada: 'ENTRADA',
+        destinacaoMercadoria: 'REVENDA',
+        csosnXml: '500',
+      }),
+    ).toMatchObject({
+      pendenteClassificacao: true,
+      apropriaCreditoIcms: false,
+    });
+  });
+  it('impede regra com destino inativo', async () => {
+    const engine = createEngine([
+      [{ clienteId: 'c1', cfopDestino: '1102', prioridade: 1 }],
+      [{ codigo: '1102', ativo: false }],
+    ]);
+    expect(
+      await engine.evaluate({
+        clienteId: 'c1',
+        cfopXml: '5102',
+        tipoOperacaoEscriturada: 'ENTRADA',
+      }),
+    ).toMatchObject({ bloqueiaFallback: true, pendenteClassificacao: true });
+  });
+  it('mantém baixa confiança pendente apesar da equivalência linear existir', async () => {
+    const classify = jest
+      .fn()
+      .mockResolvedValue({
+        destinacao: 'REVENDA',
+        confianca: 0.65,
+        origem: 'NCM_PERFIL',
+        justificativa: 'Confirmar uso',
+        requerConfirmacao: true,
+      });
+    const db = {
+      select: () => ({
+        from: () => ({ where: () => ({ orderBy: async () => [] }) }),
+      }),
+    };
+    const engine = new FiscalRuleEngineService(
+      { db } as never,
+      { classificar: classify } as never,
+    );
+    expect(
+      await engine.evaluate({
+        clienteId: 'c1',
+        cfopXml: '5102',
+        tipoOperacaoEscriturada: 'ENTRADA',
+      }),
+    ).toMatchObject({
+      pendenteClassificacao: true,
+      classificacao: { confianca: 0.65 },
+    });
   });
 });

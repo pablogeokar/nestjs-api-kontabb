@@ -1,8 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { and, asc, eq, isNull, or, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import { cfops, regrasFiscais } from '../../database/schema';
+import { cfopEquivalencias, cfops, regrasFiscais } from '../../database/schema';
 import type { AbrangenciaCfop, TipoOperacaoEscriturada } from './cfop.service';
+
+import {
+  ClassificacaoDestinacaoService,
+  type DestinacaoInferida,
+  type PerfilClassificacaoCache,
+} from './classificacao-destinacao.service';
 
 export type DestinacaoMercadoria =
   'REVENDA' | 'INDUSTRIALIZACAO' | 'USO_CONSUMO' | 'ATIVO_IMOBILIZADO';
@@ -28,7 +34,11 @@ export type OrigemResolucaoRegra =
   | 'PENDENTE_CLASSIFICACAO';
 
 export interface RuleEvaluationInput {
+  perfilCache?: PerfilClassificacaoCache;
   clienteId: string;
+  itemId?: string;
+  codigoProduto?: string | null;
+  descricao?: string | null;
   tipoOperacaoEscriturada: TipoOperacaoEscriturada;
   cfopXml: string;
   ncm?: string | null;
@@ -42,6 +52,8 @@ export interface RuleEvaluationInput {
 }
 
 export interface RuleEvaluationResult {
+  classificacao?: DestinacaoInferida;
+  bloqueiaFallback?: boolean;
   cfopEscriturado: string;
   cstIcmsEscriturado?: string | null;
   csosnEscriturado?: string | null;
@@ -78,26 +90,149 @@ type RegraRow = typeof regrasFiscais.$inferSelect;
  */
 @Injectable()
 export class FiscalRuleEngineService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    @Optional() private readonly classificacao?: ClassificacaoDestinacaoService,
+  ) {}
 
   async evaluate(input: RuleEvaluationInput): Promise<RuleEvaluationResult> {
     const cfopXml = normalizeCfop(input.cfopXml);
 
-    // 1 + 2. Regras cadastradas (cliente tem prioridade sobre global).
-    const regra = await this.findMatchingRule(input, cfopXml);
-    if (regra) {
-      const destino = await this.getCfop(regra.cfopDestino);
-      return this.buildFromRule(regra, destino);
-    }
-
-    // 3. Destinação econômica declarada pelo usuário.
-    if (input.destinacaoMercadoria) {
-      const porDestinacao = await this.resolvePorDestinacao(
+    // Destinação manual é uma decisão, não um critério que regras podem substituir.
+    if (
+      input.destinacaoMercadoria &&
+      input.tipoOperacaoEscriturada === 'ENTRADA'
+    ) {
+      const classificacao: DestinacaoInferida = {
+        destinacao: input.destinacaoMercadoria,
+        confianca: 1,
+        origem: 'MANUAL',
+        requerConfirmacao: false,
+        justificativa: 'Destinação confirmada pelo responsável fiscal.',
+      };
+      const result = await this.resolvePorDestinacao(
         cfopXml,
         input.tipoOperacaoEscriturada,
         input.destinacaoMercadoria,
+        temSt(input),
       );
-      if (porDestinacao) return porDestinacao;
+      if (result) {
+        const compativel = await this.findMatchingRule(input, cfopXml);
+        if (compativel && compativel.cfopDestino === result.cfopEscriturado) {
+          const destino = await this.getCfop(compativel.cfopDestino);
+          if (destino?.ativo)
+            return {
+              ...this.buildFromRule(compativel, destino),
+              classificacao,
+            };
+        }
+      }
+      return {
+        ...(result ??
+          pendente(
+            cfopXml,
+            'Destinação manual incompatível com a operação ou catálogo.',
+          )),
+        classificacao,
+      };
+    }
+
+    const regra = await this.findMatchingRule(input, cfopXml);
+    if (regra) {
+      const destino = await this.getCfop(regra.cfopDestino);
+      if (
+        !destino?.ativo ||
+        tipoOperacaoFromCodigo(destino.codigo) !==
+          input.tipoOperacaoEscriturada ||
+        abrangenciaFromCodigo(destino.codigo) !== abrangenciaFromCodigo(cfopXml)
+      ) {
+        return pendente(
+          cfopXml,
+          'Regra fiscal aponta para CFOP inexistente, inativo ou incompatível.',
+        );
+      }
+      return this.buildFromRule(regra, destino);
+    }
+
+    // Não converter devoluções, transferências, remessas, combustíveis ou serviços
+    // em compras genéricas. Regras com destinação são critérios, não treinamento.
+    if (
+      this.classificacao &&
+      input.tipoOperacaoEscriturada === 'ENTRADA' &&
+      compraClassificavel(cfopXml)
+    ) {
+      // Equivalência específica do cliente é uma decisão explícita. Equivalências
+      // globais legadas não devem anular a nova evidência de destinação.
+      const equivalencias = await this.database.db.select().from(cfopEquivalencias).where(and(
+        eq(cfopEquivalencias.ativo, true), eq(cfopEquivalencias.cfopOrigem, cfopXml),
+        eq(cfopEquivalencias.tipoOperacao, 'SAIDA_PARA_ENTRADA'),
+        eq(cfopEquivalencias.clienteId, input.clienteId),
+      )).orderBy(asc(cfopEquivalencias.id));
+      const equivalencia = equivalencias[0];
+      if (equivalencia) {
+        const destino = await this.getCfop(equivalencia.cfopDestino);
+        if (
+          !destino?.ativo ||
+          tipoOperacaoFromCodigo(destino.codigo) !== 'ENTRADA' ||
+          abrangenciaFromCodigo(destino.codigo) !==
+            abrangenciaFromCodigo(cfopXml)
+        ) {
+          return pendente(
+            cfopXml,
+            'Equivalência cadastrada aponta para CFOP inativo ou incompatível.',
+          );
+        }
+        return this.buildFromCatalog(
+          destino.codigo,
+          destino,
+          'EQUIVALENCIA',
+          'Equivalência explícita cadastrada aplicada antes da inferência.',
+        );
+      }
+      const classificacao = await this.classificacao.classificar(input);
+      if (classificacao.destinacao && !classificacao.requerConfirmacao) {
+        const contextual = await this.findMatchingRule(
+          { ...input, destinacaoMercadoria: classificacao.destinacao },
+          cfopXml,
+        );
+        if (contextual) {
+          const destino = await this.getCfop(contextual.cfopDestino);
+          if (
+            !destino?.ativo ||
+            tipoOperacaoFromCodigo(destino.codigo) !==
+              input.tipoOperacaoEscriturada ||
+            abrangenciaFromCodigo(destino.codigo) !==
+              abrangenciaFromCodigo(cfopXml)
+          ) {
+            return {
+              ...pendente(
+                cfopXml,
+                'Regra contextual aponta para CFOP inválido.',
+              ),
+              classificacao,
+            };
+          }
+          return { ...this.buildFromRule(contextual, destino), classificacao };
+        }
+        const result = await this.resolvePorDestinacao(
+          cfopXml,
+          input.tipoOperacaoEscriturada,
+          classificacao.destinacao,
+          temSt(input),
+        );
+        return {
+          ...(result ??
+            pendente(
+              cfopXml,
+              'CFOP da destinação não disponível no catálogo.',
+            )),
+          classificacao,
+        };
+      }
+      return {
+        ...pendente(cfopXml, classificacao.justificativa),
+        classificacao,
+      };
     }
 
     // 4. CFOP já está no sentido correto e ativo.
@@ -174,7 +309,7 @@ export class FiscalRuleEngineService {
       .select()
       .from(regrasFiscais)
       .where(and(escopo, eq(regrasFiscais.ativo, true)))
-      .orderBy(asc(regrasFiscais.prioridade));
+      .orderBy(asc(regrasFiscais.prioridade), asc(regrasFiscais.id));
 
     const cliente = candidatas
       .filter((r) => r.clienteId === input.clienteId)
@@ -254,7 +389,9 @@ export class FiscalRuleEngineService {
       cstPisEscriturado: regra.cstPisDestino,
       cstCofinsEscriturado: regra.cstCofinsDestino,
       apropriaCreditoIcms:
-        creditoIcms && (destino ? destino.geraCreditoIcmsPadrao : true),
+        creditoIcms &&
+        Boolean(destino?.geraCreditoIcmsPadrao) &&
+        !vedaCredito(regra.cfopDestino),
       apropriaCreditoIpi: regra.apropriaCreditoIpi,
       exigeCiap: regra.exigeCiap,
       exigeDifalEntrada: regra.exigeDifalEntrada,
@@ -269,13 +406,15 @@ export class FiscalRuleEngineService {
     cfopXml: string,
     tipoOperacao: TipoOperacaoEscriturada,
     destinacao: DestinacaoMercadoria,
+    st = false,
   ): Promise<RuleEvaluationResult | null> {
     // Só aplicamos a destinação em ENTRADAS (compras). Em saídas, a destinação
     // do adquirente não é do emitente e não deve reescrever o CFOP.
-    if (tipoOperacao !== 'ENTRADA') return null;
+    if (tipoOperacao !== 'ENTRADA' || !compraClassificavel(cfopXml))
+      return null;
 
     const abrangencia = abrangenciaFromCodigo(cfopXml);
-    const alvo = destinacaoParaCfop(destinacao, abrangencia);
+    const alvo = destinacaoParaCfop(destinacao, abrangencia, st);
     if (!alvo) return null;
     if (!(await this.isCfopAtivo(alvo))) return null;
 
@@ -295,15 +434,14 @@ export class FiscalRuleEngineService {
     motivo: string,
   ): RuleEvaluationResult {
     const categoria = (row?.categoriaFiscal ?? 'OUTRAS') as CategoriaFiscalCfop;
-    const creditoIcms = row?.geraCreditoIcmsPadrao ?? false;
+    const creditoIcms =
+      Boolean(row?.geraCreditoIcmsPadrao) && !vedaCredito(codigo);
     return {
       cfopEscriturado: codigo,
       apropriaCreditoIcms: creditoIcms,
       // IPI: crédito nas entradas de insumo/revenda (RIPI). Uso/consumo e ativo
       // não geram crédito de IPI para não-industrial; deixamos conservador.
-      apropriaCreditoIpi:
-        tipoOperacaoFromCodigo(codigo) === 'ENTRADA' &&
-        (categoria === 'COMPRA_INSUMO' || categoria === 'COMPRA_REVENDA'),
+      apropriaCreditoIpi: false,
       exigeCiap:
         tipoOperacaoFromCodigo(codigo) === 'ENTRADA' &&
         categoria === 'ATIVO_IMOBILIZADO',
@@ -342,6 +480,7 @@ export class FiscalRuleEngineService {
 function destinacaoParaCfop(
   destinacao: DestinacaoMercadoria,
   abrangencia: AbrangenciaCfop,
+  st = false,
 ): string | null {
   const prefixo =
     abrangencia === 'ESTADUAL'
@@ -355,7 +494,15 @@ function destinacaoParaCfop(
     USO_CONSUMO: '556',
     ATIVO_IMOBILIZADO: '551',
   };
-  // Não há 3556/3551 padrão? Existem (importação). Mantemos.
+  if (st) {
+    if (abrangencia === 'EXTERIOR') return null;
+    Object.assign(finais, {
+      REVENDA: '403',
+      INDUSTRIALIZACAO: '401',
+      USO_CONSUMO: '407',
+      ATIVO_IMOBILIZADO: '406',
+    });
+  }
   return `${prefixo}${finais[destinacao]}`;
 }
 
@@ -410,4 +557,31 @@ function fallbackCfop(
   if (sourcePrefix === '2') return '6949';
   if (sourcePrefix === '3') return '7949';
   return '5949';
+}
+
+export function compraClassificavel(cfop: string): boolean {
+  return /^[123567](101|102|401|403|405|406|407|551|556)$/.test(cfop);
+}
+function temSt(input: RuleEvaluationInput): boolean {
+  return (
+    ['10', '30', '60', '70'].includes((input.cstIcmsXml ?? '').slice(-2)) ||
+    ['201', '202', '203', '500'].includes(input.csosnXml ?? '') ||
+    /^[1256](401|403|405|406|407)$/.test(input.cfopXml)
+  );
+}
+function vedaCredito(cfop: string): boolean {
+  return /^[123](401|403|405|406|407|551|552|556|557)$/.test(cfop);
+}
+function pendente(cfop: string, motivo: string): RuleEvaluationResult {
+  return {
+    cfopEscriturado: cfop,
+    pendenteClassificacao: true,
+    bloqueiaFallback: true,
+    origemResolucao: 'PENDENTE_CLASSIFICACAO',
+    motivoResolucao: motivo,
+    apropriaCreditoIcms: false,
+    apropriaCreditoIpi: false,
+    exigeCiap: false,
+    exigeDifalEntrada: false,
+  };
 }

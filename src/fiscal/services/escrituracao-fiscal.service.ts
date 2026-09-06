@@ -1,5 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, gte, inArray, lte, type SQL } from 'drizzle-orm';
+import {
+  camposClassificacao,
+  type PerfilClassificacaoCache,
+} from './classificacao-destinacao.service';
+import type { DestinacaoMercadoria } from './fiscal-rule-engine.service';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
@@ -105,6 +114,11 @@ export class EscrituracaoFiscalService {
         cfop: documentosFiscaisItens.cfop,
         cfopXml: documentosFiscaisItens.cfopXml,
         ncm: documentosFiscaisItens.ncm,
+        codigoProduto: documentosFiscaisItens.codigoProduto,
+        descricao: documentosFiscaisItens.descricao,
+        destinacaoMercadoria: documentosFiscaisItens.destinacaoMercadoria,
+        cfopManual: documentosFiscaisItens.cfopManual,
+        revisao: sql<string>`${documentosFiscaisItens.atualizadoEm}::text`,
         cstIcms: documentosFiscaisItens.cstIcms,
         csosnIcms: documentosFiscaisItens.csosnIcms,
         cstPis: documentosFiscaisItens.cstPis,
@@ -123,6 +137,7 @@ export class EscrituracaoFiscalService {
       current.push(item);
       itensPorDocumento.set(item.documentoFiscalId, current);
     }
+    const perfilCache: PerfilClassificacaoCache = new Map();
     const resolucaoCache = new Map<string, CfopResolvido>();
     const documentosPreparados: Array<{
       documento: DocumentoReprocessado;
@@ -131,6 +146,7 @@ export class EscrituracaoFiscalService {
       tpNfInferido: boolean;
       itens: Array<{
         id: string;
+        revisao: string;
         cfopXml: string;
         resolvido: CfopResolvido;
         cstIcms: string | null;
@@ -186,8 +202,7 @@ export class EscrituracaoFiscalService {
       const parsedItens = new Map(
         (parsed?.itens ?? []).map((item) => [item.numeroItem, item]),
       );
-      const emitenteUf =
-        parsed?.emitente.uf || readUf(documento.emitenteDados);
+      const emitenteUf = parsed?.emitente.uf || readUf(documento.emitenteDados);
       const itensPreparados: (typeof documentosPreparados)[number]['itens'] =
         [];
       for (const item of itensPorDocumento.get(documento.id) ?? []) {
@@ -196,22 +211,44 @@ export class EscrituracaoFiscalService {
           item.cfopXml ?? parsedCfops.get(item.numeroItem) ?? item.cfop;
         const cstIcmsXml = parsedItem?.cstIcms ?? item.cstIcms;
         const csosnXml = parsedItem?.csosnIcms ?? item.csosnIcms;
-        const cacheKey = [
+        const cacheKey = JSON.stringify([
           input.clienteId,
+          documento.emitenteCnpjCpf,
+          item.codigoProduto ?? '',
+          item.descricao ?? '',
+          item.destinacaoMercadoria ?? '',
           tipoOperacao,
           cfopXml,
-          item.ncm ?? '',
+          parsedItem?.ncm ?? item.ncm ?? '',
           cstIcmsXml ?? '',
           csosnXml ?? '',
           emitenteUf ?? '',
-        ].join(':');
+        ]);
         let resolvido = resolucaoCache.get(cacheKey);
+        if (item.cfopManual) {
+          const manual = await this.cfopService.resolverCfopManual({
+            cfop: item.cfop,
+            tipoOperacaoEscriturada: tipoOperacao,
+          });
+          resolvido = {
+            cfop: manual.catalogo.codigo,
+            revisaoNecessaria: false,
+            origemResolucao: 'MANUAL',
+            motivoResolucao: 'CFOP manual preservado no reprocessamento.',
+          };
+        }
         if (!resolvido) {
           resolvido = await this.cfopService.resolverCfopEquivalenteDetalhado({
+            perfilCache,
             clienteId: input.clienteId,
             cfopXml,
             tipoOperacaoEscriturada: tipoOperacao,
             ncm: parsedItem?.ncm ?? item.ncm,
+            itemId: item.id,
+            codigoProduto: item.codigoProduto,
+            descricao: item.descricao,
+            destinacaoMercadoria:
+              item.destinacaoMercadoria as DestinacaoMercadoria | null,
             emitenteCnpjCpf: documento.emitenteCnpjCpf,
             emitenteUf,
             cstIcmsXml,
@@ -221,6 +258,7 @@ export class EscrituracaoFiscalService {
         }
         itensPreparados.push({
           id: item.id,
+          revisao: item.revisao,
           cfopXml,
           resolvido,
           cstIcms: parsedItem?.cstIcms ?? item.cstIcms,
@@ -251,31 +289,18 @@ export class EscrituracaoFiscalService {
               cfopRevisaoNecessaria: item.resolvido.revisaoNecessaria,
             })),
           );
-        await tx
-          .update(documentosFiscais)
-          .set({
-            tpNfXml: preparado.tpNfXml,
-            tipoOperacaoEscriturada: preparado.tipoOperacao,
-            escriturado: true,
-            escrituracaoStatus: pendingReview
-              ? 'PENDENTE_REVISAO'
-              : 'ESCRITURADO',
-            ...(preparado.parsed
-              ? buildDocumentoFiscalSpedMetadata(preparado.parsed)
-              : {
-                  integridadeConferida: false,
-                  integridadeStatus: 'NAO_CONFERIDA' as const,
-                }),
-            atualizadoEm: new Date(),
-          })
-          .where(eq(documentosFiscais.id, preparado.documento.id));
         for (const item of preparado.itens) {
           if (item.resolvido.revisaoNecessaria) itensParaRevisao += 1;
-          await tx
+          const alterados = await tx
             .update(documentosFiscaisItens)
             .set({
               cfopXml: item.cfopXml,
               cfop: item.resolvido.cfop,
+              ...(item.resolvido.origemResolucao === 'MANUAL'
+                ? {}
+                : camposClassificacao(item.resolvido.classificacao)),
+              cfopOrigemResolucao: item.resolvido.origemResolucao,
+              cfopMotivoResolucao: item.resolvido.motivoResolucao ?? null,
               cstIcms: item.resolvido.cstIcmsEscriturado
                 ? item.resolvido.cstIcmsEscriturado
                 : item.resolvido.csosnEscriturado
@@ -286,16 +311,45 @@ export class EscrituracaoFiscalService {
                 : item.resolvido.cstIcmsEscriturado
                   ? null
                   : item.csosnIcms,
-              cstPis:
-                item.resolvido.cstPisEscriturado ?? item.cstPis,
-              cstCofins:
-                item.resolvido.cstCofinsEscriturado ?? item.cstCofins,
+              cstPis: item.resolvido.cstPisEscriturado ?? item.cstPis,
+              cstCofins: item.resolvido.cstCofinsEscriturado ?? item.cstCofins,
               tipoOperacaoEscriturada: preparado.tipoOperacao,
               cfopRevisaoNecessaria: item.resolvido.revisaoNecessaria,
-              atualizadoEm: new Date(),
+              atualizadoEm: sql`clock_timestamp()`,
             })
-            .where(eq(documentosFiscaisItens.id, item.id));
+            .where(
+              and(
+                eq(documentosFiscaisItens.id, item.id),
+                sql`${documentosFiscaisItens.atualizadoEm}::text = ${item.revisao}`,
+              ),
+            )
+            .returning({ id: documentosFiscaisItens.id });
+          if (alterados.length !== 1)
+            throw new ConflictException(
+              'Um item foi alterado durante o reprocessamento. Tente novamente; nenhuma decisão foi sobrescrita.',
+            );
         }
+        await tx
+          .update(documentosFiscais)
+          .set({
+            tpNfXml: preparado.tpNfXml,
+            tipoOperacaoEscriturada: preparado.tipoOperacao,
+            escriturado: preparado.documento.situacao === 'AUTORIZADA',
+            escrituracaoStatus:
+              preparado.documento.situacao !== 'AUTORIZADA'
+                ? 'NAO_ESCRITURAVEL'
+                : pendingReview
+                  ? 'PENDENTE_REVISAO'
+                  : 'ESCRITURADO',
+            ...(preparado.parsed
+              ? buildDocumentoFiscalSpedMetadata(preparado.parsed)
+              : {
+                  integridadeConferida: false,
+                  integridadeStatus: 'NAO_CONFERIDA' as const,
+                }),
+            atualizadoEm: sql`clock_timestamp()`,
+          })
+          .where(eq(documentosFiscais.id, preparado.documento.id));
       }
       for (const cte of ctesPreparadas) {
         await tx
@@ -303,7 +357,7 @@ export class EscrituracaoFiscalService {
           .set({
             tpNfXml: '1',
             ...buildDocumentoFiscalSpedMetadata(cte.parsed),
-            atualizadoEm: new Date(),
+            atualizadoEm: sql`clock_timestamp()`,
           })
           .where(eq(documentosFiscais.id, cte.documento.id));
         await this.fiscalCteService.persistirEscrituracao(tx, {
