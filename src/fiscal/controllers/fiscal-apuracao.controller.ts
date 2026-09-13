@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -23,10 +24,20 @@ import { CiapService } from '../services/ciap.service';
 import { DifalEntradaService } from '../services/difal-entrada.service';
 import {
   FiscalGuiasService,
-  type CriarGuiaInput,
   type TributoGuia,
 } from '../services/fiscal-guias.service';
 import { PisCofinsService } from '../services/pis-cofins.service';
+import { FiscalItensService } from '../services/fiscal-itens.service';
+import { parseCompetenciaMensal } from '../fiscal-date.util';
+import {
+  BaixarBemCiapDto,
+  CiapCompetenciaDto,
+  RegistrarBemCiapDto,
+} from '../dto/ciap.dto';
+import {
+  CriarGuiaDto,
+  MarcarPagamentoGuiaDto,
+} from '../dto/guias-fiscais.dto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Controller do CLIENTE logado (escopo da própria empresa)
@@ -43,12 +54,41 @@ export class ClienteFiscalApuracaoController {
     private readonly difalService: DifalEntradaService,
     private readonly guiasService: FiscalGuiasService,
     private readonly pisCofinsService: PisCofinsService,
-  ) {}
+    private readonly fiscalItensService: FiscalItensService,
+  ) { }
 
   private async clienteId(userId: string): Promise<string> {
     const cliente = await this.clientesService.getClientForUser(userId);
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
     return cliente.id;
+  }
+
+  private competenciaRange(competencia: string) {
+    try {
+      return parseCompetenciaMensal(competencia);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Competência inválida.',
+      );
+    }
+  }
+
+  // ── ICMS (apuração mensal) ────────────────────────────────────────────────
+  @Get('icms')
+  @ApiOperation({
+    summary: 'Apura o ICMS (créditos, débitos e saldo) da competência',
+  })
+  async apurarIcms(
+    @Query('competencia') competencia: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const { inicio, fim } = this.competenciaRange(competencia);
+    const data = await this.fiscalItensService.getApuracaoIcms({
+      clienteId: await this.clienteId(user.id),
+      dataInicio: inicio,
+      dataFim: fim,
+    });
+    return { data };
   }
 
   // ── CIAP (Bloco G) ──────────────────────────────────────────────────────
@@ -149,14 +189,14 @@ export class AdminFiscalApuracaoController {
     private readonly difalService: DifalEntradaService,
     private readonly guiasService: FiscalGuiasService,
     private readonly pisCofinsService: PisCofinsService,
-  ) {}
+  ) { }
 
   // ── CIAP ────────────────────────────────────────────────────────────────
   @Post('ciap/importar')
   @ApiOperation({
     summary: 'Importa bens de ativo (1551/2551) escriturados para o CIAP',
   })
-  async importarBens(@Body() body: { clienteId: string; competencia: string }) {
+  async importarBens(@Body() body: CiapCompetenciaDto) {
     return this.ciapService.importarBensDoPeriodo({
       clienteId: body.clienteId,
       competencia: body.competencia,
@@ -165,27 +205,13 @@ export class AdminFiscalApuracaoController {
 
   @Post('ciap/bens')
   @ApiOperation({ summary: 'Registra manualmente um bem no CIAP' })
-  async registrarBem(
-    @Body()
-    body: {
-      clienteId: string;
-      codigoBem: string;
-      identificacaoBem: string;
-      dataEntrada: string;
-      valorIcmsTotal: string;
-      valorIcmsFrete?: string;
-      valorIcmsDifal?: string;
-      quantidadeParcelas?: number;
-    },
-  ) {
+  async registrarBem(@Body() body: RegistrarBemCiapDto) {
     return this.ciapService.registrarBem(body);
   }
 
   @Post('ciap/apropriar')
   @ApiOperation({ summary: 'Efetiva a apropriação CIAP (1/48) da competência' })
-  async apropriarCiap(
-    @Body() body: { clienteId: string; competencia: string },
-  ) {
+  async apropriarCiap(@Body() body: CiapCompetenciaDto) {
     return this.ciapService.apropriarCompetencia({
       clienteId: body.clienteId,
       competencia: body.competencia,
@@ -196,12 +222,7 @@ export class AdminFiscalApuracaoController {
   @ApiOperation({ summary: 'Baixa um bem do CIAP' })
   async baixarBem(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body()
-    body: {
-      clienteId: string;
-      dataBaixa: string;
-      motivoBaixa: '01' | '02' | '03';
-    },
+    @Body() body: BaixarBemCiapDto,
   ) {
     return this.ciapService.baixarBem({
       clienteId: body.clienteId,
@@ -214,7 +235,7 @@ export class AdminFiscalApuracaoController {
   // ── Guias ───────────────────────────────────────────────────────────────
   @Post('guias')
   @ApiOperation({ summary: 'Cria uma guia de recolhimento' })
-  async criarGuia(@Body() body: CriarGuiaInput) {
+  async criarGuia(@Body() body: CriarGuiaDto) {
     return this.guiasService.criarGuia(body);
   }
 
@@ -222,11 +243,7 @@ export class AdminFiscalApuracaoController {
   @ApiOperation({ summary: 'Atualiza o status de pagamento de uma guia' })
   async marcarPagamento(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body()
-    body: {
-      clienteId: string;
-      statusPagamento: 'PENDENTE' | 'PAGO' | 'VENCIDO';
-    },
+    @Body() body: MarcarPagamentoGuiaDto,
   ) {
     return this.guiasService.marcarPagamento({
       clienteId: body.clienteId,

@@ -1,4 +1,8 @@
 import { FiscalRuleEngineService } from './fiscal-rule-engine.service';
+import {
+  CFOP_FINAIS_VEDA_CREDITO,
+  cfopVedaCreditoIcms,
+} from './decisao-credito';
 
 // Monta um DatabaseService falso cujo select() responde em fila.
 // Ordem esperada das consultas no evaluate():
@@ -276,5 +280,112 @@ describe('resolução contextual segura', () => {
       pendenteClassificacao: true,
       classificacao: { confianca: 0.65 },
     });
+  });
+});
+
+// O simulador (RegrasFiscaisService.simular → FiscalRuleEngineService.evaluate)
+// e a apuração/builder DEVEM vedar crédito pelos MESMOS CFOPs (R3.3, R7.1). Esta
+// suíte prova que o motor de regras deriva a vedação da fonte única
+// `cfopVedaCreditoIcms` (decisao-credito.ts), sem regex privada duplicada.
+describe('vedação de crédito por CFOP compartilhada simulador ↔ apuração (R3.3)', () => {
+  it.each(CFOP_FINAIS_VEDA_CREDITO.map((final) => `1${final}`))(
+    'não credita ICMS via regra quando o CFOP de destino %s veda crédito',
+    async (cfopDestino) => {
+      // Sanidade: a fonte única realmente veda esse CFOP.
+      expect(cfopVedaCreditoIcms(cfopDestino)).toBe(true);
+
+      const engine = createEngine([
+        [
+          {
+            id: 'r1',
+            clienteId: 'c1',
+            prioridade: 10,
+            nomeRegra: 'Regra que aponta CFOP vedado',
+            cfopOrigem: '5102',
+            cfopDestino,
+            // Regra tenta apropriar; a vedação por CFOP tem de prevalecer,
+            // exatamente como no builder/apuração.
+            apropriaCreditoIcms: true,
+            apropriaCreditoIpi: false,
+            exigeCiap: false,
+            exigeDifalEntrada: false,
+          },
+        ],
+        [
+          {
+            codigo: cfopDestino,
+            ativo: true,
+            categoriaFiscal: 'USO_CONSUMO',
+            // Mesmo com o catálogo permitindo crédito, o CFOP vedado corta.
+            geraCreditoIcmsPadrao: true,
+          },
+        ],
+      ]);
+
+      const result = await engine.evaluate({
+        clienteId: 'c1',
+        tipoOperacaoEscriturada: 'ENTRADA',
+        cfopXml: '5102',
+      });
+
+      expect(result.cfopEscriturado).toBe(cfopDestino);
+      expect(result.apropriaCreditoIcms).toBe(false);
+    },
+  );
+
+  it.each(CFOP_FINAIS_VEDA_CREDITO.map((final) => `1${final}`))(
+    'não credita ICMS via catálogo (MANTIDO) quando o CFOP %s veda crédito',
+    async (cfop) => {
+      expect(cfopVedaCreditoIcms(cfop)).toBe(true);
+
+      const engine = createEngine([
+        [], // sem regras
+        [{ codigo: cfop }], // isCfopAtivo(cfop) -> ativo
+        [
+          {
+            codigo: cfop,
+            ativo: true,
+            categoriaFiscal: 'USO_CONSUMO',
+            geraCreditoIcmsPadrao: true,
+          },
+        ], // getCfop(cfop)
+      ]);
+
+      const result = await engine.evaluate({
+        clienteId: 'c1',
+        tipoOperacaoEscriturada: 'ENTRADA',
+        cfopXml: cfop,
+      });
+
+      expect(result.origemResolucao).toBe('MANTIDO');
+      expect(result.cfopEscriturado).toBe(cfop);
+      expect(result.apropriaCreditoIcms).toBe(false);
+    },
+  );
+
+  it('credita ICMS quando o CFOP NÃO é vedado pela fonte única (1102)', async () => {
+    // Espelha o caso positivo do builder/decisão pura (1102 credita).
+    expect(cfopVedaCreditoIcms('1102')).toBe(false);
+
+    const engine = createEngine([
+      [], // sem regras
+      [{ codigo: '1102' }],
+      [
+        {
+          codigo: '1102',
+          ativo: true,
+          categoriaFiscal: 'COMPRA_REVENDA',
+          geraCreditoIcmsPadrao: true,
+        },
+      ],
+    ]);
+
+    const result = await engine.evaluate({
+      clienteId: 'c1',
+      tipoOperacaoEscriturada: 'ENTRADA',
+      cfopXml: '1102',
+    });
+
+    expect(result.apropriaCreditoIcms).toBe(true);
   });
 });

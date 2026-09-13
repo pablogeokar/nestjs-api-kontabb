@@ -349,6 +349,192 @@ describe('Regressão Fase 0 — cenários P0', () => {
     expect(e110[0]).toBe('12,00');
   });
 
+  // F04 (R2.1) — o débito de prestação do CT-e de saída soma-se ao débito das
+  // NF-e de saída no E110, contado EXATAMENTE UMA VEZ: NF-e 18,00 + CT-e 12,00
+  // = 30,00. Também confirma que o crédito de frete (0,00 aqui) não contamina
+  // o débito e que o CT-e de saída não vira crédito.
+  it('F04: débito do E110 soma NF-e de saída (18,00) e prestação de CT-e (12,00) sem duplicar', () => {
+    const input = makeInput({
+      nfe: [
+        makeNfe(
+          { tipoOperacaoEscriturada: 'SAIDA' },
+          [makeItem({ cfop: '5102', valorIcms: '18.00' })],
+        ),
+      ],
+      cte: [
+        makeCte(
+          { tipoOperacaoEscriturada: 'SAIDA' },
+          {
+            tipoOperacaoEscriturada: 'SAIDA',
+            cfop: '5353',
+            cfopXml: '5353',
+            valorIcms: '12.00',
+            valorIcmsCreditavel: '0.00',
+          },
+        ),
+      ],
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+    // Campo 1 (após REG) = VL_TOT_DEBITOS: 18,00 (NF-e) + 12,00 (CT-e).
+    expect(e110[0]).toBe('30,00');
+    // Campo 5 (após REG) = VL_TOT_CREDITOS: o CT-e de saída não gera crédito.
+    expect(e110[4]).toBe('0,00');
+    expect(result.apuracao.icmsProprio.debitos).toBe('30.00');
+    expect(result.apuracao.icmsProprio.creditos).toBe('0.00');
+  });
+
+  // F04 (R2.2/R2.3) — quando um CT-e de saída está cancelado, seu ICMS não
+  // entra no débito do E110: só o débito da NF-e de saída permanece.
+  it('F04: CT-e de saída cancelado não soma ao débito do E110', () => {
+    const input = makeInput({
+      nfe: [
+        makeNfe(
+          { tipoOperacaoEscriturada: 'SAIDA' },
+          [makeItem({ cfop: '5102', valorIcms: '18.00' })],
+        ),
+      ],
+      cte: [
+        makeCte(
+          { tipoOperacaoEscriturada: 'SAIDA', codSituacaoSped: '02' },
+          {
+            tipoOperacaoEscriturada: 'SAIDA',
+            cfop: '5353',
+            cfopXml: '5353',
+            valorIcms: '12.00',
+            valorIcmsCreditavel: '0.00',
+          },
+        ),
+      ],
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+    expect(e110[0]).toBe('18,00');
+    expect(result.apuracao.icmsProprio.debitos).toBe('18.00');
+  });
+
+  // F04 (R2.2) — CT-e de saída cancelado não emite D190 e não soma ao E110:
+  // conciliação de ponta a ponta (nenhum registro D190, débito zero).
+  it('F04: CT-e de saída cancelado não emite D190 nem débito no E110', () => {
+    const input = makeInput({
+      cte: [
+        makeCte(
+          { tipoOperacaoEscriturada: 'SAIDA', codSituacaoSped: '02' },
+          {
+            tipoOperacaoEscriturada: 'SAIDA',
+            cfop: '5353',
+            cfopXml: '5353',
+            valorIcms: '12.00',
+            valorIcmsCreditavel: '0.00',
+          },
+        ),
+      ],
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+    // Nenhum D190 é emitido para o CT-e cancelado.
+    expect(
+      result.records.filter((record) => record.reg === 'D190'),
+    ).toHaveLength(0);
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+    expect(e110[0]).toBe('0,00');
+    expect(result.apuracao.icmsProprio.debitos).toBe('0.00');
+  });
+
+  // F04 (R2.3) — par original + complementar de SAÍDA de ponta a ponta. O
+  // complementar (tpCte '1') destaca apenas o incremento (3,00); o E110 soma
+  // 12,00 (original) + 3,00 (complemento) = 15,00, sem recontar o imposto
+  // original dentro do complementar.
+  it('F04: original + complementar de saída somam sem duplicar no E110 (12,00 + 3,00 = 15,00)', () => {
+    const input = makeInput({
+      cte: [
+        makeCte(
+          { tipoOperacaoEscriturada: 'SAIDA' },
+          {
+            tipoOperacaoEscriturada: 'SAIDA',
+            cfop: '5353',
+            cfopXml: '5353',
+            valorIcms: '12.00',
+            valorIcmsCreditavel: '0.00',
+          },
+        ),
+        makeCte(
+          {
+            id: 'cte-documento-2',
+            chaveAcesso: '3'.repeat(44),
+            numeroDocumento: '201',
+            tipoOperacaoEscriturada: 'SAIDA',
+            codSituacaoSped: '06',
+          },
+          {
+            id: 'cte-2',
+            tipoOperacaoEscriturada: 'SAIDA',
+            tpCte: '1',
+            cfop: '5353',
+            cfopXml: '5353',
+            valorIcms: '3.00',
+            valorIcmsCreditavel: '0.00',
+            chaveCteReferenciado: '2'.repeat(44),
+          },
+        ),
+      ],
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+    expect(e110[0]).toBe('15,00');
+    expect(result.apuracao.icmsProprio.debitos).toBe('15.00');
+    // Cada documento (original e complementar) gera seu próprio D190.
+    expect(
+      result.records.filter((record) => record.reg === 'D190'),
+    ).toHaveLength(2);
+  });
+
+  // F04 (R2.3) — par original cancelado + substituto de SAÍDA de ponta a ponta.
+  // O substituto (tpCte '3') refaz a prestação com 15,00; o original é
+  // cancelado, então o E110 recebe só 15,00 — não 12,00 + 15,00.
+  it('F04: substituto refaz o original cancelado sem duplicar no E110 (débito 15,00)', () => {
+    const input = makeInput({
+      cte: [
+        makeCte(
+          { tipoOperacaoEscriturada: 'SAIDA', codSituacaoSped: '02' },
+          {
+            tipoOperacaoEscriturada: 'SAIDA',
+            cfop: '5353',
+            cfopXml: '5353',
+            valorIcms: '12.00',
+            valorIcmsCreditavel: '0.00',
+          },
+        ),
+        makeCte(
+          {
+            id: 'cte-documento-2',
+            chaveAcesso: '3'.repeat(44),
+            numeroDocumento: '201',
+            tipoOperacaoEscriturada: 'SAIDA',
+            codSituacaoSped: '06',
+          },
+          {
+            id: 'cte-2',
+            tipoOperacaoEscriturada: 'SAIDA',
+            tpCte: '3',
+            cfop: '5353',
+            cfopXml: '5353',
+            valorIcms: '15.00',
+            valorIcmsCreditavel: '0.00',
+            chaveCteReferenciado: '2'.repeat(44),
+          },
+        ),
+      ],
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+    expect(e110[0]).toBe('15,00');
+    expect(result.apuracao.icmsProprio.debitos).toBe('15.00');
+    // Só o substituto gera D190 (o original cancelado não emite).
+    expect(
+      result.records.filter((record) => record.reg === 'D190'),
+    ).toHaveLength(1);
+  });
+
   // F09 — IPI CST 01 (entrada tributada com alíquota zero) com valor positivo
   // não deve virar crédito automático.
   it('F09: IPI CST 01 com valor positivo não credita automaticamente', () => {

@@ -56,7 +56,10 @@ import { QueryCteFiscalDto } from '../dto/query-cte-fiscal.dto';
 import { EditarCfopDto } from '../dto/editar-cfop.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
-import { FiscalItensService } from '../services/fiscal-itens.service';
+import {
+  FiscalItensService,
+  RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
+} from '../services/fiscal-itens.service';
 import { FiscalCteService } from '../services/fiscal-cte.service';
 import { RegrasFiscaisService } from '../services/regras-fiscais.service';
 import { getRequestId, type RequestWithId } from '../../common/request-id';
@@ -79,7 +82,7 @@ export class AdminFiscalController {
     private readonly fiscalItensService: FiscalItensService,
     private readonly fiscalCteService: FiscalCteService,
     private readonly regrasFiscaisService: RegrasFiscaisService,
-  ) {}
+  ) { }
 
   // ─── Certificados ─────────────────────────────────────────────────────────
 
@@ -587,6 +590,9 @@ export class AdminFiscalController {
       }),
       transportes_bloco_d:
         await this.fiscalCteService.getResumoLivros(filtrosCte),
+      // Resumo documental por CFOP: parcial em relação ao imposto final (R7.3).
+      parcial: true,
+      observacao: RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
     };
   }
 

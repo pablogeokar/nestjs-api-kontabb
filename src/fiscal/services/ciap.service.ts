@@ -26,6 +26,11 @@ const CFOPS_ATIVO_ENTRADA = new Set(['1551', '2551', '3551']);
 // Escala usada para o coeficiente de saídas tributadas (4 casas decimais).
 const COEFICIENTE_SCALE = 4;
 
+// Limite legal de parcelas de apropriação do CIAP (1/48). Espelha as
+// restrições do RegistrarBemCiapDto para valer também fora do HTTP (R6.4).
+const PARCELAS_MIN = 1;
+const PARCELAS_MAX = 48;
+
 export interface RegistroBemCiapInput {
   clienteId: string;
   documentoFiscalId?: string | null;
@@ -45,23 +50,48 @@ interface CiapRow {
 
 @Injectable()
 export class CiapService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(private readonly database: DatabaseService) { }
 
   /**
    * Registra manualmente um bem do ativo permanente no CIAP.
    * O saldo credor inicial = ICMS total + frete + DIFAL (base de apropriação).
    */
   async registrarBem(input: RegistroBemCiapInput) {
-    const parcelas = input.quantidadeParcelas ?? 48;
-    if (parcelas <= 0) {
+    const parcelas = input.quantidadeParcelas ?? PARCELAS_MAX;
+    // R6.4: as mesmas invariantes que o RegistrarBemCiapDto impõe na fronteira
+    // HTTP são reforçadas aqui, para que um chamador que NÃO passe pelo
+    // ValidationPipe (cron, fila, outro serviço, importarBensDoPeriodo) não as
+    // burle. Parcelas devem ser inteiras dentro de 1..48.
+    if (!Number.isInteger(parcelas)) {
       throw new BadRequestException(
-        'Quantidade de parcelas deve ser positiva.',
+        'Quantidade de parcelas deve ser um número inteiro.',
       );
     }
+    if (parcelas < PARCELAS_MIN || parcelas > PARCELAS_MAX) {
+      throw new BadRequestException(
+        `Quantidade de parcelas deve estar entre ${PARCELAS_MIN} e ${PARCELAS_MAX}.`,
+      );
+    }
+    // R6.4/R6.3: valores de ICMS (total, frete, DIFAL) não podem ser negativos.
+    // Sem isso, um chamador não-HTTP poderia gravar uma base de apropriação
+    // negativa (corrompendo o saldo credor do CIAP).
+    this.assertValorNaoNegativo(input.valorIcmsTotal, 'ICMS total');
+    this.assertValorNaoNegativo(input.valorIcmsFrete ?? '0', 'ICMS do frete');
+    this.assertValorNaoNegativo(input.valorIcmsDifal ?? '0', 'DIFAL');
+
+    // R6.2: quando o registro referencia um documento fiscal (ou um item de
+    // documento) de outro cliente, a operação é rejeitada. A checagem de
+    // propriedade é feita no serviço — não confiamos apenas na FK por UUID —
+    // impedindo que um bem CIAP seja atrelado ao documento de outro cliente.
+    await this.assertDocumentoDoCliente(
+      input.clienteId,
+      input.documentoFiscalId,
+      input.documentoFiscalItemId,
+    );
     const saldoInicial = fromScaledInteger(
       toScaledInteger(input.valorIcmsTotal) +
-        toScaledInteger(input.valorIcmsFrete ?? '0') +
-        toScaledInteger(input.valorIcmsDifal ?? '0'),
+      toScaledInteger(input.valorIcmsFrete ?? '0') +
+      toScaledInteger(input.valorIcmsDifal ?? '0'),
     );
 
     const rows = await this.database.db
@@ -519,6 +549,28 @@ export class CiapService {
     }
   }
 
+  /**
+   * R6.4: garante que um valor monetário é um decimal não negativo,
+   * independentemente do ValidationPipe do HTTP. `toScaledInteger` também
+   * rejeita strings não numéricas (TypeError), aqui convertidas em
+   * BadRequestException com mensagem estável.
+   */
+  private assertValorNaoNegativo(valor: string, rotulo: string): void {
+    let escalado: bigint;
+    try {
+      escalado = toScaledInteger(valor);
+    } catch {
+      throw new BadRequestException(
+        `Valor de ${rotulo} inválido: "${valor}".`,
+      );
+    }
+    if (escalado < 0n) {
+      throw new BadRequestException(
+        `O valor de ${rotulo} não pode ser negativo.`,
+      );
+    }
+  }
+
   async assertCliente(clienteId: string) {
     const rows = await this.database.db
       .select({ id: clientes.id })
@@ -526,6 +578,65 @@ export class CiapService {
       .where(eq(clientes.id, clienteId))
       .limit(1);
     if (!rows[0]) throw new NotFoundException('Empresa não encontrada.');
+  }
+
+  /**
+   * R6.2: verifica que o documento fiscal e/ou o item referenciados pertencem
+   * ao cliente informado. Segue a convenção do código para acesso cruzado
+   * (WHERE por clienteId + ausência de linha → NotFound): um objeto de outro
+   * cliente é indistinguível de um objeto inexistente e resulta em rejeição.
+   */
+  private async assertDocumentoDoCliente(
+    clienteId: string,
+    documentoFiscalId?: string | null,
+    documentoFiscalItemId?: string | null,
+  ): Promise<void> {
+    if (documentoFiscalId) {
+      const rows = await this.database.db
+        .select({ id: documentosFiscais.id })
+        .from(documentosFiscais)
+        .where(
+          and(
+            eq(documentosFiscais.id, documentoFiscalId),
+            eq(documentosFiscais.clienteId, clienteId),
+          ),
+        )
+        .limit(1);
+      if (!rows[0]) {
+        throw new NotFoundException('Documento fiscal não encontrado.');
+      }
+    }
+
+    if (documentoFiscalItemId) {
+      const rows = await this.database.db
+        .select({
+          id: documentosFiscaisItens.id,
+          documentoFiscalId: documentosFiscaisItens.documentoFiscalId,
+        })
+        .from(documentosFiscaisItens)
+        .where(
+          and(
+            eq(documentosFiscaisItens.id, documentoFiscalItemId),
+            eq(documentosFiscaisItens.clienteId, clienteId),
+          ),
+        )
+        .limit(1);
+      const item = rows[0];
+      if (!item) {
+        throw new NotFoundException('Item do documento fiscal não encontrado.');
+      }
+      // Coerência: se ambos foram informados, o item deve pertencer ao mesmo
+      // documento fiscal referenciado (evita cruzar item/documento do próprio
+      // cliente de forma inconsistente).
+      if (
+        documentoFiscalId &&
+        item.documentoFiscalId !== documentoFiscalId
+      ) {
+        throw new BadRequestException(
+          'O item informado não pertence ao documento fiscal informado.',
+        );
+      }
+    }
   }
 
   private toBemResponse(row: CiapRow['ciap']) {

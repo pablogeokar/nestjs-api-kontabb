@@ -3,6 +3,7 @@ import { and, asc, eq, isNull, or, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { cfopEquivalencias, cfops, regrasFiscais } from '../../database/schema';
 import type { AbrangenciaCfop, TipoOperacaoEscriturada } from './cfop.service';
+import { cfopVedaCreditoIcms } from './decisao-credito';
 
 import {
   ClassificacaoDestinacaoService,
@@ -87,13 +88,16 @@ type RegraRow = typeof regrasFiscais.$inferSelect;
  * O direito a crédito de ICMS/IPI é derivado da categoria fiscal do CFOP
  * escriturado (uso/consumo e ST-substituído NÃO geram crédito — LC 87/96
  * art. 33, I e Convênio ICMS 142/18), salvo sobrescrita explícita por regra.
+ * A vedação de crédito por CFOP usa a fonte única `cfopVedaCreditoIcms`
+ * (decisao-credito.ts) — a MESMA consumida pelo builder SPED e pela
+ * apuração/livros (R3.3, R7.1), para que simulador e apuração não divirjam.
  */
 @Injectable()
 export class FiscalRuleEngineService {
   constructor(
     private readonly database: DatabaseService,
     @Optional() private readonly classificacao?: ClassificacaoDestinacaoService,
-  ) {}
+  ) { }
 
   async evaluate(input: RuleEvaluationInput): Promise<RuleEvaluationResult> {
     const cfopXml = normalizeCfop(input.cfopXml);
@@ -143,7 +147,7 @@ export class FiscalRuleEngineService {
       if (
         !destino?.ativo ||
         tipoOperacaoFromCodigo(destino.codigo) !==
-          input.tipoOperacaoEscriturada ||
+        input.tipoOperacaoEscriturada ||
         abrangenciaFromCodigo(destino.codigo) !== abrangenciaFromCodigo(cfopXml)
       ) {
         return pendente(
@@ -182,7 +186,7 @@ export class FiscalRuleEngineService {
           !destino?.ativo ||
           tipoOperacaoFromCodigo(destino.codigo) !== 'ENTRADA' ||
           abrangenciaFromCodigo(destino.codigo) !==
-            abrangenciaFromCodigo(cfopXml)
+          abrangenciaFromCodigo(cfopXml)
         ) {
           return pendente(
             cfopXml,
@@ -207,9 +211,9 @@ export class FiscalRuleEngineService {
           if (
             !destino?.ativo ||
             tipoOperacaoFromCodigo(destino.codigo) !==
-              input.tipoOperacaoEscriturada ||
+            input.tipoOperacaoEscriturada ||
             abrangenciaFromCodigo(destino.codigo) !==
-              abrangenciaFromCodigo(cfopXml)
+            abrangenciaFromCodigo(cfopXml)
           ) {
             return {
               ...pendente(
@@ -363,7 +367,7 @@ export class FiscalRuleEngineService {
     if (
       regra.fornecedorCnpjCpf &&
       normalizeTaxId(regra.fornecedorCnpjCpf) !==
-        normalizeTaxId(input.emitenteCnpjCpf)
+      normalizeTaxId(input.emitenteCnpjCpf)
     ) {
       return false;
     }
@@ -398,7 +402,7 @@ export class FiscalRuleEngineService {
       apropriaCreditoIcms:
         creditoIcms &&
         Boolean(destino?.geraCreditoIcmsPadrao) &&
-        !vedaCredito(regra.cfopDestino),
+        !cfopVedaCreditoIcms(regra.cfopDestino),
       apropriaCreditoIpi: regra.apropriaCreditoIpi,
       exigeCiap: regra.exigeCiap,
       exigeDifalEntrada: regra.exigeDifalEntrada,
@@ -442,7 +446,7 @@ export class FiscalRuleEngineService {
   ): RuleEvaluationResult {
     const categoria = (row?.categoriaFiscal ?? 'OUTRAS') as CategoriaFiscalCfop;
     const creditoIcms =
-      Boolean(row?.geraCreditoIcmsPadrao) && !vedaCredito(codigo);
+      Boolean(row?.geraCreditoIcmsPadrao) && !cfopVedaCreditoIcms(codigo);
     return {
       cfopEscriturado: codigo,
       apropriaCreditoIcms: creditoIcms,
@@ -575,9 +579,6 @@ function temSt(input: RuleEvaluationInput): boolean {
     ['201', '202', '203', '500'].includes(input.csosnXml ?? '') ||
     /^[1256](401|403|405|406|407)$/.test(input.cfopXml)
   );
-}
-function vedaCredito(cfop: string): boolean {
-  return /^[123](401|403|405|406|407|551|552|556|557)$/.test(cfop);
 }
 function pendente(cfop: string, motivo: string): RuleEvaluationResult {
   return {

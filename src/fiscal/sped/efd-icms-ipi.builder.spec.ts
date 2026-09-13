@@ -782,6 +782,8 @@ describe('buildEfdIcmsIpiRecords', () => {
       saldoCredorAnterior: '0.00',
       recolher: '5.00',
       saldoCredorTransportar: '0.00',
+      ipiOriginalEntradas: '0.00',
+      ipiOriginalSaidas: '5.00',
     });
   });
 
@@ -814,6 +816,49 @@ describe('buildEfdIcmsIpiRecords', () => {
         codigo: 'IPI_CREDITO_EXIGE_REVISAO',
         severidade: 'ERRO',
       }),
+    );
+  });
+
+  it('nao credita IPI de entrada CST 01 com valor positivo e sinaliza revisao (R4.1)', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: {
+          indAtiv: '0',
+          classificacaoEstabelecimentoIndustrial: '2099',
+        },
+        inconsistencias,
+        nfe: [
+          makeNfe({ id: 'doc-cst01', chaveAcesso: '7'.repeat(44) }, [
+            makeItem({
+              // CST 01 (entrada tributada com alíquota zero): valor de IPI
+              // positivo é contradição, não comprovação de crédito.
+              numeroItem: 3,
+              cstIpi: '01',
+              valorBcIpi: '100.00',
+              aliquotaIpi: '50.00',
+              valorIpi: '50.00',
+            }),
+          ]),
+        ],
+      }),
+    );
+
+    // R4.1: nenhum crédito cego sob CST 01.
+    expect(result.apuracao.ipi?.creditos).toBe('0.00');
+    // Inconsistência identifica documento, item e campo para revisão.
+    expect(inconsistencias).toContainEqual(
+      expect.objectContaining({
+        codigo: 'IPI_CST01_VALOR_POSITIVO',
+        severidade: 'ERRO',
+        documentoId: 'doc-cst01',
+        chaveAcesso: '7'.repeat(44),
+        campo: 'item.3.cstIpi',
+      }),
+    );
+    // Não deve ser confundido com o erro genérico de CST ambíguo.
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'IPI_CREDITO_EXIGE_REVISAO' }),
     );
   });
 
@@ -858,6 +903,153 @@ describe('buildEfdIcmsIpiRecords', () => {
     );
     expect(inconsistencias).not.toContainEqual(
       expect.objectContaining({ codigo: 'IPI_DEBITO_EXIGE_REVISAO' }),
+    );
+  });
+
+  it('nao apropria CST de saida do fornecedor como CST de entrada e nao credita (R4.3)', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: {
+          indAtiv: '0',
+          classificacaoEstabelecimentoIndustrial: '2099',
+        },
+        inconsistencias,
+        // Entrada cujo XML carrega o CST de SAÍDA do fornecedor (50, faixa
+        // 50-99 do RIPI). Ele não pode ser apropriado como CST de entrada do
+        // declarante nem gerar crédito automático.
+        nfe: [
+          makeNfe({ id: 'doc-saida-em-entrada', chaveAcesso: '8'.repeat(44) }, [
+            makeItem({
+              numeroItem: 5,
+              cstIpi: '50',
+              valorBcIpi: '100.00',
+              aliquotaIpi: '5.00',
+              valorIpi: '5.00',
+            }),
+          ]),
+        ],
+      }),
+    );
+
+    // R4.3: nenhum crédito cego a partir do CST de saída do fornecedor.
+    expect(result.apuracao.ipi?.creditos).toBe('0.00');
+    // Diagnóstico específico identificando documento, item e campo.
+    expect(inconsistencias).toContainEqual(
+      expect.objectContaining({
+        codigo: 'IPI_CST_SAIDA_EM_ENTRADA',
+        severidade: 'ERRO',
+        documentoId: 'doc-saida-em-entrada',
+        chaveAcesso: '8'.repeat(44),
+        campo: 'item.5.cstIpi',
+      }),
+    );
+    // Não deve ser confundido com o erro genérico de CST ambíguo.
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'IPI_CREDITO_EXIGE_REVISAO' }),
+    );
+  });
+
+  it('mantem o IPI original do XML separado do IPI escriturado por sentido (R4.4)', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    // Entrada com o CST de saída do fornecedor (50) e IPI destacado de 7,00:
+    // não gera crédito escriturado, mas o valor original do XML é preservado.
+    const entrada = makeNfe(
+      { id: 'ent-orig', chaveAcesso: '9'.repeat(44) },
+      [
+        makeItem({
+          numeroItem: 1,
+          cstIpi: '50',
+          valorBcIpi: '100.00',
+          aliquotaIpi: '7.00',
+          valorIpi: '7.00',
+        }),
+      ],
+    );
+    // Saída tributada (CST 50) com IPI destacado de 5,00: debita e compõe o
+    // original de saída.
+    const saida = makeNfe(
+      {
+        id: 'sai-orig',
+        chaveAcesso: 'a'.repeat(44),
+        tipoOperacaoEscriturada: 'SAIDA',
+        emitenteCnpjCpf: EMPRESA_CNPJ,
+      },
+      [
+        makeItem({
+          cfop: '5101',
+          cstIpi: '50',
+          valorBcIpi: '100.00',
+          aliquotaIpi: '5.00',
+          valorIpi: '5.00',
+        }),
+      ],
+    );
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: {
+          indAtiv: '0',
+          classificacaoEstabelecimentoIndustrial: '2099',
+        },
+        inconsistencias,
+        nfe: [entrada, saida],
+      }),
+    );
+
+    // R4.4: escriturado (debitos/creditos) distinto do original do XML.
+    expect(result.apuracao.ipi?.creditos).toBe('0.00');
+    expect(result.apuracao.ipi?.debitos).toBe('5.00');
+    // O IPI original da entrada (7,00) é preservado mesmo sem crédito.
+    expect(result.apuracao.ipi?.ipiOriginalEntradas).toBe('7.00');
+    expect(result.apuracao.ipi?.ipiOriginalSaidas).toBe('5.00');
+  });
+
+  // R4.1/R4.2 (F09): caso VÁLIDO com enquadramento explícito. Uma entrada
+  // corretamente classificada sob o CST de entrada do declarante — CST 00
+  // (entrada com recuperação de crédito) — DEVE creditar. Contrasta com o CST
+  // 01 e com o CST de saída do fornecedor, que NÃO creditam. O crédito aparece
+  // no E520, na apuração e não gera nenhuma inconsistência de IPI.
+  it('credita IPI de entrada corretamente classificada em CST 00 (caso valido com enquadramento explicito) (R4.1/R4.2)', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const entrada = makeNfe({ id: 'ent-valida', chaveAcesso: 'b'.repeat(44) }, [
+      makeItem({
+        // CST 00: entrada tributada com recuperação de crédito — o
+        // enquadramento de entrada do declarante é explícito e correto.
+        cstIpi: '00',
+        codigoEnquadramentoIpi: '999',
+        valorBcIpi: '100.00',
+        aliquotaIpi: '10.00',
+        valorIpi: '10.00',
+      }),
+    ]);
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: {
+          indAtiv: '0',
+          classificacaoEstabelecimentoIndustrial: '2099',
+        },
+        inconsistencias,
+        nfe: [entrada],
+      }),
+    );
+
+    // O crédito é reconhecido na apuração (contraste com CST 01 / saída = 0,00).
+    expect(result.apuracao.ipi?.creditos).toBe('10.00');
+    expect(result.apuracao.ipi?.debitos).toBe('0.00');
+    // O IPI original de entrada do XML também acompanha o valor destacado.
+    expect(result.apuracao.ipi?.ipiOriginalEntradas).toBe('10.00');
+    expect(result.apuracao.ipi?.ipiOriginalSaidas).toBe('0.00');
+    // E520 campo 2 (após REG) = VL_TOT_CRED: o crédito válido é escriturado.
+    expect(fieldsOf(lineFor(result.records, 'E520'))[2]).toBe('10,00');
+    // Enquadramento correto ⇒ nenhuma inconsistência de IPI.
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'IPI_CST01_VALOR_POSITIVO' }),
+    );
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'IPI_CST_SAIDA_EM_ENTRADA' }),
+    );
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'IPI_CREDITO_EXIGE_REVISAO' }),
     );
   });
 
@@ -1704,6 +1896,95 @@ describe('distinção campo dispensado × código obrigatório ausente (R4.5)', 
     // A geração é impedida por severidade ERRO.
     expect(input.inconsistencias.some((i) => i.severidade === 'ERRO')).toBe(
       true,
+    );
+  });
+
+  // F04 (R2.4): o débito de prestação do CT-e de saída que compõe o E110 é o
+  // mesmo ICMS escriturado no D190 do bloco D e no livro de saídas.
+  it('reconcilia o ICMS do D190 do CT-e de saída com o débito do E110', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const cteSaida = makeCte(
+      { emitenteCnpjCpf: EMPRESA_CNPJ },
+      {
+        tipoOperacaoEscriturada: 'SAIDA',
+        cfop: '5353',
+        cstIcms: '00',
+        valorIcms: '12.00',
+        valorIcmsCreditavel: '0.00',
+      },
+    );
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({ inconsistencias, cte: [cteSaida] }),
+    );
+
+    const d190 = fieldsOf(lineFor(result.records, 'D190'));
+    const e110 = fieldsOf(lineFor(result.records, 'E110'));
+    // D190 campo 5 (após REG) = VL_ICMS; E110 campo 1 = VL_TOT_DEBITOS.
+    expect(d190[5]).toBe('12,00');
+    expect(e110[0]).toBe('12,00');
+    expect(result.apuracao.icmsProprio.debitos).toBe('12.00');
+    // Nenhuma divergência de conciliação é reportada.
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'CTE_SAIDA_D190_E110_DIVERGENTE' }),
+    );
+  });
+
+  // F04 (R2.4): quando um CT-e de anulação (tpCte '2') de saída traz ICMS
+  // destacado positivo, o D190 o escritura mas o débito do E110/livro de saídas
+  // não. A divergência é sinalizada como inconsistência impeditiva.
+  it('sinaliza divergência de conciliação quando anulação de saída tem ICMS positivo no D190', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const cteAnulacao = makeCte(
+      { emitenteCnpjCpf: EMPRESA_CNPJ },
+      {
+        tipoOperacaoEscriturada: 'SAIDA',
+        tpCte: '2',
+        cfop: '5353',
+        cstIcms: '00',
+        valorIcms: '12.00',
+        valorIcmsCreditavel: '0.00',
+      },
+    );
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({ inconsistencias, cte: [cteAnulacao] }),
+    );
+
+    // O D190 traz o ICMS destacado, mas o E110 não recebe débito positivo.
+    expect(fieldsOf(lineFor(result.records, 'D190'))[5]).toBe('12,00');
+    expect(fieldsOf(lineFor(result.records, 'E110'))[0]).toBe('0,00');
+    expect(result.apuracao.icmsProprio.debitos).toBe('0.00');
+    expect(inconsistencias).toContainEqual(
+      expect.objectContaining({
+        codigo: 'CTE_SAIDA_D190_E110_DIVERGENTE',
+        severidade: 'ERRO',
+      }),
+    );
+  });
+
+  // F04 (R2.4): no Simples Nacional o E110 é zerado por regime; a conciliação
+  // de CT-e de saída não deve gerar divergência espúria.
+  it('não sinaliza divergência de conciliação de CT-e de saída no Simples Nacional', () => {
+    const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
+    const cteSaida = makeCte(
+      { emitenteCnpjCpf: EMPRESA_CNPJ },
+      {
+        tipoOperacaoEscriturada: 'SAIDA',
+        tpCte: '2',
+        cfop: '5353',
+        cstIcms: '00',
+        valorIcms: '12.00',
+      },
+    );
+    buildEfdIcmsIpiRecords(
+      makeInput({
+        empresa: { regimeTributario: 'SIMPLES_NACIONAL' },
+        inconsistencias,
+        cte: [cteSaida],
+      }),
+    );
+
+    expect(inconsistencias).not.toContainEqual(
+      expect.objectContaining({ codigo: 'CTE_SAIDA_D190_E110_DIVERGENTE' }),
     );
   });
 

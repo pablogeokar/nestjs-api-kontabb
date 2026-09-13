@@ -146,6 +146,69 @@ function createApuracaoDb(
   };
 }
 
+// DB falso para registrarBem (R6.2). Os selects de checagem de propriedade
+// (documento e item) terminam em .limit(); a fila `ownershipRows` fornece o
+// resultado de cada limit() na ordem em que registrarBem os executa:
+//   1) documento fiscal (se documentoFiscalId informado)
+//   2) item do documento (se documentoFiscalItemId informado)
+// O insert().values().onConflictDoUpdate().returning() devolve `insertedRow`.
+function createRegistrarBemDb(opts: {
+  ownershipRows: unknown[][];
+  insertedRow?: Record<string, unknown>;
+}) {
+  const queue = [...opts.ownershipRows];
+  return {
+    db: {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(queue.shift() ?? [])),
+          }),
+        }),
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoUpdate: jest.fn().mockReturnValue({
+            returning: jest
+              .fn()
+              .mockResolvedValue([
+                opts.insertedRow ?? defaultBemRow(),
+              ]),
+          }),
+        }),
+      }),
+    },
+  };
+}
+
+function defaultBemRow(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: 'bem-1',
+    clienteId: 'c1',
+    documentoFiscalId: null,
+    documentoFiscalItemId: null,
+    codigoBem: 'BEM-1',
+    identificacaoBem: 'Máquina',
+    dataEntrada: '2026-01-10',
+    valorIcmsTotal: '4800.00',
+    valorIcmsFrete: '0',
+    valorIcmsDifal: '0',
+    quantidadeParcelas: 48,
+    parcelasApropriadas: 0,
+    saldoCredorRestante: '4800.00',
+    status: 'ATIVO',
+    dataBaixa: null,
+    motivoBaixa: null,
+    criadoEm: new Date('2026-01-10T00:00:00Z'),
+    atualizadoEm: new Date('2026-01-10T00:00:00Z'),
+    ...overrides,
+  };
+}
+
 describe('CiapService', () => {
   it('coeficiente 100% tributado: crédito = parcela cheia (1/48)', async () => {
     // Bem com ICMS total 4.800, 48 parcelas => parcela 100,00.
@@ -641,5 +704,207 @@ describe('CiapService', () => {
         valor: '100.00',
       }),
     );
+  });
+
+  describe('registrarBem — propriedade cliente↔documento (R6.2)', () => {
+    it('rejeita registro quando o documento fiscal pertence a outro cliente', async () => {
+      // WHERE por (id, clienteId) do cliente dono não retorna linha ->
+      // documento de outro cliente é indistinguível de inexistente -> rejeita.
+      const service = new CiapService(
+        createRegistrarBemDb({ ownershipRows: [[]] }) as never,
+      );
+      await expect(
+        service.registrarBem({
+          clienteId: 'c1',
+          documentoFiscalId: 'doc-de-outro-cliente',
+          codigoBem: 'BEM-1',
+          identificacaoBem: 'Máquina',
+          dataEntrada: '2026-01-10',
+          valorIcmsTotal: '4800.00',
+        }),
+      ).rejects.toThrow('Documento fiscal não encontrado.');
+    });
+
+    it('rejeita registro quando o item de documento pertence a outro cliente', async () => {
+      // Item scoped por clienteId não retorna linha -> rejeita.
+      const service = new CiapService(
+        createRegistrarBemDb({ ownershipRows: [[]] }) as never,
+      );
+      await expect(
+        service.registrarBem({
+          clienteId: 'c1',
+          documentoFiscalItemId: 'item-de-outro-cliente',
+          codigoBem: 'BEM-1',
+          identificacaoBem: 'Máquina',
+          dataEntrada: '2026-01-10',
+          valorIcmsTotal: '4800.00',
+        }),
+      ).rejects.toThrow('Item do documento fiscal não encontrado.');
+    });
+
+    it('registra quando documento e item pertencem ao próprio cliente', async () => {
+      // Fila: (1) documento do cliente encontrado, (2) item do cliente
+      // encontrado e coerente com o documento informado.
+      const db = createRegistrarBemDb({
+        ownershipRows: [
+          [{ id: 'doc-1' }],
+          [{ id: 'item-1', documentoFiscalId: 'doc-1' }],
+        ],
+        insertedRow: defaultBemRow({
+          id: 'bem-1',
+          documentoFiscalId: 'doc-1',
+          documentoFiscalItemId: 'item-1',
+        }),
+      });
+      const service = new CiapService(db as never);
+      const bem = await service.registrarBem({
+        clienteId: 'c1',
+        documentoFiscalId: 'doc-1',
+        documentoFiscalItemId: 'item-1',
+        codigoBem: 'BEM-1',
+        identificacaoBem: 'Máquina',
+        dataEntrada: '2026-01-10',
+        valorIcmsTotal: '4800.00',
+      });
+      expect(bem.documento_fiscal_id).toBe('doc-1');
+      expect(bem.documento_fiscal_item_id).toBe('item-1');
+      expect(db.db.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it('registra sem referências de documento/item (nenhuma checagem de propriedade)', async () => {
+      const db = createRegistrarBemDb({ ownershipRows: [] });
+      const service = new CiapService(db as never);
+      const bem = await service.registrarBem({
+        clienteId: 'c1',
+        codigoBem: 'BEM-1',
+        identificacaoBem: 'Máquina',
+        dataEntrada: '2026-01-10',
+        valorIcmsTotal: '4800.00',
+      });
+      expect(bem.id).toBe('bem-1');
+      // Nenhum select de propriedade foi necessário.
+      expect(db.db.select).not.toHaveBeenCalled();
+      expect(db.db.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it('R6.4: rejeita quantidade de parcelas acima de 48 chamando o serviço direto (fora do HTTP)', async () => {
+      // O DTO impõe @Max(48) na fronteira HTTP; aqui provamos que o serviço
+      // rejeita o mesmo limite sem depender do ValidationPipe. Falha ANTES de
+      // qualquer acesso ao banco.
+      const db = createRegistrarBemDb({ ownershipRows: [] });
+      const service = new CiapService(db as never);
+      await expect(
+        service.registrarBem({
+          clienteId: 'c1',
+          codigoBem: 'BEM-1',
+          identificacaoBem: 'Máquina',
+          dataEntrada: '2026-01-10',
+          valorIcmsTotal: '4800.00',
+          quantidadeParcelas: 49,
+        }),
+      ).rejects.toThrow('Quantidade de parcelas deve estar entre 1 e 48.');
+      expect(db.db.insert).not.toHaveBeenCalled();
+    });
+
+    it('R6.4: rejeita quantidade de parcelas zero/negativa (fora do HTTP)', async () => {
+      const db = createRegistrarBemDb({ ownershipRows: [] });
+      const service = new CiapService(db as never);
+      await expect(
+        service.registrarBem({
+          clienteId: 'c1',
+          codigoBem: 'BEM-1',
+          identificacaoBem: 'Máquina',
+          dataEntrada: '2026-01-10',
+          valorIcmsTotal: '4800.00',
+          quantidadeParcelas: 0,
+        }),
+      ).rejects.toThrow('Quantidade de parcelas deve estar entre 1 e 48.');
+      expect(db.db.insert).not.toHaveBeenCalled();
+    });
+
+    it('R6.4/R6.3: rejeita valor de ICMS total negativo (fora do HTTP)', async () => {
+      // O DTO impõe não-negatividade via regex; o serviço reforça o mesmo para
+      // impedir base de apropriação negativa vinda de um chamador não-HTTP.
+      const db = createRegistrarBemDb({ ownershipRows: [] });
+      const service = new CiapService(db as never);
+      await expect(
+        service.registrarBem({
+          clienteId: 'c1',
+          codigoBem: 'BEM-1',
+          identificacaoBem: 'Máquina',
+          dataEntrada: '2026-01-10',
+          valorIcmsTotal: '-100.00',
+        }),
+      ).rejects.toThrow('O valor de ICMS total não pode ser negativo.');
+      expect(db.db.insert).not.toHaveBeenCalled();
+    });
+
+    it('R6.4/R6.3: rejeita valor de frete/DIFAL negativo (fora do HTTP)', async () => {
+      const db = createRegistrarBemDb({ ownershipRows: [] });
+      const service = new CiapService(db as never);
+      await expect(
+        service.registrarBem({
+          clienteId: 'c1',
+          codigoBem: 'BEM-1',
+          identificacaoBem: 'Máquina',
+          dataEntrada: '2026-01-10',
+          valorIcmsTotal: '100.00',
+          valorIcmsDifal: '-1.00',
+        }),
+      ).rejects.toThrow('O valor de DIFAL não pode ser negativo.');
+      expect(db.db.insert).not.toHaveBeenCalled();
+    });
+
+    it('R6.2: baixarBem de bem de outro cliente é rejeitado (WHERE por clienteId → NotFound)', async () => {
+      // O update é escopado por (id, clienteId); um bem de outro cliente não
+      // casa o WHERE, o .returning() vem vazio e o serviço rejeita como
+      // "não encontrado" (objeto de outro cliente indistinguível de inexistente).
+      const returning = jest.fn().mockResolvedValue([]);
+      const db = {
+        db: {
+          update: jest.fn().mockReturnValue({
+            set: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ returning }),
+            }),
+          }),
+        },
+      };
+      const service = new CiapService(db as never);
+      await expect(
+        service.baixarBem({
+          clienteId: 'c1',
+          bemId: 'bem-de-outro-cliente',
+          dataBaixa: '2026-08-31',
+          motivoBaixa: '01',
+        }),
+      ).rejects.toThrow('Bem do CIAP não encontrado.');
+      // A tentativa foi feita, mas nenhuma linha do cliente foi afetada.
+      expect(returning).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejeita quando o item informado não pertence ao documento informado (mesmo cliente)', async () => {
+      // Documento e item do cliente existem, mas o item aponta para OUTRO
+      // documento -> inconsistência de referência -> BadRequest.
+      const db = createRegistrarBemDb({
+        ownershipRows: [
+          [{ id: 'doc-1' }],
+          [{ id: 'item-1', documentoFiscalId: 'doc-OUTRO' }],
+        ],
+      });
+      const service = new CiapService(db as never);
+      await expect(
+        service.registrarBem({
+          clienteId: 'c1',
+          documentoFiscalId: 'doc-1',
+          documentoFiscalItemId: 'item-1',
+          codigoBem: 'BEM-1',
+          identificacaoBem: 'Máquina',
+          dataEntrada: '2026-01-10',
+          valorIcmsTotal: '4800.00',
+        }),
+      ).rejects.toThrow(
+        'O item informado não pertence ao documento fiscal informado.',
+      );
+    });
   });
 });
