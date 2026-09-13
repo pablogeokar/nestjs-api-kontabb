@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { DatabaseService } from '../../database/database.service';
 import { documentosFiscaisItens } from '../../database/schema';
 
@@ -14,16 +14,19 @@ type DatabaseExecutor =
  * (`classificacao_destinacao_aprendizado.itemId ON DELETE CASCADE`) e o vínculo
  * com o ativo permanente (`ciap_ativo_permanente.documentoFiscalItemId`).
  *
- * A identidade estável do item dentro do documento é o `numeroItem`
- * (uniqueIndex `uidx_item_doc_num` em documentoFiscalId + numeroItem).
+ * A identidade estável do item dentro do documento é o par
+ * `numeroItem` + `codigoProduto`. O `numeroItem` sozinho é a posição na nota
+ * (uniqueIndex `uidx_item_doc_num`), mas usar também o `codigoProduto` evita
+ * que uma reemissão que reordene/insira itens faça um item herdar a decisão
+ * humana de outro produto que passou a ocupar a mesma posição.
  *
- * Regras de preservação:
- *  - Itens existentes (mesmo numeroItem) são ATUALIZADOS in-place, mantendo o
+ * Regras de preservação (mantém / insere / marca-ausente; NUNCA deleta):
+ *  - Itens existentes (mesma identidade) são ATUALIZADOS in-place, mantendo o
  *    `id` e as colunas de decisão humana.
  *  - Itens novos são INSERIDOS.
- *  - Itens que sumiram do XML são removidos (delete residual). Esse caso é raro
- *    numa reimportação do mesmo documento; quando ocorre, é uma mudança real de
- *    conteúdo, não uma reimportação idêntica.
+ *  - Itens que sumiram do XML são MARCADOS como ausentes (retornados em
+ *    `ausentes`), nunca deletados fisicamente, para não acionar o cascade
+ *    sobre as decisões humanas nem quebrar o vínculo com o CIAP.
  *
  * Colunas NUNCA sobrescritas (decisão humana / identidade):
  *  - id, criadoEm (identidade e origem)
@@ -61,19 +64,35 @@ const CAMPOS_PROTEGIDOS = new Set<string>([
 ]);
 
 // Aceita qualquer objeto de item de escrituração (o shape concreto varia entre
-// os canais). Só exige a identidade estável `numeroItem`.
-type ItemInsert = { numeroItem?: number };
+// os canais). Só exige a identidade estável `numeroItem` + `codigoProduto`.
+type ItemInsert = { numeroItem?: number; codigoProduto?: string };
 
 interface ExistingItem {
   id: string;
   numeroItem: number;
+  codigoProduto: string;
   cfopManual: boolean;
 }
 
 export interface ReconciliacaoResultado {
   atualizados: number;
   inseridos: number;
-  removidos: number;
+  ausentes: number;
+}
+
+/**
+ * Deriva a chave de identidade estável de um item dentro do documento a partir
+ * do par `numeroItem` + `codigoProduto`. Exportada para teste unitário.
+ */
+export function chaveIdentidadeItem(item: {
+  numeroItem?: number;
+  codigoProduto?: string;
+}): string | null {
+  if (typeof item.numeroItem !== 'number') return null;
+  if (typeof item.codigoProduto !== 'string' || item.codigoProduto === '') {
+    return null;
+  }
+  return `${item.numeroItem}::${item.codigoProduto}`;
 }
 
 /**
@@ -101,8 +120,11 @@ export function montarPatchAtualizacao(
 }
 
 /**
- * Calcula o plano de reconciliação (quais numeroItem atualizar, inserir e
- * remover) sem executar I/O. Função pura, exportada para teste unitário.
+ * Calcula o plano de reconciliação (quais itens atualizar, inserir e marcar
+ * como ausentes) sem executar I/O. Função pura, exportada para teste unitário.
+ *
+ * NUNCA produz uma instrução de exclusão: itens existentes que não aparecem no
+ * conjunto novo são devolvidos em `ausentes` para tratamento não destrutivo.
  */
 export function planejarReconciliacao<T extends ItemInsert>(
   novos: T[],
@@ -110,25 +132,28 @@ export function planejarReconciliacao<T extends ItemInsert>(
 ): {
   atualizar: Array<{ existente: ExistingItem; item: T }>;
   inserir: T[];
-  removerNumeros: number[];
+  ausentes: ExistingItem[];
 } {
-  const existentesPorNumero = new Map<number, ExistingItem>();
-  for (const e of existentes) existentesPorNumero.set(e.numeroItem, e);
+  const existentesPorChave = new Map<string, ExistingItem>();
+  for (const e of existentes) {
+    const chave = chaveIdentidadeItem(e);
+    if (chave !== null) existentesPorChave.set(chave, e);
+  }
 
-  const numerosNovos = new Set<number>();
+  const chavesNovas = new Set<string>();
   const atualizar: Array<{ existente: ExistingItem; item: T }> = [];
   const inserir: T[] = [];
 
   for (const item of novos) {
-    const numero = item.numeroItem;
-    if (typeof numero !== 'number') {
+    const chave = chaveIdentidadeItem(item);
+    if (chave === null) {
       // Sem identidade estável: trata como inserção (não deveria ocorrer para
-      // NF-e, cujo numeroItem é obrigatório).
+      // NF-e, cujo numeroItem/codigoProduto são obrigatórios).
       inserir.push(item);
       continue;
     }
-    numerosNovos.add(numero);
-    const existente = existentesPorNumero.get(numero);
+    chavesNovas.add(chave);
+    const existente = existentesPorChave.get(chave);
     if (existente) {
       atualizar.push({ existente, item });
     } else {
@@ -136,16 +161,19 @@ export function planejarReconciliacao<T extends ItemInsert>(
     }
   }
 
-  const removerNumeros = existentes
-    .map((e) => e.numeroItem)
-    .filter((numero) => !numerosNovos.has(numero));
+  const ausentes = existentes.filter((e) => {
+    const chave = chaveIdentidadeItem(e);
+    return chave === null || !chavesNovas.has(chave);
+  });
 
-  return { atualizar, inserir, removerNumeros };
+  return { atualizar, inserir, ausentes };
 }
 
 /**
  * Executa a reconciliação idempotente dos itens de um documento fiscal dentro
- * de uma transação. Preserva ids e decisões humanas.
+ * de uma transação. Preserva ids e decisões humanas e NUNCA deleta itens: os
+ * que sumiram do XML permanecem intactos (marcados como ausentes no resultado)
+ * para não acionar o cascade sobre as decisões humanas.
  */
 export async function reconciliarItensDocumento<T extends ItemInsert>(
   tx: DatabaseExecutor,
@@ -159,6 +187,7 @@ export async function reconciliarItensDocumento<T extends ItemInsert>(
     .select({
       id: documentosFiscaisItens.id,
       numeroItem: documentosFiscaisItens.numeroItem,
+      codigoProduto: documentosFiscaisItens.codigoProduto,
       cfopManual: documentosFiscaisItens.cfopManual,
     })
     .from(documentosFiscaisItens)
@@ -166,7 +195,7 @@ export async function reconciliarItensDocumento<T extends ItemInsert>(
       eq(documentosFiscaisItens.documentoFiscalId, params.documentoFiscalId),
     );
 
-  const { atualizar, inserir, removerNumeros } = planejarReconciliacao(
+  const { atualizar, inserir, ausentes } = planejarReconciliacao(
     params.itens,
     existentes,
   );
@@ -189,23 +218,13 @@ export async function reconciliarItensDocumento<T extends ItemInsert>(
     await tx.insert(documentosFiscaisItens).values(lote);
   }
 
-  if (removerNumeros.length > 0) {
-    await tx
-      .delete(documentosFiscaisItens)
-      .where(
-        and(
-          eq(
-            documentosFiscaisItens.documentoFiscalId,
-            params.documentoFiscalId,
-          ),
-          inArray(documentosFiscaisItens.numeroItem, removerNumeros),
-        ),
-      );
-  }
+  // Itens ausentes NUNCA são deletados nesta fase (F01): mantê-los preserva as
+  // decisões humanas e o vínculo com o CIAP. A marcação persistente é tratada
+  // em uma etapa aditiva posterior.
 
   return {
     atualizados: atualizar.length,
     inseridos: inserir.length,
-    removidos: removerNumeros.length,
+    ausentes: ausentes.length,
   };
 }

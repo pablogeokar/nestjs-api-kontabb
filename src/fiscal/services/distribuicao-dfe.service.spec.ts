@@ -156,7 +156,17 @@ describe('DistribuicaoDfeService', () => {
     });
     const itemValues = jest.fn().mockResolvedValue(undefined);
     const returning = jest.fn().mockResolvedValue([{ id: 'doc-1' }]);
+    // Reconciliação (F01): a transação consulta os itens existentes antes de
+    // inserir/atualizar. Documento novo → nenhum item existente.
+    const txSelect = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([]),
+      }),
+    });
+    const txExecute = jest.fn().mockResolvedValue(undefined);
     const tx = {
+      execute: txExecute,
+      select: txSelect,
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockResolvedValue(undefined),
@@ -165,15 +175,12 @@ describe('DistribuicaoDfeService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-              values: jest.fn().mockReturnValue({
-                onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
-              }),
-            }
+            values: jest.fn().mockReturnValue({
+              onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
+            }),
+          }
           : { values: itemValues },
       ),
-      delete: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(undefined),
-      }),
     };
     const transaction = jest.fn(
       (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
@@ -203,8 +210,14 @@ describe('DistribuicaoDfeService', () => {
 
     expect(result).toBe(true);
     expect(transaction).toHaveBeenCalledTimes(1);
+    // R1.6/R1.7: o caminho de substituição (`onConflictDoUpdate`) adquire o
+    // advisory lock por cliente + chaveAcesso (NÃO por NSU), serializando
+    // reimportações concorrentes manual × DF-e.
+    expectAdvisoryLockAcquired(txExecute, 'cliente-1', documento.chaveAcesso);
     expect(tx.insert).toHaveBeenCalledWith(documentosFiscais);
-    expect(tx.delete).toHaveBeenCalledWith(documentosFiscaisItens);
+    // F01: reconciliação consulta os itens existentes (nenhum, doc novo) e
+    // nunca deleta em massa; apenas insere os itens novos.
+    expect(txSelect).toHaveBeenCalled();
     expect(tx.insert).toHaveBeenCalledWith(documentosFiscaisItens);
     expect(itemValues).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -217,6 +230,109 @@ describe('DistribuicaoDfeService', () => {
         tipoOperacaoEscriturada: 'ENTRADA',
       }),
     ]);
+  });
+
+  it('cancelamento atualiza a situação para CANCELADA sem apagar o documento nem os itens (R1.5)', async () => {
+    const documento = parseDocumentWithItem();
+    // O evento de cancelamento reprocessa o mesmo documento já persistido
+    // (mesmo NSU) trazendo a situação CANCELADA.
+    const canceladoParsed: ParsedDocumentoFiscal = {
+      ...documento,
+      situacao: 'CANCELADA',
+    };
+
+    // Documento já existe com o mesmo NSU e não é RESUMIDA → ramo isDuplicate.
+    const existingLimit = jest.fn().mockResolvedValue([
+      {
+        id: 'doc-existente-1',
+        nsu: canceladoParsed.nsu,
+        situacao: 'AUTORIZADA',
+        xmlKey: 'clientes/xml-antigo.xml',
+      },
+    ]);
+    const select = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: existingLimit }),
+      }),
+    });
+
+    // Itens já persistidos: a reconciliação deve preservá-los (UPDATE por id),
+    // nunca deletar em massa.
+    const itemExistente = {
+      id: 'item-existente-1',
+      numeroItem: 1,
+      codigoProduto: 'PROD-1',
+      cfopManual: false,
+    };
+    const txSelect = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([itemExistente]),
+      }),
+    });
+
+    const docUpdateSet = jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue(undefined),
+    });
+    const itemUpdateSet = jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue(undefined),
+    });
+    const update = jest.fn((table) =>
+      table === documentosFiscais
+        ? { set: docUpdateSet }
+        : { set: itemUpdateSet },
+    );
+    const deleteFn = jest.fn();
+    const insertFn = jest.fn();
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      select: txSelect,
+      update,
+      delete: deleteFn,
+      insert: insertFn,
+    };
+    const transaction = jest.fn(
+      (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    const storage = {
+      upload: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new DistribuicaoDfeService(
+      { db: { select, transaction } } as never,
+      storage as never,
+      {} as never,
+      createCfopServiceMock() as never,
+      {} as never,
+    );
+
+    const result = await (
+      service as unknown as {
+        salvarDocumento(
+          clienteId: string,
+          cnpj: string,
+          parsed: ParsedDocumentoFiscal,
+        ): Promise<boolean>;
+      }
+    ).salvarDocumento('cliente-1', '98765432000110', canceladoParsed);
+
+    // Documento já existia → salvarDocumento retorna false (não é novo).
+    expect(result).toBe(false);
+    // R1.6/R1.7: o ramo isDuplicate adquire o advisory lock por cliente +
+    // chaveAcesso (NÃO por NSU), serializando reimportações concorrentes.
+    expectAdvisoryLockAcquired(tx.execute, 'cliente-1', canceladoParsed.chaveAcesso);
+    // Situação convergiu para CANCELADA via UPDATE do documento original.
+    expect(update).toHaveBeenCalledWith(documentosFiscais);
+    expect(docUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ situacao: 'CANCELADA' }),
+    );
+    // Reconciliação consultou os itens existentes (preservação por identidade).
+    expect(txSelect).toHaveBeenCalled();
+    // O item existente foi ATUALIZADO in-place (id preservado), não recriado.
+    expect(update).toHaveBeenCalledWith(documentosFiscaisItens);
+    // NUNCA deleta o documento nem os itens no cancelamento.
+    expect(deleteFn).not.toHaveBeenCalled();
+    // Não reinsere documento nem itens (sem delete+reinsert destrutivo).
+    expect(insertFn).not.toHaveBeenCalled();
   });
 
   it('serializa o início do mês como timestamp no dashboard', async () => {
@@ -245,6 +361,35 @@ describe('DistribuicaoDfeService', () => {
     expect(dashboardQuery.params[0]).toMatch(/^\d{4}-\d{2}-01T/);
   });
 });
+
+// R1.6/R1.7: verifica que a transação adquiriu o advisory lock por
+// cliente + chaveAcesso. A chave DEVE ser `fiscal-doc:${clienteId}:${chave}`
+// (idêntica entre distribuição DF-e e importação manual) para que os dois
+// canais serializem no mesmo par cliente+chave e nunca no NSU.
+function expectAdvisoryLockAcquired(
+  execute: jest.Mock,
+  clienteId: string,
+  chaveAcesso: string,
+): void {
+  const dialect = new PgDialect();
+  const expectedKey = `fiscal-doc:${clienteId}:${chaveAcesso}`;
+  const acquired = execute.mock.calls.some(([arg]) => {
+    if (!arg || typeof arg !== 'object') {
+      return false;
+    }
+    let rendered: { sql: string; params: unknown[] };
+    try {
+      rendered = dialect.sqlToQuery(arg as SQL);
+    } catch {
+      return false;
+    }
+    return (
+      rendered.sql.includes('pg_advisory_xact_lock') &&
+      rendered.params.includes(expectedKey)
+    );
+  });
+  expect(acquired).toBe(true);
+}
 
 function parseDocumentWithItem(): ParsedDocumentoFiscal {
   const chave = buildAccessKey('55');

@@ -1,13 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { AppLogger } from '../../common/logger.service';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   documentosFiscais,
   documentosFiscaisCteEscrituracao,
-  documentosFiscaisItens,
   eventosAuditoria,
 } from '../../database/schema';
 import { StorageService } from '../../storage/storage.service';
@@ -20,6 +19,7 @@ import {
   FiscalCteService,
   type CteEscrituracaoPreparada,
 } from './fiscal-cte.service';
+import { reconciliarItensDocumento } from './fiscal-item-reconciliation';
 import type { RegimeTributario } from '../../clientes/clientes.types';
 import {
   buildDocumentoFiscalSpedMetadata,
@@ -64,10 +64,10 @@ export interface FiscalXmlReviewItem {
 
 export interface FiscalXmlReviewIssue {
   codigo:
-    | 'CFOP_NAO_CADASTRADO'
-    | 'CFOP_DESTINO_NAO_CADASTRADO'
-    | 'INTEGRIDADE_XML_DIVERGENTE'
-    | 'CTE_PENDENTE_REVISAO';
+  | 'CFOP_NAO_CADASTRADO'
+  | 'CFOP_DESTINO_NAO_CADASTRADO'
+  | 'INTEGRIDADE_XML_DIVERGENTE'
+  | 'CTE_PENDENTE_REVISAO';
   mensagem: string;
   acao_recomendada: string;
   cliente_id: string;
@@ -113,7 +113,7 @@ export class ImportacaoXmlFiscalService {
     private readonly logger: AppLogger,
     private readonly cfopService: CfopService,
     private readonly fiscalCteService: FiscalCteService,
-  ) {}
+  ) { }
 
   async importar(input: {
     files: Express.Multer.File[];
@@ -373,15 +373,15 @@ export class ImportacaoXmlFiscalService {
     const { target, documento } = input;
     const ctePreparada = documento.cteEscrituracao
       ? await this.fiscalCteService.prepararEscrituracao({
-          clienteId: target.id,
-          clienteCnpjCpf: target.cnpj,
-          regimeTributario:
-            (target.regimeTributario as RegimeTributario | null) ?? null,
-          apuraIcms: target.apuraIcms ?? false,
-          situacao: documento.situacao,
-          cte: documento.cteEscrituracao,
-          emitenteUf: documento.emitente.uf || null,
-        })
+        clienteId: target.id,
+        clienteCnpjCpf: target.cnpj,
+        regimeTributario:
+          (target.regimeTributario as RegimeTributario | null) ?? null,
+        apuraIcms: target.apuraIcms ?? false,
+        situacao: documento.situacao,
+        cte: documento.cteEscrituracao,
+        emitenteUf: documento.emitente.uf || null,
+      })
       : null;
     if (documento.tipoDocumento === 'CTE' && !ctePreparada) {
       throw new Error('Dados de escrituração do CT-e não foram extraídos.');
@@ -389,18 +389,18 @@ export class ImportacaoXmlFiscalService {
     const escrituracao =
       documento.tipoDocumento === 'CTE'
         ? {
-            tipoOperacaoEscriturada: 'ENTRADA' as const,
-            itens: [],
-            revisoes: [] as CfopItemRevisao[],
-          }
+          tipoOperacaoEscriturada: 'ENTRADA' as const,
+          itens: [],
+          revisoes: [] as CfopItemRevisao[],
+        }
         : await this.cfopService.prepararItensEscrituracao({
-            clienteId: target.id,
-            clienteCnpjCpf: target.cnpj,
-            emitenteCnpjCpf: documento.emitenteCnpjCpf,
-            emitenteUf: documento.emitente.uf || null,
-            tpNfXml: documento.tpNfXml,
-            itens: documento.itens,
-          });
+          clienteId: target.id,
+          clienteCnpjCpf: target.cnpj,
+          emitenteCnpjCpf: documento.emitenteCnpjCpf,
+          emitenteUf: documento.emitente.uf || null,
+          tpNfXml: documento.tpNfXml,
+          itens: documento.itens,
+        });
     const spedMetadata = buildDocumentoFiscalSpedMetadata(documento);
     const nfePendenteRevisao =
       documento.tipoDocumento !== 'CTE' &&
@@ -489,6 +489,15 @@ export class ImportacaoXmlFiscalService {
       let persisted: Array<{ id: string }> = [];
       let ctePersistedStatus: CteEscrituracaoPreparadaStatus | undefined;
       await this.database.db.transaction(async (tx) => {
+        // F01/R1.6/R1.7: serializa reimportações concorrentes do mesmo
+        // documento (manual × DF-e) por cliente + chave, evitando corrida na
+        // reconciliação de itens. A chave do lock DEVE ser cliente +
+        // chaveAcesso (NÃO o NSU) para que os canais manual e DF-e convirjam
+        // para o mesmo documento lógico. Usa o mesmo formato de chave do
+        // caminho de distribuição (`fiscal-doc:${clienteId}:${chaveAcesso}`).
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${target.id}:${documento.chaveAcesso}`}, 0))`,
+        );
         if (existing) {
           persisted = await tx
             .update(documentosFiscais)
@@ -517,24 +526,16 @@ export class ImportacaoXmlFiscalService {
 
         if (persisted.length > 0) {
           const documentoFiscalId = persisted[0].id;
-          await tx
-            .delete(documentosFiscaisItens)
-            .where(
-              eq(documentosFiscaisItens.documentoFiscalId, documentoFiscalId),
-            );
-          for (
-            let offset = 0;
-            offset < escrituracao.itens.length;
-            offset += 300
-          ) {
-            await tx.insert(documentosFiscaisItens).values(
-              escrituracao.itens.slice(offset, offset + 300).map((item) => ({
-                ...item,
-                documentoFiscalId,
-                clienteId: target.id,
-              })),
-            );
-          }
+          // F01: reconciliação idempotente por numeroItem+codigoProduto —
+          // preserva os ids dos itens e as decisões humanas (cfop manual,
+          // destinação confirmada) na reimportação. Não deleta em massa,
+          // portanto não aciona o cascade sobre o aprendizado de classificação
+          // nem quebra o vínculo com o CIAP.
+          await reconciliarItensDocumento(tx, {
+            documentoFiscalId,
+            clienteId: target.id,
+            itens: escrituracao.itens,
+          });
           if (ctePreparada) {
             const ctePersistida =
               await this.fiscalCteService.persistirEscrituracao(tx, {
@@ -604,21 +605,21 @@ export class ImportacaoXmlFiscalService {
         },
         ...(input.cteEscrituracaoStatus
           ? [
-              {
-                atorUserId: input.actorUserId,
-                acao:
-                  input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
-                    ? 'CTE_NAO_ESCRITURAVEL'
-                    : 'CTE_ESCRITURADO',
-                entidadeTipo: 'DOCUMENTO_FISCAL',
-                entidadeId: input.documentoId,
-                dados: {
-                  origem: 'UPLOAD_MANUAL',
-                  clienteId: input.clienteId,
-                  escrituracaoStatus: input.cteEscrituracaoStatus,
-                },
+            {
+              atorUserId: input.actorUserId,
+              acao:
+                input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
+                  ? 'CTE_NAO_ESCRITURAVEL'
+                  : 'CTE_ESCRITURADO',
+              entidadeTipo: 'DOCUMENTO_FISCAL',
+              entidadeId: input.documentoId,
+              dados: {
+                origem: 'UPLOAD_MANUAL',
+                clienteId: input.clienteId,
+                escrituracaoStatus: input.cteEscrituracaoStatus,
               },
-            ]
+            },
+          ]
           : []),
       ]);
     } catch (error: unknown) {
@@ -741,14 +742,14 @@ export class ImportacaoXmlFiscalService {
         ...common,
         itens: values.cfopRevisaoNecessaria
           ? [
-              {
-                numero_item: 1,
-                descricao: 'Prestação de serviço de transporte',
-                cfop_xml: values.cfopXml,
-                cfop_aplicado: values.cfop,
-                cfop_sugerido: values.cfop,
-              },
-            ]
+            {
+              numero_item: 1,
+              descricao: 'Prestação de serviço de transporte',
+              cfop_xml: values.cfopXml,
+              cfop_aplicado: values.cfop,
+              cfop_sugerido: values.cfop,
+            },
+          ]
           : [],
       });
     }

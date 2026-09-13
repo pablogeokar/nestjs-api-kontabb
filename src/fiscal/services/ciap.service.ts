@@ -45,7 +45,7 @@ interface CiapRow {
 
 @Injectable()
 export class CiapService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(private readonly database: DatabaseService) { }
 
   /**
    * Registra manualmente um bem do ativo permanente no CIAP.
@@ -60,8 +60,8 @@ export class CiapService {
     }
     const saldoInicial = fromScaledInteger(
       toScaledInteger(input.valorIcmsTotal) +
-        toScaledInteger(input.valorIcmsFrete ?? '0') +
-        toScaledInteger(input.valorIcmsDifal ?? '0'),
+      toScaledInteger(input.valorIcmsFrete ?? '0') +
+      toScaledInteger(input.valorIcmsDifal ?? '0'),
     );
 
     const rows = await this.database.db
@@ -282,10 +282,31 @@ export class CiapService {
         );
       const bensJaApropriados = new Set(jaApropriados.map((r) => r.bemId));
 
+      // R2.1/R2.4: o número de parcelas apropriadas de cada bem é DERIVADO da
+      // razão auxiliar (ciap_competencias_apropriadas) — quantidade de
+      // competências distintas já registradas para o bem — em vez de um
+      // incremento cego sobre o contador armazenado. Isso torna
+      // parcelasApropriadas reconstruível e consistente mesmo após retries ou
+      // falhas parciais, evitando divergência (drift).
+      const ledgerPorBem = await tx
+        .select({
+          bemId: ciapCompetenciasApropriadas.bemId,
+          total: sql<number>`count(*)::int`,
+        })
+        .from(ciapCompetenciasApropriadas)
+        .where(eq(ciapCompetenciasApropriadas.clienteId, input.clienteId))
+        .groupBy(ciapCompetenciasApropriadas.bemId);
+      const parcelasNaRazaoPorBem = new Map(
+        ledgerPorBem.map((r) => [r.bemId, Number(r.total)]),
+      );
+
       let totalCredito = 0n;
       let bensApropriados = 0;
       for (const bem of bens) {
-        if (bem.parcelasApropriadas >= bem.quantidadeParcelas) continue;
+        // Parcelas já apropriadas segundo a razão auxiliar (fonte de verdade),
+        // não o contador armazenado no bem.
+        const parcelasNaRazao = parcelasNaRazaoPorBem.get(bem.id) ?? 0;
+        if (parcelasNaRazao >= bem.quantidadeParcelas) continue;
         if (bensJaApropriados.has(bem.id)) continue;
         const baseScaled =
           toScaledInteger(bem.valorIcmsTotal) +
@@ -297,7 +318,10 @@ export class CiapService {
         const novoSaldo = positive(
           toScaledInteger(bem.saldoCredorRestante) - parcela,
         );
-        const parcelasApropriadas = bem.parcelasApropriadas + 1;
+        // R2.1/R2.4: contagem resultante = competências na razão ANTES deste
+        // insert + 1 (a competência ora apropriada). Derivado da razão, nunca
+        // um +1 cego sobre bem.parcelasApropriadas.
+        const parcelasApropriadas = parcelasNaRazao + 1;
         const concluido = parcelasApropriadas >= bem.quantidadeParcelas;
 
         await tx

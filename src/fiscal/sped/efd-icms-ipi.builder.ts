@@ -511,11 +511,11 @@ function buildBlocoC(input: SpedEfdBuilderInput): SpedRecord[] {
         regular ? dateField(row.dataEmissaoFiscal ?? row.dataEmissao) : null,
         regular
           ? dateField(
-              row.dataEntradaSaidaFiscal ??
-                row.dataEmissaoFiscal ??
-                row.dataEntradaSaida ??
-                row.dataEmissao,
-            )
+            row.dataEntradaSaidaFiscal ??
+            row.dataEmissaoFiscal ??
+            row.dataEntradaSaida ??
+            row.dataEmissao,
+          )
           : null,
         regular
           ? decimalField(totalValue(totals, 'vNF', row.valorTotal))
@@ -694,11 +694,11 @@ function buildBlocoD(input: SpedEfdBuilderInput): SpedRecord[] {
         regular ? dateField(row.dataEmissaoFiscal ?? row.dataEmissao) : null,
         regular
           ? dateField(
-              row.dataEntradaSaidaFiscal ??
-                row.dataEmissaoFiscal ??
-                row.dataEntradaSaida ??
-                row.dataEmissao,
-            )
+            row.dataEntradaSaidaFiscal ??
+            row.dataEmissaoFiscal ??
+            row.dataEntradaSaida ??
+            row.dataEmissao,
+          )
           : null,
         regular ? cte.tpCte : null,
         regular && cte.tpCte === '3' ? cte.chaveCteReferenciado : null,
@@ -762,17 +762,17 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
   const debitos = simples
     ? 0n
     : totalIcmsDocumentos(input.nfe, 'SAIDA') +
-      totalIcmsCtePrestacao(input.cte);
+    totalIcmsCtePrestacao(input.cte);
   const creditosMercadorias = simples
     ? 0n
     : totalIcmsDocumentos(input.nfe, 'ENTRADA', input.inconsistencias);
   const creditosFrete = simples
     ? 0n
     : input.cte.reduce(
-        (sum, documento) =>
-          sum + toScaledInteger(documento.cte.valorIcmsCreditavel),
-        0n,
-      );
+      (sum, documento) =>
+        sum + toScaledInteger(documento.cte.valorIcmsCreditavel),
+      0n,
+    );
   const creditos = creditosMercadorias + creditosFrete;
   const ajustesDebitos = totalAjustes(ajustesIcms, 'DEBITO');
   const ajustesCreditos = totalAjustes(ajustesIcms, 'CREDITO');
@@ -1546,11 +1546,22 @@ function sumItems(
   );
 }
 
+// F10 (R4.4): o CST de ICMS do C170/C190 é a origem (1 dígito) seguida do CST
+// (2 dígitos). A origem deve ser prefixada exatamente UMA vez. Se o valor já
+// vem composto (3 dígitos, ex.: '000' = origem 0 + CST 00), não pode ser
+// prefixado de novo (viraria '0000'); se vem como CST puro (2 dígitos, ex.:
+// '00'), prefixa a origem uma vez (→ '000'). O guarda usa o CST sem espaços
+// para não depender de comprimento cru e evita compor comprimentos inesperados.
 function normalizeCstIcms(row: ItemRow): string {
-  if (row.cstIcms) {
-    return row.cstIcms.length === 2
-      ? `${row.origemMercadoria ?? '0'}${row.cstIcms}`
-      : row.cstIcms;
+  const cstIcms = row.cstIcms?.trim();
+  if (cstIcms) {
+    // Já composto (origem + CST): mantém como está para não duplicar a origem.
+    if (cstIcms.length === 3) return cstIcms;
+    // CST puro: prefixa a origem exatamente uma vez.
+    if (cstIcms.length === 2)
+      return `${(row.origemMercadoria ?? '0').trim()}${cstIcms}`;
+    // Comprimento inesperado: não tenta compor para não inventar código.
+    return cstIcms;
   }
   return row.csosnIcms ?? '';
 }

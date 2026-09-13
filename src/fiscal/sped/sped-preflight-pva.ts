@@ -116,27 +116,55 @@ export function runPreflightPva(records: SpedRecord[]): SpedInconsistencia[] {
   return issues;
 }
 
+/**
+ * Natureza de operação derivada do CFOP, para o preflight decidir regras
+ * (ex.: devolução exige C113). R5.3: a decisão é dirigida por natureza
+ * classificada, não por um palpite de sufixo cru.
+ */
+type NaturezaCfop = 'DEVOLUCAO' | 'USO_CONSUMO' | 'OUTRA';
+
+// F22/R5.3: sufixos de CFOP (3 últimos dígitos) que caracterizam DEVOLUÇÃO,
+// exigindo referência à nota original via C113. A tabela é explícita e
+// documentada em vez de uma heurística de sufixo. Fonte: tabela CFOP do
+// Ajuste SINIEF (grupos 1/2/5/6/7 compartilham os mesmos 3 dígitos finais).
+const SUFIXOS_DEVOLUCAO = new Set([
+  '201', // Devolução de compra para industrialização/produção
+  '202', // Devolução de compra para comercialização
+  '208', // Devolução de mercadoria recebida em transferência
+  '209', // Devolução de mercadoria recebida (produção do estabelecimento)
+  '410', // Devolução de compra p/ industrialização (ST)
+  '411', // Devolução de compra p/ comercialização (ST)
+  '412', // Devolução de bem do ativo imobilizado (ST)
+  '413', // Devolução de mercadoria de uso/consumo (ST)
+  '553', // Devolução de compra de bem para o ativo imobilizado
+]);
+
+// Sufixos de uso/consumo que NÃO são devolução. Explicitados para deixar claro
+// que 556 (1556/2556 = material de uso e consumo) é diferente de devolução —
+// era a fonte histórica de falso positivo. 557 é o par com ST.
+const SUFIXOS_USO_CONSUMO = new Set([
+  '556', // Compra de material para uso ou consumo
+  '557', // Compra de material para uso/consumo (ST)
+]);
+
+/**
+ * Classifica um CFOP completo (ex.: `1202`, `1556`) em uma natureza de
+ * operação. Usa apenas os 3 dígitos finais, comuns às famílias 1/2/5/6/7.
+ * `1556` (uso/consumo) → USO_CONSUMO; `1202`/`5556`... conforme o sufixo.
+ */
+export function naturezaCfop(cfop: string): NaturezaCfop {
+  const sufixo = cfop.trim().slice(-3);
+  if (SUFIXOS_DEVOLUCAO.has(sufixo)) return 'DEVOLUCAO';
+  if (SUFIXOS_USO_CONSUMO.has(sufixo)) return 'USO_CONSUMO';
+  return 'OUTRA';
+}
+
 // Percorre os documentos (C100) e seus filhos até o próximo C100, sinalizando
-// devoluções (CFOP terminando em 201/202/411/553/556 etc.) sem C113.
+// documentos cuja natureza (via naturezaCfop) é DEVOLUÇÃO mas que não têm C113.
 function validarReferenciaDevolucao(
   records: SpedRecord[],
 ): SpedInconsistencia[] {
   const issues: SpedInconsistencia[] = [];
-  // F22: terminações de CFOP que caracterizam DEVOLUÇÃO (exigem referência à
-  // nota original via C113). NÃO inclui 556: 1556/2556 são material de uso e
-  // consumo, não devolução — incluí-lo gerava falso positivo. 553 (devolução
-  // de compra p/ industrialização) e 556 (uso/consumo) são códigos distintos.
-  const finaisDevolucao = new Set([
-    '201',
-    '202',
-    '208',
-    '209',
-    '410',
-    '411',
-    '412',
-    '413',
-    '553',
-  ]);
   let dentroC100 = false;
   let temReferencia = false;
   let temDevolucao = false;
@@ -169,7 +197,7 @@ function validarReferenciaDevolucao(
       const cfop = fieldText(
         record.reg === 'C170' ? record.fields[9] : record.fields[1],
       );
-      if (cfop && finaisDevolucao.has(cfop.slice(1))) temDevolucao = true;
+      if (cfop && naturezaCfop(cfop) === 'DEVOLUCAO') temDevolucao = true;
     }
     // Registros de outros blocos encerram o escopo do C100 atual.
     if (!record.reg.startsWith('C')) {

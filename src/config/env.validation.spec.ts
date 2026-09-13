@@ -87,4 +87,39 @@ describe('environment validation', () => {
       }),
     ).toThrow('CERTIFICATE_ENCRYPTION_KEY');
   });
+
+  it('treats SPED_BLOCO_G_LEIAUTE_HOMOLOGADO as optional (Fase 0 default off)', () => {
+    const result = validate({
+      ...baseConfig,
+      BETTER_AUTH_SECRET: 'canonical-secret-with-at-least-32-chars',
+    });
+
+    expect(result.SPED_BLOCO_G_LEIAUTE_HOMOLOGADO).toBeUndefined();
+  });
+
+  it.each(['true', 'false'])(
+    'accepts %s for SPED_BLOCO_G_LEIAUTE_HOMOLOGADO',
+    (value) => {
+      const result = validate({
+        ...baseConfig,
+        BETTER_AUTH_SECRET: 'canonical-secret-with-at-least-32-chars',
+        SPED_BLOCO_G_LEIAUTE_HOMOLOGADO: value,
+      });
+
+      expect(result.SPED_BLOCO_G_LEIAUTE_HOMOLOGADO).toBe(value);
+    },
+  );
+
+  it.each(['1', '0', 'yes', 'sim', 'TRUE'])(
+    'rejects invalid SPED_BLOCO_G_LEIAUTE_HOMOLOGADO: %s',
+    (value) => {
+      expect(() =>
+        validate({
+          ...baseConfig,
+          BETTER_AUTH_SECRET: 'canonical-secret-with-at-least-32-chars',
+          SPED_BLOCO_G_LEIAUTE_HOMOLOGADO: value,
+        }),
+      ).toThrow('SPED_BLOCO_G_LEIAUTE_HOMOLOGADO');
+    },
+  );
 });
