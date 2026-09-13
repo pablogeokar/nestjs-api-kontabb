@@ -250,15 +250,13 @@ describe('resolução contextual segura', () => {
     ).toMatchObject({ bloqueiaFallback: true, pendenteClassificacao: true });
   });
   it('mantém baixa confiança pendente apesar da equivalência linear existir', async () => {
-    const classify = jest
-      .fn()
-      .mockResolvedValue({
-        destinacao: 'REVENDA',
-        confianca: 0.65,
-        origem: 'NCM_PERFIL',
-        justificativa: 'Confirmar uso',
-        requerConfirmacao: true,
-      });
+    const classify = jest.fn().mockResolvedValue({
+      destinacao: 'REVENDA',
+      confianca: 0.65,
+      origem: 'NCM_PERFIL',
+      justificativa: 'Confirmar uso',
+      requerConfirmacao: true,
+    });
     const db = {
       select: () => ({
         from: () => ({ where: () => ({ orderBy: async () => [] }) }),

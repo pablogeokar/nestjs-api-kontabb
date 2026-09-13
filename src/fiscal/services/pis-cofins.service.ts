@@ -92,6 +92,8 @@ export class PisCofinsService {
         tipoOperacao: 'SAIDA',
         inicio,
         fim,
+        aliquotaPis: aliquotas.pis,
+        aliquotaCofins: aliquotas.cofins,
       }),
       naoCumulativo
         ? this.somarPorSegmento({
@@ -99,6 +101,8 @@ export class PisCofinsService {
             tipoOperacao: 'ENTRADA',
             inicio,
             fim,
+            aliquotaPis: aliquotas.pis,
+            aliquotaCofins: aliquotas.cofins,
           })
         : Promise.resolve(null),
     ]);
@@ -107,7 +111,7 @@ export class PisCofinsService {
       aliquota: aliquotas.pis,
       naoCumulativo,
       baseTributadaScaled: saidas.pis.baseTributada,
-      valorDestacadoScaled: saidas.pis.valorDestacado,
+      debitoScaled: saidas.pis.debito,
       baseCreditoScaled: entradas?.pis.baseCredito ?? 0n,
       valorMonofasicoStScaled: saidas.pis.baseSemDebito,
     });
@@ -115,7 +119,7 @@ export class PisCofinsService {
       aliquota: aliquotas.cofins,
       naoCumulativo,
       baseTributadaScaled: saidas.cofins.baseTributada,
-      valorDestacadoScaled: saidas.cofins.valorDestacado,
+      debitoScaled: saidas.cofins.debito,
       baseCreditoScaled: entradas?.cofins.baseCredito ?? 0n,
       valorMonofasicoStScaled: saidas.cofins.baseSemDebito,
     });
@@ -134,18 +138,16 @@ export class PisCofinsService {
     aliquota: string;
     naoCumulativo: boolean;
     baseTributadaScaled: bigint;
-    valorDestacadoScaled: bigint;
+    // F12: débito já decidido POR ITEM na consulta (destaque quando presente,
+    // senão base × alíquota). Somar por item evita que um mix de itens com e
+    // sem destaque perca base quando o destaque agregado é positivo.
+    debitoScaled: bigint;
     baseCreditoScaled: bigint;
     valorMonofasicoStScaled: bigint;
   }) {
     const aliqScaled = toScaledInteger(input.aliquota, 4); // pontos * 1e4
     const denom = 100n * 10n ** 4n;
-    // Débito: preferimos o valor destacado nos documentos; se ausente,
-    // calculamos base * alíquota.
-    const debito =
-      input.valorDestacadoScaled > 0n
-        ? input.valorDestacadoScaled
-        : (input.baseTributadaScaled * aliqScaled) / denom;
+    const debito = input.debitoScaled;
     // Crédito (só não-cumulativo): base das entradas creditáveis * alíquota.
     const credito = input.naoCumulativo
       ? (input.baseCreditoScaled * aliqScaled) / denom
@@ -171,19 +173,25 @@ export class PisCofinsService {
     tipoOperacao: 'ENTRADA' | 'SAIDA';
     inicio: Date;
     fim: Date;
+    aliquotaPis: string;
+    aliquotaCofins: string;
   }) {
     const tributadoIn = sqlInList([...CST_TRIBUTADO]);
     const semDebitoIn = sqlInList([...CST_SEM_DEBITO]);
     const creditoIn = sqlInList([...CST_CREDITO]);
+    // F12: débito por item = destaque quando presente (>0), senão base ×
+    // alíquota. Somado por item para não perder base num mix com/sem destaque.
+    const pisDebitoItem = sql`CASE WHEN ${documentosFiscaisItens.cstPis} IN ${tributadoIn} THEN CASE WHEN COALESCE(${documentosFiscaisItens.valorPis}, 0) > 0 THEN ${documentosFiscaisItens.valorPis} ELSE ROUND(COALESCE(${documentosFiscaisItens.valorBcPis}, 0) * ${input.aliquotaPis}::numeric / 100, 2) END ELSE 0 END`;
+    const cofinsDebitoItem = sql`CASE WHEN ${documentosFiscaisItens.cstCofins} IN ${tributadoIn} THEN CASE WHEN COALESCE(${documentosFiscaisItens.valorCofins}, 0) > 0 THEN ${documentosFiscaisItens.valorCofins} ELSE ROUND(COALESCE(${documentosFiscaisItens.valorBcCofins}, 0) * ${input.aliquotaCofins}::numeric / 100, 2) END ELSE 0 END`;
 
     const rows = await this.database.db
       .select({
         pis_base_tributada: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstPis} IN ${tributadoIn} THEN COALESCE(${documentosFiscaisItens.valorBcPis}, 0) ELSE 0 END), 0)`,
-        pis_valor_destacado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstPis} IN ${tributadoIn} THEN COALESCE(${documentosFiscaisItens.valorPis}, 0) ELSE 0 END), 0)`,
+        pis_debito: sql<string>`COALESCE(SUM(${pisDebitoItem}), 0)`,
         pis_base_sem_debito: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstPis} IN ${semDebitoIn} THEN COALESCE(${documentosFiscaisItens.valorBcPis}, COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0)) ELSE 0 END), 0)`,
         pis_base_credito: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstPis} IN ${creditoIn} THEN COALESCE(${documentosFiscaisItens.valorBcPis}, 0) ELSE 0 END), 0)`,
         cofins_base_tributada: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstCofins} IN ${tributadoIn} THEN COALESCE(${documentosFiscaisItens.valorBcCofins}, 0) ELSE 0 END), 0)`,
-        cofins_valor_destacado: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstCofins} IN ${tributadoIn} THEN COALESCE(${documentosFiscaisItens.valorCofins}, 0) ELSE 0 END), 0)`,
+        cofins_debito: sql<string>`COALESCE(SUM(${cofinsDebitoItem}), 0)`,
         cofins_base_sem_debito: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstCofins} IN ${semDebitoIn} THEN COALESCE(${documentosFiscaisItens.valorBcCofins}, COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0)) ELSE 0 END), 0)`,
         cofins_base_credito: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.cstCofins} IN ${creditoIn} THEN COALESCE(${documentosFiscaisItens.valorBcCofins}, 0) ELSE 0 END), 0)`,
       })
@@ -210,13 +218,13 @@ export class PisCofinsService {
     return {
       pis: {
         baseTributada: toScaledInteger(r?.pis_base_tributada ?? '0'),
-        valorDestacado: toScaledInteger(r?.pis_valor_destacado ?? '0'),
+        debito: toScaledInteger(r?.pis_debito ?? '0'),
         baseSemDebito: toScaledInteger(r?.pis_base_sem_debito ?? '0'),
         baseCredito: toScaledInteger(r?.pis_base_credito ?? '0'),
       },
       cofins: {
         baseTributada: toScaledInteger(r?.cofins_base_tributada ?? '0'),
-        valorDestacado: toScaledInteger(r?.cofins_valor_destacado ?? '0'),
+        debito: toScaledInteger(r?.cofins_debito ?? '0'),
         baseSemDebito: toScaledInteger(r?.cofins_base_sem_debito ?? '0'),
         baseCredito: toScaledInteger(r?.cofins_base_credito ?? '0'),
       },

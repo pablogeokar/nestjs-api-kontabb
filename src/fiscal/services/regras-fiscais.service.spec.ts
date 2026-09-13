@@ -202,15 +202,11 @@ function transactionalMock(db: { select: jest.Mock; update?: jest.Mock }) {
         }),
       };
     }),
-    insert: jest
-      .fn()
-      .mockReturnValue({
-        values: jest
-          .fn()
-          .mockReturnValue({
-            onConflictDoUpdate: jest.fn().mockResolvedValue([]),
-          }),
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        onConflictDoUpdate: jest.fn().mockResolvedValue([]),
       }),
+    }),
     delete: jest
       .fn()
       .mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),

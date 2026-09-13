@@ -196,13 +196,11 @@ function reprocessFixture(
   };
   const cfop = {
     determinarTipoOperacaoEscriturada: jest.fn().mockReturnValue('ENTRADA'),
-    resolverCfopEquivalenteDetalhado: jest
-      .fn()
-      .mockResolvedValue({
-        cfop: '1556',
-        revisaoNecessaria: false,
-        origemResolucao: 'DESTINACAO_NCM',
-      }),
+    resolverCfopEquivalenteDetalhado: jest.fn().mockResolvedValue({
+      cfop: '1556',
+      revisaoNecessaria: false,
+      origemResolucao: 'DESTINACAO_NCM',
+    }),
     resolverCfopManual: jest
       .fn()
       .mockResolvedValue({ catalogo: { codigo: '1556' } }),

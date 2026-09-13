@@ -54,7 +54,7 @@ export class RhUploadController {
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
     private readonly mail: MailService,
-  ) { }
+  ) {}
 
   @Post('upload')
   @HttpCode(HttpStatus.OK)
@@ -225,7 +225,7 @@ export class RhUploadController {
 
     if (!result.ok) {
       // Cleanup R2 on failure
-      await this.storage.delete(r2Key).catch(() => { });
+      await this.storage.delete(r2Key).catch(() => {});
       const message =
         result.code === 'FOLHA_DUPLICADA'
           ? `Folha duplicada: já existe uma folha para a competência ${dados.competencia}.`

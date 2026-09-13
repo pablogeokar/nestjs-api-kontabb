@@ -2173,6 +2173,38 @@ export const ciapAtivoPermanente = pgTable(
   ],
 );
 
+// Contenção de idempotência do CIAP (Fase 0 / F06). Registra que a apropriação
+// de uma competência já foi aplicada a um bem, para que retries e chamadas
+// concorrentes não consumam parcelas em duplicidade. Estrutura mínima e
+// aditiva; será absorvida pela razão completa (ciap_apropriacoes) na Fase 2.
+export const ciapCompetenciasApropriadas = pgTable(
+  'ciap_competencias_apropriadas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    bemId: uuid('bem_id')
+      .notNull()
+      .references(() => ciapAtivoPermanente.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    aplicadoEm: timestamp('aplicado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_ciap_competencia_bem').on(
+      table.clienteId,
+      table.competencia,
+      table.bemId,
+    ),
+    index('idx_ciap_competencia_cliente').on(
+      table.clienteId,
+      table.competencia,
+    ),
+  ],
+);
+
 // Guias e obrigações fiscais apuradas (DAE/GNRE/DARF/DAS)
 export const fiscalApuracoesGuias = pgTable(
   'fiscal_apuracoes_guias',

@@ -163,11 +163,18 @@ export class FiscalRuleEngineService {
     ) {
       // Equivalência específica do cliente é uma decisão explícita. Equivalências
       // globais legadas não devem anular a nova evidência de destinação.
-      const equivalencias = await this.database.db.select().from(cfopEquivalencias).where(and(
-        eq(cfopEquivalencias.ativo, true), eq(cfopEquivalencias.cfopOrigem, cfopXml),
-        eq(cfopEquivalencias.tipoOperacao, 'SAIDA_PARA_ENTRADA'),
-        eq(cfopEquivalencias.clienteId, input.clienteId),
-      )).orderBy(asc(cfopEquivalencias.id));
+      const equivalencias = await this.database.db
+        .select()
+        .from(cfopEquivalencias)
+        .where(
+          and(
+            eq(cfopEquivalencias.ativo, true),
+            eq(cfopEquivalencias.cfopOrigem, cfopXml),
+            eq(cfopEquivalencias.tipoOperacao, 'SAIDA_PARA_ENTRADA'),
+            eq(cfopEquivalencias.clienteId, input.clienteId),
+          ),
+        )
+        .orderBy(asc(cfopEquivalencias.id));
       const equivalencia = equivalencias[0];
       if (equivalencia) {
         const destino = await this.getCfop(equivalencia.cfopDestino);

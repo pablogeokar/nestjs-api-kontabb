@@ -122,6 +122,10 @@ function validarReferenciaDevolucao(
   records: SpedRecord[],
 ): SpedInconsistencia[] {
   const issues: SpedInconsistencia[] = [];
+  // F22: terminações de CFOP que caracterizam DEVOLUÇÃO (exigem referência à
+  // nota original via C113). NÃO inclui 556: 1556/2556 são material de uso e
+  // consumo, não devolução — incluí-lo gerava falso positivo. 553 (devolução
+  // de compra p/ industrialização) e 556 (uso/consumo) são códigos distintos.
   const finaisDevolucao = new Set([
     '201',
     '202',
@@ -132,7 +136,6 @@ function validarReferenciaDevolucao(
     '412',
     '413',
     '553',
-    '556',
   ]);
   let dentroC100 = false;
   let temReferencia = false;

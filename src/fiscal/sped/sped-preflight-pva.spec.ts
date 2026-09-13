@@ -122,6 +122,28 @@ describe('runPreflightPva', () => {
     );
   });
 
+  it('F22: CFOP 1556 (uso/consumo) não dispara falso positivo de devolução', () => {
+    const usoConsumo = [
+      createSpedRecord('C100', '0', '1', 'PART-1', '55', '00'),
+      createSpedRecord(
+        'C170',
+        '1',
+        'ITEM-1',
+        null,
+        '1,00',
+        'UN',
+        '100,00',
+        null,
+        '0',
+        '000',
+        '1556', // material de uso/consumo — NÃO é devolução
+      ),
+    ];
+    expect(runPreflightPva(usoConsumo)).not.toContainEqual(
+      expect.objectContaining({ codigo: 'PVA_DEVOLUCAO_SEM_C113' }),
+    );
+  });
+
   it('não gera inconsistências para catálogo íntegro', () => {
     const records = [
       createSpedRecord(

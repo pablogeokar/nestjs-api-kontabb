@@ -7,6 +7,7 @@ import { and, asc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   ciapAtivoPermanente,
+  ciapCompetenciasApropriadas,
   clientes,
   documentosFiscais,
   documentosFiscaisItens,
@@ -252,6 +253,12 @@ export class CiapService {
     const uf = await this.getUfCliente(input.clienteId);
 
     return this.database.db.transaction(async (tx) => {
+      // F06: serializa apropriações concorrentes do mesmo cliente/competência,
+      // impedindo que duas execuções simultâneas consumam duas parcelas.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ciap-apropriacao:${input.clienteId}:${competencia}`}, 0))`,
+      );
+
       const bens = await tx
         .select()
         .from(ciapAtivoPermanente)
@@ -262,10 +269,24 @@ export class CiapService {
           ),
         );
 
+      // F06: bens que já tiveram esta competência apropriada não são
+      // consumidos de novo (idempotência por bem/competência).
+      const jaApropriados = await tx
+        .select({ bemId: ciapCompetenciasApropriadas.bemId })
+        .from(ciapCompetenciasApropriadas)
+        .where(
+          and(
+            eq(ciapCompetenciasApropriadas.clienteId, input.clienteId),
+            eq(ciapCompetenciasApropriadas.competencia, competencia),
+          ),
+        );
+      const bensJaApropriados = new Set(jaApropriados.map((r) => r.bemId));
+
       let totalCredito = 0n;
       let bensApropriados = 0;
       for (const bem of bens) {
         if (bem.parcelasApropriadas >= bem.quantidadeParcelas) continue;
+        if (bensJaApropriados.has(bem.id)) continue;
         const baseScaled =
           toScaledInteger(bem.valorIcmsTotal) +
           toScaledInteger(bem.valorIcmsFrete) +
@@ -289,26 +310,53 @@ export class CiapService {
           })
           .where(eq(ciapAtivoPermanente.id, bem.id));
 
+        // F06: marca a competência como apropriada para este bem. O unique
+        // (clienteId, competencia, bemId) impede o registro em duplicidade.
+        await tx.insert(ciapCompetenciasApropriadas).values({
+          clienteId: input.clienteId,
+          bemId: bem.id,
+          competencia,
+        });
+
         totalCredito += credito;
         bensApropriados += 1;
       }
 
       // Reflete o crédito apropriado como ajuste E111 (CREDITO) na apuração do
       // ICMS da competência. O código UF+02CIAP satisfaz o check de coerência
-      // (E111, natureza 2 = crédito → indicador CREDITO). Regeneramos o ajuste
-      // do CIAP a cada apropriação (delete-then-insert) para ser idempotente.
+      // (E111, natureza 2 = crédito → indicador CREDITO).
+      //
+      // F06: numa reexecução idempotente (nada novo apropriado), NÃO mexemos no
+      // ajuste E111 existente — o delete-then-insert só é aplicado quando esta
+      // execução acrescenta crédito, e o valor é somado ao ajuste já existente
+      // para refletir o total apropriado na competência.
       const competenciaDate = competencia;
-      await tx
-        .delete(spedAjustesApuracao)
-        .where(
-          and(
-            eq(spedAjustesApuracao.clienteId, input.clienteId),
-            eq(spedAjustesApuracao.competencia, competenciaDate),
-            eq(spedAjustesApuracao.registro, 'E111'),
-            eq(spedAjustesApuracao.codigoAjuste, `${uf}02CIAP`),
-          ),
-        );
+      let ajusteGerado: string | null = null;
       if (totalCredito > 0n) {
+        const existente = await tx
+          .select({ valor: spedAjustesApuracao.valor })
+          .from(spedAjustesApuracao)
+          .where(
+            and(
+              eq(spedAjustesApuracao.clienteId, input.clienteId),
+              eq(spedAjustesApuracao.competencia, competenciaDate),
+              eq(spedAjustesApuracao.registro, 'E111'),
+              eq(spedAjustesApuracao.codigoAjuste, `${uf}02CIAP`),
+            ),
+          );
+        const acumulado =
+          totalCredito +
+          (existente[0] ? toScaledInteger(existente[0].valor) : 0n);
+        await tx
+          .delete(spedAjustesApuracao)
+          .where(
+            and(
+              eq(spedAjustesApuracao.clienteId, input.clienteId),
+              eq(spedAjustesApuracao.competencia, competenciaDate),
+              eq(spedAjustesApuracao.registro, 'E111'),
+              eq(spedAjustesApuracao.codigoAjuste, `${uf}02CIAP`),
+            ),
+          );
         await tx.insert(spedAjustesApuracao).values({
           clienteId: input.clienteId,
           competencia: competenciaDate,
@@ -316,11 +364,12 @@ export class CiapService {
           codigoAjuste: `${uf}02CIAP`,
           descricao:
             'Crédito de ICMS do ativo permanente (CIAP - 1/48) apropriado no período.',
-          valor: fromScaledInteger(totalCredito),
+          valor: fromScaledInteger(acumulado),
           indicador: 'CREDITO',
           uf: null,
           numeroDocumento: null,
         });
+        ajusteGerado = `${uf}02CIAP`;
       }
 
       return {
@@ -328,7 +377,7 @@ export class CiapService {
         coeficiente_saidas_tributadas: coeficiente,
         bens_apropriados: bensApropriados,
         total_credito_apropriado: fromScaledInteger(totalCredito),
-        ajuste_e111_gerado: totalCredito > 0n ? `${uf}02CIAP` : null,
+        ajuste_e111_gerado: ajusteGerado,
       };
     });
   }

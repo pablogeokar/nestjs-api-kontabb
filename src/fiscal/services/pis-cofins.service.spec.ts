@@ -2,6 +2,11 @@ import { PisCofinsService } from './pis-cofins.service';
 
 // DB falso: a primeira consulta (getCliente) resolve por .limit; as demais
 // (somarPorSegmento) resolvem por .where. Usamos uma fila de resultados.
+//
+// Nota (F12): o débito de PIS/COFINS passou a ser decidido POR ITEM na própria
+// consulta SQL (destaque quando presente; senão base × alíquota). Portanto os
+// mocks fornecem diretamente `pis_debito`/`cofins_debito`, refletindo o que o
+// PostgreSQL calcularia — o serviço apenas soma crédito e apura o saldo.
 function createDb(
   cliente: { regimeTributario: string | null },
   segmentos: unknown[][],
@@ -50,15 +55,15 @@ describe('PisCofinsService', () => {
   });
 
   it('Lucro Presumido: cumulativo 0,65%/3% sobre base tributada, sem crédito', async () => {
-    // Saídas: base tributada 10.000, sem valor destacado (calcula por alíquota).
+    // Saídas: base tributada 10.000; débito por item calculado no SQL.
     const saidas = [
       {
         pis_base_tributada: '10000.00',
-        pis_valor_destacado: '0.00',
+        pis_debito: '65.00',
         pis_base_sem_debito: '0.00',
         pis_base_credito: '0.00',
         cofins_base_tributada: '10000.00',
-        cofins_valor_destacado: '0.00',
+        cofins_debito: '300.00',
         cofins_base_sem_debito: '0.00',
         cofins_base_credito: '0.00',
       },
@@ -83,11 +88,11 @@ describe('PisCofinsService', () => {
     const saidas = [
       {
         pis_base_tributada: '10000.00',
-        pis_valor_destacado: '0.00',
+        pis_debito: '165.00',
         pis_base_sem_debito: '0.00',
         pis_base_credito: '0.00',
         cofins_base_tributada: '10000.00',
-        cofins_valor_destacado: '0.00',
+        cofins_debito: '760.00',
         cofins_base_sem_debito: '0.00',
         cofins_base_credito: '0.00',
       },
@@ -95,11 +100,11 @@ describe('PisCofinsService', () => {
     const entradas = [
       {
         pis_base_tributada: '0.00',
-        pis_valor_destacado: '0.00',
+        pis_debito: '0.00',
         pis_base_sem_debito: '0.00',
         pis_base_credito: '4000.00',
         cofins_base_tributada: '0.00',
-        cofins_valor_destacado: '0.00',
+        cofins_debito: '0.00',
         cofins_base_sem_debito: '0.00',
         cofins_base_credito: '4000.00',
       },
@@ -126,11 +131,11 @@ describe('PisCofinsService', () => {
     const saidas = [
       {
         pis_base_tributada: '0.00',
-        pis_valor_destacado: '0.00',
+        pis_debito: '0.00',
         pis_base_sem_debito: '5000.00',
         pis_base_credito: '0.00',
         cofins_base_tributada: '0.00',
-        cofins_valor_destacado: '0.00',
+        cofins_debito: '0.00',
         cofins_base_sem_debito: '5000.00',
         cofins_base_credito: '0.00',
       },
@@ -145,5 +150,36 @@ describe('PisCofinsService', () => {
     expect(result.pis.debito).toBe('0.00');
     expect(result.pis.base_monofasica_st).toBe('5000.00');
     expect(result.cofins.debito).toBe('0.00');
+  });
+
+  // F12 (regressão): mix de itens tributados, um com destaque e outro sem.
+  // O débito por item (destaque OU base×alíquota) não pode perder a base do
+  // item sem destaque. Duas bases de 1.000 a 0,65% ⇒ débito total 13,00.
+  it('F12: mix com/sem destaque soma o débito de ambas as bases', async () => {
+    // O SQL por item somaria: item com destaque 6,50 + item sem destaque
+    // (1.000 × 0,65% = 6,50) = 13,00. base tributada agregada = 2.000.
+    const saidas = [
+      {
+        pis_base_tributada: '2000.00',
+        pis_debito: '13.00',
+        pis_base_sem_debito: '0.00',
+        pis_base_credito: '0.00',
+        cofins_base_tributada: '2000.00',
+        cofins_debito: '60.00',
+        cofins_base_sem_debito: '0.00',
+        cofins_base_credito: '0.00',
+      },
+    ];
+    const service = new PisCofinsService(
+      createDb({ regimeTributario: 'LUCRO_PRESUMIDO' }, [saidas]) as never,
+    );
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+    // Não pode ficar só com o destaque de uma das bases (6,50): é 13,00.
+    expect(result.pis.debito).toBe('13.00');
+    expect(result.pis.saldo_a_recolher).toBe('13.00');
+    expect(result.cofins.debito).toBe('60.00');
   });
 });

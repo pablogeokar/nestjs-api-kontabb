@@ -109,10 +109,19 @@ describe('CiapService', () => {
         saldoCredorRestante: '4800.00',
       },
     ];
+    // Fila de resultados de select dentro da transação, na ordem em que
+    // apropriarCompetencia os executa: (1) bens ativos, (2) competências já
+    // apropriadas, (3) ajuste E111 existente.
+    const txSelectQueue: unknown[][] = [bens, [], []];
     const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue(bens),
+          where: jest
+            .fn()
+            .mockImplementation(() =>
+              Promise.resolve(txSelectQueue.shift() ?? []),
+            ),
         }),
       }),
       update: jest.fn().mockReturnValue({
@@ -169,14 +178,109 @@ describe('CiapService', () => {
 
     expect(result.total_credito_apropriado).toBe('100.00');
     expect(result.ajuste_e111_gerado).toBe('SP02CIAP');
+    // Adquiriu o lock de idempotência da competência (F06).
+    expect(tx.execute).toHaveBeenCalledTimes(1);
+    // Registrou a competência apropriada para o bem (marcador de idempotência).
+    expect(inserted).toContainEqual(
+      expect.objectContaining({ bemId: 'b1', competencia: '2026-09-01' }),
+    );
     // Um E111 de crédito de 100,00 deve ter sido inserido.
-    expect(inserted).toEqual([
+    expect(inserted).toContainEqual(
       expect.objectContaining({
         registro: 'E111',
         codigoAjuste: 'SP02CIAP',
         indicador: 'CREDITO',
         valor: '100.00',
       }),
-    ]);
+    );
+  });
+
+  it('F06: reexecução da mesma competência não consome parcela de novo', async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const bens = [
+      {
+        id: 'b1',
+        codigoBem: 'BEM-1',
+        identificacaoBem: 'Maquina',
+        valorIcmsTotal: '4800.00',
+        valorIcmsFrete: '0',
+        valorIcmsDifal: '0',
+        quantidadeParcelas: 48,
+        parcelasApropriadas: 1,
+        saldoCredorRestante: '4700.00',
+      },
+    ];
+    // Bem b1 já consta como apropriado nesta competência.
+    const txSelectQueue: unknown[][] = [bens, [{ bemId: 'b1' }], []];
+    const updates: unknown[] = [];
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest
+            .fn()
+            .mockImplementation(() =>
+              Promise.resolve(txSelectQueue.shift() ?? []),
+            ),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((v: unknown) => {
+          updates.push(v);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      }),
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(undefined),
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
+          inserted.push(v);
+          return Promise.resolve(undefined);
+        }),
+      }),
+    };
+    const db = {
+      select: jest
+        .fn()
+        .mockImplementation((selection: Record<string, unknown>) => {
+          if (selection && 'uf' in selection) {
+            return {
+              from: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockResolvedValue([{ uf: 'SP' }]),
+                }),
+              }),
+            };
+          }
+          return {
+            from: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest
+                  .fn()
+                  .mockResolvedValue([
+                    { totais: '10000.00', tributadas: '10000.00' },
+                  ]),
+              }),
+            }),
+          };
+        }),
+      transaction: jest
+        .fn()
+        .mockImplementation((cb: (t: unknown) => unknown) => cb(tx)),
+    };
+    const service = new CiapService({ db } as never);
+
+    const result = await service.apropriarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+
+    // Nenhum bem apropriado de novo; nenhuma parcela consumida.
+    expect(result.bens_apropriados).toBe(0);
+    expect(result.total_credito_apropriado).toBe('0.00');
+    expect(updates).toHaveLength(0);
+    // Não reinsere marcador de competência nem E111.
+    expect(inserted).toHaveLength(0);
   });
 });

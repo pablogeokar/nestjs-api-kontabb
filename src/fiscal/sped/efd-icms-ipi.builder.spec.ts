@@ -1174,6 +1174,9 @@ describe('buildEfdIcmsIpiRecords', () => {
   it('gera Bloco G (G110/G125) a partir dos dados do CIAP', () => {
     const result = buildEfdIcmsIpiRecords(
       makeInput({
+        // F07: com o leiaute homologado (flag), o Bloco G é serializado.
+        // A correção do leiaute em si é escopo da Fase 2.
+        blocoGLeiauteHomologado: true,
         ciap: {
           saldoInicial: '4800.00',
           somaParcelas: '100.00',
@@ -1206,6 +1209,44 @@ describe('buildEfdIcmsIpiRecords', () => {
     expect(
       validateSpedFile(file.bytes, { strictFieldCounts: true }),
     ).toMatchObject({ valid: true });
+  });
+
+  it('F07: bloqueia a geração quando o CIAP exige Bloco G e o leiaute não está homologado', () => {
+    const input = makeInput({
+      ciap: {
+        saldoInicial: '4800.00',
+        somaParcelas: '100.00',
+        valorTotalCredito: '100.00',
+        indicadorPeriodo: '0',
+        saidasTributadas: '10000.00',
+        saidasTotais: '10000.00',
+        bens: [
+          {
+            codigoIndividualizacao: 'BEM-1',
+            identificacaoBem: 'Maquina',
+            tipoMovimentacao: 'SI',
+            valorIcmsOperacao: '4800.00',
+            valorIcmsFrete: '0.00',
+            valorIcmsDifal: '0.00',
+            numeroParcela: 1,
+            valorParcelaIcms: '100.00',
+            valorParcelaFrete: '0.00',
+            valorParcelaDifal: '0.00',
+          },
+        ],
+      },
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+    // Sem a flag: diagnóstico impeditivo específico e nenhum registro do Bloco G.
+    expect(input.inconsistencias).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'BLOCO_G_LEIAUTE_PENDENTE',
+          severidade: 'ERRO',
+        }),
+      ]),
+    );
+    expect(regs(result.records, 'G')).toEqual([]);
   });
 });
 

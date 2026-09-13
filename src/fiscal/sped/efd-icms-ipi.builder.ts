@@ -188,6 +188,10 @@ export interface SpedEfdBuilderInput {
   inconsistencias: SpedInconsistencia[];
   // Bloco G (CIAP): bens do ativo e a apropriação 1/48 da competência.
   ciap?: SpedCiapBuilderData | null;
+  // F07: o leiaute atual do Bloco G (G110/G125) está incorreto e será
+  // reescrito na Fase 2. Enquanto não homologado, a geração de arquivos que
+  // exijam Bloco G é bloqueada. Default (ausente/false) = bloqueado.
+  blocoGLeiauteHomologado?: boolean;
 }
 
 export interface SpedCiapBemBuilderData {
@@ -268,17 +272,81 @@ export function buildEfdIcmsIpiRecords(
           campo: `item.${row.numeroItem}.cstIcms`,
         });
       }
+      // F10: validar o domínio de CST de PIS, COFINS e IPI. Um código fora do
+      // catálogo (ex.: 88) não pode atravessar a validação estrutural. Campo
+      // legitimamente ausente (null/vazio) é dispensado; código informado e
+      // inválido é erro.
+      validarCstContribuicao(input, documento, row, 'PIS', row.cstPis);
+      validarCstContribuicao(input, documento, row, 'COFINS', row.cstCofins);
+      validarCstIpi(input, documento, row);
     }
   }
+  // F07: bloqueia a geração quando o arquivo exige Bloco G e o leiaute correto
+  // ainda não foi homologado (Fase 2). Diagnóstico específico, não erro genérico.
+  const exigeBlocoG = Boolean(input.ciap && input.ciap.bens.length > 0);
+  if (exigeBlocoG && !input.blocoGLeiauteHomologado) {
+    input.inconsistencias.push({
+      codigo: 'BLOCO_G_LEIAUTE_PENDENTE',
+      severidade: 'ERRO',
+      mensagem:
+        'Geração bloqueada: o CIAP exige o Bloco G, cujo leiaute (G110/G125/0300) está em correção. Habilite após a homologação do Bloco G.',
+    });
+  }
+
   records.push(...buildBloco0(input));
   records.push(...buildBlocoC(input));
   records.push(...buildBlocoD(input));
   const blocoE = buildBlocoE(input);
   records.push(...blocoE.records);
-  records.push(...buildBlocoG(input));
+  // Só serializa o Bloco G quando o leiaute está homologado; caso contrário a
+  // inconsistência impeditiva acima interrompe a entrega.
+  if (!exigeBlocoG || input.blocoGLeiauteHomologado) {
+    records.push(...buildBlocoG(input));
+  }
   records.push(...buildBlocoH(input));
   records.push(...buildBloco1(input.indicadores1010));
   return { records, apuracao: blocoE.apuracao };
+}
+
+// F10: valida o CST de uma contribuição (PIS/COFINS). Ausência é dispensada;
+// código informado fora do catálogo é erro impeditivo.
+function validarCstContribuicao(
+  input: SpedEfdBuilderInput,
+  documento: SpedDocumentoNfeBuilderData,
+  row: ItemRow,
+  tributo: 'PIS' | 'COFINS',
+  codigo: string | null | undefined,
+): void {
+  if (!codigo) return;
+  if (descricaoCst(tributo, codigo)) return;
+  input.inconsistencias.push({
+    codigo: `CST_${tributo}_INVALIDO`,
+    severidade: 'ERRO',
+    mensagem: `Item ${row.numeroItem}: CST ${tributo} "${codigo}" fora do catálogo oficial.`,
+    documentoId: documento.row.id,
+    chaveAcesso: documento.row.chaveAcesso,
+    campo: `item.${row.numeroItem}.cst${tributo === 'PIS' ? 'Pis' : 'Cofins'}`,
+  });
+}
+
+// F10: valida o CST de IPI mesmo quando o valor é zero. Ausência é dispensada;
+// código informado fora do catálogo é erro impeditivo.
+function validarCstIpi(
+  input: SpedEfdBuilderInput,
+  documento: SpedDocumentoNfeBuilderData,
+  row: ItemRow,
+): void {
+  const codigo = row.cstIpi;
+  if (!codigo) return;
+  if (descricaoCst('IPI', codigo)) return;
+  input.inconsistencias.push({
+    codigo: 'CST_IPI_INVALIDO',
+    severidade: 'ERRO',
+    mensagem: `Item ${row.numeroItem}: CST IPI "${codigo}" fora do catálogo oficial.`,
+    documentoId: documento.row.id,
+    chaveAcesso: documento.row.chaveAcesso,
+    campo: `item.${row.numeroItem}.cstIpi`,
+  });
 }
 
 function buildBloco0(input: SpedEfdBuilderInput): SpedRecord[] {
@@ -649,6 +717,20 @@ function buildBlocoD(input: SpedEfdBuilderInput): SpedRecord[] {
     );
 
     if (!regular) continue;
+    // F10: CT-e sem CST/CSOSN não pode receber fallback inventado ('000'). É
+    // erro impeditivo indicando o campo ausente.
+    const cstCte = cte.cstIcms ?? cte.csosnIcms;
+    if (!cstCte) {
+      input.inconsistencias.push({
+        codigo: 'CST_CTE_AUSENTE',
+        severidade: 'ERRO',
+        mensagem: `CT-e ${row.chaveAcesso}: informe o CST/CSOSN do ICMS antes de gerar o D190.`,
+        documentoId: row.id,
+        chaveAcesso: row.chaveAcesso,
+        campo: 'cte.cstIcms',
+      });
+      continue;
+    }
     records.push(
       createSpedRecord(
         'D190',
@@ -675,7 +757,12 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
   const ajustesIcms = simples
     ? []
     : input.ajustes.filter((row) => row.registro === 'E111');
-  const debitos = simples ? 0n : totalIcmsDocumentos(input.nfe, 'SAIDA');
+  // F04: os débitos do E110 devem incluir o ICMS das prestações de CT-e de
+  // saída tributadas, não só o ICMS das NF-e de saída.
+  const debitos = simples
+    ? 0n
+    : totalIcmsDocumentos(input.nfe, 'SAIDA') +
+      totalIcmsCtePrestacao(input.cte);
   const creditosMercadorias = simples
     ? 0n
     : totalIcmsDocumentos(input.nfe, 'ENTRADA', input.inconsistencias);
@@ -991,9 +1078,12 @@ function calculateDifalFcpComponent(base: bigint, ajustes: AjusteRow[]) {
 
 // CSTs de IPI conforme Tabela 4.3.2 do RIPI (Decreto 7.212/2010).
 // Entrada: 00-49. Saída: 50-99.
+// F09: apenas CST 00 (entrada com recuperação de crédito) credita
+// automaticamente. CST 01 (entrada tributada com alíquota zero) NÃO gera
+// crédito automático — um valor de IPI positivo sob CST 01 é contradição a
+// ser revisada, não comprovação de crédito.
 const IPI_CST_ENTRADA_CREDITO = new Set([
   '00', // Entrada com recuperação de crédito
-  '01', // Entrada tributada com alíquota zero (mantém crédito quando destacado)
 ]);
 const IPI_CST_ENTRADA_VALIDO = new Set([
   '00',
@@ -1067,6 +1157,18 @@ function buildIpi(
         // CSTs de entrada válidos (02-49) não creditam e não são erro.
         if (IPI_CST_ENTRADA_CREDITO.has(cst)) {
           creditos += ipi;
+        } else if (cst === '01') {
+          // F09: CST 01 é "entrada tributada com alíquota zero"; um valor
+          // positivo é contraditório. Não credita; sinaliza para revisão da
+          // hipótese específica (não há transformação de CST IPI homologada).
+          input.inconsistencias.push({
+            codigo: 'IPI_CST01_VALOR_POSITIVO',
+            severidade: 'ERRO',
+            mensagem: `Item ${row.numeroItem}: CST IPI 01 (alíquota zero) com IPI destacado. Crédito não é automático; revise a hipótese.`,
+            documentoId: documento.row.id,
+            chaveAcesso: documento.row.chaveAcesso,
+            campo: `item.${row.numeroItem}.cstIpi`,
+          });
         } else if (!IPI_CST_ENTRADA_VALIDO.has(cst)) {
           reportAmbiguousIpi(documento, item, 'CREDITO', input.inconsistencias);
         }
@@ -1348,6 +1450,20 @@ function totalIcmsDocumentos(
     );
 }
 
+// F04: soma o ICMS das prestações de CT-e de saída (débito próprio do
+// prestador). CT-e cancelado/denegado (codSituacaoSped 02-05) não gera débito.
+// Complementar/substituto entram apenas com o ICMS efetivamente destacado no
+// próprio documento, sem duplicar o imposto da prestação original.
+function totalIcmsCtePrestacao(
+  documentos: SpedDocumentoCteBuilderData[],
+): bigint {
+  return documentos.reduce((sum, documento) => {
+    if (documento.cte.tipoOperacaoEscriturada !== 'SAIDA') return sum;
+    if (!hasFiscalValues(documento.row.codSituacaoSped)) return sum;
+    return sum + toScaledInteger(documento.cte.valorIcms);
+  }, 0n);
+}
+
 /**
  * Indica se o CFOP de entrada veda a apropriação de crédito de ICMS.
  * Classificação pela terminação (3 últimos dígitos), independente da
@@ -1439,8 +1555,10 @@ function normalizeCstIcms(row: ItemRow): string {
   return row.csosnIcms ?? '';
 }
 
+// F10: sem fallback inventado. O chamador (buildBlocoD) já garante que há
+// CST/CSOSN antes de emitir o D190; a ausência vira inconsistência impeditiva.
 function normalizeCstCte(row: CteRow): string {
-  return row.cstIcms ?? row.csosnIcms ?? '000';
+  return row.cstIcms ?? row.csosnIcms ?? '';
 }
 
 function mapCteFreightIndicator(tomadorPapel: string): string {
