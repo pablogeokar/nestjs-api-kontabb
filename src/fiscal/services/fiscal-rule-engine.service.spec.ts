@@ -259,7 +259,7 @@ describe('resolução contextual segura', () => {
     });
     const db = {
       select: () => ({
-        from: () => ({ where: () => ({ orderBy: async () => [] }) }),
+        from: () => ({ where: () => ({ orderBy: () => Promise.resolve([]) }) }),
       }),
     };
     const engine = new FiscalRuleEngineService(

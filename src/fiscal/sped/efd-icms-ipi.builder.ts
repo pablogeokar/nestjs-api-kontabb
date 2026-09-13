@@ -511,11 +511,11 @@ function buildBlocoC(input: SpedEfdBuilderInput): SpedRecord[] {
         regular ? dateField(row.dataEmissaoFiscal ?? row.dataEmissao) : null,
         regular
           ? dateField(
-            row.dataEntradaSaidaFiscal ??
-            row.dataEmissaoFiscal ??
-            row.dataEntradaSaida ??
-            row.dataEmissao,
-          )
+              row.dataEntradaSaidaFiscal ??
+                row.dataEmissaoFiscal ??
+                row.dataEntradaSaida ??
+                row.dataEmissao,
+            )
           : null,
         regular
           ? decimalField(totalValue(totals, 'vNF', row.valorTotal))
@@ -694,11 +694,11 @@ function buildBlocoD(input: SpedEfdBuilderInput): SpedRecord[] {
         regular ? dateField(row.dataEmissaoFiscal ?? row.dataEmissao) : null,
         regular
           ? dateField(
-            row.dataEntradaSaidaFiscal ??
-            row.dataEmissaoFiscal ??
-            row.dataEntradaSaida ??
-            row.dataEmissao,
-          )
+              row.dataEntradaSaidaFiscal ??
+                row.dataEmissaoFiscal ??
+                row.dataEntradaSaida ??
+                row.dataEmissao,
+            )
           : null,
         regular ? cte.tpCte : null,
         regular && cte.tpCte === '3' ? cte.chaveCteReferenciado : null,
@@ -762,17 +762,17 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
   const debitos = simples
     ? 0n
     : totalIcmsDocumentos(input.nfe, 'SAIDA') +
-    totalIcmsCtePrestacao(input.cte);
+      totalIcmsCtePrestacao(input.cte);
   const creditosMercadorias = simples
     ? 0n
     : totalIcmsDocumentos(input.nfe, 'ENTRADA', input.inconsistencias);
   const creditosFrete = simples
     ? 0n
     : input.cte.reduce(
-      (sum, documento) =>
-        sum + toScaledInteger(documento.cte.valorIcmsCreditavel),
-      0n,
-    );
+        (sum, documento) =>
+          sum + toScaledInteger(documento.cte.valorIcmsCreditavel),
+        0n,
+      );
   const creditos = creditosMercadorias + creditosFrete;
   const ajustesDebitos = totalAjustes(ajustesIcms, 'DEBITO');
   const ajustesCreditos = totalAjustes(ajustesIcms, 'CREDITO');

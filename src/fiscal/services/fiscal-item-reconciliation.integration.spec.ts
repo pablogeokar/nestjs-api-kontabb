@@ -1,5 +1,5 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
-import type { SQL } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { reconciliarItensDocumento } from './fiscal-item-reconciliation';
 
 /**
@@ -107,7 +107,7 @@ function criarStore(seed: {
           ),
       }),
     }),
-    update: (_table: unknown) => ({
+    update: () => ({
       set: (patch: Record<string, unknown>) => ({
         where: (condition: unknown) => {
           const alvoId = paramFinalDaCondicao(condition);
@@ -122,7 +122,7 @@ function criarStore(seed: {
         },
       }),
     }),
-    insert: (_table: unknown) => ({
+    insert: () => ({
       values: (lote: Array<Record<string, unknown>>) => {
         for (const novo of lote) {
           itens.push({
@@ -247,7 +247,9 @@ describe('Reconciliação de itens — integração de serviço (F01, R1.1–R1.
   it('R1.1: item novo no XML é inserido preservando os existentes', async () => {
     const store = criarStore({
       documentoFiscalId: DOC,
-      itens: [itemBase({ id: 'item-1', numeroItem: 1, codigoProduto: 'PROD-A' })],
+      itens: [
+        itemBase({ id: 'item-1', numeroItem: 1, codigoProduto: 'PROD-A' }),
+      ],
     });
 
     const resultado = await reconciliarItensDocumento(store.tx, {
@@ -345,7 +347,7 @@ describe('Reconciliação de itens — integração de serviço (F01, R1.1–R1.
     // Ambos os canais serializaram na MESMA chave de lock cliente+chaveAcesso.
     const chaveLock = `fiscal-doc:${CLIENTE}:${CHAVE}`;
     const locks = store.lockKeys.filter(
-      (k) => typeof k === 'string' && (k as string).includes(chaveLock),
+      (k) => typeof k === 'string' && k.includes(chaveLock),
     );
     expect(locks.length).toBeGreaterThanOrEqual(2);
   });
@@ -396,6 +398,5 @@ describe('Reconciliação de itens — integração de serviço (F01, R1.1–R1.
 // Constrói uma condição `eq(id, valor)` renderizável para o UPDATE do cabeçalho
 // no cenário de cancelamento, usando o mesmo mecanismo drizzle dos serviços.
 function dialectEqId(id: string): SQL {
-  const { sql } = require('drizzle-orm') as typeof import('drizzle-orm');
-  return sql`"id" = ${id}` as unknown as SQL;
+  return sql`"id" = ${id}`;
 }

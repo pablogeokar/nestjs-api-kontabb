@@ -45,7 +45,7 @@ interface CiapRow {
 
 @Injectable()
 export class CiapService {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(private readonly database: DatabaseService) {}
 
   /**
    * Registra manualmente um bem do ativo permanente no CIAP.
@@ -60,8 +60,8 @@ export class CiapService {
     }
     const saldoInicial = fromScaledInteger(
       toScaledInteger(input.valorIcmsTotal) +
-      toScaledInteger(input.valorIcmsFrete ?? '0') +
-      toScaledInteger(input.valorIcmsDifal ?? '0'),
+        toScaledInteger(input.valorIcmsFrete ?? '0') +
+        toScaledInteger(input.valorIcmsDifal ?? '0'),
     );
 
     const rows = await this.database.db

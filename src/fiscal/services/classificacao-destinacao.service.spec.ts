@@ -70,8 +70,8 @@ function historico(rows: unknown[]) {
     from: () => chain,
     innerJoin: () => chain,
     where: () => chain,
-    groupBy: async () => rows,
-    limit: async () => [{ principal: '4711301', secundarios: [] }],
+    groupBy: () => Promise.resolve(rows),
+    limit: () => Promise.resolve([{ principal: '4711301', secundarios: [] }]),
   };
   const select = jest.fn().mockReturnValue(chain);
   return new ClassificacaoDestinacaoService({ db: { select } } as never);

@@ -16,7 +16,13 @@
  *  6. Fallback agregado PIS/COFINS (F12)    → débito por item, sem perder base.
  */
 import type { SpedEfdBuilderInput } from '../efd-icms-ipi.builder';
-import { cteFixture, empresaFixture, inputFixture, itemRow, nfeFixture } from './normative-rows';
+import {
+  cteFixture,
+  empresaFixture,
+  inputFixture,
+  itemRow,
+  nfeFixture,
+} from './normative-rows';
 
 /**
  * Expectativa de uma linha SPED específica: registro, índice de ocorrência e
@@ -60,7 +66,10 @@ export const FIXTURES_NORMATIVAS: FixtureNormativa[] = [
       inputFixture({
         nfe: [nfeFixture({}, [itemRow({ cstPis: '88', cstCofins: '88' })])],
       }),
-    inconsistenciasExigidas: [/^CST_PIS_(INVALIDO|AUSENTE)$/, /^CST_COFINS_(INVALIDO|AUSENTE)$/],
+    inconsistenciasExigidas: [
+      /^CST_PIS_(INVALIDO|AUSENTE)$/,
+      /^CST_COFINS_(INVALIDO|AUSENTE)$/,
+    ],
   },
   {
     id: 'F10-cst-ipi-88-valor-zero',

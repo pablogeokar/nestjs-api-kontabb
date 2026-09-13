@@ -230,25 +230,37 @@ describe('F07 — bloqueio de geração por Bloco G pendente (R3.1/R3.3)', () =>
     };
     // A preparação end-to-end exige banco; aqui isolamos o contrato de saída:
     // com inconsistência ERRO o `podeGerar` é falso e a geração é abortada.
+    // `preparar` é privado; para isolar o contrato de saída, fornecemos um
+    // retorno com tipo estrutural explícito (não `any`) e o injetamos no spy.
+    const preparado: {
+      preview: {
+        podeGerar: boolean;
+        inconsistencias: SpedInconsistencia[];
+        perfil: string;
+      };
+      records: unknown[];
+      clientDocument: string;
+      participantes: unknown[];
+      unidades: unknown[];
+      itensCatalogo: unknown[];
+    } = {
+      preview: {
+        podeGerar: false,
+        inconsistencias: [inconsistencia],
+        perfil: 'A',
+      },
+      records: [],
+      clientDocument: '09157533000156',
+      participantes: [],
+      unidades: [],
+      itensCatalogo: [],
+    };
     const prepararSpy = jest
       .spyOn(
-        service as unknown as {
-          preparar: EfdIcmsIpiService['preview'];
-        },
+        service as unknown as { preparar: EfdIcmsIpiService['preview'] },
         'preparar' as never,
       )
-      .mockResolvedValue({
-        preview: {
-          podeGerar: false,
-          inconsistencias: [inconsistencia],
-          perfil: 'A',
-        },
-        records: [],
-        clientDocument: '09157533000156',
-        participantes: [],
-        unidades: [],
-        itensCatalogo: [],
-      } as never);
+      .mockResolvedValue(preparado as never);
 
     await expect(
       service.gerar({
@@ -262,7 +274,7 @@ describe('F07 — bloqueio de geração por Bloco G pendente (R3.1/R3.3)', () =>
         code: 'SPED_INCONSISTENTE',
         inconsistencias: expect.arrayContaining([
           expect.objectContaining({ codigo: 'BLOCO_G_LEIAUTE_PENDENTE' }),
-        ]),
+        ]) as unknown,
       },
     });
     // Contrato central: nenhum arquivo é escrito no storage.

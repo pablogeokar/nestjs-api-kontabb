@@ -410,8 +410,8 @@ describe('CiapService', () => {
         jaApropriadosNaCompetencia: jaNaCompetencia,
         ledgerPorBem,
         e111Existente: [],
-        inserted: inserted as Array<Record<string, unknown>>,
-        updates: updates as unknown[],
+        inserted: inserted,
+        updates: updates,
       });
       // Aplica o efeito do insert do marcador na razão simulada, respeitando o
       // unique (no-op quando a competência já existe para o bem).
@@ -440,9 +440,7 @@ describe('CiapService', () => {
         competencia: '2026-09',
       });
 
-      const bemUpdate = updates.find(
-        (u) => 'parcelasApropriadas' in u,
-      ) as Record<string, unknown> | undefined;
+      const bemUpdate = updates.find((u) => 'parcelasApropriadas' in u);
       if (bemUpdate) {
         ultimaParcelaGravada = bemUpdate.parcelasApropriadas as number;
         // Persiste o saldo gravado para o próximo retry ler.
@@ -489,7 +487,7 @@ describe('CiapService', () => {
       ledgerPorBem: [{ bemId: 'b1', total: 3 }],
       e111Existente: [],
       inserted,
-      updates: updates as unknown[],
+      updates: updates,
     });
     const db = createRootDbMock(tx);
     const service = new CiapService({ db } as never);
@@ -501,9 +499,7 @@ describe('CiapService', () => {
 
     // Apropriou 1 bem nesta competência.
     expect(result.bens_apropriados).toBe(1);
-    const bemUpdate = updates.find((u) => 'parcelasApropriadas' in u) as
-      | Record<string, unknown>
-      | undefined;
+    const bemUpdate = updates.find((u) => 'parcelasApropriadas' in u);
     expect(bemUpdate).toBeDefined();
     // Derivado da razão: 3 anteriores + 1 = 4. NÃO 40 + 1 = 41.
     expect(bemUpdate?.parcelasApropriadas).toBe(4);
@@ -577,10 +573,7 @@ describe('CiapService', () => {
         values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
           if (v.registro === 'E111') {
             e111Inseridos.push(v);
-          } else if (
-            v.bemId === 'b1' &&
-            v.competencia === competenciaDate
-          ) {
+          } else if (v.bemId === 'b1' && v.competencia === competenciaDate) {
             marcadoresInseridos.push(v);
             const exists = razao.some(
               (r) => r.bemId === 'b1' && r.competencia === competenciaDate,

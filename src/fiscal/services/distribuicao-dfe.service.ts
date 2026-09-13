@@ -42,12 +42,12 @@ import {
 
 export interface FiscalSyncResult {
   status:
-  | 'OK'
-  | 'ADIADO'
-  | 'EM_ANDAMENTO'
-  | 'SCHEMA_ERROR'
-  | 'CONSUMO_INDEVIDO'
-  | 'ERRO';
+    | 'OK'
+    | 'ADIADO'
+    | 'EM_ANDAMENTO'
+    | 'SCHEMA_ERROR'
+    | 'CONSUMO_INDEVIDO'
+    | 'ERRO';
   message?: string;
   cStat?: number;
   ultimoNsu?: number;
@@ -85,7 +85,7 @@ export class DistribuicaoDfeService {
     private readonly nfeWizard: NfeWizardService,
     private readonly cfopService: CfopService,
     private readonly fiscalCteService: FiscalCteService,
-  ) { }
+  ) {}
 
   /**
    * Executa a sincronização de documentos fiscais para um cliente.
@@ -207,7 +207,7 @@ export class DistribuicaoDfeService {
         if (isSchemaError) {
           this.logger.warn(
             `Validação de schema falhou para ${cnpj}/${tipoDocumento} — pulando. ` +
-            `Isso geralmente indica XSD desatualizado na lib.`,
+              `Isso geralmente indica XSD desatualizado na lib.`,
           );
           await this.atualizarControleNsu(control.id, {
             statusSefaz: 998,
@@ -857,14 +857,14 @@ export class DistribuicaoDfeService {
   ): Promise<boolean> {
     const ctePreparada = parsed.cteEscrituracao
       ? await this.fiscalCteService.prepararEscrituracao({
-        clienteId,
-        clienteCnpjCpf: cnpj,
-        regimeTributario: fiscalConfig.regimeTributario,
-        apuraIcms: fiscalConfig.apuraIcms,
-        situacao: parsed.situacao,
-        cte: parsed.cteEscrituracao,
-        emitenteUf: parsed.emitente.uf || null,
-      })
+          clienteId,
+          clienteCnpjCpf: cnpj,
+          regimeTributario: fiscalConfig.regimeTributario,
+          apuraIcms: fiscalConfig.apuraIcms,
+          situacao: parsed.situacao,
+          cte: parsed.cteEscrituracao,
+          emitenteUf: parsed.emitente.uf || null,
+        })
       : null;
     if (parsed.tipoDocumento === 'CTE' && !ctePreparada) {
       throw new Error('Dados de escrituração do CT-e não foram extraídos.');
@@ -873,13 +873,13 @@ export class DistribuicaoDfeService {
       parsed.tipoDocumento === 'CTE'
         ? { tipoOperacaoEscriturada: 'ENTRADA' as const, itens: [] }
         : await this.cfopService.prepararItensEscrituracao({
-          clienteId,
-          clienteCnpjCpf: cnpj,
-          emitenteCnpjCpf: parsed.emitenteCnpjCpf,
-          emitenteUf: parsed.emitente.uf || null,
-          tpNfXml: parsed.tpNfXml,
-          itens: parsed.itens,
-        });
+            clienteId,
+            clienteCnpjCpf: cnpj,
+            emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+            emitenteUf: parsed.emitente.uf || null,
+            tpNfXml: parsed.tpNfXml,
+            itens: parsed.itens,
+          });
     const spedMetadata = buildDocumentoFiscalSpedMetadata(parsed);
     const nfePendenteRevisao =
       parsed.tipoDocumento !== 'CTE' &&

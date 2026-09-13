@@ -175,10 +175,10 @@ describe('DistribuicaoDfeService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-            values: jest.fn().mockReturnValue({
-              onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
-            }),
-          }
+              values: jest.fn().mockReturnValue({
+                onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
+              }),
+            }
           : { values: itemValues },
       ),
     };
@@ -319,7 +319,11 @@ describe('DistribuicaoDfeService', () => {
     expect(result).toBe(false);
     // R1.6/R1.7: o ramo isDuplicate adquire o advisory lock por cliente +
     // chaveAcesso (NÃO por NSU), serializando reimportações concorrentes.
-    expectAdvisoryLockAcquired(tx.execute, 'cliente-1', canceladoParsed.chaveAcesso);
+    expectAdvisoryLockAcquired(
+      tx.execute,
+      'cliente-1',
+      canceladoParsed.chaveAcesso,
+    );
     // Situação convergiu para CANCELADA via UPDATE do documento original.
     expect(update).toHaveBeenCalledWith(documentosFiscais);
     expect(docUpdateSet).toHaveBeenCalledWith(

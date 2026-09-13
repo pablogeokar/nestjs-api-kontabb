@@ -1,8 +1,5 @@
 import { ImportacaoXmlFiscalService } from './importacao-xml-fiscal.service';
-import {
-  documentosFiscais,
-  documentosFiscaisItens,
-} from '../../database/schema';
+import { documentosFiscais } from '../../database/schema';
 import {
   parseManualFiscalXml,
   type ParsedDocumentoFiscal,
@@ -257,10 +254,10 @@ describe('ImportacaoXmlFiscalService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-            values: jest.fn().mockReturnValue({
-              onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
-            }),
-          }
+              values: jest.fn().mockReturnValue({
+                onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
+              }),
+            }
           : { values: itemValues },
       ),
     };

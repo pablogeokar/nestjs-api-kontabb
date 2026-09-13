@@ -553,9 +553,7 @@ describe('buildEfdIcmsIpiRecords', () => {
     const result = buildEfdIcmsIpiRecords(
       makeInput({
         nfe: [
-          makeNfe({}, [
-            makeItem({ origemMercadoria: '0', cstIcms: '00' }),
-          ]),
+          makeNfe({}, [makeItem({ origemMercadoria: '0', cstIcms: '00' })]),
         ],
       }),
     );
@@ -589,9 +587,7 @@ describe('buildEfdIcmsIpiRecords', () => {
     const result = buildEfdIcmsIpiRecords(
       makeInput({
         nfe: [
-          makeNfe({}, [
-            makeItem({ origemMercadoria: '2', cstIcms: '20' }),
-          ]),
+          makeNfe({}, [makeItem({ origemMercadoria: '2', cstIcms: '20' })]),
         ],
       }),
     );
@@ -1452,7 +1448,9 @@ describe('validação de domínio de CST PIS/COFINS (R4.1)', () => {
       }),
     );
     // R4.1: a mensagem identifica o item envolvido.
-    const pis = input.inconsistencias.find((i) => i.codigo === 'CST_PIS_INVALIDO');
+    const pis = input.inconsistencias.find(
+      (i) => i.codigo === 'CST_PIS_INVALIDO',
+    );
     expect(pis?.mensagem).toContain('Item 7');
     expect(pis?.mensagem).toContain('88');
     // A geração é impedida: há inconsistência de severidade ERRO.
@@ -1491,9 +1489,7 @@ describe('validação de domínio de CST PIS/COFINS (R4.1)', () => {
   it('dispensa CST de PIS/COFINS legitimamente ausente (null) sem gerar inconsistência', () => {
     // R4.5: campo vazio dispensado ≠ código obrigatório ausente.
     const input = makeInput({
-      nfe: [
-        makeNfe({}, [makeItem({ cstPis: null, cstCofins: null })]),
-      ],
+      nfe: [makeNfe({}, [makeItem({ cstPis: null, cstCofins: null })])],
     });
 
     buildEfdIcmsIpiRecords(input);
@@ -1561,7 +1557,9 @@ describe('validação de domínio de CST IPI antes do E510 (R4.2)', () => {
         campo: 'item.5.cstIpi',
       }),
     );
-    const ipi = input.inconsistencias.find((i) => i.codigo === 'CST_IPI_INVALIDO');
+    const ipi = input.inconsistencias.find(
+      (i) => i.codigo === 'CST_IPI_INVALIDO',
+    );
     expect(ipi?.mensagem).toContain('Item 5');
     expect(ipi?.mensagem).toContain('88');
     // A geração é impedida: há inconsistência de severidade ERRO.

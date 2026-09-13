@@ -176,7 +176,7 @@ function reprocessFixture(
       where: () => {
         const result = queue[index++];
         return index === 1
-          ? { limit: async () => result }
+          ? { limit: () => Promise.resolve(result) }
           : Promise.resolve(result);
       },
     }),
@@ -188,7 +188,8 @@ function reprocessFixture(
         updates.push(value);
         return {
           where: () => ({
-            returning: async () => (updateSucceeds ? [{ id: 'i1' }] : []),
+            returning: () =>
+              Promise.resolve(updateSucceeds ? [{ id: 'i1' }] : []),
           }),
         };
       },

@@ -291,24 +291,26 @@ function criarTxFalso(existentes: Array<Record<string, unknown>>) {
   const tx = {
     select: () => ({
       from: () => ({
-        where: async () => existentes,
+        where: () => Promise.resolve(existentes),
       }),
     }),
     update: () => ({
       set: (patch: Record<string, unknown>) => ({
-        where: async () => {
+        where: () => {
           updatesEmitidos.push({ patch });
+          return Promise.resolve(undefined);
         },
       }),
     }),
     insert: () => ({
-      values: async (lote: unknown[]) => {
+      values: (lote: unknown[]) => {
         inserts.push(lote);
+        return Promise.resolve(undefined);
       },
     }),
     delete: () => {
       deleteChamado = true;
-      return { where: async () => undefined };
+      return { where: () => Promise.resolve(undefined) };
     },
   };
 

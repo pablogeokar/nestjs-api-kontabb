@@ -184,8 +184,16 @@ describe('RegrasFiscaisService', () => {
   });
 });
 
+// Forma mínima da cadeia de query do mock, para evitar acessos em `any`.
+interface MockQueryChain {
+  from: () => {
+    innerJoin: () => { where: () => { limit: () => unknown } };
+    [key: string]: unknown;
+  };
+}
+
 function transactionalMock(db: { select: jest.Mock; update?: jest.Mock }) {
-  const original = db.select;
+  const original = db.select as unknown as () => MockQueryChain;
   const tx = {
     ...db,
     select: jest.fn().mockImplementation(() => {

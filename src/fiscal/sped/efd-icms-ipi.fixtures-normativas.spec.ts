@@ -32,7 +32,9 @@ function camposDaLinha(
   const matches = records.filter((record) => record.reg === reg);
   const alvo = matches[ocorrencia];
   if (!alvo) {
-    throw new Error(`Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`);
+    throw new Error(
+      `Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`,
+    );
   }
   const serial = serializeSpedRecord(alvo);
   // Formato: |REG|c0|c1|...|  ⇒ remove vazios de borda e o próprio REG.
@@ -60,31 +62,28 @@ describe('Fixtures normativas de regressão — SPED (Fase 0, cenários P0)', ()
     return { input, records: result.records };
   };
 
-  it.each(FIXTURES_NORMATIVAS)(
-    '[$achado] $descricao',
-    (fixture) => {
-      const { input, records } = executar(fixture);
-      const codigos = input.inconsistencias.map((i) => i.codigo);
+  it.each(FIXTURES_NORMATIVAS)('[$achado] $descricao', (fixture) => {
+    const { input, records } = executar(fixture);
+    const codigos = input.inconsistencias.map((i) => i.codigo);
 
-      for (const exigida of fixture.inconsistenciasExigidas ?? []) {
-        expect(codigos.some((c) => exigida.test(c))).toBe(true);
+    for (const exigida of fixture.inconsistenciasExigidas ?? []) {
+      expect(codigos.some((c) => exigida.test(c))).toBe(true);
+    }
+    for (const proibida of fixture.inconsistenciasProibidas ?? []) {
+      expect(codigos.some((c) => proibida.test(c))).toBe(false);
+    }
+    for (const linha of fixture.linhasEsperadas ?? []) {
+      verificarLinha(records, linha);
+    }
+    for (const proibida of fixture.linhasProibidas ?? []) {
+      const linhas = records
+        .filter((r) => r.reg === proibida.reg)
+        .map(serializeSpedRecord);
+      for (const serial of linhas) {
+        expect(proibida.contem.test(serial)).toBe(false);
       }
-      for (const proibida of fixture.inconsistenciasProibidas ?? []) {
-        expect(codigos.some((c) => proibida.test(c))).toBe(false);
-      }
-      for (const linha of fixture.linhasEsperadas ?? []) {
-        verificarLinha(records, linha);
-      }
-      for (const proibida of fixture.linhasProibidas ?? []) {
-        const linhas = records
-          .filter((r) => r.reg === proibida.reg)
-          .map(serializeSpedRecord);
-        for (const serial of linhas) {
-          expect(proibida.contem.test(serial)).toBe(false);
-        }
-      }
-    },
-  );
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -106,7 +105,9 @@ function createDb(
             return {
               from: jest.fn().mockReturnValue({
                 where: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue([{ id: 'c1', ...cliente }]),
+                  limit: jest
+                    .fn()
+                    .mockResolvedValue([{ id: 'c1', ...cliente }]),
                 }),
               }),
             };
