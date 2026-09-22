@@ -442,9 +442,13 @@ export const folhasPagamento = pgTable(
     }),
     arquivoKey: text('arquivo_key').notNull(),
     arquivoNome: text('arquivo_nome').notNull(),
+    tipo: text('tipo').notNull().default('FOLHA_MENSAL'),
     competencia: text('competencia').notNull(),
     periodoInicio: date('periodo_inicio').notNull(),
     periodoFim: date('periodo_fim').notNull(),
+    periodoAquisitivoInicio: date('periodo_aquisitivo_inicio'),
+    periodoAquisitivoFim: date('periodo_aquisitivo_fim'),
+    diasFerias: integer('dias_ferias'),
     totalBruto: numeric('total_bruto', { precision: 12, scale: 2 }).notNull(),
     totalDescontos: numeric('total_descontos', {
       precision: 12,
@@ -477,10 +481,9 @@ export const folhasPagamento = pgTable(
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('uidx_folhas_cliente_competencia').on(
-      table.clienteId,
-      table.competencia,
-    ),
+    uniqueIndex('uidx_folhas_cliente_competencia')
+      .on(table.clienteId, table.competencia)
+      .where(sql`${table.tipo} = 'FOLHA_MENSAL'`),
     unique('uq_folhas_id_cliente').on(table.id, table.clienteId),
     index('idx_folhas_cliente_id').on(table.clienteId),
     index('idx_folhas_competencia').on(table.competencia),
@@ -491,6 +494,10 @@ export const folhasPagamento = pgTable(
     check(
       'chk_folhas_periodo',
       sql`${table.periodoInicio} <= ${table.periodoFim}`,
+    ),
+    check(
+      'chk_folhas_tipo',
+      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`,
     ),
     check(
       'chk_folhas_totais',

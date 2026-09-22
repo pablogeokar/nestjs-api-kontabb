@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { RhService } from './rh.service';
 import { ClientesService } from '../clientes/clientes.service';
+import { StorageService } from '../storage/storage.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { RequirePasswordChangedGuard } from '../auth/require-password-changed.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -35,6 +36,7 @@ export class RhClienteController {
   constructor(
     private readonly rhService: RhService,
     private readonly clientesService: ClientesService,
+    private readonly storage: StorageService,
   ) {}
 
   @Get('folhas')
@@ -79,6 +81,30 @@ export class RhClienteController {
     const folha = await this.rhService.getFolhaDetail(folhaId);
     if (!folha) throw new NotFoundException('Folha não encontrada.');
     return folha;
+  }
+
+  @Get('folhas/:folhaId/download')
+  @ApiOperation({ summary: 'URL assinada para download do PDF original pelo cliente' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'URL assinada gerada.' })
+  @ApiResponse({ status: 403, description: 'Acesso negado.' })
+  @ApiResponse({ status: 404, description: 'Folha ou documento não encontrado.' })
+  async downloadFolha(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) throw new NotFoundException('Cliente não encontrado.');
+
+    const ownerClienteId = await this.rhService.getFolhaClienteId(folhaId);
+    if (!ownerClienteId) throw new NotFoundException('Folha não encontrada.');
+    if (ownerClienteId !== client.id)
+      throw new ForbiddenException('Acesso negado.');
+
+    const key = await this.rhService.getFolhaDocumentoKey(folhaId);
+    if (!key) throw new NotFoundException('Documento não encontrado.');
+    const url = await this.storage.getSignedUrl(key);
+    return { url };
   }
 
   @Get('folhas/:folhaId/funcionarios')
