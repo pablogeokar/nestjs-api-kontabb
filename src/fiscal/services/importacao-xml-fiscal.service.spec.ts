@@ -1,9 +1,11 @@
 import { ImportacaoXmlFiscalService } from './importacao-xml-fiscal.service';
-import { documentosFiscaisItens } from '../../database/schema';
+import { documentosFiscais } from '../../database/schema';
 import {
   parseManualFiscalXml,
   type ParsedDocumentoFiscal,
 } from './dfe-document.parser';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 describe('ImportacaoXmlFiscalService', () => {
   const storage = {
@@ -151,7 +153,7 @@ describe('ImportacaoXmlFiscalService', () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
-  it('reconcilia itens de documento duplicado em transação sem novo upload', async () => {
+  it('preserva itens e decisões de documento duplicado sem escrita ou novo upload', async () => {
     const existingLimit = jest.fn().mockResolvedValue([
       {
         id: 'doc-1',
@@ -214,21 +216,128 @@ describe('ImportacaoXmlFiscalService', () => {
     });
 
     expect(result).toEqual({ status: 'DUPLICADO', revisoes: [] });
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(tx.delete).toHaveBeenCalledWith(documentosFiscaisItens);
-    expect(itemValues).toHaveBeenCalledWith([
-      expect.objectContaining({
-        documentoFiscalId: 'doc-1',
-        clienteId: 'cliente-1',
-        numeroItem: 1,
-        cfopXml: '5102',
-        cfop: '5102',
-        tipoOperacaoEscriturada: 'SAIDA',
-      }),
-    ]);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(tx.delete).not.toHaveBeenCalled();
+    expect(itemValues).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
   });
+
+  it('adquire o advisory lock por cliente + chaveAcesso ao persistir documento novo (R1.6/R1.7)', async () => {
+    // Documento inexistente → a transação de persistência/reconciliação roda.
+    const existingLimit = jest.fn().mockResolvedValue([]);
+    const select = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: existingLimit }),
+      }),
+    });
+    // db.insert (fora da transação): auditoria pós-commit.
+    const auditValues = jest.fn().mockResolvedValue(undefined);
+    const dbInsert = jest.fn().mockReturnValue({ values: auditValues });
+
+    const itemValues = jest.fn().mockResolvedValue(undefined);
+    const returning = jest.fn().mockResolvedValue([{ id: 'doc-1' }]);
+    // Reconciliação (F01): consulta os itens existentes (nenhum, doc novo).
+    const txSelect = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([]),
+      }),
+    });
+    const txExecute = jest.fn().mockResolvedValue(undefined);
+    const tx = {
+      execute: txExecute,
+      select: txSelect,
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning }),
+        }),
+      }),
+      insert: jest.fn((table) =>
+        table === documentosFiscais
+          ? {
+              values: jest.fn().mockReturnValue({
+                onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
+              }),
+            }
+          : { values: itemValues },
+      ),
+    };
+    const transaction = jest.fn(
+      (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    const newDocService = new ImportacaoXmlFiscalService(
+      { db: { select, transaction, insert: dbInsert } } as never,
+      storage as never,
+      logger as never,
+      createCfopServiceMock() as never,
+      {} as never,
+    );
+    const parsed = parseManualFiscalXml(buildNfeProc());
+    if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');
+
+    const result = await (
+      newDocService as unknown as {
+        persistirDocumento(input: {
+          target: { id: string; cnpj: string; razaoSocial: string };
+          documento: ParsedDocumentoFiscal;
+          actorUserId: string;
+          requestId: string;
+        }): Promise<{
+          status: 'IMPORTADO' | 'DUPLICADO';
+          revisoes: unknown[];
+        }>;
+      }
+    ).persistirDocumento({
+      target: {
+        id: 'cliente-1',
+        cnpj: '98765432000110',
+        razaoSocial: 'Empresa Destinatária',
+      },
+      documento: parsed.documento,
+      actorUserId: 'user-1',
+      requestId: 'request-1',
+    });
+
+    expect(result.status).toBe('IMPORTADO');
+    expect(transaction).toHaveBeenCalledTimes(1);
+    // R1.6/R1.7: serializa reimportações concorrentes manual × DF-e por
+    // cliente + chaveAcesso (NÃO por NSU), usando o mesmo formato de chave do
+    // caminho de distribuição para convergir no mesmo documento lógico.
+    expectAdvisoryLockAcquired(
+      txExecute,
+      'cliente-1',
+      parsed.documento.chaveAcesso,
+    );
+  });
 });
+
+// R1.6/R1.7: verifica que a transação adquiriu o advisory lock por
+// cliente + chaveAcesso. A chave DEVE ser `fiscal-doc:${clienteId}:${chave}`
+// (idêntica entre importação manual e distribuição DF-e) para que os dois
+// canais serializem no mesmo par cliente+chave e nunca no NSU.
+function expectAdvisoryLockAcquired(
+  execute: jest.Mock,
+  clienteId: string,
+  chaveAcesso: string,
+): void {
+  const dialect = new PgDialect();
+  const expectedKey = `fiscal-doc:${clienteId}:${chaveAcesso}`;
+  const acquired = execute.mock.calls.some(([arg]) => {
+    if (!arg || typeof arg !== 'object') {
+      return false;
+    }
+    let rendered: { sql: string; params: unknown[] };
+    try {
+      rendered = dialect.sqlToQuery(arg as SQL);
+    } catch {
+      return false;
+    }
+    return (
+      rendered.sql.includes('pg_advisory_xact_lock') &&
+      rendered.params.includes(expectedKey)
+    );
+  });
+  expect(acquired).toBe(true);
+}
 
 function xmlFile(xml: string, originalname = 'documento.xml') {
   const buffer = Buffer.from(xml, 'utf8');

@@ -54,6 +54,13 @@ export interface SpedApuracaoPreview {
     saldoCredorAnterior: string;
     recolher: string;
     saldoCredorTransportar: string;
+    // R4.4: IPI original do XML (soma do destaque dos documentos, sob o CST do
+    // emitente) mantido separado do IPI escriturado sob o enfoque do
+    // declarante (debitos/creditos acima). Espelha a separação R3.2 entre
+    // valorIcms original e valorCreditoAdmitido: o valor do XML nunca é zerado
+    // nem se converte em crédito/débito por si só.
+    ipiOriginalEntradas: string;
+    ipiOriginalSaidas: string;
   };
 }
 

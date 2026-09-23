@@ -1,8 +1,11 @@
+import { alias } from 'drizzle-orm/pg-core';
+import { descricaoCst } from './cst-catalogo';
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gte, lte, or, sql, type SQL } from 'drizzle-orm';
 import type { PaginationParams } from '../../common/types';
 import { DatabaseService } from '../../database/database.service';
 import {
+  cfops,
   clientes,
   documentosFiscais,
   documentosFiscaisItens,
@@ -13,12 +16,40 @@ import {
 } from '../../clientes/clientes.types';
 import { FiscalCteService } from './fiscal-cte.service';
 import { convertDirection } from './cfop.service';
+import {
+  CFOP_FINAIS_VEDA_CREDITO,
+  CFOP_PREFIXOS_ENTRADA,
+  CSOSN_ICMS_PERMITE_CREDITO,
+  CST_ICMS_ENTRADA_CREDITO,
+} from './decisao-credito';
+
+const cfopsXml = alias(cfops, 'cfops_xml_descricao');
 
 const SIMPLES_SEM_APURACAO_OBSERVACAO =
   'Cliente optante pelo Simples Nacional — ICMS recolhido via DAS. Apuração de débito/crédito não aplicável.';
 
 const SIMPLES_C190_OBSERVACAO =
   'Empresa optante pelo Simples Nacional — valores de ICMS apresentados apenas para conferência, sem geração de débitos/créditos.';
+
+/**
+ * Observação padrão dos resumos DOCUMENTAIS (C190/livros por CFOP). Estes
+ * resumos derivam o ICMS diretamente dos documentos e NÃO representam o imposto
+ * final apurado a recolher (R7.3): ainda não incorporam ajustes E111, saldo
+ * credor anterior, deduções, CIAP, débito de CT-e frete, nem consideram itens
+ * pendentes de revisão/decisão de crédito. Devem ser lidos como parciais.
+ */
+export const RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO =
+  'Resumo documental parcial — valores derivados diretamente dos documentos. NÃO representa o imposto final apurado a recolher: não inclui ajustes (E111), saldo credor anterior, deduções, CIAP nem débito de CT-e frete, e pode conter itens pendentes de revisão. Consulte a apuração de ICMS para o valor final.';
+
+/**
+ * Observação da apuração de ICMS documental (créditos/débitos por item + crédito
+ * de CT-e frete). Nesta fase ela ainda é PARCIAL em relação ao imposto final a
+ * recolher (R7.3): não incorpora ajustes E111, saldo credor anterior, deduções
+ * e CIAP — conciliação completa fica na Fase 3. Rotulada para o usuário não a
+ * confundir com o valor definitivo a recolher.
+ */
+export const APURACAO_ICMS_PARCIAL_OBSERVACAO =
+  'Apuração parcial — considera débitos e créditos documentais (inclusive CT-e frete), mas ainda NÃO incorpora ajustes (E111), saldo credor anterior, deduções nem CIAP. NÃO use como imposto final a recolher até a conciliação completa.';
 
 interface ItemFilters {
   clienteId?: string;
@@ -43,7 +74,7 @@ export class FiscalItensService {
   constructor(
     private readonly database: DatabaseService,
     private readonly fiscalCteService?: FiscalCteService,
-  ) {}
+  ) { }
 
   async listItens(input: ItemFilters & { pagination: PaginationParams }) {
     const where = this.buildWhere(input);
@@ -62,12 +93,16 @@ export class FiscalItensService {
           dataEmissao: documentosFiscais.dataEmissao,
           chaveAcesso: documentosFiscais.chaveAcesso,
           modelo: documentosFiscais.modelo,
+          cfopDescricao: cfops.descricao,
+          cfopXmlDescricao: cfopsXml.descricao,
         })
         .from(documentosFiscaisItens)
         .innerJoin(
           documentosFiscais,
           eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
         )
+        .leftJoin(cfops, eq(cfops.codigo, documentosFiscaisItens.cfop))
+        .leftJoin(cfopsXml, eq(cfopsXml.codigo, documentosFiscaisItens.cfopXml))
         .where(where)
         .orderBy(
           desc(documentosFiscais.dataEmissao),
@@ -130,10 +165,17 @@ export class FiscalItensService {
     const icmsCompoeApuracao = fiscalConfig
       ? !simplesNacionalSemApuracaoIcms(fiscalConfig)
       : true;
+    // O C190 é um resumo DOCUMENTAL: sempre parcial em relação ao imposto final
+    // apurado (R7.3). Preserva a observação do Simples quando aplicável,
+    // concatenando-a à do resumo parcial para não perder nenhuma advertência.
+    const observacao = icmsCompoeApuracao
+      ? RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO
+      : `${SIMPLES_C190_OBSERVACAO} ${RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO}`;
     return {
       data: rows,
       icms_compoe_apuracao: icmsCompoeApuracao,
-      observacao: icmsCompoeApuracao ? null : SIMPLES_C190_OBSERVACAO,
+      parcial: true,
+      observacao,
     };
   }
 
@@ -181,7 +223,7 @@ export class FiscalItensService {
   async getResumoLivros(input: ItemFilters) {
     const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
     const where = this.buildWhere(input, true);
-    const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
+    const creditoPermitido = this.creditoIcmsPermitidoSql();
     const valorOperacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
     const valorSemTributacao = sql`GREATEST(${valorOperacao} - COALESCE(${documentosFiscaisItens.valorBcIcms}, 0), 0)`;
     const isentaOuNaoTributada = sql`(RIGHT(COALESCE(${documentosFiscaisItens.cstIcms}, ''), 2) IN ('40', '41') OR ${documentosFiscaisItens.csosnIcms} IN ('103', '300', '400'))`;
@@ -242,7 +284,7 @@ export class FiscalItensService {
     }
 
     const where = this.buildWhere(input, true);
-    const creditoPermitido = sql`(${documentosFiscaisItens.cstIcms} IN ('00', '10', '20', '70') OR ${documentosFiscaisItens.csosnIcms} IN ('101', '201'))`;
+    const creditoPermitido = this.creditoIcmsPermitidoSql();
     const rows = await this.database.db
       .select({
         total_creditos: sql<string>`COALESCE(SUM(CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${documentosFiscaisItens.csosnIcms} IN ('101', '201') THEN COALESCE(${documentosFiscaisItens.valorCreditoIcmsSn}, 0) WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' AND ${creditoPermitido} THEN COALESCE(${documentosFiscaisItens.valorIcms}, 0) ELSE 0 END), 0)`,
@@ -264,13 +306,13 @@ export class FiscalItensService {
       input.tipoOperacao === 'SAIDA' || !this.fiscalCteService
         ? '0.00'
         : await this.fiscalCteService.getTotalCreditoIcms({
-            clienteId: input.clienteId,
-            documentoId: input.documentoId,
-            cfop: input.cfop,
-            cst: input.cst,
-            dataInicio: input.dataInicio,
-            dataFim: input.dataFim,
-          });
+          clienteId: input.clienteId,
+          documentoId: input.documentoId,
+          cfop: input.cfop,
+          cst: input.cst,
+          dataInicio: input.dataInicio,
+          dataFim: input.dataFim,
+        });
     return {
       total_creditos: addMoney(
         apuracaoMercadorias.total_creditos,
@@ -282,8 +324,40 @@ export class FiscalItensService {
         creditosFrete,
       ),
       creditos_frete_cte: normalizeMoney(creditosFrete),
-      observacao: null,
+      parcial: true,
+      observacao: APURACAO_ICMS_PARCIAL_OBSERVACAO,
     };
+  }
+
+  /**
+   * Condição SQL de admissibilidade de crédito de ICMS de entrada, espelhando
+   * `decidirCreditoIcms` (decisao-credito.ts) — a MESMA fonte que o builder
+   * SPED consome (R7.1). A precedência é idêntica ao builder:
+   *  - CSOSN 101/201 (Simples) permite crédito, sem sujeição à vedação por CFOP;
+   *  - regime normal credita quando o CST está na allow-list E o CFOP não veda
+   *    o crédito (R7.2: uso/consumo, substituído, ativo → sem crédito, ainda
+   *    que o CST autorize).
+   * Deriva das constantes compartilhadas (CST/CSOSN/CFOP), sem reimplementar as
+   * listas aqui, para que livros e builder concedam o mesmo crédito documental.
+   */
+  private creditoIcmsPermitidoSql(): SQL {
+    const csts = CST_ICMS_ENTRADA_CREDITO.map((c) => `'${c}'`).join(', ');
+    const csosns = CSOSN_ICMS_PERMITE_CREDITO.map((c) => `'${c}'`).join(', ');
+    return sql`((${documentosFiscaisItens.cstIcms} IN (${sql.raw(csts)}) AND NOT ${this.cfopVedaCreditoIcmsSql()}) OR ${documentosFiscaisItens.csosnIcms} IN (${sql.raw(csosns)}))`;
+  }
+
+  /**
+   * Condição SQL que replica `cfopVedaCreditoIcms` (decisao-credito.ts): CFOP de
+   * entrada (primeiro dígito 1/2/3) cuja terminação (3 últimos dígitos) veda a
+   * apropriação de crédito de ICMS (R7.2). Deriva das constantes compartilhadas.
+   */
+  private cfopVedaCreditoIcmsSql(): SQL {
+    const prefixos = CFOP_PREFIXOS_ENTRADA.map((p) => `'${p}'`).join(', ');
+    const finais = CFOP_FINAIS_VEDA_CREDITO.map((f) => `'${f}'`).join(', ');
+    // Normaliza o CFOP a dígitos e só considera o código de 4 dígitos, como a
+    // função pura `cfopVedaCreditoIcms` (replace(/\D/g,'') + length === 4).
+    const digitos = sql`regexp_replace(COALESCE(${documentosFiscaisItens.cfop}, ''), '[^0-9]', '', 'g')`;
+    return sql`(LENGTH(${digitos}) = 4 AND LEFT(${digitos}, 1) IN (${sql.raw(prefixos)}) AND RIGHT(${digitos}, 3) IN (${sql.raw(finais)}))`;
   }
 
   private async getClienteFiscalConfig(clienteId?: string) {
@@ -388,6 +462,8 @@ export class FiscalItensService {
     dataEmissao: Date;
     chaveAcesso: string;
     modelo: string;
+    cfopDescricao?: string | null;
+    cfopXmlDescricao?: string | null;
   }) {
     const item = row.item;
     return {
@@ -404,13 +480,28 @@ export class FiscalItensService {
         cfop: item.cfop,
         revisao_necessaria: item.cfopRevisaoNecessaria,
         cfop_sugerido:
-          item.cfopRevisaoNecessaria && item.cfopXml
+          item.cfopRevisaoNecessaria &&
+            item.cfopXml &&
+            item.cfopOrigemResolucao !== 'PENDENTE_CLASSIFICACAO'
             ? convertDirection(
-                item.cfopXml,
-                item.tipoOperacaoEscriturada as 'ENTRADA' | 'SAIDA',
-              )
+              item.cfopXml,
+              item.tipoOperacaoEscriturada as 'ENTRADA' | 'SAIDA',
+            )
             : null,
         destinacao_mercadoria: item.destinacaoMercadoria,
+        destinacao_efetiva:
+          item.destinacaoMercadoria ??
+          (Number(item.destinacaoConfianca) >= 0.9
+            ? item.destinacaoInferida
+            : null),
+        destinacao_inferida: item.destinacaoInferida,
+        destinacao_origem: item.destinacaoOrigem,
+        destinacao_confianca: item.destinacaoConfianca,
+        destinacao_justificativa: item.destinacaoJustificativa,
+        origem_resolucao: item.cfopOrigemResolucao,
+        motivo_resolucao: item.cfopMotivoResolucao,
+        cfop_descricao: row.cfopDescricao ?? null,
+        cfop_xml_descricao: row.cfopXmlDescricao ?? null,
       },
       produto: {
         codigo_produto: item.codigoProduto,
@@ -443,8 +534,11 @@ export class FiscalItensService {
       },
       icms: {
         origem_mercadoria: item.origemMercadoria,
+        origem_descricao: descricaoCst('ORIGEM', item.origemMercadoria),
         cst: item.cstIcms,
+        cst_descricao: descricaoCst('ICMS', item.cstIcms),
         csosn: item.csosnIcms,
+        csosn_descricao: descricaoCst('CSOSN', item.csosnIcms),
         modalidade_bc: item.modalidadeBcIcms,
         percentual_reducao_bc: item.percentualReducaoBcIcms,
         valor_bc: item.valorBcIcms,
@@ -486,6 +580,7 @@ export class FiscalItensService {
       },
       ipi: {
         cst: item.cstIpi,
+        cst_descricao: descricaoCst('IPI', item.cstIpi),
         classe_enquadramento: item.classeEnquadramentoIpi,
         codigo_enquadramento: item.codigoEnquadramentoIpi,
         cnpj_produtor: item.cnpjProdutorIpi,
@@ -497,6 +592,7 @@ export class FiscalItensService {
       },
       pis: {
         cst: item.cstPis,
+        cst_descricao: descricaoCst('PIS', item.cstPis),
         valor_bc: item.valorBcPis,
         aliquota_percentual: item.aliquotaPisPercentual,
         quantidade_bc: item.quantidadeBcPis,
@@ -510,6 +606,7 @@ export class FiscalItensService {
       },
       cofins: {
         cst: item.cstCofins,
+        cst_descricao: descricaoCst('COFINS', item.cstCofins),
         valor_bc: item.valorBcCofins,
         aliquota_percentual: item.aliquotaCofinsPercentual,
         quantidade_bc: item.quantidadeBcCofins,

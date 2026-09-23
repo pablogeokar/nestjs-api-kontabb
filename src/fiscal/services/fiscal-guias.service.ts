@@ -37,16 +37,25 @@ export interface CriarGuiaInput {
 
 @Injectable()
 export class FiscalGuiasService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(private readonly database: DatabaseService) { }
 
   async criarGuia(input: CriarGuiaInput) {
     await this.assertCliente(input.clienteId);
     const { competencia } = this.competenciaRange(input.competencia);
-    const valorTotal = fromScaledInteger(
-      toScaledInteger(input.valorPrincipal) +
-        toScaledInteger(input.valorMulta ?? '0') +
-        toScaledInteger(input.valorJuros ?? '0'),
+
+    // R6.4/R6.3: reforça as invariantes do CriarGuiaDto no serviço para que um
+    // chamador fora do HTTP (sem ValidationPipe) não as burle. Cada componente
+    // (principal, multa, juros) deve ser um decimal NÃO NEGATIVO — checado
+    // individualmente para que um principal negativo não seja compensado por
+    // uma multa positiva a fim de passar apenas na validação do total.
+    const principal = this.parseValorNaoNegativo(
+      input.valorPrincipal,
+      'principal',
     );
+    const multa = this.parseValorNaoNegativo(input.valorMulta ?? '0', 'multa');
+    const juros = this.parseValorNaoNegativo(input.valorJuros ?? '0', 'juros');
+
+    const valorTotal = fromScaledInteger(principal + multa + juros);
     if (toScaledInteger(valorTotal) <= 0n) {
       throw new BadRequestException(
         'O valor total da guia deve ser maior que zero.',
@@ -187,6 +196,27 @@ export class FiscalGuiasService {
         error instanceof Error ? error.message : 'Competência inválida.',
       );
     }
+  }
+
+  /**
+   * R6.4/R6.3: converte um componente monetário em inteiro escalado, exigindo
+   * que seja um decimal não negativo, independentemente do ValidationPipe.
+   */
+  private parseValorNaoNegativo(valor: string, rotulo: string): bigint {
+    let escalado: bigint;
+    try {
+      escalado = toScaledInteger(valor);
+    } catch {
+      throw new BadRequestException(
+        `Valor ${rotulo} inválido: "${valor}".`,
+      );
+    }
+    if (escalado < 0n) {
+      throw new BadRequestException(
+        `O valor ${rotulo} da guia não pode ser negativo.`,
+      );
+    }
+    return escalado;
   }
 
   private async assertCliente(clienteId: string) {

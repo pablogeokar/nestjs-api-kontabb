@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsNotIn,
   IsOptional,
   IsString,
@@ -71,6 +72,17 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CRON_SECRET?: string;
+
+  // Fase 0 (F07): feature flag `sped.blocoG.leiauteHomologado`. Enquanto o
+  // leiaute do Bloco G não estiver homologado (Fase 2), esta flag permanece
+  // `false` e a geração de arquivos EFD que exijam Bloco G é bloqueada.
+  // Fonte única de verdade consumida por efd-icms-ipi.service.ts.
+  @IsString()
+  @IsOptional()
+  @IsIn(['true', 'false'], {
+    message: 'SPED_BLOCO_G_LEIAUTE_HOMOLOGADO deve ser "true" ou "false"',
+  })
+  SPED_BLOCO_G_LEIAUTE_HOMOLOGADO?: string;
 
   @IsString()
   @IsOptional()

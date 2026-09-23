@@ -29,6 +29,11 @@ import { MailService } from '../mail/mail.service';
 import { hasValidFileSignature } from '../common/file-validation';
 import { extractPdfText } from '../common/pdf-extraction';
 import { extractDadosFolhaPagamento } from '../common/pdf-extraction-rh';
+import {
+  extractDadosFerias,
+  isReciboFerias,
+  type DadosFerias,
+} from '../common/pdf-extraction-ferias';
 import { sanitizeFileName } from '../common/file-validation';
 import type { CurrentUser as CurrentUserType } from '../common/types';
 
@@ -39,6 +44,8 @@ interface RhFileResult {
   cnpj?: string;
   competencia?: string;
   totalFuncionarios?: number;
+  tipo?: 'FOLHA_MENSAL' | 'FERIAS';
+  funcionarioNome?: string;
 }
 
 @ApiTags('RH (Admin)')
@@ -54,7 +61,7 @@ export class RhUploadController {
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
     private readonly mail: MailService,
-  ) { }
+  ) {}
 
   @Post('upload')
   @HttpCode(HttpStatus.OK)
@@ -153,6 +160,18 @@ export class RhUploadController {
       };
     }
 
+    if (isReciboFerias(text)) {
+      return this.processFeriasFile(file, text, ctx);
+    }
+
+    return this.processFolhaFile(file, text, ctx);
+  }
+
+  private async processFolhaFile(
+    file: Express.Multer.File,
+    text: string,
+    ctx: { requestId: string; actorUserId: string },
+  ): Promise<RhFileResult> {
     // Parse payroll data
     const dados = extractDadosFolhaPagamento(text);
     if (!dados) {
@@ -160,7 +179,7 @@ export class RhUploadController {
         fileName: file.originalname,
         success: false,
         message:
-          'O arquivo não é uma folha de pagamento válida ou não foi possível extrair os dados.',
+          'O arquivo não é uma folha de pagamento ou recibo de férias válido.',
       };
     }
 
@@ -173,6 +192,7 @@ export class RhUploadController {
         success: false,
         message: `Cliente com CNPJ ${dados.cnpj} não encontrado.`,
         cnpj: dados.cnpj,
+        tipo: 'FOLHA_MENSAL',
       };
     }
 
@@ -188,6 +208,7 @@ export class RhUploadController {
         message: `Folha duplicada: já existe uma folha para a competência ${dados.competencia} deste cliente.`,
         cnpj: dados.cnpj,
         competencia: dados.competencia,
+        tipo: 'FOLHA_MENSAL',
       };
     }
 
@@ -210,6 +231,7 @@ export class RhUploadController {
         fileName: file.originalname,
         success: false,
         message: 'Falha ao armazenar o arquivo. Tente novamente.',
+        tipo: 'FOLHA_MENSAL',
       };
     }
 
@@ -225,7 +247,7 @@ export class RhUploadController {
 
     if (!result.ok) {
       // Cleanup R2 on failure
-      await this.storage.delete(r2Key).catch(() => { });
+      await this.storage.delete(r2Key).catch(() => {});
       const message =
         result.code === 'FOLHA_DUPLICADA'
           ? `Folha duplicada: já existe uma folha para a competência ${dados.competencia}.`
@@ -235,6 +257,7 @@ export class RhUploadController {
         success: false,
         message,
         cnpj: dados.cnpj,
+        tipo: 'FOLHA_MENSAL',
       };
     }
 
@@ -264,6 +287,131 @@ export class RhUploadController {
       cnpj: dados.cnpj,
       competencia: dados.competencia,
       totalFuncionarios: dados.totalFuncionarios,
+      tipo: 'FOLHA_MENSAL',
+    };
+  }
+
+  private async processFeriasFile(
+    file: Express.Multer.File,
+    text: string,
+    ctx: { requestId: string; actorUserId: string },
+  ): Promise<RhFileResult> {
+    const dados = extractDadosFerias(text);
+    if (!dados) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message:
+          'O arquivo foi identificado como férias, mas não foi possível extrair os dados necessários.',
+        tipo: 'FERIAS',
+      };
+    }
+
+    const cnpjDigits = dados.cnpj.replace(/\D/g, '');
+    const client = await this.clientesService.findClientForUpload(cnpjDigits);
+    if (!client) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: `Cliente com CNPJ ${dados.cnpj} não encontrado.`,
+        cnpj: dados.cnpj,
+        tipo: 'FERIAS',
+      };
+    }
+
+    const existing = await this.rhService.checkDuplicateFerias(
+      client.id,
+      dados.funcionario.codigoFuncionario,
+      dados.periodoInicio,
+      dados.periodoFim,
+    );
+    if (existing) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: `Recibo de férias duplicado: já existe um registro para ${dados.funcionario.nomeCompleto} no período de ${dados.gozoInicio} a ${dados.gozoFim}.`,
+        cnpj: dados.cnpj,
+        competencia: dados.competencia,
+        tipo: 'FERIAS',
+        funcionarioNome: dados.funcionario.nomeCompleto,
+      };
+    }
+
+    const feriasUuid = crypto.randomUUID();
+    const [month, year] = dados.competencia.split('/');
+    const r2Key = `rh/${cnpjDigits}/${year}/${month}/ferias-${dados.funcionario.codigoFuncionario}-${feriasUuid}.pdf`;
+
+    try {
+      await this.storage.upload(
+        r2Key,
+        Buffer.from(file.buffer),
+        'application/pdf',
+      );
+    } catch (error) {
+      this.logger.error('rh_ferias_upload_storage_failed', error, {
+        requestId: ctx.requestId,
+      });
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: 'Falha ao armazenar o arquivo. Tente novamente.',
+        tipo: 'FERIAS',
+      };
+    }
+
+    const result = await this.rhService.processarFerias({
+      dados,
+      clienteId: client.id,
+      r2Key,
+      fileName: sanitizeFileName(file.originalname),
+      actorUserId: ctx.actorUserId,
+      requestId: ctx.requestId,
+    });
+
+    if (!result.ok) {
+      await this.storage.delete(r2Key).catch(() => {});
+      const message =
+        result.code === 'FERIAS_DUPLICADAS'
+          ? `Recibo de férias duplicado para ${dados.funcionario.nomeCompleto}.`
+          : 'Falha ao processar o recibo de férias. Tente novamente.';
+      return {
+        fileName: file.originalname,
+        success: false,
+        message,
+        cnpj: dados.cnpj,
+        tipo: 'FERIAS',
+        funcionarioNome: dados.funcionario.nomeCompleto,
+      };
+    }
+
+    // Notify client via email (fire-and-forget)
+    if (!client.suspenso && client.emails && client.emails.length > 0) {
+      this.mail
+        .sendFeriasNotificationEmail({
+          to: client.emails,
+          clientName: client.razaoSocial,
+          funcionarioNome: dados.funcionario.nomeCompleto,
+          competencia: dados.competencia,
+          periodoGozo: `${dados.gozoInicio} a ${dados.gozoFim}`,
+          totalLiquido: String(dados.totalLiquido),
+        })
+        .catch((err) => {
+          this.logger.error('rh_ferias_email_notification_failed', err, {
+            requestId: ctx.requestId,
+            clienteId: client.id,
+          });
+        });
+    }
+
+    return {
+      fileName: file.originalname,
+      success: true,
+      message: `Recibo de férias de ${dados.funcionario.nomeCompleto} processado com sucesso.`,
+      cnpj: dados.cnpj,
+      competencia: dados.competencia,
+      totalFuncionarios: 1,
+      tipo: 'FERIAS',
+      funcionarioNome: dados.funcionario.nomeCompleto,
     };
   }
 }

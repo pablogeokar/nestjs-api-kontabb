@@ -210,8 +210,8 @@ export class FiscalCteService {
     const sign = input.cte.tpCte === '2' ? -1 : 1;
     const valorIcmsCreditavel =
       decisao.creditaIcms && (cfop.apropriaCreditoIcms ?? true)
-      ? signedDecimal(input.cte.valorIcms ?? '0', sign)
-      : '0.00';
+        ? signedDecimal(input.cte.valorIcms ?? '0', sign)
+        : '0.00';
 
     return {
       values: {

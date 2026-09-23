@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   unique,
   foreignKey,
+  primaryKey,
   varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -441,9 +442,13 @@ export const folhasPagamento = pgTable(
     }),
     arquivoKey: text('arquivo_key').notNull(),
     arquivoNome: text('arquivo_nome').notNull(),
+    tipo: text('tipo').notNull().default('FOLHA_MENSAL'),
     competencia: text('competencia').notNull(),
     periodoInicio: date('periodo_inicio').notNull(),
     periodoFim: date('periodo_fim').notNull(),
+    periodoAquisitivoInicio: date('periodo_aquisitivo_inicio'),
+    periodoAquisitivoFim: date('periodo_aquisitivo_fim'),
+    diasFerias: integer('dias_ferias'),
     totalBruto: numeric('total_bruto', { precision: 12, scale: 2 }).notNull(),
     totalDescontos: numeric('total_descontos', {
       precision: 12,
@@ -476,10 +481,9 @@ export const folhasPagamento = pgTable(
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('uidx_folhas_cliente_competencia').on(
-      table.clienteId,
-      table.competencia,
-    ),
+    uniqueIndex('uidx_folhas_cliente_competencia')
+      .on(table.clienteId, table.competencia)
+      .where(sql`${table.tipo} = 'FOLHA_MENSAL'`),
     unique('uq_folhas_id_cliente').on(table.id, table.clienteId),
     index('idx_folhas_cliente_id').on(table.clienteId),
     index('idx_folhas_competencia').on(table.competencia),
@@ -490,6 +494,10 @@ export const folhasPagamento = pgTable(
     check(
       'chk_folhas_periodo',
       sql`${table.periodoInicio} <= ${table.periodoFim}`,
+    ),
+    check(
+      'chk_folhas_tipo',
+      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`,
     ),
     check(
       'chk_folhas_totais',
@@ -984,6 +992,17 @@ export const documentosFiscaisItens = pgTable(
     // Destinação econômica atribuída pelo usuário (override manual) que
     // realimenta o motor de regras para re-resolver o CFOP escriturado.
     destinacaoMercadoria: varchar('destinacao_mercadoria', { length: 20 }),
+    destinacaoInferida: varchar('destinacao_inferida', { length: 20 }),
+    destinacaoOrigem: varchar('destinacao_origem', { length: 20 }),
+    destinacaoConfianca: numeric('destinacao_confianca', {
+      precision: 4,
+      scale: 3,
+    }),
+    destinacaoJustificativa: text('destinacao_justificativa'),
+    cfopManual: boolean('cfop_manual').notNull().default(false),
+    cfopOrigemResolucao: varchar('cfop_origem_resolucao', { length: 30 }),
+    cfopMotivoResolucao: text('cfop_motivo_resolucao'),
+
     unidadeComercial: varchar('unidade_comercial', { length: 10 }).notNull(),
     quantidadeComercial: numeric('quantidade_comercial', {
       precision: 15,
@@ -1235,6 +1254,18 @@ export const documentosFiscaisItens = pgTable(
     index('idx_item_cst_pis').on(table.cstPis),
     index('idx_item_cst_cofins').on(table.cstCofins),
     index('idx_item_ncm').on(table.ncm),
+    check(
+      'chk_item_destinacao_inferida',
+      sql`${table.destinacaoInferida} IS NULL OR ${table.destinacaoInferida} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
+    ),
+    check(
+      'chk_item_destinacao_confianca',
+      sql`${table.destinacaoConfianca} IS NULL OR ${table.destinacaoConfianca} BETWEEN 0 AND 1`,
+    ),
+    check(
+      'chk_item_destinacao_origem',
+      sql`${table.destinacaoOrigem} IS NULL OR ${table.destinacaoOrigem} IN ('MANUAL', 'HISTORICO', 'NCM_PERFIL', 'HEURISTICA', 'INDETERMINADO')`,
+    ),
     check('chk_item_numero', sql`${table.numeroItem} BETWEEN 1 AND 990`),
     check(
       'chk_item_ind_escala',
@@ -2150,6 +2181,38 @@ export const ciapAtivoPermanente = pgTable(
   ],
 );
 
+// Contenção de idempotência do CIAP (Fase 0 / F06). Registra que a apropriação
+// de uma competência já foi aplicada a um bem, para que retries e chamadas
+// concorrentes não consumam parcelas em duplicidade. Estrutura mínima e
+// aditiva; será absorvida pela razão completa (ciap_apropriacoes) na Fase 2.
+export const ciapCompetenciasApropriadas = pgTable(
+  'ciap_competencias_apropriadas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    bemId: uuid('bem_id')
+      .notNull()
+      .references(() => ciapAtivoPermanente.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    aplicadoEm: timestamp('aplicado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_ciap_competencia_bem').on(
+      table.clienteId,
+      table.competencia,
+      table.bemId,
+    ),
+    index('idx_ciap_competencia_cliente').on(
+      table.clienteId,
+      table.competencia,
+    ),
+  ],
+);
+
 // Guias e obrigações fiscais apuradas (DAE/GNRE/DARF/DAS)
 export const fiscalApuracoesGuias = pgTable(
   'fiscal_apuracoes_guias',
@@ -2204,5 +2267,103 @@ export const fiscalApuracoesGuias = pgTable(
       sql`${table.statusPagamento} IN ('PENDENTE', 'PAGO', 'VENCIDO')`,
     ),
     check('chk_fiscal_guias_uf', sql`${table.ufFavorecida} ~ '^[A-Z]{2}$'`),
+  ],
+);
+
+// Uma confirmação por item: retries não aumentam artificialmente a confiança.
+export const classificacaoDestinacaoAprendizado = pgTable(
+  'classificacao_destinacao_aprendizado',
+  {
+    itemId: uuid('item_id')
+      .primaryKey()
+      .references(() => documentosFiscaisItens.id, { onDelete: 'cascade' }),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    fornecedor: text('fornecedor').notNull(),
+    codigoProduto: text('codigo_produto').notNull(),
+    ncm: varchar('ncm', { length: 8 }).notNull(),
+    destinacao: varchar('destinacao', { length: 20 }).notNull(),
+    ultimaConfirmacaoEm: timestamp('ultima_confirmacao_em', {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('idx_aprendizado_contexto').on(
+      table.clienteId,
+      table.fornecedor,
+      table.codigoProduto,
+      table.ncm,
+    ),
+    check(
+      'chk_aprendizado_destinacao',
+      sql`${table.destinacao} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
+    ),
+    check('chk_aprendizado_ncm', sql`${table.ncm} ~ '^[0-9]{8}$'`),
+  ],
+);
+
+// Decisão de crédito por item — embrião de `fiscal_decisoes_item` (F05 / R3.2,
+// R3.4). Persiste, POR ITEM, a decisão produzida pela função pura
+// `decidirCreditoIcms` (fiscal/services/decisao-credito.ts): o crédito
+// efetivamente admitido, a decisão, o motivo e a versão da regra aplicada.
+//
+// ADITIVA E NÃO-DESTRUTIVA: o valor original destacado no XML permanece
+// intocado em `documentos_fiscais_itens.valor_icms`. `valor_credito_admitido`
+// é armazenado SEPARADAMENTE aqui e NUNCA sobrescreve o original (R3.2).
+//
+// Versionamento (R3.4): a chave é (item_id + regra_versao_id), de modo que uma
+// nova versão de decisão gera uma nova linha em vez de sobrescrever a anterior.
+// `regra_versao_id` usa a sentinela `'SEM_REGRA'` quando não há regra
+// versionada aplicável (evita NULL na PK composta, permitindo unicidade).
+export const fiscalDecisoesItem = pgTable(
+  'fiscal_decisoes_item',
+  {
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => documentosFiscaisItens.id, { onDelete: 'cascade' }),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    // Versão da regra aplicada; sentinela quando não há regra versionada.
+    // Compõe a PK para que novas versões coexistam (R3.4) sem sobrescrever.
+    regraVersaoId: text('regra_versao_id').notNull().default('SEM_REGRA'),
+    // Crédito de ICMS efetivamente admitido pela decisão. Mantido SEPARADO do
+    // `valor_icms` original do XML (R3.2). 0 para VEDADO/EXIGE_REVISAO.
+    valorCreditoAdmitido: numeric('valor_credito_admitido', {
+      precision: 15,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+    decisao: varchar('decisao', { length: 20 }).notNull(),
+    motivo: varchar('motivo', { length: 40 }).notNull(),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'fiscal_decisoes_item_pk',
+      columns: [table.itemId, table.regraVersaoId],
+    }),
+    index('idx_fiscal_decisoes_item_cliente').on(table.clienteId),
+    check(
+      'chk_fiscal_decisao',
+      sql`${table.decisao} IN ('ADMITIDO', 'VEDADO', 'EXIGE_REVISAO')`,
+    ),
+    check(
+      'chk_fiscal_decisao_motivo',
+      sql`${table.motivo} IN ('SEM_VALOR_DESTACADO', 'CST_AUTORIZA_CREDITO', 'CSOSN_PERMITE_CREDITO', 'CFOP_VEDA_CREDITO', 'REGRA_VEDA_CREDITO', 'CST_NAO_AUTORIZADO')`,
+    ),
+    check(
+      'chk_fiscal_decisao_credito_nao_negativo',
+      sql`${table.valorCreditoAdmitido} >= 0`,
+    ),
   ],
 );

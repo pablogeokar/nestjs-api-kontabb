@@ -56,7 +56,10 @@ import { QueryCteFiscalDto } from '../dto/query-cte-fiscal.dto';
 import { EditarCfopDto } from '../dto/editar-cfop.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
-import { FiscalItensService } from '../services/fiscal-itens.service';
+import {
+  FiscalItensService,
+  RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
+} from '../services/fiscal-itens.service';
 import { FiscalCteService } from '../services/fiscal-cte.service';
 import { RegrasFiscaisService } from '../services/regras-fiscais.service';
 import { getRequestId, type RequestWithId } from '../../common/request-id';
@@ -79,7 +82,7 @@ export class AdminFiscalController {
     private readonly fiscalItensService: FiscalItensService,
     private readonly fiscalCteService: FiscalCteService,
     private readonly regrasFiscaisService: RegrasFiscaisService,
-  ) {}
+  ) { }
 
   // ─── Certificados ─────────────────────────────────────────────────────────
 
@@ -353,6 +356,7 @@ export class AdminFiscalController {
       clienteId: query.clienteId,
       tipoDocumento: query.tipoDocumento,
       situacao: query.situacao,
+      tipoOperacao: query.tipoOperacao,
       manifestacaoStatus: query.manifestacaoStatus,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
@@ -393,7 +397,9 @@ export class AdminFiscalController {
   }
 
   @Patch('itens/:itemId/cfop')
-  @ApiOperation({ summary: 'Corrigir manualmente o CFOP escriturado de um item' })
+  @ApiOperation({
+    summary: 'Corrigir manualmente o CFOP escriturado de um item',
+  })
   async editarCfopItem(
     @Param('itemId', new ParseUUIDPipe({ version: '4' })) itemId: string,
     @Body() body: EditarCfopDto,
@@ -434,7 +440,9 @@ export class AdminFiscalController {
   }
 
   @Patch('cte/:documentoId/cfop')
-  @ApiOperation({ summary: 'Corrigir manualmente o CFOP escriturado de um CT-e' })
+  @ApiOperation({
+    summary: 'Corrigir manualmente o CFOP escriturado de um CT-e',
+  })
   async editarCfopCte(
     @Param('documentoId', new ParseUUIDPipe({ version: '4' }))
     documentoId: string,
@@ -582,6 +590,9 @@ export class AdminFiscalController {
       }),
       transportes_bloco_d:
         await this.fiscalCteService.getResumoLivros(filtrosCte),
+      // Resumo documental por CFOP: parcial em relação ao imposto final (R7.3).
+      parcial: true,
+      observacao: RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
     };
   }
 

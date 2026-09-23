@@ -4,6 +4,7 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   and,
@@ -129,7 +130,24 @@ export class EfdIcmsIpiService {
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Feature flag `sped.blocoG.leiauteHomologado` (F07 / Fase 0).
+   *
+   * Fonte única de verdade lida da configuração
+   * (`SPED_BLOCO_G_LEIAUTE_HOMOLOGADO`). Enquanto o leiaute do Bloco G não
+   * estiver homologado (Fase 2), resolve para `false` — o que faz o builder
+   * bloquear a geração de arquivos que exijam Bloco G. As tarefas 5.2/5.3
+   * (bloqueio + motivo na UI) dependem deste mesmo valor.
+   */
+  get blocoGLeiauteHomologado(): boolean {
+    return (
+      this.configService.get<string>('SPED_BLOCO_G_LEIAUTE_HOMOLOGADO') ===
+      'true'
+    );
+  }
 
   async preview(input: {
     clienteId: string;
@@ -812,6 +830,10 @@ export class EfdIcmsIpiService {
       indicadores1010: company.indicadores1010 ?? {},
       inconsistencias,
       ciap: await this.loadCiap(db, clienteId, nfe),
+      // F07 (Fase 0): fonte única de verdade da flag
+      // `sped.blocoG.leiauteHomologado`. Enquanto false, o builder bloqueia a
+      // geração de arquivos que exijam Bloco G (BLOCO_G_LEIAUTE_PENDENTE).
+      blocoGLeiauteHomologado: this.blocoGLeiauteHomologado,
     };
     const builtRecords = buildEfdIcmsIpiRecords(builderInput);
 

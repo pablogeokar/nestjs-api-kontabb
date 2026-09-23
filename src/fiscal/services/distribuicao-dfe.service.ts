@@ -26,7 +26,6 @@ import {
 import {
   controleNsu,
   documentosFiscais,
-  documentosFiscaisItens,
   eventosFiscais,
   certificadosDigitais,
   clientes,
@@ -34,6 +33,7 @@ import {
 import type { PaginationParams } from '../../common/types';
 import { CfopService } from './cfop.service';
 import { FiscalCteService } from './fiscal-cte.service';
+import { reconciliarItensDocumento } from './fiscal-item-reconciliation';
 import type { RegimeTributario } from '../../clientes/clientes.types';
 import {
   buildDocumentoFiscalSpedMetadata,
@@ -455,6 +455,7 @@ export class DistribuicaoDfeService {
     clienteId?: string;
     tipoDocumento?: string;
     situacao?: string;
+    tipoOperacao?: string;
     manifestacaoStatus?: string;
     dataInicio?: Date;
     dataFim?: Date;
@@ -472,6 +473,11 @@ export class DistribuicaoDfeService {
     }
     if (input.situacao) {
       conditions.push(eq(documentosFiscais.situacao, input.situacao));
+    }
+    if (input.tipoOperacao) {
+      conditions.push(
+        eq(documentosFiscais.tipoOperacaoEscriturada, input.tipoOperacao),
+      );
     }
     if (input.manifestacaoStatus) {
       conditions.push(
@@ -531,7 +537,9 @@ export class DistribuicaoDfeService {
           numeroDocumento: documentosFiscais.numeroDocumento,
           emitenteCnpjCpf: documentosFiscais.emitenteCnpjCpf,
           emitenteRazaoSocial: documentosFiscais.emitenteRazaoSocial,
-          emitenteUf: sql<string | null>`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
+          emitenteUf: sql<
+            string | null
+          >`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
           cfopsEscriturados: sql<string[]>`CASE
             WHEN ${documentosFiscais.modelo} = '57' THEN COALESCE((
               SELECT array_agg(DISTINCT cte_cfop.cfop ORDER BY cte_cfop.cfop)
@@ -899,12 +907,22 @@ export class DistribuicaoDfeService {
 
     if (isDuplicate) {
       await this.database.db.transaction(async (tx) => {
+        // F01: serializa reimportações concorrentes do mesmo documento
+        // (manual × DF-e) por cliente + chave, evitando corrida na reconciliação.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${clienteId}:${parsed.chaveAcesso}`}, 0))`,
+        );
         await tx
           .update(documentosFiscais)
           .set({
             tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
             tpNfXml: parsed.tpNfXml,
             ...spedMetadata,
+            // F01/R1.5: um evento de cancelamento reprocessa o documento já
+            // persistido. A situação DEVE convergir para CANCELADA (ou o valor
+            // corrente do XML) via UPDATE — nunca deletando a linha original
+            // nem seus itens. A reconciliação abaixo preserva ids e decisões.
+            situacao: parsed.situacao,
             ...(parsed.tipoDocumento !== 'CTE' && {
               escriturado: true,
               escrituracaoStatus: nfePendenteRevisao
@@ -914,22 +932,15 @@ export class DistribuicaoDfeService {
             atualizadoEm: new Date(),
           })
           .where(eq(documentosFiscais.id, existing[0].id));
-        await tx
-          .delete(documentosFiscaisItens)
-          .where(eq(documentosFiscaisItens.documentoFiscalId, existing[0].id));
-        for (
-          let offset = 0;
-          offset < escrituracao.itens.length;
-          offset += 300
-        ) {
-          await tx.insert(documentosFiscaisItens).values(
-            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
-              ...item,
-              documentoFiscalId: existing[0].id,
-              clienteId,
-            })),
-          );
-        }
+        // F01: reconciliação idempotente por numeroItem — preserva ids dos
+        // itens e as decisões humanas (cfop manual, destinação). Não deleta em
+        // massa, portanto não aciona o cascade sobre o aprendizado de
+        // classificação nem quebra o vínculo com o CIAP.
+        await reconciliarItensDocumento(tx, {
+          documentoFiscalId: existing[0].id,
+          clienteId,
+          itens: escrituracao.itens,
+        });
         if (ctePreparada) {
           await this.fiscalCteService.persistirEscrituracao(tx, {
             documentoFiscalId: existing[0].id,
@@ -940,7 +951,7 @@ export class DistribuicaoDfeService {
         }
       });
       this.logger.debug(
-        `Documento ${parsed.chaveAcesso} já existe; itens fiscais reconciliados.`,
+        `Documento ${parsed.chaveAcesso} já existe; itens fiscais reconciliados sem apagar decisões.`,
       );
       return false;
     }
@@ -988,6 +999,14 @@ export class DistribuicaoDfeService {
 
     try {
       await this.database.db.transaction(async (tx) => {
+        // F01/R1.6/R1.7: serializa reimportações concorrentes do mesmo
+        // documento (manual × DF-e) por cliente + chave, evitando corrida na
+        // reconciliação também no caminho de substituição (`onConflictDoUpdate`).
+        // A chave do lock DEVE ser cliente + chaveAcesso (NÃO o NSU) para que os
+        // dois canais convirjam para o mesmo documento lógico.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${clienteId}:${parsed.chaveAcesso}`}, 0))`,
+        );
         const persisted = await tx
           .insert(documentosFiscais)
           .values(values)
@@ -1027,24 +1046,17 @@ export class DistribuicaoDfeService {
           .returning({ id: documentosFiscais.id });
         const documentoFiscalId = persisted[0].id;
 
-        await tx
-          .delete(documentosFiscaisItens)
-          .where(
-            eq(documentosFiscaisItens.documentoFiscalId, documentoFiscalId),
-          );
-        for (
-          let offset = 0;
-          offset < escrituracao.itens.length;
-          offset += 300
-        ) {
-          await tx.insert(documentosFiscaisItens).values(
-            escrituracao.itens.slice(offset, offset + 300).map((item) => ({
-              ...item,
-              documentoFiscalId,
-              clienteId,
-            })),
-          );
-        }
+        // F01: reconciliação idempotente por numeroItem — preserva ids dos
+        // itens e as decisões humanas (cfop manual, destinação) mesmo no
+        // caminho de substituição (`onConflictDoUpdate`), em que o documento
+        // pode já existir com itens. Não deleta em massa, portanto não aciona
+        // o cascade sobre o aprendizado de classificação nem quebra o vínculo
+        // com o CIAP.
+        await reconciliarItensDocumento(tx, {
+          documentoFiscalId,
+          clienteId,
+          itens: escrituracao.itens,
+        });
         if (ctePreparada) {
           await this.fiscalCteService.persistirEscrituracao(tx, {
             documentoFiscalId,

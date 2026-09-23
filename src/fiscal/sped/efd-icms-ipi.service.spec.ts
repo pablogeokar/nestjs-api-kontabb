@@ -1,6 +1,9 @@
+import { UnprocessableEntityException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import type { spedAjustesApuracao } from '../../database/schema';
 import type { SpedDocumentoNfeBuilderData } from './efd-icms-ipi.builder';
 import {
+  EfdIcmsIpiService,
   inputTaxSignals,
   isInventoryDueForPeriod,
   pendingDocumentReviewMessage,
@@ -9,6 +12,10 @@ import {
   validateAdjustmentAuditTrail,
   type SpedFcpTaxSignals,
 } from './efd-icms-ipi.service';
+import type { DatabaseService } from '../../database/database.service';
+import type { StorageService } from '../../storage/storage.service';
+import type { AppLogger } from '../../common/logger.service';
+import type { SpedInconsistencia } from './sped-efd.types';
 
 type Adjustment = typeof spedAjustesApuracao.$inferSelect;
 
@@ -167,5 +174,147 @@ describe('auditabilidade da apuração', () => {
         severidade: 'ERRO',
       }),
     ]);
+  });
+});
+
+describe('F07 — bloqueio de geração por Bloco G pendente (R3.1/R3.3)', () => {
+  function makeService(configValue: string | undefined) {
+    const upload = jest.fn();
+    const storage = { upload } as unknown as StorageService;
+    // A transação apenas executa o callback recebido, como no runtime.
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      insert: jest.fn(),
+    };
+    const db = {
+      transaction: jest.fn(
+        async (cb: (executor: typeof tx) => Promise<unknown>) => cb(tx),
+      ),
+    };
+    const database = { db } as unknown as DatabaseService;
+    const logger = {
+      error: jest.fn(),
+      warn: jest.fn(),
+      log: jest.fn(),
+    } as unknown as AppLogger;
+    const configService = {
+      get: jest.fn((key: string) =>
+        key === 'SPED_BLOCO_G_LEIAUTE_HOMOLOGADO' ? configValue : undefined,
+      ),
+    } as unknown as ConfigService;
+
+    const service = new EfdIcmsIpiService(
+      database,
+      storage,
+      logger,
+      configService,
+    );
+    return { service, upload };
+  }
+
+  it('resolve a flag `sped.blocoG.leiauteHomologado` a partir da configuração', () => {
+    // Fase 0: default (ausente) e qualquer valor != "true" mantêm bloqueado.
+    expect(makeService(undefined).service.blocoGLeiauteHomologado).toBe(false);
+    expect(makeService('false').service.blocoGLeiauteHomologado).toBe(false);
+    // Só a homologação explícita (Fase 2) libera a serialização do Bloco G.
+    expect(makeService('true').service.blocoGLeiauteHomologado).toBe(true);
+  });
+
+  it('gerar() recusa o arquivo quando a prévia tem BLOCO_G_LEIAUTE_PENDENTE (ERRO)', async () => {
+    const { service, upload } = makeService('false');
+    const inconsistencia: SpedInconsistencia = {
+      codigo: 'BLOCO_G_LEIAUTE_PENDENTE',
+      severidade: 'ERRO',
+      mensagem:
+        'Geração bloqueada: o CIAP exige o Bloco G, cujo leiaute está em correção.',
+    };
+    // A preparação end-to-end exige banco; aqui isolamos o contrato de saída:
+    // com inconsistência ERRO o `podeGerar` é falso e a geração é abortada.
+    // `preparar` é privado; para isolar o contrato de saída, fornecemos um
+    // retorno com tipo estrutural explícito (não `any`) e o injetamos no spy.
+    const preparado: {
+      preview: {
+        podeGerar: boolean;
+        inconsistencias: SpedInconsistencia[];
+        perfil: string;
+      };
+      records: unknown[];
+      clientDocument: string;
+      participantes: unknown[];
+      unidades: unknown[];
+      itensCatalogo: unknown[];
+    } = {
+      preview: {
+        podeGerar: false,
+        inconsistencias: [inconsistencia],
+        perfil: 'A',
+      },
+      records: [],
+      clientDocument: '09157533000156',
+      participantes: [],
+      unidades: [],
+      itensCatalogo: [],
+    };
+    const prepararSpy = jest
+      .spyOn(
+        service as unknown as { preparar: EfdIcmsIpiService['preview'] },
+        'preparar' as never,
+      )
+      .mockResolvedValue(preparado as never);
+
+    await expect(
+      service.gerar({
+        clienteId: 'cliente-1',
+        competencia: '2026-08',
+        finalidade: '0',
+        actorUserId: 'user-1',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SPED_INCONSISTENTE',
+        inconsistencias: expect.arrayContaining([
+          expect.objectContaining({ codigo: 'BLOCO_G_LEIAUTE_PENDENTE' }),
+        ]) as unknown,
+      },
+    });
+    // Contrato central: nenhum arquivo é escrito no storage.
+    expect(upload).not.toHaveBeenCalled();
+    prepararSpy.mockRestore();
+  });
+
+  it('gerar() propaga UnprocessableEntityException do tipo SPED_INCONSISTENTE', async () => {
+    const { service } = makeService('false');
+    jest
+      .spyOn(
+        service as unknown as { preparar: EfdIcmsIpiService['preview'] },
+        'preparar' as never,
+      )
+      .mockResolvedValue({
+        preview: {
+          podeGerar: false,
+          inconsistencias: [
+            {
+              codigo: 'BLOCO_G_LEIAUTE_PENDENTE',
+              severidade: 'ERRO',
+              mensagem: 'bloqueado',
+            },
+          ],
+          perfil: 'A',
+        },
+        records: [],
+        clientDocument: '09157533000156',
+        participantes: [],
+        unidades: [],
+        itensCatalogo: [],
+      } as never);
+
+    await expect(
+      service.gerar({
+        clienteId: 'cliente-1',
+        competencia: '2026-08',
+        finalidade: '0',
+        actorUserId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 });

@@ -71,7 +71,7 @@ export class ClientesController {
     private readonly cnpjLookupService: CnpjLookupService,
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   @Get()
   @ApiOperation({

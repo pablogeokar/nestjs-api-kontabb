@@ -60,7 +60,7 @@ export class UploadController {
     private readonly clientesService: ClientesService,
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
-  ) { }
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.OK)

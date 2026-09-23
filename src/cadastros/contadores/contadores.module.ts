@@ -9,4 +9,4 @@ import { AuthModule } from '../../auth/auth.module';
   providers: [ContadoresService],
   exports: [ContadoresService],
 })
-export class ContadoresModule { }
+export class ContadoresModule {}

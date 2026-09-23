@@ -44,6 +44,15 @@ export class QueryDocumentosFiscaisDto {
   situacao?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Filtrar por tipo de operação escriturada (entradas ou saídas)',
+    enum: ['ENTRADA', 'SAIDA'],
+  })
+  @IsOptional()
+  @IsIn(['ENTRADA', 'SAIDA'])
+  tipoOperacao?: string;
+
+  @ApiPropertyOptional({
     description: 'Filtrar por status de manifestação',
     enum: [
       'SEM_MANIFESTACAO',

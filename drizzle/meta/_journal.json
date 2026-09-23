@@ -50,6 +50,34 @@
       "when": 1788479883244,
       "tag": "0006_suspender_cliente",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788734940226,
+      "tag": "0007_escrituracao_inteligente",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789308508536,
+      "tag": "0008_messy_bullseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789318697324,
+      "tag": "0009_fiscal_decisoes_item",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790081377903,
+      "tag": "0010_adicionar_ferias_rh",
+      "breakpoints": true
     }
   ]
 }

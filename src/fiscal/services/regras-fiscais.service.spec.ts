@@ -75,7 +75,7 @@ describe('RegrasFiscaisService', () => {
       exigeDifalEntrada: false,
     });
     const service = new RegrasFiscaisService(
-      { db } as never,
+      { db: transactionalMock(db) } as never,
       {} as never,
       { resolverCfopEquivalenteDetalhado: resolver } as never,
     );
@@ -141,7 +141,7 @@ describe('RegrasFiscaisService', () => {
       origemResolucao: 'ALGORITMO',
     });
     const service = new RegrasFiscaisService(
-      { db } as never,
+      { db: transactionalMock(db) } as never,
       {} as never,
       { resolverCfopEquivalenteDetalhado: resolver } as never,
     );
@@ -170,7 +170,7 @@ describe('RegrasFiscaisService', () => {
       }),
     };
     const service = new RegrasFiscaisService(
-      { db } as never,
+      { db: transactionalMock(db) } as never,
       {} as never,
       {} as never,
     );
@@ -183,3 +183,44 @@ describe('RegrasFiscaisService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+// Forma mínima da cadeia de query do mock, para evitar acessos em `any`.
+interface MockQueryChain {
+  from: () => {
+    innerJoin: () => { where: () => { limit: () => unknown } };
+    [key: string]: unknown;
+  };
+}
+
+function transactionalMock(db: { select: jest.Mock; update?: jest.Mock }) {
+  const original = db.select as unknown as () => MockQueryChain;
+  const tx = {
+    ...db,
+    select: jest.fn().mockImplementation(() => {
+      const query = original();
+      const from = query.from();
+      const limit = from.innerJoin().where().limit;
+      return {
+        from: () => ({
+          ...from,
+          where: jest.fn().mockResolvedValue([]),
+          innerJoin: () => ({
+            where: () => ({ limit: () => ({ for: () => limit() }) }),
+          }),
+        }),
+      };
+    }),
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+      }),
+    }),
+    delete: jest
+      .fn()
+      .mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+  };
+  return {
+    ...tx,
+    transaction: (callback: (value: typeof tx) => unknown) => callback(tx),
+  };
+}

@@ -14,6 +14,7 @@ import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import { AppLogger } from '../common/logger.service';
 import { resultRows } from '../common/db-result';
 import type { DadosFolhaPagamento } from '../common/pdf-extraction-rh';
+import type { DadosFerias } from '../common/pdf-extraction-ferias';
 import type { PaginationParams } from '../common/types';
 
 @Injectable()
@@ -110,13 +111,13 @@ export class RhService {
         ),
         inserted_folha AS (
           INSERT INTO folhas_pagamento (
-            id, cliente_id, arquivo_key, arquivo_nome, competencia,
+            id, cliente_id, arquivo_key, arquivo_nome, tipo, competencia,
             periodo_inicio, periodo_fim, total_bruto, total_descontos,
             total_liquido, total_funcionarios, total_inss, total_fgts,
             total_irrf, total_salario_familia, uploadado_por
           ) VALUES (
             ${folhaId}::uuid, ${clienteId}::uuid, ${r2Key}, ${fileName},
-            ${dados.competencia}, ${dados.periodoInicio}::date,
+            'FOLHA_MENSAL', ${dados.competencia}, ${dados.periodoInicio}::date,
             ${dados.periodoFim}::date, ${dados.totalBruto}::numeric,
             ${dados.totalDescontos}::numeric, ${dados.totalLiquido}::numeric,
             ${dados.totalFuncionarios}, ${dados.totalInss}::numeric,
@@ -209,7 +210,178 @@ export class RhService {
     }
   }
 
-  // ─── Check duplicate ───
+  // ─── Process vacation document (Férias) upload ───
+  async processarFerias(input: {
+    dados: DadosFerias;
+    clienteId: string;
+    r2Key: string;
+    fileName: string;
+    actorUserId: string;
+    requestId?: string;
+  }): Promise<{ ok: boolean; folhaId?: string; code?: string }> {
+    const { dados, clienteId, r2Key, fileName, actorUserId } = input;
+    const func = dados.funcionario;
+
+    try {
+      const folhaId = crypto.randomUUID();
+      const funcionariosPayload = JSON.stringify([
+        {
+          codigo_funcionario: func.codigoFuncionario,
+          nome_completo: func.nomeCompleto,
+          data_admissao: func.dataAdmissao
+            ? this.parseDataAdmissao(func.dataAdmissao)
+            : null,
+          cargo: func.cargo,
+          salario_base: func.salarioBase,
+          total_proventos: func.totalProventos,
+          total_descontos: func.totalDescontos,
+          salario_liquido: func.salarioLiquido,
+          base_inss: func.baseInss,
+          aliquota_inss: func.aliquotaInss,
+          valor_inss: func.valorInss,
+          base_fgts: func.baseFgts,
+          valor_fgts: func.valorFgts,
+          base_irrf: func.baseIrrf,
+          valor_irrf: func.valorIrrf,
+          referencia: `Férias ${dados.diasGozo} dias`,
+          codigo_folha: null,
+          dependentes_ir: 0,
+          dependentes_sf: 0,
+          rubricas: func.rubricas,
+        },
+      ]);
+
+      const result = await this.database.db.execute(sql`
+        WITH input_funcionarios AS MATERIALIZED (
+          SELECT *
+          FROM jsonb_to_recordset(${funcionariosPayload}::jsonb) AS f(
+            codigo_funcionario text,
+            nome_completo text,
+            data_admissao date,
+            cargo text,
+            salario_base numeric,
+            total_proventos numeric,
+            total_descontos numeric,
+            salario_liquido numeric,
+            base_inss numeric,
+            aliquota_inss numeric,
+            valor_inss numeric,
+            base_fgts numeric,
+            valor_fgts numeric,
+            base_irrf numeric,
+            valor_irrf numeric,
+            referencia text,
+            codigo_folha text,
+            dependentes_ir integer,
+            dependentes_sf integer,
+            rubricas jsonb
+          )
+        ),
+        inserted_folha AS (
+          INSERT INTO folhas_pagamento (
+            id, cliente_id, arquivo_key, arquivo_nome, tipo, competencia,
+            periodo_inicio, periodo_fim, periodo_aquisitivo_inicio,
+            periodo_aquisitivo_fim, dias_ferias, total_bruto, total_descontos,
+            total_liquido, total_funcionarios, total_inss, total_fgts,
+            total_irrf, total_salario_familia, uploadado_por
+          ) VALUES (
+            ${folhaId}::uuid, ${clienteId}::uuid, ${r2Key}, ${fileName},
+            'FERIAS', ${dados.competencia}, ${dados.periodoInicio}::date,
+            ${dados.periodoFim}::date,
+            ${dados.aquisitivoInicio ? this.parseDataAdmissao(dados.aquisitivoInicio) : null}::date,
+            ${dados.aquisitivoFim ? this.parseDataAdmissao(dados.aquisitivoFim) : null}::date,
+            ${dados.diasGozo}::integer, ${dados.totalBruto}::numeric,
+            ${dados.totalDescontos}::numeric, ${dados.totalLiquido}::numeric,
+            1, ${dados.totalInss}::numeric, 0::numeric, 0::numeric, 0::numeric,
+            ${actorUserId}
+          )
+          RETURNING id, cliente_id
+        ),
+        upserted_funcionarios AS (
+          INSERT INTO funcionarios_rh (
+            id, cliente_id, codigo_funcionario, nome_completo,
+            data_admissao, cargo
+          )
+          SELECT
+            gen_random_uuid(), folha.cliente_id, f.codigo_funcionario,
+            f.nome_completo, f.data_admissao, f.cargo
+          FROM input_funcionarios f
+          CROSS JOIN inserted_folha folha
+          ON CONFLICT (cliente_id, codigo_funcionario) DO UPDATE SET
+            nome_completo = EXCLUDED.nome_completo,
+            data_admissao = COALESCE(
+              EXCLUDED.data_admissao,
+              funcionarios_rh.data_admissao
+            ),
+            cargo = COALESCE(EXCLUDED.cargo, funcionarios_rh.cargo),
+            atualizado_em = now()
+          RETURNING id, cliente_id, codigo_funcionario
+        ),
+        inserted_itens AS (
+          INSERT INTO itens_folha_pagamento (
+            folha_id, funcionario_id, cliente_id, salario_base,
+            total_proventos, total_descontos, salario_liquido, base_inss,
+            aliquota_inss, valor_inss, base_fgts, valor_fgts, base_irrf,
+            valor_irrf, referencia, codigo_folha, dependentes_ir,
+            dependentes_sf, rubricas
+          )
+          SELECT
+            folha.id, funcionario.id, folha.cliente_id, f.salario_base,
+            f.total_proventos, f.total_descontos, f.salario_liquido,
+            f.base_inss, f.aliquota_inss, f.valor_inss, f.base_fgts,
+            f.valor_fgts, f.base_irrf, f.valor_irrf, f.referencia,
+            f.codigo_folha, f.dependentes_ir, f.dependentes_sf, f.rubricas
+          FROM input_funcionarios f
+          JOIN upserted_funcionarios funcionario
+            ON funcionario.codigo_funcionario = f.codigo_funcionario
+          CROSS JOIN inserted_folha folha
+          RETURNING id
+        ),
+        audit_event AS (
+          INSERT INTO eventos_auditoria (
+            ator_user_id, acao, entidade_tipo, entidade_id, dados
+          )
+          SELECT
+            ${actorUserId}, 'FERIAS_UPLOADADAS', 'FOLHA_PAGAMENTO',
+            folha.id::text,
+            jsonb_build_object(
+              'clienteId', folha.cliente_id::text,
+              'competencia', ${dados.competencia}::text,
+              'tipo', 'FERIAS',
+              'codigoFuncionario', ${func.codigoFuncionario}::text,
+              'nomeCompleto', ${func.nomeCompleto}::text
+            )
+          FROM inserted_folha folha
+          RETURNING id
+        )
+        SELECT
+          EXISTS (SELECT 1 FROM inserted_folha) AS inserted,
+          (SELECT count(*)::integer FROM inserted_itens) AS item_count
+      `);
+
+      const persisted = resultRows<{
+        inserted: boolean;
+        item_count: number;
+      }>(result)[0];
+      if (!persisted?.inserted || Number(persisted.item_count) !== 1) {
+        throw new Error('FERIAS_INSERT_INCOMPLETE');
+      }
+
+      return { ok: true, folhaId };
+    } catch (error) {
+      this.logger.error('rh_processar_ferias_failed', error, {
+        requestId: input.requestId,
+        clienteId,
+        codigoFuncionario: func.codigoFuncionario,
+      });
+      if (this.isUniqueViolation(error)) {
+        return { ok: false, code: 'FERIAS_DUPLICADAS' };
+      }
+      return { ok: false, code: 'DATABASE_FAILED' };
+    }
+  }
+
+  // ─── Check duplicate folha ───
   async checkDuplicateFolha(clienteId: string, competencia: string) {
     const result = await this.database.db
       .select({ id: folhasPagamento.id })
@@ -217,7 +389,39 @@ export class RhService {
       .where(
         and(
           eq(folhasPagamento.clienteId, clienteId),
+          eq(folhasPagamento.tipo, 'FOLHA_MENSAL'),
           eq(folhasPagamento.competencia, competencia),
+        ),
+      )
+      .limit(1);
+    return result[0] ?? null;
+  }
+
+  // ─── Check duplicate ferias ───
+  async checkDuplicateFerias(
+    clienteId: string,
+    codigoFuncionario: string,
+    periodoInicio: string,
+    periodoFim: string,
+  ) {
+    const result = await this.database.db
+      .select({ id: folhasPagamento.id })
+      .from(folhasPagamento)
+      .innerJoin(
+        itensFolhaPagamento,
+        eq(itensFolhaPagamento.folhaId, folhasPagamento.id),
+      )
+      .innerJoin(
+        funcionariosRh,
+        eq(itensFolhaPagamento.funcionarioId, funcionariosRh.id),
+      )
+      .where(
+        and(
+          eq(folhasPagamento.clienteId, clienteId),
+          eq(folhasPagamento.tipo, 'FERIAS'),
+          eq(funcionariosRh.codigoFuncionario, codigoFuncionario),
+          eq(folhasPagamento.periodoInicio, periodoInicio),
+          eq(folhasPagamento.periodoFim, periodoFim),
         ),
       )
       .limit(1);
@@ -258,9 +462,11 @@ export class RhService {
         .select({
           id: folhasPagamento.id,
           clienteId: folhasPagamento.clienteId,
+          tipo: folhasPagamento.tipo,
           competencia: folhasPagamento.competencia,
           periodoInicio: folhasPagamento.periodoInicio,
           periodoFim: folhasPagamento.periodoFim,
+          diasFerias: folhasPagamento.diasFerias,
           totalBruto: folhasPagamento.totalBruto,
           totalDescontos: folhasPagamento.totalDescontos,
           totalLiquido: folhasPagamento.totalLiquido,
@@ -270,6 +476,13 @@ export class RhService {
             razaoSocial: clientes.razaoSocial,
             cnpj: clientes.cnpj,
           },
+          funcionarioNome: sql<string | null>`(
+            SELECT fr.nome_completo
+            FROM itens_folha_pagamento ifp
+            JOIN funcionarios_rh fr ON fr.id = ifp.funcionario_id
+            WHERE ifp.folha_id = ${folhasPagamento.id}
+            LIMIT 1
+          )`.as('funcionario_nome'),
           visualizado:
             sql<boolean>`EXISTS (SELECT 1 FROM visualizacoes_folhas WHERE visualizacoes_folhas.folha_id = ${folhasPagamento.id})`.as(
               'visualizado',
@@ -297,9 +510,12 @@ export class RhService {
       data: rows.map((r) => ({
         id: r.id,
         clienteId: r.clienteId,
+        tipo: r.tipo ?? 'FOLHA_MENSAL',
         competencia: r.competencia,
         periodoInicio: r.periodoInicio,
         periodoFim: r.periodoFim,
+        diasFerias: r.diasFerias ?? null,
+        funcionarioNome: r.funcionarioNome ?? null,
         totalBruto: Number(r.totalBruto),
         totalDescontos: Number(r.totalDescontos),
         totalLiquido: Number(r.totalLiquido),
@@ -354,9 +570,13 @@ export class RhService {
       .select({
         id: folhasPagamento.id,
         clienteId: folhasPagamento.clienteId,
+        tipo: folhasPagamento.tipo,
         competencia: folhasPagamento.competencia,
         periodoInicio: folhasPagamento.periodoInicio,
         periodoFim: folhasPagamento.periodoFim,
+        periodoAquisitivoInicio: folhasPagamento.periodoAquisitivoInicio,
+        periodoAquisitivoFim: folhasPagamento.periodoAquisitivoFim,
+        diasFerias: folhasPagamento.diasFerias,
         totalBruto: folhasPagamento.totalBruto,
         totalDescontos: folhasPagamento.totalDescontos,
         totalLiquido: folhasPagamento.totalLiquido,
@@ -367,6 +587,13 @@ export class RhService {
         totalSalarioFamilia: folhasPagamento.totalSalarioFamilia,
         criadoEm: folhasPagamento.criadoEm,
         cliente: { razaoSocial: clientes.razaoSocial, cnpj: clientes.cnpj },
+        funcionarioNome: sql<string | null>`(
+          SELECT fr.nome_completo
+          FROM itens_folha_pagamento ifp
+          JOIN funcionarios_rh fr ON fr.id = ifp.funcionario_id
+          WHERE ifp.folha_id = ${folhasPagamento.id}
+          LIMIT 1
+        )`.as('funcionario_nome'),
       })
       .from(folhasPagamento)
       .leftJoin(clientes, eq(folhasPagamento.clienteId, clientes.id))
@@ -379,9 +606,14 @@ export class RhService {
     return {
       id: folha.id,
       clienteId: folha.clienteId,
+      tipo: folha.tipo ?? 'FOLHA_MENSAL',
       competencia: folha.competencia,
       periodoInicio: folha.periodoInicio,
       periodoFim: folha.periodoFim,
+      periodoAquisitivoInicio: folha.periodoAquisitivoInicio ?? null,
+      periodoAquisitivoFim: folha.periodoAquisitivoFim ?? null,
+      diasFerias: folha.diasFerias ?? null,
+      funcionarioNome: folha.funcionarioNome ?? null,
       totalBruto: Number(folha.totalBruto),
       totalDescontos: Number(folha.totalDescontos),
       totalLiquido: Number(folha.totalLiquido),
@@ -915,6 +1147,21 @@ export class RhService {
       .where(eq(itensFolhaPagamento.id, itemFolhaId))
       .limit(1);
     return result[0]?.clienteId ?? null;
+  }
+
+  async getItemFolhaContext(itemFolhaId: string): Promise<{
+    clienteId: string;
+    folhaId: string;
+  } | null> {
+    const result = await this.database.db
+      .select({
+        clienteId: itensFolhaPagamento.clienteId,
+        folhaId: itensFolhaPagamento.folhaId,
+      })
+      .from(itensFolhaPagamento)
+      .where(eq(itensFolhaPagamento.id, itemFolhaId))
+      .limit(1);
+    return result[0] ?? null;
   }
 
   // ─── Get funcionario owner (for client access check) ───

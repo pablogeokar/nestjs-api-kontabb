@@ -1,4 +1,9 @@
 import {
+  camposClassificacao,
+  type DestinacaoInferida,
+  type PerfilClassificacaoCache,
+} from './classificacao-destinacao.service';
+import {
   BadRequestException,
   ConflictException,
   Injectable,
@@ -28,13 +33,18 @@ export type TipoEquivalencia = 'SAIDA_PARA_ENTRADA' | 'ENTRADA_PARA_SAIDA';
 export type AbrangenciaCfop = 'ESTADUAL' | 'INTERESTADUAL' | 'EXTERIOR';
 
 export interface CfopResolvido {
+  classificacao?: DestinacaoInferida;
+  motivoResolucao?: string;
   cfop: string;
   revisaoNecessaria: boolean;
   origemResolucao:
+    | 'EQUIVALENCIA'
+    | 'MANUAL'
     | 'MANTIDO'
     | 'CLIENTE'
     | 'GLOBAL'
     | 'ALGORITMO'
+    | 'PENDENTE_CLASSIFICACAO'
     | 'FALLBACK'
     | 'REGRA_CLIENTE'
     | 'REGRA_GLOBAL'
@@ -103,6 +113,7 @@ export class CfopService {
   async prepararItensEscrituracao<
     T extends {
       cfop: string;
+      codigoProduto?: string;
       numeroItem?: number;
       descricao?: string;
       ncm?: string | null;
@@ -124,29 +135,37 @@ export class CfopService {
       params.emitenteCnpjCpf,
       params.tpNfXml,
     );
+    const perfilCache: PerfilClassificacaoCache = new Map();
     const revisoes: CfopItemRevisao[] = [];
     const resolvidos = new Map<string, CfopResolvido>();
-    const itens = [] as Array<T & {
-      cfopXml: string;
-      cfop: string;
-      tipoOperacaoEscriturada: TipoOperacaoEscriturada;
-      cfopRevisaoNecessaria: boolean;
-    }>;
+    const itens = [] as Array<
+      T & {
+        cfopXml: string;
+        cfop: string;
+        tipoOperacaoEscriturada: TipoOperacaoEscriturada;
+        cfopRevisaoNecessaria: boolean;
+      }
+    >;
     for (const [index, item] of params.itens.entries()) {
-      const cacheKey = [
+      const cacheKey = JSON.stringify([
         item.cfop,
+        item.codigoProduto ?? '',
+        item.descricao ?? '',
         item.ncm ?? '',
         item.cstIcms ?? '',
         item.csosnIcms ?? '',
         params.emitenteUf ?? '',
-      ].join(':');
+      ]);
       let resolvido = resolvidos.get(cacheKey);
       if (!resolvido) {
         resolvido = await this.resolverCfopEquivalenteDetalhado({
+          perfilCache,
           clienteId: params.clienteId,
           cfopXml: item.cfop,
           tipoOperacaoEscriturada,
           ncm: item.ncm,
+          codigoProduto: item.codigoProduto,
+          descricao: item.descricao,
           emitenteCnpjCpf: params.emitenteCnpjCpf,
           emitenteUf: params.emitenteUf,
           cstIcmsXml: item.cstIcms,
@@ -172,6 +191,9 @@ export class CfopService {
         ...item,
         cfopXml: item.cfop,
         cfop: resolvido.cfop,
+        ...camposClassificacao(resolvido.classificacao),
+        cfopOrigemResolucao: resolvido.origemResolucao,
+        cfopMotivoResolucao: resolvido.motivoResolucao ?? null,
         // Precedência dos códigos: regra do cliente > regra global > XML.
         ...(resolvido.cstIcmsEscriturado
           ? {
@@ -214,6 +236,10 @@ export class CfopService {
     clienteId: string;
     cfopXml: string;
     tipoOperacaoEscriturada: TipoOperacaoEscriturada;
+    perfilCache?: PerfilClassificacaoCache;
+    itemId?: string;
+    codigoProduto?: string | null;
+    descricao?: string | null;
     // Contexto opcional para o motor de regras. Quando presente, a resolução
     // usa regras cadastradas + destinação econômica antes do algoritmo linear.
     ncm?: string | null;
@@ -227,6 +253,10 @@ export class CfopService {
     // destinação econômica). Só recorre à cascata legada quando o motor não
     // encontra correspondência segura.
     const avaliacao = await this.ruleEngine.evaluate({
+      perfilCache: params.perfilCache,
+      itemId: params.itemId,
+      codigoProduto: params.codigoProduto,
+      descricao: params.descricao,
       clienteId: params.clienteId,
       tipoOperacaoEscriturada: params.tipoOperacaoEscriturada,
       cfopXml: params.cfopXml,
@@ -239,14 +269,20 @@ export class CfopService {
     });
 
     if (
+      avaliacao.classificacao ||
+      avaliacao.bloqueiaFallback ||
+      avaliacao.origemResolucao === 'EQUIVALENCIA' ||
       avaliacao.origemResolucao === 'REGRA_CLIENTE' ||
       avaliacao.origemResolucao === 'REGRA_GLOBAL' ||
       avaliacao.origemResolucao === 'DESTINACAO_NCM'
     ) {
       return {
         cfop: avaliacao.cfopEscriturado,
-        revisaoNecessaria: false,
-        origemResolucao: avaliacao.origemResolucao,
+        classificacao: avaliacao.classificacao,
+        motivoResolucao: avaliacao.motivoResolucao,
+        revisaoNecessaria: avaliacao.pendenteClassificacao,
+        origemResolucao:
+          avaliacao.origemResolucao as CfopResolvido['origemResolucao'],
         apropriaCreditoIcms: avaliacao.apropriaCreditoIcms,
         apropriaCreditoIpi: avaliacao.apropriaCreditoIpi,
         exigeCiap: avaliacao.exigeCiap,
@@ -268,7 +304,9 @@ export class CfopService {
   }) {
     const catalogo = await this.getCfop(params.cfop);
     if (!catalogo.ativo) {
-      throw new BadRequestException('O CFOP informado está inativo no catálogo.');
+      throw new BadRequestException(
+        'O CFOP informado está inativo no catálogo.',
+      );
     }
     if (catalogo.tipo_operacao !== params.tipoOperacaoEscriturada) {
       throw new BadRequestException(
@@ -277,7 +315,9 @@ export class CfopService {
     }
     const efeitos = await this.ruleEngine.evaluateManualCfop(catalogo.codigo);
     if (!efeitos) {
-      throw new BadRequestException('O CFOP informado está inativo no catálogo.');
+      throw new BadRequestException(
+        'O CFOP informado está inativo no catálogo.',
+      );
     }
     return { catalogo, efeitos };
   }
