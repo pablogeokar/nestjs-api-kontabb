@@ -1149,6 +1149,21 @@ export class RhService {
     return result[0]?.clienteId ?? null;
   }
 
+  async getItemFolhaContext(itemFolhaId: string): Promise<{
+    clienteId: string;
+    folhaId: string;
+  } | null> {
+    const result = await this.database.db
+      .select({
+        clienteId: itensFolhaPagamento.clienteId,
+        folhaId: itensFolhaPagamento.folhaId,
+      })
+      .from(itensFolhaPagamento)
+      .where(eq(itensFolhaPagamento.id, itemFolhaId))
+      .limit(1);
+    return result[0] ?? null;
+  }
+
   // ─── Get funcionario owner (for client access check) ───
   async getFuncionarioClienteId(funcionarioId: string): Promise<string | null> {
     const result = await this.database.db

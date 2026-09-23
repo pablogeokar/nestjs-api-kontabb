@@ -82,9 +82,10 @@ export class GuiasController {
 
     const url = await this.guiasService.getSignedUrl(guia.arquivoKey);
 
-    // Record view for client users
+    // The access record is part of the document-delivery flow. Do not return a
+    // usable URL unless the event has been persisted for the client user.
     if (!isStaff) {
-      this.guiasService.recordGuiaView(id, currentUser.id).catch(() => {});
+      await this.guiasService.recordGuiaView(id, currentUser.id);
     }
 
     return { url };

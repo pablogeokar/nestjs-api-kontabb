@@ -80,15 +80,22 @@ export class RhClienteController {
 
     const folha = await this.rhService.getFolhaDetail(folhaId);
     if (!folha) throw new NotFoundException('Folha não encontrada.');
+
+    await this.rhService.recordFolhaView(folhaId, currentUser.id);
     return folha;
   }
 
   @Get('folhas/:folhaId/download')
-  @ApiOperation({ summary: 'URL assinada para download do PDF original pelo cliente' })
+  @ApiOperation({
+    summary: 'URL assinada para download do PDF original pelo cliente',
+  })
   @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, description: 'URL assinada gerada.' })
   @ApiResponse({ status: 403, description: 'Acesso negado.' })
-  @ApiResponse({ status: 404, description: 'Folha ou documento não encontrado.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Folha ou documento não encontrado.',
+  })
   async downloadFolha(
     @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
     @CurrentUser() currentUser: CurrentUserType,
@@ -104,6 +111,8 @@ export class RhClienteController {
     const key = await this.rhService.getFolhaDocumentoKey(folhaId);
     if (!key) throw new NotFoundException('Documento não encontrado.');
     const url = await this.storage.getSignedUrl(key);
+
+    await this.rhService.recordFolhaView(folhaId, currentUser.id);
     return { url };
   }
 
@@ -151,8 +160,7 @@ export class RhClienteController {
 
     const recibos = await this.rhService.getAllRecibosByFolha(folhaId);
 
-    // Record view (marks folha as "lido" for the admin listing)
-    this.rhService.recordFolhaView(folhaId, currentUser.id).catch(() => {});
+    await this.rhService.recordFolhaView(folhaId, currentUser.id);
 
     return { recibos };
   }
@@ -233,13 +241,15 @@ export class RhClienteController {
     const client = await this.clientesService.getClientForUser(currentUser.id);
     if (!client) throw new NotFoundException('Cliente não encontrado.');
 
-    const ownerClienteId = await this.rhService.getItemClienteId(itemFolhaId);
-    if (!ownerClienteId) throw new NotFoundException('Recibo não encontrado.');
-    if (ownerClienteId !== client.id)
+    const itemContext = await this.rhService.getItemFolhaContext(itemFolhaId);
+    if (!itemContext) throw new NotFoundException('Recibo não encontrado.');
+    if (itemContext.clienteId !== client.id)
       throw new ForbiddenException('Acesso negado.');
 
     const recibo = await this.rhService.getRecibo(itemFolhaId);
     if (!recibo) throw new NotFoundException('Recibo não encontrado.');
+
+    await this.rhService.recordFolhaView(itemContext.folhaId, currentUser.id);
     return recibo;
   }
 

@@ -80,10 +80,7 @@ describe('GuiasController receipt URL', () => {
   });
 
   it('returns 404 when the guia does not exist', async () => {
-    getAccessibleGuia.mockResolvedValue({
-      guia: null,
-      authorized: false,
-    });
+    getAccessibleGuia.mockResolvedValue({ guia: null, authorized: false });
 
     await expect(
       controller.getReceiptSignedUrl(
@@ -119,6 +116,58 @@ describe('GuiasController receipt URL', () => {
         USER,
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('GuiasController document access tracking', () => {
+  const guiaId = '08383b59-970d-48a1-b3fc-8a2c1c640779';
+
+  function createController() {
+    const guiasService = {
+      getAccessibleGuia: jest.fn(),
+      getSignedUrl: jest.fn(),
+      recordGuiaView: jest.fn(),
+    };
+    const rateLimit = { consume: jest.fn().mockResolvedValue(undefined) };
+    const controller = new GuiasController(
+      guiasService as never,
+      {} as never,
+      rateLimit as never,
+    );
+    return { controller, guiasService, rateLimit };
+  }
+
+  it('persiste o acesso do cliente antes de devolver a URL da guia', async () => {
+    const { controller, guiasService } = createController();
+    guiasService.getAccessibleGuia.mockResolvedValue({
+      guia: { arquivoKey: 'guias/guia.pdf' },
+      isStaff: false,
+      authorized: true,
+    });
+    guiasService.getSignedUrl.mockResolvedValue('https://storage.example/guia');
+    guiasService.recordGuiaView.mockResolvedValue(undefined);
+
+    await expect(controller.getSignedUrl(guiaId, USER)).resolves.toEqual({
+      url: 'https://storage.example/guia',
+    });
+    expect(guiasService.recordGuiaView).toHaveBeenCalledWith(guiaId, USER.id);
+  });
+
+  it('não entrega a URL ao cliente quando não consegue registrar o acesso', async () => {
+    const { controller, guiasService } = createController();
+    guiasService.getAccessibleGuia.mockResolvedValue({
+      guia: { arquivoKey: 'guias/guia.pdf' },
+      isStaff: false,
+      authorized: true,
+    });
+    guiasService.getSignedUrl.mockResolvedValue('https://storage.example/guia');
+    guiasService.recordGuiaView.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+
+    await expect(controller.getSignedUrl(guiaId, USER)).rejects.toThrow(
+      'database unavailable',
+    );
   });
 });
 
