@@ -73,79 +73,88 @@ export function extractDadosFerias(text: string): DadosFerias | null {
     return null;
   }
 
+  // `unpdf` pode mesclar o conteúdo de uma página inteira em uma única linha.
+  // Os campos deste documento são posicionais, portanto a extração não pode
+  // depender de quebras de linha presentes no PDF original.
+  const normalizedText = text.replace(/\s+/g, ' ').trim();
+
   // 1. CNPJ (14 dígitos)
   const cnpjMatch =
-    text.match(/\b(\d{14})\b/) ||
-    text.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/);
+    normalizedText.match(/\b(\d{14})\b/) ||
+    normalizedText.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/);
   if (!cnpjMatch) return null;
   const cnpj = formatCnpj(cnpjMatch[1]);
 
   // 2. Nome do Colaborador
   // Aparece logo após o aviso de concessão de abono ou cabeçalho inicial
   const nameMatch =
-    text.match(/Até 15 [^\n]+\n([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙ\s]+)\n/) ||
-    text.match(/Funcionário:\s*\n([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙ\s]+)\n/);
+    normalizedText.match(
+      /abono pecuniário\.\s+([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙ\s]+?)(?=\s+\d{2}\/\d{2}\/\d{4}\s+\d{2}\/\d{2}\/\d{4}\s+Período aquisitivo)/i,
+    ) ||
+    normalizedText.match(
+      /Funcionário:\s*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙ\s]+?)(?=\s+\d{2}\/\d{2}\/\d{4})/i,
+    );
   const nomeFuncionario = nameMatch ? nameMatch[1].trim() : '';
   if (!nomeFuncionario) return null;
 
   // 3. Período Aquisitivo
-  const aquisitivoMatch = text.match(
-    /(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s*\nPeríodo aquisitivo/,
+  const aquisitivoMatch = normalizedText.match(
+    /(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+Período aquisitivo/,
   );
   const aquisitivoInicio = aquisitivoMatch ? aquisitivoMatch[1] : null;
   const aquisitivoFim = aquisitivoMatch ? aquisitivoMatch[2] : null;
 
   // 4. Período de Gozo
-  const gozoMatch = text.match(
-    /Período a ser gozado\s*\n(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})/,
+  const gozoMatch = normalizedText.match(
+    /Período a ser gozado\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})/,
   );
   if (!gozoMatch) return null;
   const gozoInicio = gozoMatch[1];
   const gozoFim = gozoMatch[2];
 
   // 5. Razão Social da Empresa
-  const empresaMatch = text.match(
-    /Período a ser gozado\s*\n\d{2}\/\d{2}\/\d{4}\s+\d{2}\/\d{2}\/\d{4}\s*\n(.*?)(?:\s+\d{5})?\n\s*\d{14}/,
+  const empresaMatch = normalizedText.match(
+    /Período a ser gozado\s+\d{2}\/\d{2}\/\d{4}\s+\d{2}\/\d{2}\/\d{4}\s+(.+?)(?:\s+\d{5})?\s+\d{14}/,
   );
   let razaoSocial = empresaMatch ? empresaMatch[1].trim() : '';
   if (!razaoSocial) {
-    const fallbackEmpresa = text.match(/Empresa:\s*([^\n]+)/);
+    const fallbackEmpresa = normalizedText.match(/Empresa:\s*([^\n]+)/);
     razaoSocial = fallbackEmpresa ? fallbackEmpresa[1].trim() : '';
   }
 
   // 6. Cargo / Função e Data de Admissão
-  const cargoMatch = text.match(
-    /\d{14}\s*\n(.*?)(?:Admissão:\s*(\d{2}\/\d{2}\/\d{4}))/,
+  const cargoMatch = normalizedText.match(
+    /\d{14}\s+(.+?)(?:Admissão:\s*(\d{2}\/\d{2}\/\d{4}))/,
   );
   const cargo = cargoMatch ? cargoMatch[1].trim() : null;
   const dataAdmissao = cargoMatch ? cargoMatch[2] : null;
 
   // 7. Código do Funcionário (6 dígitos após NOTIFICAÇÃO DE FÉRIAS)
-  const codeMatch = text.match(/NOTIFICAÇÃO DE FÉRIAS\s*\n(\d{6})/);
+  const codeMatch = normalizedText.match(/NOTIFICAÇÃO DE FÉRIAS\s+(\d{6})/);
   const codigoFuncionario = codeMatch ? codeMatch[1] : '';
 
   // 8. Dias de Duração
-  const diasMatch = text.match(/NOTIFICAÇÃO DE FÉRIAS\s*\n\d{6}\s*\n(\d{1,2})/);
+  const diasMatch = normalizedText.match(
+    /NOTIFICAÇÃO DE FÉRIAS\s+\d{6}\s+(\d{1,2})/,
+  );
   const diasGozo = diasMatch ? parseInt(diasMatch[1], 10) : 30;
 
   // 9. Rubricas
-  const rubricasSectionMatch = text.match(
-    /férias abaixo:\s*\n([\s\S]*?)(?:\*{5,}|Líquido:)/,
+  const rubricasSectionMatch = normalizedText.match(
+    /férias abaixo:\s+(.+?)(?:\*{5,}|Líquido:)/i,
   );
   const rubricas: RubricaFerias[] = [];
   if (rubricasSectionMatch) {
-    const lines = rubricasSectionMatch[1].split('\n');
-    for (const line of lines) {
-      const rMatch = line.trim().match(/^(\d{3})\s+(.+?)\s+([\d.,]+)$/);
-      if (rMatch) {
-        const codigo = rMatch[1];
-        const descricao = rMatch[2].trim();
-        const valor = parseBRL(rMatch[3]);
-        const num = parseInt(codigo, 10);
-        const tipo: 'PROVENTO' | 'DESCONTO' =
-          num >= 900 || (num >= 600 && num < 700) ? 'DESCONTO' : 'PROVENTO';
-        rubricas.push({ codigo, descricao, referencia: null, tipo, valor });
-      }
+    const rubricaPattern =
+      /(\d{3})\s+(.+?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})(?=\s*(?:\d{3}\s+|$))/g;
+    for (const rMatch of rubricasSectionMatch[1].matchAll(rubricaPattern)) {
+      const codigo = rMatch[1];
+      const descricao = rMatch[2].trim();
+      const valor = parseBRL(rMatch[3]);
+      const num = parseInt(codigo, 10);
+      const tipo: 'PROVENTO' | 'DESCONTO' =
+        num >= 900 || (num >= 600 && num < 700) ? 'DESCONTO' : 'PROVENTO';
+      rubricas.push({ codigo, descricao, referencia: null, tipo, valor });
     }
   }
 

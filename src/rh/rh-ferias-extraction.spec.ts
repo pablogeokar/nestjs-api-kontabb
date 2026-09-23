@@ -199,6 +199,26 @@ describe('extractDadosFerias', () => {
     expect(dados!.totalInss).toBeCloseTo(186.88, 2);
   });
 
+  it('deve extrair dados quando o leitor de PDF mesclar as linhas', () => {
+    const dados = extractDadosFerias(textoJailton.replace(/\s+/g, ' '));
+
+    expect(dados).toMatchObject({
+      cnpj: '18.103.272/0001-82',
+      razaoSocial: 'OLYMPUS ATIVIDADES FISICA LTDA',
+      competencia: '09/2026',
+      periodoInicio: '2026-09-15',
+      periodoFim: '2026-10-14',
+      totalBruto: 1219.12,
+      totalDescontos: 91.42,
+      totalLiquido: 1127.7,
+      funcionario: {
+        codigoFuncionario: '000018',
+        nomeCompleto: 'JAILTON OLIVEIRA ALVES JUNIOR',
+      },
+    });
+    expect(dados?.funcionario.rubricas).toHaveLength(3);
+  });
+
   it('deve retornar null para texto não relacionado a férias', () => {
     expect(
       extractDadosFerias('Guia de FGTS Digital Simples Nacional'),
