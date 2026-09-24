@@ -672,9 +672,7 @@ export const certificadosDigitais = pgTable(
     index('idx_certificados_cnpj').on(table.cnpj),
     index('idx_certificados_status').on(table.status),
     index('idx_certificados_validade_fim').on(table.validadeFim),
-    uniqueIndex('uidx_certificados_cliente_ativo')
-      .on(table.clienteId)
-      .where(sql`status IN ('ATIVO', 'PRESTES_A_EXPIRAR')`),
+    uniqueIndex('uidx_certificados_cliente').on(table.clienteId),
     check(
       'chk_certificados_status',
       sql`${table.status} IN ('ATIVO', 'EXPIRADO', 'PRESTES_A_EXPIRAR', 'REVOGADO')`,
