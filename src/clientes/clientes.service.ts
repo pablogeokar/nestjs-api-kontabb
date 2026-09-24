@@ -12,6 +12,10 @@ import { StorageService } from '../storage/storage.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import type { PaginationParams } from '../common/types';
 import { AuthService } from '../auth/auth.service';
+import {
+  CLIENT_PROVISIONAL_PASSWORD,
+  CrmService,
+} from '../crm/crm.service';
 import type {
   FonteConsultaCnpj,
   RegimeTributario,
@@ -60,6 +64,7 @@ export class ClientesService {
     private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
+    private readonly crmService: CrmService,
   ) {}
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
@@ -210,7 +215,9 @@ export class ClientesService {
     );
     const authIdentifier = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
     const authEmail = `${authIdentifier}@kontabb.local`;
-    const hashedPassword = await this.authService.hashPassword('123456');
+    const hashedPassword = await this.authService.hashPassword(
+      CLIENT_PROVISIONAL_PASSWORD,
+    );
     const authUserId = crypto.randomUUID();
     const contadorId =
       input.tipoPessoa === 'PJ'
@@ -290,6 +297,18 @@ export class ClientesService {
 
       const clientId = resultRows<{ client_id: string }>(result)[0]?.client_id;
       if (!clientId) throw new Error('CLIENT_INSERT_FAILED');
+
+      this.enviarEmailBoasVindasAutomaticamente({
+        clienteId: clientId,
+        clientName: input.companyName,
+        emails: input.emails,
+        tipoPessoa: input.tipoPessoa,
+        cnpj: cnpjValue,
+        cpf: cpfValue,
+        requestId: input.requestId,
+        actorUserId: input.actorUserId,
+      });
+
       return { ok: true as const, clientId };
     } catch (error: any) {
       this.logger.error('client_creation_failed', error, {
@@ -966,6 +985,37 @@ export class ClientesService {
       writeTipoContribuinteIcms,
       tipoContribuinteIcms: input.tipoContribuinteIcms ?? null,
     };
+  }
+
+  private enviarEmailBoasVindasAutomaticamente(input: {
+    clienteId: string;
+    clientName: string;
+    emails: string[];
+    tipoPessoa: 'PF' | 'PJ';
+    cnpj: string;
+    cpf: string | null;
+    requestId?: string;
+    actorUserId: string;
+  }) {
+    // O cadastro já foi confirmado no banco: o e-mail não deve atrasar nem
+    // alterar sua resposta HTTP. O CRM registra cada desfecho; este catch
+    // cobre apenas falhas inesperadas fora do contrato do serviço.
+    void this.crmService
+      .enviarEmailBoasVindasParaDados({
+        ...input,
+        provisionalPassword: CLIENT_PROVISIONAL_PASSWORD,
+        suspenso: false,
+      })
+      .catch((error) => {
+        this.logger.error('crm_welcome_email_failed', error, {
+          requestId: input.requestId,
+          userId: input.actorUserId,
+          entityType: 'CLIENTE',
+          entityId: input.clienteId,
+          operation: 'crm_welcome_email',
+          result: 'unexpected_failure',
+        });
+      });
   }
 
   private textArray(values: string[]) {
