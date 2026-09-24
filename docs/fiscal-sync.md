@@ -19,6 +19,23 @@ anterior ao clique. Enquanto houver processamento ativo, acompanha a operação 
 iniciar outra consulta. Se a resposta original se perder, confirma o resultado
 pela evolução do status, NSU ou total de documentos.
 
+## Resumos e manifestação de NF-e
+
+Quando o Ambiente Nacional entrega `resNFe`, o sistema preserva o resumo como
+NF-e `RESUMIDA`, com escrituração bloqueada e sem oferecer DANFE ou download do
+XML completo. O resumo aparece no painel para que o destinatário escolha
+conscientemente Ciência, Confirmação, Desconhecimento ou Operação não Realizada.
+
+Ciência e Confirmação acionam uma consulta pontual pela chave. Se a propagação da
+SEFAZ ainda não tiver terminado, o resumo permanece pendente e uma sincronização
+posterior reconsulta no máximo uma chave manifestada por ciclo. O XML completo
+substitui o resumo sem trocar a identidade do documento.
+
+Ciência não autoriza escrituração automática. A NF-e completa permanece não
+escriturável até Confirmação. Desconhecimento e Operação não Realizada também
+bloqueiam a escrituração como aquisição. A importação do XML entregue diretamente
+pelo fornecedor continua disponível e não depende da distribuição.
+
 ## Concorrência e recuperação
 
 O serviço reivindica atomicamente um lock por `(cliente_id, tipo_documento)` na

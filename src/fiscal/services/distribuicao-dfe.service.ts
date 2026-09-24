@@ -21,7 +21,9 @@ import {
   extractDfeDocZips,
   extractDfeResponseMetadata,
   parseDfeDocZip,
+  parseNfeResumoDocZip,
   type ParsedDocumentoFiscal,
+  type ParsedResumoNfe,
 } from './dfe-document.parser';
 import {
   controleNsu,
@@ -284,6 +286,15 @@ export class DistribuicaoDfeService {
         try {
           const parsed = parseDfeDocZip(docZip, tipoDocumento);
           if (!parsed) {
+            const resumo =
+              tipoDocumento === 'NFE' ? parseNfeResumoDocZip(docZip) : null;
+            if (resumo) {
+              if (await this.salvarResumoNfe(clienteId, cnpj, resumo)) {
+                documentosProcessados += 1;
+              }
+              ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+              continue;
+            }
             documentosIgnorados++;
             ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
             this.logger.debug(
@@ -307,6 +318,31 @@ export class DistribuicaoDfeService {
             `Falha ao persistir docZip NSU ${docZip.nsu}: ${this.getRootCauseMessage(error)}`,
           );
           break;
+        }
+      }
+
+      // A disponibilizacao do procNFe apos a manifestacao pode ser assincrona.
+      // Reconsulta no maximo um resumo por ciclo para convergir sem multiplicar
+      // chamadas ao Ambiente Nacional nem favorecer consumo indevido.
+      if (tipoDocumento === 'NFE' && documentosComFalha === 0) {
+        try {
+          if (
+            await this.recuperarUmResumoManifestado(
+              clienteId,
+              cnpj,
+              uf || 'SP',
+              {
+                regimeTributario: regimeTributario as RegimeTributario | null,
+                apuraIcms,
+              },
+            )
+          ) {
+            documentosProcessados += 1;
+          }
+        } catch (error: unknown) {
+          this.logger.warn(
+            `XML completo de resumo manifestado ainda indisponivel para ${cnpj}: ${this.getRootCauseMessage(error)}`,
+          );
         }
       }
 
@@ -623,12 +659,15 @@ export class DistribuicaoDfeService {
     }
 
     const doc = await this.database.db
-      .select({ xmlKey: documentosFiscais.xmlKey })
+      .select({
+        xmlKey: documentosFiscais.xmlKey,
+        situacao: documentosFiscais.situacao,
+      })
       .from(documentosFiscais)
       .where(and(...conditions))
       .limit(1);
 
-    if (!doc[0]) return null;
+    if (!doc[0] || doc[0].situacao === 'RESUMIDA') return null;
     return this.storage.getSignedUrl(doc[0].xmlKey, 600);
   }
 
@@ -719,33 +758,6 @@ export class DistribuicaoDfeService {
     motivoSefaz?: string;
     xmlEventoKey?: string;
   }) {
-    // Buscar a sequência do evento
-    const ultimoEvento = await this.database.db
-      .select({ seq: eventosFiscais.sequenciaEvento })
-      .from(eventosFiscais)
-      .where(
-        and(
-          eq(eventosFiscais.documentoFiscalId, input.documentoId),
-          eq(eventosFiscais.tipoEvento, input.tipoEvento),
-        ),
-      )
-      .orderBy(desc(eventosFiscais.sequenciaEvento))
-      .limit(1);
-
-    const sequencia = (ultimoEvento[0]?.seq ?? 0) + 1;
-
-    await this.database.db.insert(eventosFiscais).values({
-      documentoFiscalId: input.documentoId,
-      tipoEvento: input.tipoEvento,
-      codigoEvento: input.codigoEvento,
-      sequenciaEvento: sequencia,
-      protocolo: input.protocolo,
-      statusSefaz: input.statusSefaz,
-      motivoSefaz: input.motivoSefaz,
-      xmlEventoKey: input.xmlEventoKey,
-    });
-
-    // Atualizar manifestacaoStatus no documento fiscal
     const manifestacaoMap: Record<string, string> = {
       '210210': 'CIENCIA',
       '210200': 'CONFIRMADA',
@@ -754,15 +766,98 @@ export class DistribuicaoDfeService {
     };
 
     const novoStatus = manifestacaoMap[input.codigoEvento];
-    if (novoStatus) {
-      await this.database.db
-        .update(documentosFiscais)
-        .set({
-          manifestacaoStatus: novoStatus,
-          atualizadoEm: new Date(),
-        })
-        .where(eq(documentosFiscais.id, input.documentoId));
-    }
+    await this.database.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-manifestacao:${input.documentoId}`}, 0))`,
+      );
+      const ultimoEvento = await tx
+        .select({ seq: eventosFiscais.sequenciaEvento })
+        .from(eventosFiscais)
+        .where(
+          and(
+            eq(eventosFiscais.documentoFiscalId, input.documentoId),
+            eq(eventosFiscais.tipoEvento, input.tipoEvento),
+          ),
+        )
+        .orderBy(desc(eventosFiscais.sequenciaEvento))
+        .limit(1);
+
+      await tx.insert(eventosFiscais).values({
+        documentoFiscalId: input.documentoId,
+        tipoEvento: input.tipoEvento,
+        codigoEvento: input.codigoEvento,
+        sequenciaEvento: (ultimoEvento[0]?.seq ?? 0) + 1,
+        protocolo: input.protocolo,
+        statusSefaz: input.statusSefaz,
+        motivoSefaz: input.motivoSefaz,
+        xmlEventoKey: input.xmlEventoKey,
+      });
+
+      if (novoStatus) {
+        const confirmada = input.codigoEvento === '210200';
+        await tx
+          .update(documentosFiscais)
+          .set({
+            manifestacaoStatus: novoStatus,
+            ...(confirmada
+              ? {
+                  escriturado: sql<boolean>`${documentosFiscais.situacao} = 'AUTORIZADA'`,
+                  escrituracaoStatus: sql<string>`CASE
+                    WHEN ${documentosFiscais.situacao} <> 'AUTORIZADA' THEN 'NAO_ESCRITURAVEL'
+                    WHEN EXISTS (
+                      SELECT 1 FROM documentos_fiscais_itens item
+                      WHERE item.documento_fiscal_id = ${documentosFiscais.id}
+                        AND item.cfop_revisao_necessaria = true
+                    ) THEN 'PENDENTE_REVISAO'
+                    ELSE 'ESCRITURADO'
+                  END`,
+                }
+              : {
+                  escriturado: false,
+                  escrituracaoStatus: 'NAO_ESCRITURAVEL',
+                }),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(documentosFiscais.id, input.documentoId));
+      }
+    });
+  }
+
+  /**
+   * Tenta obter o XML completo logo apos uma manifestacao que o disponibiliza.
+   * A manifestacao permanece valida se a propagacao da SEFAZ ainda nao terminou.
+   */
+  async buscarXmlCompletoAposManifestacao(input: {
+    documentoId: string;
+    clienteId: string;
+    cnpj: string;
+    uf: string;
+    chaveAcesso: string;
+  }): Promise<'OBTIDO' | 'PENDENTE'> {
+    const resposta = await this.nfeWizard.consultarPorChave({
+      clienteId: input.clienteId,
+      cnpj: input.cnpj,
+      uf: input.uf,
+      chaveAcesso: input.chaveAcesso,
+    });
+    const completo = extractDfeDocZips(resposta)
+      .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
+      .find((documento) => documento?.chaveAcesso === input.chaveAcesso);
+    if (!completo) return 'PENDENTE';
+
+    const cliente = await this.database.db
+      .select({
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, input.clienteId))
+      .limit(1);
+    await this.salvarDocumento(input.clienteId, input.cnpj, completo, {
+      regimeTributario: cliente[0]?.regimeTributario as RegimeTributario | null,
+      apuraIcms: cliente[0]?.apuraIcms ?? false,
+    });
+    return 'OBTIDO';
   }
 
   /**
@@ -846,6 +941,142 @@ export class DistribuicaoDfeService {
 
   // ─── Private Methods ────────────────────────────────────────────────────────
 
+  private async salvarResumoNfe(
+    clienteId: string,
+    cnpj: string,
+    resumo: ParsedResumoNfe,
+  ): Promise<boolean> {
+    const existing = await this.database.db
+      .select({
+        id: documentosFiscais.id,
+        situacao: documentosFiscais.situacao,
+      })
+      .from(documentosFiscais)
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          eq(documentosFiscais.chaveAcesso, resumo.chaveAcesso),
+        ),
+      )
+      .limit(1);
+    if (
+      existing[0]?.situacao !== undefined &&
+      existing[0].situacao !== 'RESUMIDA'
+    ) {
+      return false;
+    }
+
+    const ano = String(resumo.dataEmissao.getUTCFullYear());
+    const mes = String(resumo.dataEmissao.getUTCMonth() + 1).padStart(2, '0');
+    const xmlKey = `clientes/${cnpj}/fiscais/${ano}/${mes}/resumos/nfe/${resumo.chaveAcesso}.xml`;
+    await this.storage.upload(
+      xmlKey,
+      Buffer.from(resumo.xmlContent, 'utf8'),
+      'application/xml',
+    );
+
+    try {
+      await this.database.db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${clienteId}:${resumo.chaveAcesso}`}, 0))`,
+        );
+        await tx
+          .insert(documentosFiscais)
+          .values({
+            clienteId,
+            chaveAcesso: resumo.chaveAcesso,
+            nsu: resumo.nsu,
+            tipoDocumento: 'NFE',
+            modelo: '55',
+            serie: resumo.serie,
+            numeroDocumento: resumo.numeroDocumento,
+            emitenteCnpjCpf: resumo.emitenteCnpjCpf,
+            emitenteRazaoSocial: resumo.emitenteRazaoSocial,
+            destinatarioCnpjCpf: cnpj,
+            dataEmissao: resumo.dataEmissao,
+            dataEmissaoFiscal: resumo.dataEmissaoFiscal,
+            valorTotal: resumo.valorTotal,
+            situacao: 'RESUMIDA',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            tpNfXml: resumo.tpNfXml,
+            escriturado: false,
+            escrituracaoStatus: 'NAO_ESCRITURAVEL',
+            xmlKey,
+          })
+          .onConflictDoUpdate({
+            target: [
+              documentosFiscais.clienteId,
+              documentosFiscais.chaveAcesso,
+            ],
+            set: {
+              nsu: resumo.nsu,
+              emitenteCnpjCpf: resumo.emitenteCnpjCpf,
+              emitenteRazaoSocial: resumo.emitenteRazaoSocial,
+              dataEmissao: resumo.dataEmissao,
+              dataEmissaoFiscal: resumo.dataEmissaoFiscal,
+              valorTotal: resumo.valorTotal,
+              tpNfXml: resumo.tpNfXml,
+              xmlKey,
+              atualizadoEm: new Date(),
+            },
+            setWhere: eq(documentosFiscais.situacao, 'RESUMIDA'),
+          });
+      });
+      return !existing[0];
+    } catch (error) {
+      if (!existing[0]) {
+        try {
+          await this.storage.delete(xmlKey);
+        } catch (cleanupError: unknown) {
+          this.logger.warn(
+            `Resumo NF-e orfao nao removido (${xmlKey}): ${this.getRootCauseMessage(cleanupError)}`,
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async recuperarUmResumoManifestado(
+    clienteId: string,
+    cnpj: string,
+    uf: string,
+    fiscalConfig: {
+      regimeTributario: RegimeTributario | null;
+      apuraIcms: boolean;
+    },
+  ): Promise<boolean> {
+    const pendente = await this.database.db
+      .select({ chaveAcesso: documentosFiscais.chaveAcesso })
+      .from(documentosFiscais)
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          eq(documentosFiscais.situacao, 'RESUMIDA'),
+          inArray(documentosFiscais.manifestacaoStatus, [
+            'CIENCIA',
+            'CONFIRMADA',
+          ]),
+        ),
+      )
+      .orderBy(asc(documentosFiscais.atualizadoEm))
+      .limit(1);
+    if (!pendente[0]) return false;
+
+    const resposta = await this.nfeWizard.consultarPorChave({
+      clienteId,
+      cnpj,
+      uf,
+      chaveAcesso: pendente[0].chaveAcesso,
+    });
+    const completo = extractDfeDocZips(resposta)
+      .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
+      .find((documento) => documento?.chaveAcesso === pendente[0].chaveAcesso);
+    if (!completo) return false;
+    await this.salvarDocumento(clienteId, cnpj, completo, fiscalConfig);
+    return true;
+  }
+
   private async salvarDocumento(
     clienteId: string,
     cnpj: string,
@@ -891,6 +1122,7 @@ export class DistribuicaoDfeService {
         id: documentosFiscais.id,
         nsu: documentosFiscais.nsu,
         situacao: documentosFiscais.situacao,
+        manifestacaoStatus: documentosFiscais.manifestacaoStatus,
         xmlKey: documentosFiscais.xmlKey,
       })
       .from(documentosFiscais)
@@ -904,6 +1136,20 @@ export class DistribuicaoDfeService {
 
     const isDuplicate =
       existing[0]?.nsu === parsed.nsu && existing[0]?.situacao !== 'RESUMIDA';
+    const nfeManifestacaoPermiteEscriturar = ![
+      'CIENCIA',
+      'DESCONHECIDA',
+      'NAO_REALIZADA',
+    ].includes(existing[0]?.manifestacaoStatus ?? 'SEM_MANIFESTACAO');
+    const nfeEscriturado =
+      parsed.tipoDocumento !== 'CTE' &&
+      parsed.situacao === 'AUTORIZADA' &&
+      nfeManifestacaoPermiteEscriturar;
+    const nfeEscrituracaoStatus = nfeEscriturado
+      ? nfePendenteRevisao
+        ? ('PENDENTE_REVISAO' as const)
+        : ('ESCRITURADO' as const)
+      : ('NAO_ESCRITURAVEL' as const);
 
     if (isDuplicate) {
       await this.database.db.transaction(async (tx) => {
@@ -924,10 +1170,8 @@ export class DistribuicaoDfeService {
             // nem seus itens. A reconciliação abaixo preserva ids e decisões.
             situacao: parsed.situacao,
             ...(parsed.tipoDocumento !== 'CTE' && {
-              escriturado: true,
-              escrituracaoStatus: nfePendenteRevisao
-                ? ('PENDENTE_REVISAO' as const)
-                : ('ESCRITURADO' as const),
+              escriturado: nfeEscriturado,
+              escrituracaoStatus: nfeEscrituracaoStatus,
             }),
             atualizadoEm: new Date(),
           })
@@ -987,13 +1231,11 @@ export class DistribuicaoDfeService {
       situacao: parsed.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: parsed.tpNfXml,
-      escriturado: parsed.tipoDocumento !== 'CTE',
+      escriturado: nfeEscriturado,
       escrituracaoStatus:
         parsed.tipoDocumento === 'CTE'
           ? ('NAO_ESCRITURAVEL' as const)
-          : nfePendenteRevisao
-            ? ('PENDENTE_REVISAO' as const)
-            : ('ESCRITURADO' as const),
+          : nfeEscrituracaoStatus,
       xmlKey,
     };
 
@@ -1031,13 +1273,11 @@ export class DistribuicaoDfeService {
               situacao: parsed.situacao,
               tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
               tpNfXml: parsed.tpNfXml,
-              escriturado: parsed.tipoDocumento !== 'CTE',
+              escriturado: nfeEscriturado,
               escrituracaoStatus:
                 parsed.tipoDocumento === 'CTE'
                   ? ('NAO_ESCRITURAVEL' as const)
-                  : nfePendenteRevisao
-                    ? ('PENDENTE_REVISAO' as const)
-                    : ('ESCRITURADO' as const),
+                  : nfeEscrituracaoStatus,
               xmlKey,
               danfeKey: null,
               atualizadoEm: new Date(),

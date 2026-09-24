@@ -146,6 +146,21 @@ export interface ParsedDocumentoFiscal {
   xmlContent: string;
 }
 
+export interface ParsedResumoNfe {
+  chaveAcesso: string;
+  nsu: number;
+  modelo: '55';
+  serie: string;
+  numeroDocumento: string;
+  emitenteCnpjCpf: string;
+  emitenteRazaoSocial: string;
+  dataEmissao: Date;
+  dataEmissaoFiscal: string;
+  valorTotal: string;
+  tpNfXml: '0' | '1';
+  xmlContent: string;
+}
+
 export type ManualFiscalXmlParseResult =
   | { status: 'DOCUMENTO'; documento: ParsedDocumentoFiscal }
   | { status: 'IGNORADO'; motivo: string }
@@ -240,6 +255,59 @@ export function parseDfeDocZip(
   if (!xml) return null;
 
   return parseFiscalXml(xml, docZip.nsu, tipoConsulta);
+}
+
+/**
+ * Extrai o resumo entregue ao destinatario antes da manifestacao. O resumo nao
+ * contem itens ou tributos e, por isso, nunca deve ser tratado como documento
+ * escrituravel.
+ */
+export function parseNfeResumoDocZip(
+  docZip: DfeDocZip,
+): ParsedResumoNfe | null {
+  const fileName = docZip.schema.trim().split(/[\\/]/).pop() ?? '';
+  if (fileName && !/^resNFe_v[\d.]+\.xsd$/i.test(fileName)) return null;
+
+  const xml = decompressDocZip(docZip.content);
+  if (!xml || !hasElement(xml, 'resNFe')) return null;
+
+  const chaveAcesso = normalizeFiscalAccessKey(extractTagValue(xml, 'chNFe'));
+  if (!chaveAcesso || !isValidFiscalAccessKey(chaveAcesso)) return null;
+  if (chaveAcesso.substring(20, 22) !== '55') return null;
+
+  const emitenteCnpjCpf =
+    normalizeFiscalCnpj(extractTagValue(xml, 'CNPJ')) ||
+    normalizeFiscalCpf(extractTagValue(xml, 'CPF'));
+  if (!emitenteCnpjCpf) return null;
+
+  const dataEmissaoValue = extractTagValue(xml, 'dhEmi');
+  const dataEmissao = new Date(dataEmissaoValue);
+  const dataEmissaoFiscal = parseFiscalCalendarDate(dataEmissaoValue);
+  if (
+    !dataEmissaoValue ||
+    Number.isNaN(dataEmissao.getTime()) ||
+    !dataEmissaoFiscal
+  ) {
+    return null;
+  }
+
+  const valorTotal = extractTagValue(xml, 'vNF');
+  if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(valorTotal)) return null;
+
+  return {
+    chaveAcesso,
+    nsu: docZip.nsu,
+    modelo: '55',
+    serie: String(Number(chaveAcesso.substring(22, 25))),
+    numeroDocumento: String(Number(chaveAcesso.substring(25, 34))),
+    emitenteCnpjCpf,
+    emitenteRazaoSocial: extractTagValue(xml, 'xNome'),
+    dataEmissao,
+    dataEmissaoFiscal,
+    valorTotal,
+    tpNfXml: extractTagValue(xml, 'tpNF') === '0' ? '0' : '1',
+    xmlContent: xml,
+  };
 }
 
 /**

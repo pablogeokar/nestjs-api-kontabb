@@ -3,6 +3,7 @@ import {
   extractDfeDocZips,
   extractDfeResponseMetadata,
   parseDfeDocZip,
+  parseNfeResumoDocZip,
   parseManualFiscalXml,
   type DfeDocZip,
 } from './dfe-document.parser';
@@ -84,6 +85,35 @@ describe('DF-e document parser', () => {
       '12345678000195',
       '98765432000110',
     ]);
+  });
+
+  it('extrai resumo de NF-e sem classificá-lo como XML completo', () => {
+    const chave = buildAccessKey('55');
+    const xml = `<resNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+      <chNFe>${chave}</chNFe><CNPJ>12345678000195</CNPJ>
+      <xNome>Empresa &amp; Filhos</xNome><IE>123456789</IE>
+      <dhEmi>2024-08-15T10:45:00-03:00</dhEmi><tpNF>1</tpNF>
+      <vNF>150.75</vNF><cSitNFe>1</cSitNFe>
+    </resNFe>`;
+    const envelope = {
+      nsu: 456,
+      schema: 'resNFe_v1.01.xsd',
+      content: zip(xml),
+    };
+
+    expect(parseDfeDocZip(envelope, 'NFE')).toBeNull();
+    expect(parseNfeResumoDocZip(envelope)).toMatchObject({
+      chaveAcesso: chave,
+      nsu: 456,
+      modelo: '55',
+      serie: '1',
+      numeroDocumento: '123',
+      emitenteCnpjCpf: '12345678000195',
+      emitenteRazaoSocial: 'Empresa & Filhos',
+      dataEmissaoFiscal: '2024-08-15',
+      valorTotal: '150.75',
+      tpNfXml: '1',
+    });
   });
 
   it('extrai participantes do 0150, totais, datas e informações complementares', () => {
