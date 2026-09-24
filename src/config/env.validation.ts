@@ -99,6 +99,10 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   MAILTRAP_SENDER_NAME?: string;
+
+  @IsString()
+  @IsOptional()
+  EMAIL_ASSETS_BASE_URL?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

@@ -20,6 +20,7 @@ import { SetupController } from './health/setup.controller';
 import { DashboardController } from './health/dashboard.controller';
 import { CronController } from './cron/cron.controller';
 import { StorageAdminController } from './storage/storage.controller';
+import { CrmModule } from './crm/crm.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { StorageAdminController } from './storage/storage.controller';
     AuthModule,
     StorageModule,
     MailModule,
+    CrmModule,
     ClientesModule,
     GuiasModule,
     UploadModule,

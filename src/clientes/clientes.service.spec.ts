@@ -8,6 +8,7 @@ describe('ClientesService - configuração fiscal', () => {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   const normalize = (
     existing: {
@@ -223,5 +224,61 @@ describe('ClientesService - configuração fiscal', () => {
         { regimeTributario: 'SIMPLES_NACIONAL' },
       ),
     ).toThrow(BadRequestException);
+  });
+
+  it('dispara boas-vindas sem tornar o cadastro dependente do envio', async () => {
+    const crmService = {
+      enviarEmailBoasVindasParaDados: jest
+        .fn()
+        .mockRejectedValue(new Error('MAIL_PROVIDER_UNAVAILABLE')),
+    };
+    const logger = {
+      error: jest.fn(),
+    };
+    const serviceWithCrm = new ClientesService(
+      {
+        db: {
+          execute: jest
+            .fn()
+            .mockResolvedValue([
+              { client_id: '11111111-1111-4111-8111-111111111111' },
+            ]),
+        },
+      } as never,
+      logger as never,
+      {} as never,
+      {} as never,
+      { hashPassword: jest.fn().mockResolvedValue('password-hash') } as never,
+      crmService as never,
+    );
+
+    await expect(
+      serviceWithCrm.registerClient({
+        actorUserId: 'admin-1',
+        tipoPessoa: 'PF',
+        companyName: 'Pessoa Exemplo',
+        cnpj: '12345678901',
+        cpf: '12345678901',
+        emails: ['pessoa@example.com'],
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      clientId: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(crmService.enviarEmailBoasVindasParaDados).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clienteId: '11111111-1111-4111-8111-111111111111',
+        emails: ['pessoa@example.com'],
+        provisionalPassword: '123456',
+      }),
+    );
+
+    await Promise.resolve();
+    expect(logger.error).toHaveBeenCalledWith(
+      'crm_welcome_email_failed',
+      expect.any(Error),
+      expect.objectContaining({ operation: 'crm_welcome_email' }),
+    );
   });
 });

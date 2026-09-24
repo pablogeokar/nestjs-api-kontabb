@@ -21,6 +21,7 @@ export class MailService {
   private readonly senderName: string;
   private readonly apiUrl: string;
   private readonly portalUrl: string;
+  private readonly emailAssetsBaseUrl: string;
 
   constructor(
     private configService: ConfigService,
@@ -38,6 +39,9 @@ export class MailService {
       this.configService.get<string>('MAILTRAP_API_URL') ||
       'https://send.api.mailtrap.io/api/send';
     this.portalUrl = this.configService.getOrThrow<string>('APP_URL');
+    this.emailAssetsBaseUrl =
+      this.configService.get<string>('EMAIL_ASSETS_BASE_URL')?.trim() ||
+      this.portalUrl;
   }
 
   async sendDocumentNotificationEmail(
@@ -213,6 +217,64 @@ export class MailService {
     return this.sendEmail(payload, 'ferias_notification');
   }
 
+  async sendWelcomeEmail(params: {
+    to: string | string[];
+    clientName: string;
+    loginIdentifier: string;
+    loginEmail?: string;
+    provisionalPassword: string;
+    panelUrl?: string;
+  }): Promise<boolean> {
+    const {
+      to,
+      clientName,
+      loginIdentifier,
+      loginEmail,
+      provisionalPassword,
+    } = params;
+
+    if (!this.apiToken) {
+      this.logger.warn('mailtrap_not_configured', {
+        operation: 'welcome_email',
+        result: 'skipped',
+      });
+      return false;
+    }
+
+    const recipients = (Array.isArray(to) ? to : [to])
+      .map((email) => email.trim())
+      .filter(Boolean)
+      .map((email) => ({ email }));
+    if (!recipients.length) {
+      this.logger.warn('welcome_email_without_recipients', {
+        operation: 'welcome_email',
+        result: 'skipped',
+      });
+      return false;
+    }
+
+    const panelUrl =
+      params.panelUrl ?? `${this.portalUrl.replace(/\/+$/, '')}/cliente`;
+    const loginEmailText = loginEmail
+      ? `\nE-mail técnico de acesso: ${loginEmail}`
+      : '';
+    const payload = {
+      from: { email: this.senderEmail, name: this.senderName },
+      to: recipients,
+      subject: 'Bem-vindo(a) à Kontabb · Acesso ao seu painel',
+      text: `Olá, ${clientName}\n\nBem-vindo(a) à Kontabb. Seu painel do cliente reúne obrigações, folhas de pagamento e o acompanhamento da sua rotina contábil.\n\nAcesse o painel: ${panelUrl}\nIdentificador de login: ${loginIdentifier}${loginEmailText}\nSenha provisória: ${provisionalPassword}\n\nNo primeiro acesso, será obrigatório trocar a senha provisória por uma senha nova e segura.\n\nConte com a nossa equipe sempre que precisar.\n\n—\nKontabb · Contabilidade Borges`,
+      html: this.buildWelcomeHtml({
+        clientName,
+        loginIdentifier,
+        loginEmail,
+        provisionalPassword,
+        panelUrl,
+      }),
+    };
+
+    return this.sendEmail(payload, 'welcome_email');
+  }
+
   // ──────────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────────
@@ -275,6 +337,140 @@ export class MailService {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  }
+
+  private buildWelcomeHtml(params: {
+    clientName: string;
+    loginIdentifier: string;
+    loginEmail?: string;
+    provisionalPassword: string;
+    panelUrl: string;
+  }): string {
+    const {
+      clientName,
+      loginIdentifier,
+      loginEmail,
+      provisionalPassword,
+      panelUrl,
+    } = params;
+    const esc = (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    const loginEmailRow = loginEmail
+      ? `<tr>
+          <td style="padding:0 0 16px;">
+            <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">E-mail técnico</span><br>
+            <span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(loginEmail)}</span>
+          </td>
+        </tr>`
+      : '';
+    const feature = (params: {
+      title: string;
+      description: string;
+      image: string;
+      alt: string;
+    }) => `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0 0;">
+        <tr>
+          <td style="padding:0;">
+            <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:#0B1F3A;">${params.title}</p>
+            <p style="margin:0 0 14px;color:#5F6B7A;line-height:1.6;">${params.description}</p>
+            <img
+              src="${esc(this.emailAssetUrl(params.image))}"
+              alt="${params.alt}"
+              width="508"
+              style="display:block;max-width:100%;height:auto;border:0;"
+            />
+          </td>
+        </tr>
+      </table>`;
+
+    const bodyContent = `
+      <p style="margin:0 0 16px;font-size:20px;font-weight:700;color:#0B1F3A;">Olá, ${esc(clientName)}</p>
+      <p style="margin:0;color:#5F6B7A;line-height:1.6;">Seja bem-vindo(a) à Kontabb. No seu painel do cliente, você acompanha obrigações, documentos e informações importantes da sua rotina contábil em um só lugar.</p>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;">
+        <tr>
+          <td style="padding:24px;">
+            <p style="margin:0 0 18px;font-size:16px;font-weight:700;color:#0B1F3A;">Como acessar seu painel</p>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:0 0 16px;">
+                  <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Endereço</span><br>
+                  <a href="${esc(panelUrl)}" style="font-size:15px;font-weight:600;color:#1456A3;text-decoration:none;">${esc(panelUrl)}</a>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 16px;">
+                  <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Identificador de login</span><br>
+                  <span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(loginIdentifier)}</span>
+                </td>
+              </tr>
+              ${loginEmailRow}
+              <tr>
+                <td>
+                  <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Senha provisória</span><br>
+                  <span style="display:inline-block;margin-top:4px;padding:8px 12px;background:#ffffff;border:1px solid #dce4ee;border-radius:6px;font-size:18px;font-weight:700;color:#0B1F3A;letter-spacing:1px;">${esc(provisionalPassword)}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 4px;background:#fff7e6;border:1px solid #f2d59c;border-radius:10px;">
+        <tr>
+          <td style="padding:16px 18px;color:#5F6B7A;line-height:1.6;">
+            <strong style="color:#0B1F3A;">Importante no primeiro acesso:</strong> depois de entrar com a senha provisória, o sistema pedirá que você defina uma senha nova e segura. Essa etapa é obrigatória para continuar.
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin:28px 0 0;font-size:18px;font-weight:700;color:#0B1F3A;">Conheça o painel</p>
+      ${feature({
+        title: 'Acesso à área do cliente',
+        description:
+          'Entre com seu identificador e senha para acompanhar todas as informações da sua empresa.',
+        image: 'login_area_do_cliente.jpg',
+        alt: 'Tela de login da área do cliente Kontabb',
+      })}
+      ${feature({
+        title: 'Obrigações',
+        description:
+          'Consulte as obrigações disponíveis, seus vencimentos e os documentos necessários para cada competência.',
+        image: 'painel_do_cliente_obrigacoes.jpg',
+        alt: 'Painel de obrigações do cliente Kontabb',
+      })}
+      ${feature({
+        title: 'Folhas de pagamento',
+        description:
+          'Acesse as folhas de pagamento e os documentos relacionados à sua equipe sempre que precisar.',
+        image: 'painel_do_cliente_folhas_de_pagamento.jpg',
+        alt: 'Painel de folhas de pagamento do cliente Kontabb',
+      })}
+      ${feature({
+        title: 'Quitação de obrigações',
+        description:
+          'Informe pagamentos pelo painel para manter o acompanhamento das suas obrigações atualizado.',
+        image: 'modal_quitar_pagamento.jpg',
+        alt: 'Modal para informar a quitação de uma obrigação no Kontabb',
+      })}
+
+      <p style="margin:32px 0;text-align:center;">
+        <a href="${esc(panelUrl)}" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar o painel</a>
+      </p>
+      <p style="margin:0;color:#5F6B7A;line-height:1.6;">Se precisar de ajuda, conte com a nossa equipe. Estamos à disposição para apoiar você no uso do painel.</p>
+    `;
+
+    return this.layout.wrap(bodyContent);
+  }
+
+  private emailAssetUrl(fileName: string): string {
+    return `${this.emailAssetsBaseUrl.replace(/\/+$/, '')}/email/${fileName}`;
   }
 
   private buildDocumentNotificationHtml(params: {
