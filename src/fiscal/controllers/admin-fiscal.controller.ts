@@ -93,7 +93,7 @@ export class AdminFiscalController {
   @ApiOperation({
     summary: 'Upload de certificado digital A1',
     description:
-      'Envia um certificado A1 (.pfx/.p12) para um cliente específico. O certificado é validado, criptografado e armazenado no R2.',
+      'Envia um certificado A1 (.pfx/.p12) para um cliente específico. O certificado é validado, criptografado e armazenado no R2; qualquer certificado anterior do cliente é excluído e substituído.',
   })
   @ApiBody({
     schema: {
@@ -108,7 +108,7 @@ export class AdminFiscalController {
   })
   @ApiResponse({
     status: 201,
-    description: 'Certificado cadastrado com sucesso.',
+    description: 'Certificado cadastrado ou substituído com sucesso.',
   })
   @ApiResponse({
     status: 400,
@@ -141,7 +141,7 @@ export class AdminFiscalController {
 
     return {
       success: true,
-      message: 'Certificado digital cadastrado com sucesso.',
+      message: 'Certificado digital cadastrado ou substituído com sucesso.',
       data: result,
     };
   }

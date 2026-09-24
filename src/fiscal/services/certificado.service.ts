@@ -7,9 +7,14 @@ import { eq, and, gte, inArray, lt, lte } from 'drizzle-orm';
 import forge from 'node-forge';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
+import { StorageCleanupService } from '../../storage/storage-cleanup.service';
 import { AppLogger } from '../../common/logger.service';
 import { CryptoUtil } from '../../common/crypto.util';
-import { certificadosDigitais, clientes } from '../../database/schema';
+import {
+  certificadosDigitais,
+  clientes,
+  storageCleanupJobs,
+} from '../../database/schema';
 
 export interface CertificadoMetadata {
   cnpj: string;
@@ -160,6 +165,7 @@ export class CertificadoService {
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
+    private readonly storageCleanup: StorageCleanupService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -214,23 +220,15 @@ export class CertificadoService {
       );
     }
 
-    // 5. Revogar certificados anteriores ativos do mesmo cliente
-    await this.database.db
-      .update(certificadosDigitais)
-      .set({ status: 'REVOGADO', atualizadoEm: new Date() })
-      .where(
-        and(
-          eq(certificadosDigitais.clienteId, input.clienteId),
-          inArray(certificadosDigitais.status, ['ATIVO', 'PRESTES_A_EXPIRAR']),
-        ),
-      );
-
-    // 6. Criptografar o arquivo PFX com AES-256-GCM
+    // 5. Criptografar o arquivo PFX com AES-256-GCM
     const { encryptedData, iv, authTag } = CryptoUtil.encrypt(input.pfxBuffer);
     const encryptedBuffer = Buffer.from(
       JSON.stringify({ encryptedData, iv, authTag }),
       'utf-8',
     );
+
+    // 6. Criptografar a senha do certificado antes de alterar o storage.
+    const senhaCriptografada = CryptoUtil.encryptString(input.senha);
 
     // 7. Upload criptografado ao R2
     const certId = crypto.randomUUID();
@@ -241,33 +239,97 @@ export class CertificadoService {
       'application/octet-stream',
     );
 
-    // 8. Criptografar a senha do certificado
-    const senhaCriptografada = CryptoUtil.encryptString(input.senha);
-
-    // 9. Determinar status
+    // 8. Determinar status
     const diasParaExpirar = Math.floor(
       (metadata.validadeFim.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
     );
     const status = diasParaExpirar <= 30 ? 'PRESTES_A_EXPIRAR' : 'ATIVO';
 
-    // 10. Gravar no banco
-    await this.database.db
-      .insert(certificadosDigitais)
-      .values({
-        id: certId,
+    // 9. Substituir todos os certificados anteriores em uma única transação.
+    // O bloqueio do cliente serializa uploads concorrentes para o mesmo cliente.
+    let cleanupJobIds: string[];
+    try {
+      cleanupJobIds = await this.database.db.transaction(async (tx) => {
+        await tx
+          .select({ id: clientes.id })
+          .from(clientes)
+          .where(eq(clientes.id, input.clienteId))
+          .for('update');
+
+        const certificadosAnteriores = await tx
+          .select({
+            id: certificadosDigitais.id,
+            arquivoKey: certificadosDigitais.arquivoKey,
+          })
+          .from(certificadosDigitais)
+          .where(eq(certificadosDigitais.clienteId, input.clienteId));
+
+        await tx
+          .delete(certificadosDigitais)
+          .where(eq(certificadosDigitais.clienteId, input.clienteId));
+
+        await tx.insert(certificadosDigitais).values({
+          id: certId,
+          clienteId: input.clienteId,
+          cnpj: metadata.cnpj,
+          razaoSocial: metadata.razaoSocial,
+          arquivoKey,
+          senhaCriptografada,
+          thumbprint: metadata.thumbprint,
+          emissor: metadata.emissor,
+          validadeInicio: metadata.validadeInicio,
+          validadeFim: metadata.validadeFim,
+          status,
+          uploadadoPor: input.uploadadoPor,
+        });
+
+        if (!certificadosAnteriores.length) return [];
+
+        const cleanupJobs = await tx
+          .insert(storageCleanupJobs)
+          .values(
+            certificadosAnteriores.map((certificado) => ({
+              objectKey: certificado.arquivoKey,
+              entidadeTipo: 'CERTIFICADO_DIGITAL',
+              entidadeId: certificado.id,
+            })),
+          )
+          .onConflictDoNothing()
+          .returning({ id: storageCleanupJobs.id });
+
+        return cleanupJobs.map((job) => job.id);
+      });
+    } catch (error) {
+      // Se a transação falhar, o novo arquivo não pode ficar órfão no storage.
+      try {
+        await this.storage.delete(arquivoKey);
+      } catch (cleanupError) {
+        this.logger.error(
+          'certificate_upload_rollback_cleanup_failed',
+          cleanupError,
+          {
+            clienteId: input.clienteId,
+            operation: 'upload_certificado',
+          },
+        );
+      }
+      throw error;
+    }
+
+    // A exclusão é tentada na própria requisição. Em caso de falha transitória,
+    // o job persistido permite que a rotina de limpeza conclua a remoção depois.
+    const cleanup = await this.storageCleanup.processJobs(cleanupJobIds, {
+      userId: input.uploadadoPor,
+      trigger: 'certificate_replacement',
+    });
+    if (cleanup.failed > 0) {
+      this.logger.warn('certificate_previous_file_cleanup_pending', {
         clienteId: input.clienteId,
-        cnpj: metadata.cnpj,
-        razaoSocial: metadata.razaoSocial,
-        arquivoKey,
-        senhaCriptografada,
-        thumbprint: metadata.thumbprint,
-        emissor: metadata.emissor,
-        validadeInicio: metadata.validadeInicio,
-        validadeFim: metadata.validadeFim,
-        status,
-        uploadadoPor: input.uploadadoPor,
-      })
-      .returning();
+        operation: 'upload_certificado',
+        result: 'partial',
+        pendingFiles: cleanup.failed,
+      });
+    }
 
     return {
       id: certId,
