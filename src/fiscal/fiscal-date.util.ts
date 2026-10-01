@@ -39,3 +39,39 @@ export function parseCompetenciaMensal(value: string): CompetenciaRange {
   const fim = new Date(Date.UTC(ano, mes, 0, 23, 59, 59, 999));
   return { competencia, inicio, fim };
 }
+
+/**
+ * Número de meses completos (de calendário) entre a competência de entrada de
+ * um fato e uma competência de referência, considerando apenas ano+mês. Ambas
+ * as entradas podem ser 'YYYY-MM' ou qualquer data cujos 7 primeiros caracteres
+ * sejam 'YYYY-MM' (ex.: 'YYYY-MM-DD', como as colunas `date` do Postgres).
+ *
+ * Mesmo mês → 0; mês seguinte → 1; mês anterior → negativo. É a base do
+ * calendário do CIAP: a parcela de uma competência é derivada do número de
+ * meses desde a entrada do bem (R1.4), nunca de um contador de chamadas.
+ */
+export function monthsBetweenCompetencias(
+  entrada: string,
+  referencia: string,
+): number {
+  const entradaMes = anoMesParaIndice(entrada);
+  const referenciaMes = anoMesParaIndice(referencia);
+  return referenciaMes - entradaMes;
+}
+
+/**
+ * Converte 'YYYY-MM(-DD)?' num índice absoluto de meses (ano * 12 + mês), de
+ * modo que a diferença entre dois índices seja o número de meses de calendário
+ * entre eles. Lança Error para entradas sem o prefixo 'YYYY-MM'.
+ */
+function anoMesParaIndice(value: string): number {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])/.exec(value ?? '');
+  if (!match) {
+    throw new Error(
+      `Data de competência inválida: "${value}". Esperado AAAA-MM.`,
+    );
+  }
+  const ano = Number(match[1]);
+  const mes = Number(match[2]);
+  return ano * 12 + (mes - 1);
+}

@@ -31,13 +31,12 @@ import { FiscalItensService } from '../services/fiscal-itens.service';
 import { parseCompetenciaMensal } from '../fiscal-date.util';
 import {
   BaixarBemCiapDto,
+  CiapClienteDto,
   CiapCompetenciaDto,
+  CorrigirApropriacaoCiapDto,
   RegistrarBemCiapDto,
 } from '../dto/ciap.dto';
-import {
-  CriarGuiaDto,
-  MarcarPagamentoGuiaDto,
-} from '../dto/guias-fiscais.dto';
+import { CriarGuiaDto, MarcarPagamentoGuiaDto } from '../dto/guias-fiscais.dto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Controller do CLIENTE logado (escopo da própria empresa)
@@ -55,7 +54,7 @@ export class ClienteFiscalApuracaoController {
     private readonly guiasService: FiscalGuiasService,
     private readonly pisCofinsService: PisCofinsService,
     private readonly fiscalItensService: FiscalItensService,
-  ) { }
+  ) {}
 
   private async clienteId(userId: string): Promise<string> {
     const cliente = await this.clientesService.getClientForUser(userId);
@@ -113,6 +112,17 @@ export class ClienteFiscalApuracaoController {
     return this.ciapService.apurarCompetencia({
       clienteId: await this.clienteId(user.id),
       competencia,
+    });
+  }
+
+  @Get('ciap/diagnostico')
+  @ApiOperation({
+    summary:
+      'Diagnóstico read-only das fichas CIAP (identidade por SKU e risco de reemissão)',
+  })
+  async diagnosticarCiap(@CurrentUser() user: CurrentUserType) {
+    return this.ciapService.diagnosticarFichas({
+      clienteId: await this.clienteId(user.id),
     });
   }
 
@@ -189,7 +199,7 @@ export class AdminFiscalApuracaoController {
     private readonly difalService: DifalEntradaService,
     private readonly guiasService: FiscalGuiasService,
     private readonly pisCofinsService: PisCofinsService,
-  ) { }
+  ) {}
 
   // ── CIAP ────────────────────────────────────────────────────────────────
   @Post('ciap/importar')
@@ -215,6 +225,34 @@ export class AdminFiscalApuracaoController {
     return this.ciapService.apropriarCompetencia({
       clienteId: body.clienteId,
       competencia: body.competencia,
+    });
+  }
+
+  @Post('ciap/corrigir')
+  @ApiOperation({
+    summary:
+      'Correção retroativa de uma apropriação CIAP (nova versão + estorno auditável)',
+  })
+  async corrigirApropriacaoCiap(@Body() body: CorrigirApropriacaoCiapDto) {
+    return this.ciapService.corrigirApropriacao({
+      clienteId: body.clienteId,
+      bemId: body.bemId,
+      competencia: body.competencia,
+      coeficiente: body.coeficiente,
+      coeficienteFonte: body.coeficienteFonte,
+      motivo: body.motivo,
+      dataCorrecao: body.dataCorrecao,
+    });
+  }
+
+  @Post('ciap/migrar-identidade')
+  @ApiOperation({
+    summary:
+      'Migração/backfill assistido da identidade patrimonial por aquisição (não por SKU)',
+  })
+  async migrarIdentidadeCiap(@Body() body: CiapClienteDto) {
+    return this.ciapService.migrarIdentidadePorAquisicao({
+      clienteId: body.clienteId,
     });
   }
 

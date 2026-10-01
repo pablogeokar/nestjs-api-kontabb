@@ -73,10 +73,15 @@ export class EnvironmentVariables {
   @IsOptional()
   CRON_SECRET?: string;
 
-  // Fase 0 (F07): feature flag `sped.blocoG.leiauteHomologado`. Enquanto o
-  // leiaute do Bloco G não estiver homologado (Fase 2), esta flag permanece
-  // `false` e a geração de arquivos EFD que exijam Bloco G é bloqueada.
-  // Fonte única de verdade consumida por efd-icms-ipi.service.ts.
+  // F07: feature flag `sped.blocoG.leiauteHomologado`. Fonte única de verdade
+  // consumida por efd-icms-ipi.service.ts.
+  //
+  // Gate de liberação (Fase 2, tarefa 6.1): o default permanece `false`; só
+  // deve ser `true` DEPOIS que ambas as pré-condições fiscais estiverem
+  // satisfeitas — fixtures normativas verdes (tarefa 5, concluída) E validação
+  // no PVA por UF/perfil (tarefa 6.2, pendente). A liberação é config-driven de
+  // propósito (sem hardcode): um humano vira a chave após o aceite do PVA.
+  // Enquanto `false`, a geração de arquivos EFD que exijam Bloco G é bloqueada.
   @IsString()
   @IsOptional()
   @IsIn(['true', 'false'], {

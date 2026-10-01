@@ -15,6 +15,7 @@ import {
 import type { DatabaseService } from '../../database/database.service';
 import type { StorageService } from '../../storage/storage.service';
 import type { AppLogger } from '../../common/logger.service';
+import type { CiapService } from '../services/ciap.service';
 import type { SpedInconsistencia } from './sped-efd.types';
 
 type Adjustment = typeof spedAjustesApuracao.$inferSelect;
@@ -203,11 +204,18 @@ describe('F07 — bloqueio de geração por Bloco G pendente (R3.1/R3.3)', () =>
       ),
     } as unknown as ConfigService;
 
+    // loadCiap (tarefa 3.3) delega o coeficiente a CiapService.calcularCoeficiente.
+    // Estes testes não exercitam o caminho do Bloco G, logo um stub mínimo basta.
+    const ciapService = {
+      calcularCoeficiente: jest.fn(),
+    } as unknown as CiapService;
+
     const service = new EfdIcmsIpiService(
       database,
       storage,
       logger,
       configService,
+      ciapService,
     );
     return { service, upload };
   }

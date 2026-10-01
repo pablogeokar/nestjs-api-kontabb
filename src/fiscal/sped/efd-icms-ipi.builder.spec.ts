@@ -1476,22 +1476,27 @@ describe('buildEfdIcmsIpiRecords', () => {
         ciap: {
           saldoInicial: '4800.00',
           somaParcelas: '100.00',
-          valorTotalCredito: '100.00',
-          indicadorPeriodo: '0',
           saidasTributadas: '10000.00',
           saidasTotais: '10000.00',
+          somaIcmsOutrosCreditos: '0.00',
           bens: [
             {
               codigoIndividualizacao: 'BEM-1',
               identificacaoBem: 'Maquina',
               tipoMovimentacao: 'SI',
               valorIcmsOperacao: '4800.00',
+              valorIcmsSt: '150.00',
               valorIcmsFrete: '0.00',
               valorIcmsDifal: '0.00',
               numeroParcela: 1,
-              valorParcelaIcms: '100.00',
-              valorParcelaFrete: '0.00',
-              valorParcelaDifal: '0.00',
+              valorParcelaPassivel: '100.00',
+              identificacaoMercadoria: '1',
+              codigoBemPrincipal: null,
+              codigoContaContabil: '1.2.3.01',
+              numeroTotalParcelas: 48,
+              centroCusto: 'CC-PROD',
+              funcaoBem: 'Usinagem de peças',
+              vidaUtilMeses: 120,
             },
           ],
         },
@@ -1499,8 +1504,135 @@ describe('buildEfdIcmsIpiRecords', () => {
     );
     const blocoG = regs(result.records, 'G');
     expect(blocoG).toEqual(['G110', 'G125']);
+    // R3.3: o cadastro do ativo (0300) e a utilização do bem (0305) são emitidos
+    // no Bloco 0 para o bem referenciado pelo G125.
+    const bloco0 = regs(result.records, '0');
+    expect(bloco0).toContain('0300');
+    expect(bloco0).toContain('0305');
+    const r0300 = fieldsOf(lineFor(result.records, '0300'));
+    // 0300 com 6 campos após REG: COD_IND_BEM, IDENT_MERC, DESCR_ITEM, COD_PRNC,
+    // COD_CTA, NR_PARC. Bem (IDENT_MERC=1) => COD_PRNC vazio.
+    expect(r0300).toHaveLength(6);
+    expect(r0300[0]).toBe('BEM-1'); // COD_IND_BEM
+    expect(r0300[1]).toBe('1'); // IDENT_MERC (bem)
+    expect(r0300[2]).toBe('Maquina'); // DESCR_ITEM
+    expect(r0300[3]).toBe(''); // COD_PRNC (vazio para bem)
+    expect(r0300[4]).toBe('1.2.3.01'); // COD_CTA
+    expect(r0300[5]).toBe('48'); // NR_PARC
+    const r0305 = fieldsOf(lineFor(result.records, '0305'));
+    // 0305 com 3 campos após REG: COD_CCUS, FUNC, VIDA_UTIL.
+    expect(r0305).toHaveLength(3);
+    expect(r0305[0]).toBe('CC-PROD'); // COD_CCUS
+    expect(r0305[1]).toBe('Usinagem de peças'); // FUNC
+    expect(r0305[2]).toBe('120'); // VIDA_UTIL
+    // R3.3: integridade referencial — todo COD_IND_BEM de G125 tem um 0300.
+    const g125CodIndBem = fieldsOf(lineFor(result.records, 'G125'))[0];
+    expect(g125CodIndBem).toBe(r0300[0]);
     const g110 = fieldsOf(lineFor(result.records, 'G110'));
-    expect(g110[7]).toBe('100,00'); // valor total do crédito
+    // R3.1: leiaute oficial de G110 com 9 campos após REG, incluindo SOM_ICMS_OC
+    // e o índice de participação (IND_PER_SAI) na posição correta (campo 08).
+    // Campos: DT_INI, DT_FIN, SALDO_IN_ICMS, SOM_PARC, VL_TRIB_EXP, VL_TOTAL,
+    // IND_PER_SAI, ICMS_APROP, SOM_ICMS_OC.
+    expect(g110).toHaveLength(9);
+    expect(g110[2]).toBe('4800,00'); // SALDO_IN_ICMS
+    expect(g110[3]).toBe('100,00'); // SOM_PARC
+    expect(g110[4]).toBe('10000,00'); // VL_TRIB_EXP
+    expect(g110[5]).toBe('10000,00'); // VL_TOTAL
+    expect(g110[6]).toBe('1,00000000'); // IND_PER_SAI (10000 / 10000)
+    expect(g110[7]).toBe('100,00'); // ICMS_APROP (SOM_PARC x IND_PER_SAI)
+    expect(g110[8]).toBe('0,00'); // SOM_ICMS_OC
+    const g125 = fieldsOf(lineFor(result.records, 'G125'));
+    // R3.2: leiaute oficial de G125 com 9 campos após REG, modelando a posição
+    // de ICMS-ST (campo 06) e posicionando NUM_PARC/VL_PARC_PASS nos finais.
+    // Campos: COD_IND_BEM, DT_MOV, TIPO_MOV, VL_IMOB_ICMS_OP, VL_IMOB_ICMS_ST,
+    // VL_IMOB_ICMS_FRT, VL_IMOB_ICMS_DIF, NUM_PARC, VL_PARC_PASS.
+    expect(g125).toHaveLength(9);
+    expect(g125[0]).toBe('BEM-1'); // COD_IND_BEM
+    expect(g125[2]).toBe('SI'); // TIPO_MOV
+    expect(g125[3]).toBe('4800,00'); // VL_IMOB_ICMS_OP
+    expect(g125[4]).toBe('150,00'); // VL_IMOB_ICMS_ST
+    expect(g125[5]).toBe('0,00'); // VL_IMOB_ICMS_FRT
+    expect(g125[6]).toBe('0,00'); // VL_IMOB_ICMS_DIF
+    expect(g125[7]).toBe('1'); // NUM_PARC
+    expect(g125[8]).toBe('100,00'); // VL_PARC_PASS
+    const file = buildSpedFile({ records: result.records });
+    expect(
+      validateSpedFile(file.bytes, { strictFieldCounts: true }),
+    ).toMatchObject({ valid: true });
+  });
+
+  it('R3.3: emite 0300 para componente (IDENT_MERC=2) com COD_PRNC e sem 0305, e garante integridade G125 -> 0300 para múltiplos bens', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        blocoGLeiauteHomologado: true,
+        ciap: {
+          saldoInicial: '0.00',
+          somaParcelas: '200.00',
+          saidasTributadas: '10000.00',
+          saidasTotais: '10000.00',
+          somaIcmsOutrosCreditos: '0.00',
+          bens: [
+            {
+              codigoIndividualizacao: 'BEM-PRINC',
+              identificacaoBem: 'Linha de produção',
+              tipoMovimentacao: 'SI',
+              valorIcmsOperacao: '4800.00',
+              valorIcmsSt: '0.00',
+              valorIcmsFrete: '0.00',
+              valorIcmsDifal: '0.00',
+              numeroParcela: 1,
+              valorParcelaPassivel: '100.00',
+              identificacaoMercadoria: '1',
+              codigoBemPrincipal: null,
+              codigoContaContabil: '1.2.3.01',
+              numeroTotalParcelas: 48,
+              centroCusto: 'CC-PROD',
+              funcaoBem: 'Produção',
+              vidaUtilMeses: 120,
+            },
+            {
+              codigoIndividualizacao: 'COMP-1',
+              identificacaoBem: 'Motor acoplado',
+              tipoMovimentacao: 'SI',
+              valorIcmsOperacao: '2400.00',
+              valorIcmsSt: '0.00',
+              valorIcmsFrete: '0.00',
+              valorIcmsDifal: '0.00',
+              numeroParcela: 1,
+              valorParcelaPassivel: '100.00',
+              identificacaoMercadoria: '2',
+              codigoBemPrincipal: 'BEM-PRINC',
+              codigoContaContabil: '1.2.3.02',
+              numeroTotalParcelas: 48,
+              // 0305 omitido para componente — estes campos são ignorados.
+              centroCusto: 'CC-PROD',
+              funcaoBem: 'Componente',
+              vidaUtilMeses: 120,
+            },
+          ],
+        },
+      }),
+    );
+    // Dois 0300 (um por bem/componente), mas apenas um 0305 (só o bem).
+    const bloco0 = regs(result.records, '0');
+    expect(bloco0.filter((reg) => reg === '0300')).toHaveLength(2);
+    expect(bloco0.filter((reg) => reg === '0305')).toHaveLength(1);
+    // 0300 do componente: IDENT_MERC=2 e COD_PRNC referenciando o bem principal.
+    // (ordenação por COD_IND_BEM: BEM-PRINC vem antes de COMP-1.)
+    const r0300Comp = fieldsOf(lineFor(result.records, '0300', 1));
+    expect(r0300Comp[0]).toBe('COMP-1'); // COD_IND_BEM
+    expect(r0300Comp[1]).toBe('2'); // IDENT_MERC (componente)
+    expect(r0300Comp[3]).toBe('BEM-PRINC'); // COD_PRNC
+    // R3.3: todo COD_IND_BEM de G125 tem um 0300 correspondente emitido.
+    const codIndBem0300 = result.records
+      .filter((record) => record.reg === '0300')
+      .map((record) => fieldsOf(serializeSpedRecord(record))[0]);
+    const codIndBemG125 = result.records
+      .filter((record) => record.reg === 'G125')
+      .map((record) => fieldsOf(serializeSpedRecord(record))[0]);
+    for (const cod of codIndBemG125) {
+      expect(codIndBem0300).toContain(cod);
+    }
     const file = buildSpedFile({ records: result.records });
     expect(
       validateSpedFile(file.bytes, { strictFieldCounts: true }),
@@ -1512,28 +1644,36 @@ describe('buildEfdIcmsIpiRecords', () => {
       ciap: {
         saldoInicial: '4800.00',
         somaParcelas: '100.00',
-        valorTotalCredito: '100.00',
-        indicadorPeriodo: '0',
         saidasTributadas: '10000.00',
         saidasTotais: '10000.00',
+        somaIcmsOutrosCreditos: '0.00',
         bens: [
           {
             codigoIndividualizacao: 'BEM-1',
             identificacaoBem: 'Maquina',
             tipoMovimentacao: 'SI',
             valorIcmsOperacao: '4800.00',
+            valorIcmsSt: '0.00',
             valorIcmsFrete: '0.00',
             valorIcmsDifal: '0.00',
             numeroParcela: 1,
-            valorParcelaIcms: '100.00',
-            valorParcelaFrete: '0.00',
-            valorParcelaDifal: '0.00',
+            valorParcelaPassivel: '100.00',
+            identificacaoMercadoria: '1',
+            codigoBemPrincipal: null,
+            codigoContaContabil: '1.2.3.01',
+            numeroTotalParcelas: 48,
+            centroCusto: 'CC-PROD',
+            funcaoBem: 'Usinagem de peças',
+            vidaUtilMeses: 120,
           },
         ],
       },
     });
     const result = buildEfdIcmsIpiRecords(input);
     // Sem a flag: diagnóstico impeditivo específico e nenhum registro do Bloco G.
+    // R3.3: sem leiaute homologado, 0300/0305 também não são emitidos.
+    expect(regs(result.records, '0')).not.toContain('0300');
+    expect(regs(result.records, '0')).not.toContain('0305');
     expect(input.inconsistencias).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1558,10 +1698,9 @@ describe('buildEfdIcmsIpiRecords', () => {
       ciap: {
         saldoInicial: '0.00',
         somaParcelas: '0.00',
-        valorTotalCredito: '0.00',
-        indicadorPeriodo: '0',
         saidasTributadas: '0.00',
         saidasTotais: '0.00',
+        somaIcmsOutrosCreditos: '0.00',
         bens: [],
       },
     });
@@ -1574,6 +1713,221 @@ describe('buildEfdIcmsIpiRecords', () => {
         expect.objectContaining({ codigo: 'BLOCO_G_LEIAUTE_PENDENTE' }),
       );
     }
+  });
+
+  // Fábrica de um bem CIAP com todos os campos obrigatórios do 0300/0305
+  // preenchidos, parametrizável para os cenários de G130/G140 (R3.4).
+  function makeCiapBem(
+    overrides: Partial<
+      NonNullable<SpedEfdBuilderInput['ciap']>['bens'][number]
+    > = {},
+  ): NonNullable<SpedEfdBuilderInput['ciap']>['bens'][number] {
+    return {
+      codigoIndividualizacao: 'BEM-1',
+      identificacaoBem: 'Maquina',
+      tipoMovimentacao: 'SI',
+      valorIcmsOperacao: '4800.00',
+      valorIcmsSt: '0.00',
+      valorIcmsFrete: '0.00',
+      valorIcmsDifal: '0.00',
+      numeroParcela: 1,
+      valorParcelaPassivel: '100.00',
+      identificacaoMercadoria: '1',
+      codigoBemPrincipal: null,
+      codigoContaContabil: '1.2.3.01',
+      numeroTotalParcelas: 48,
+      centroCusto: 'CC-PROD',
+      funcaoBem: 'Usinagem de peças',
+      vidaUtilMeses: 120,
+      ...overrides,
+    };
+  }
+
+  function makeCiap(
+    bens: NonNullable<SpedEfdBuilderInput['ciap']>['bens'],
+  ): NonNullable<SpedEfdBuilderInput['ciap']> {
+    return {
+      saldoInicial: '4800.00',
+      somaParcelas: '100.00',
+      saidasTributadas: '10000.00',
+      saidasTotais: '10000.00',
+      somaIcmsOutrosCreditos: '0.00',
+      bens,
+    };
+  }
+
+  // R3.4: movimentação de imobilização a partir de documento fiscal com os dados
+  // de origem disponíveis emite G130 (documento) e G140 (item) aninhados sob o
+  // G125, com integridade referencial (G125 -> G130 -> G140) e contagens oficiais.
+  it('R3.4: emite G130/G140 aninhados sob o G125 quando a origem documental está disponível', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        blocoGLeiauteHomologado: true,
+        ciap: makeCiap([
+          makeCiapBem({
+            codigoIndividualizacao: 'BEM-IM',
+            tipoMovimentacao: 'IM',
+            documentosOrigem: [
+              {
+                indicadorEmitente: '1',
+                codigoParticipante: 'PART-FORN',
+                codigoModelo: '55',
+                serie: '1',
+                numeroDocumento: 12345,
+                chaveEletronica: '3'.repeat(44),
+                itens: [{ numeroItem: '1', codigoItem: 'ITEM-A' }],
+              },
+            ],
+          }),
+        ]),
+      }),
+    );
+
+    // Ordem/aninhamento no Bloco G: G110, G125, G130, G140.
+    expect(regs(result.records, 'G')).toEqual([
+      'G110',
+      'G125',
+      'G130',
+      'G140',
+    ]);
+    const g130 = fieldsOf(lineFor(result.records, 'G130'));
+    // G130 com 6 campos após REG: IND_EMIT, COD_PART, COD_MOD, SERIE, NUM_DOC,
+    // CHV_NFE_CTE.
+    expect(g130).toHaveLength(6);
+    expect(g130[0]).toBe('1'); // IND_EMIT (terceiros)
+    expect(g130[1]).toBe('PART-FORN'); // COD_PART
+    expect(g130[2]).toBe('55'); // COD_MOD
+    expect(g130[3]).toBe('1'); // SERIE
+    expect(g130[4]).toBe('12345'); // NUM_DOC
+    expect(g130[5]).toBe('3'.repeat(44)); // CHV_NFE_CTE
+    const g140 = fieldsOf(lineFor(result.records, 'G140'));
+    // G140 com 2 campos após REG: NUM_ITEM, COD_ITEM.
+    expect(g140).toHaveLength(2);
+    expect(g140[0]).toBe('1'); // NUM_ITEM
+    expect(g140[1]).toBe('ITEM-A'); // COD_ITEM
+    // Não bloqueia: a origem está completa.
+    expect(result.records.length).toBeGreaterThan(0);
+    const file = buildSpedFile({ records: result.records });
+    expect(
+      validateSpedFile(file.bytes, { strictFieldCounts: true }),
+    ).toMatchObject({ valid: true });
+  });
+
+  // R3.4: emissão própria (IND_EMIT = '0') omite COD_PART e emite G130/G140.
+  it('R3.4: emite G130 com COD_PART vazio para emissão própria (IND_EMIT=0)', () => {
+    const result = buildEfdIcmsIpiRecords(
+      makeInput({
+        blocoGLeiauteHomologado: true,
+        ciap: makeCiap([
+          makeCiapBem({
+            tipoMovimentacao: 'CI',
+            documentosOrigem: [
+              {
+                indicadorEmitente: '0',
+                codigoParticipante: null,
+                codigoModelo: '55',
+                serie: null,
+                numeroDocumento: 999,
+                chaveEletronica: null,
+                itens: [{ numeroItem: '2', codigoItem: 'ITEM-B' }],
+              },
+            ],
+          }),
+        ]),
+      }),
+    );
+
+    const g130 = fieldsOf(lineFor(result.records, 'G130'));
+    expect(g130[0]).toBe('0'); // IND_EMIT (própria)
+    expect(g130[1]).toBe(''); // COD_PART omitido
+    expect(regs(result.records, 'G')).toEqual([
+      'G110',
+      'G125',
+      'G130',
+      'G140',
+    ]);
+  });
+
+  // R3.4: movimentação que EXIGE origem (IM/IA/CI/MC) sem os dados do documento
+  // de origem bloqueia a geração — nunca emite Bloco G com origem fabricada.
+  it('R3.4: bloqueia a geração quando a movimentação exige G130/G140 mas a origem está ausente', () => {
+    const input = makeInput({
+      blocoGLeiauteHomologado: true,
+      ciap: makeCiap([
+        makeCiapBem({
+          codigoIndividualizacao: 'BEM-SEM-ORIGEM',
+          tipoMovimentacao: 'IM',
+          // documentosOrigem ausente — exigido para TIPO_MOV = IM.
+        }),
+      ]),
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+
+    expect(input.inconsistencias).toContainEqual(
+      expect.objectContaining({
+        codigo: 'BLOCO_G_ORIGEM_G130_G140_AUSENTE',
+        severidade: 'ERRO',
+        campo: 'BEM-SEM-ORIGEM',
+      }),
+    );
+    // Bloco G não é serializado quando a origem exigida está ausente.
+    expect(regs(result.records, 'G')).toEqual([]);
+    // O gate `podeGerar` do serviço reprova a entrega.
+    const podeGerar = !input.inconsistencias.some(
+      (item) => item.severidade === 'ERRO',
+    );
+    expect(podeGerar).toBe(false);
+  });
+
+  // R3.4: G130 presente porém sem itens (G140) também é origem incompleta e
+  // bloqueia — a identificação do item é obrigatória junto com o documento.
+  it('R3.4: bloqueia quando o G130 existe mas não há itens de origem (G140)', () => {
+    const input = makeInput({
+      blocoGLeiauteHomologado: true,
+      ciap: makeCiap([
+        makeCiapBem({
+          tipoMovimentacao: 'IA',
+          documentosOrigem: [
+            {
+              indicadorEmitente: '1',
+              codigoParticipante: 'PART-FORN',
+              codigoModelo: '55',
+              serie: '1',
+              numeroDocumento: 12345,
+              chaveEletronica: null,
+              itens: [], // sem itens: origem incompleta
+            },
+          ],
+        }),
+      ]),
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+
+    expect(input.inconsistencias).toContainEqual(
+      expect.objectContaining({
+        codigo: 'BLOCO_G_ORIGEM_G130_G140_AUSENTE',
+        severidade: 'ERRO',
+      }),
+    );
+    expect(regs(result.records, 'G')).toEqual([]);
+  });
+
+  // R3.4: o saldo inicial reconstruído (TIPO_MOV = SI) não tem documento de
+  // origem único e NÃO exige G130/G140 — continua gerando sem bloqueio.
+  it('R3.4: saldo inicial (SI) não exige G130/G140 e não bloqueia', () => {
+    const input = makeInput({
+      blocoGLeiauteHomologado: true,
+      ciap: makeCiap([makeCiapBem({ tipoMovimentacao: 'SI' })]),
+    });
+    const result = buildEfdIcmsIpiRecords(input);
+
+    expect(input.inconsistencias).not.toContainEqual(
+      expect.objectContaining({
+        codigo: 'BLOCO_G_ORIGEM_G130_G140_AUSENTE',
+      }),
+    );
+    // Nenhum G130/G140 é emitido para o saldo inicial.
+    expect(regs(result.records, 'G')).toEqual(['G110', 'G125']);
   });
 });
 

@@ -47,6 +47,17 @@ export class CiapCompetenciaDto {
 }
 
 /**
+ * DTO para rotas de CIAP que operam sobre todo o acervo de um cliente, sem
+ * competência (ex.: diagnóstico de fichas e migração da identidade por
+ * aquisição).
+ */
+export class CiapClienteDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID('4')
+  clienteId!: string;
+}
+
+/**
  * DTO para registro manual de um bem do ativo permanente no CIAP.
  */
 export class RegistrarBemCiapDto {
@@ -98,6 +109,64 @@ export class RegistrarBemCiapDto {
   @Min(PARCELAS_MIN)
   @Max(PARCELAS_MAX)
   quantidadeParcelas?: number;
+}
+
+// Coeficiente de apropriação (índice de participação), 0..1 com até 4 casas.
+const COEFICIENTE_PATTERN = /^(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)$/;
+
+/**
+ * DTO para correção retroativa de uma apropriação CIAP já efetivada (R1.6/R1.7).
+ * A correção cria uma nova versão na razão e um movimento de estorno/correção,
+ * sem sobrescrever a entrega anterior. Corrige o coeficiente (rateio/cenário)
+ * de um bem numa competência; a base e a parcela passível originais são
+ * preservadas.
+ */
+export class CorrigirApropriacaoCiapDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID('4')
+  clienteId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID('4')
+  bemId!: string;
+
+  @ApiProperty({ example: '2026-08', pattern: '^\\d{4}-(0[1-9]|1[0-2])$' })
+  @IsString()
+  @Matches(COMPETENCIA_PATTERN, {
+    message: 'Competência deve estar no formato AAAA-MM.',
+  })
+  competencia!: string;
+
+  @ApiProperty({ example: '0.6000' })
+  @IsString()
+  @Matches(COEFICIENTE_PATTERN, {
+    message: 'O coeficiente deve estar entre 0 e 1 (ex.: "0.6000").',
+  })
+  coeficiente!: string;
+
+  @ApiProperty({ example: 'saidas_tributadas', maxLength: 40 })
+  @IsString()
+  @Length(1, 40)
+  coeficienteFonte!: string;
+
+  @ApiPropertyOptional({
+    example: 'Reclassificação de saída tributada após retificação de NF-e.',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  motivo?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-09-15',
+    pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(DATA_PATTERN, {
+    message: 'Data da correção deve estar no formato AAAA-MM-DD.',
+  })
+  dataCorrecao?: string;
 }
 
 /**

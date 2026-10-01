@@ -2131,6 +2131,40 @@ export const ciapAtivoPermanente = pgTable(
 
     codigoBem: varchar('codigo_bem', { length: 60 }).notNull(),
     identificacaoBem: text('identificacao_bem').notNull(),
+
+    // Fase 2 / R2.1 — Identidade patrimonial POR AQUISIÇÃO (não por SKU).
+    //
+    // O `codigoBem` acima é derivado do SKU (`codigoProduto`) e, pelo unique
+    // `uidx_ciap_cliente_codigo_bem`, funde duas compras do mesmo SKU num único
+    // bem. `chaveAquisicao` passa a ser a identidade estável de UMA aquisição:
+    // `${documentoFiscalId}:${documentoFiscalItemId}` quando o bem veio de um
+    // item escriturado, ou o próprio `id` (UUID) para cadastros manuais sem
+    // item. Duas aquisições do mesmo SKU têm chaves distintas e, portanto, duas
+    // identidades patrimoniais distintas (R2.1).
+    //
+    // Coluna ADITIVA e anulável: o backfill assistido a popula sem destruir o
+    // `codigoBem` legado; o unique parcial abaixo só vale para linhas já
+    // migradas (chave não nula), de modo que a migração não quebra fichas
+    // antigas ainda não saneadas.
+    chaveAquisicao: varchar('chave_aquisicao', { length: 120 }),
+
+    // Procedência da identidade atual do bem, para auditoria do saneamento:
+    //  - 'aquisicao'                 → identidade reconstruída a partir de um
+    //                                   documento/item escriturado (comprovada);
+    //  - 'reconstruido_nao_comprovado' → ficha legada sem lastro em item
+    //                                   escriturado; chave = próprio UUID (o
+    //                                   backfill NÃO inventa documento/competência);
+    //  - 'sku_legado'                → ainda não migrada (estado inicial pós-DDL).
+    // Restringido por `chk_ciap_origem_identidade`.
+    origemIdentidade: varchar('origem_identidade', { length: 30 })
+      .notNull()
+      .default('sku_legado'),
+
+    // R2.1 — fichas cuja identidade por SKU encobre MAIS DE UMA aquisição
+    // escriturada ficam marcadas para saneamento assistido (rollout, Fase 5/13):
+    // o backfill não decide sozinho a qual aquisição a ficha legada pertence.
+    saneamentoPendente: boolean('saneamento_pendente').notNull().default(false),
+
     dataEntrada: date('data_entrada').notNull(),
     valorIcmsTotal: numeric('valor_icms_total', {
       precision: 15,
@@ -2164,9 +2198,20 @@ export const ciapAtivoPermanente = pgTable(
       table.clienteId,
       table.codigoBem,
     ),
+    // R2.1 — identidade POR AQUISIÇÃO: no máximo uma ficha por
+    // (cliente, chaveAquisicao). Unique PARCIAL (apenas chave não nula) para
+    // conviver, de forma aditiva, com fichas legadas ainda não migradas (chave
+    // nula) e com o unique legado por SKU, que permanece durante a transição.
+    uniqueIndex('uidx_ciap_cliente_chave_aquisicao')
+      .on(table.clienteId, table.chaveAquisicao)
+      .where(sql`${table.chaveAquisicao} IS NOT NULL`),
     check(
       'chk_ciap_status',
       sql`${table.status} IN ('ATIVO', 'BAIXADO', 'CONCLUIDO')`,
+    ),
+    check(
+      'chk_ciap_origem_identidade',
+      sql`${table.origemIdentidade} IN ('sku_legado', 'aquisicao', 'reconstruido_nao_comprovado')`,
     ),
     check(
       'chk_ciap_parcelas',
@@ -2207,6 +2252,208 @@ export const ciapCompetenciasApropriadas = pgTable(
     index('idx_ciap_competencia_cliente').on(
       table.clienteId,
       table.competencia,
+    ),
+  ],
+);
+
+// Razão de fatos patrimoniais do CIAP (Fase 2 / F06). É o histórico auditável
+// dos eventos que afetam o bem: aquisição, imobilização, baixa, transferência e
+// correção/estorno. Diferente de `ciap_apropriacoes` (que grava a razão mensal
+// de crédito), esta tabela registra os FATOS que originam ou alteram o controle,
+// com datas e documentos. Migração aditiva: não altera as tabelas existentes.
+//
+// R1.6: a correção retroativa gera um movimento de `correcao` (estorno/
+//   substituição) auditável, nunca uma sobrescrita silenciosa. O vínculo com o
+//   movimento substituído é guardado em `movimentoAnteriorId`.
+// R1.7: o histórico separa saldo passível de controle (aquisicao/imobilizacao),
+//   e o cancelamento residual (baixa/transferencia/correcao), classificado por
+//   `tipo` e refletido em `valorIcmsPassivel`.
+export const ciapMovimentos = pgTable(
+  'ciap_movimentos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    bemId: uuid('bem_id')
+      .notNull()
+      .references(() => ciapAtivoPermanente.id, { onDelete: 'cascade' }),
+
+    // Tipo do fato patrimonial. Restringido por check `chk_ciap_mov_tipo`.
+    tipo: varchar('tipo', { length: 20 }).notNull(),
+
+    // Data do fato (não a data de registro). Dirige elegibilidade/calendário.
+    dataMovimento: date('data_movimento').notNull(),
+
+    // Documento fiscal de origem/suporte do fato, quando houver.
+    documentoFiscalId: uuid('documento_fiscal_id').references(
+      () => documentosFiscais.id,
+      { onDelete: 'set null' },
+    ),
+    documentoFiscalItemId: uuid('documento_fiscal_item_id').references(
+      () => documentosFiscaisItens.id,
+      { onDelete: 'set null' },
+    ),
+
+    // Valor de ICMS passível de controle afetado pelo fato (base da razão).
+    // Positivo em aquisicao/imobilizacao, pode ser negativo em baixa/correcao.
+    valorIcmsPassivel: numeric('valor_icms_passivel', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+
+    // R1.6 — auditoria da correção retroativa: aponta para o movimento que este
+    // estorna/substitui. NULL para fatos originais.
+    movimentoAnteriorId: uuid('movimento_anterior_id'),
+
+    // Motivo de baixa (SPED 01/02/03) quando `tipo = 'baixa'`.
+    motivoBaixa: varchar('motivo_baixa', { length: 2 }),
+
+    observacao: text('observacao'),
+
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('idx_ciap_mov_cliente').on(table.clienteId),
+    index('idx_ciap_mov_bem').on(table.bemId),
+    index('idx_ciap_mov_bem_data').on(table.bemId, table.dataMovimento),
+    foreignKey({
+      columns: [table.movimentoAnteriorId],
+      foreignColumns: [table.id],
+      name: 'ciap_movimentos_movimento_anterior_id_fk',
+    }).onDelete('set null'),
+    check(
+      'chk_ciap_mov_tipo',
+      sql`${table.tipo} IN ('aquisicao', 'imobilizacao', 'baixa', 'transferencia', 'correcao')`,
+    ),
+    check(
+      'chk_ciap_mov_motivo_baixa',
+      sql`${table.motivoBaixa} IS NULL OR ${table.motivoBaixa} IN ('01', '02', '03')`,
+    ),
+    // R1.6: um movimento só referencia outro quando é correção/estorno.
+    check(
+      'chk_ciap_mov_correcao',
+      sql`${table.movimentoAnteriorId} IS NULL OR ${table.tipo} = 'correcao'`,
+    ),
+  ],
+);
+
+// Razão mensal de crédito do CIAP (Fase 2 / F06-F08). Grava, por bem e
+// competência, a apropriação versionada do crédito: base de controle, parcela
+// passível, coeficiente do cenário, parcela admitida e parcela vedada. Absorve
+// conceitualmente `ciap_competencias_apropriadas` da Fase 0 (que apenas marcava
+// a competência como apropriada). Migração aditiva: a tabela da Fase 0 NÃO é
+// removida nesta etapa — a transição é feita no motor de apropriação (tarefa 2).
+//
+// R1.1/R1.2: idempotência e concorrência — o unique por (cliente, bem,
+//   competência) sobre a versão ativa impede dupla parcela; retries e chamadas
+//   concorrentes convergem para uma única apropriação ativa.
+// R1.4: `numeroParcela` é derivado do calendário (mês de entrada + proporcional),
+//   não do número de chamadas. Guardado aqui para auditoria da razão.
+// R1.5: o reprocesso de uma competência já fechada devolve a MESMA versão; novas
+//   versões só surgem em correção retroativa (R1.6), nunca por reprocesso.
+// R2.2: separa parcela passível, parcela admitida (apropriada) e parcela vedada
+//   (não apropriável) — base de controle × coeficiente do cenário.
+// R2.3/R2.4: `coeficiente` é persistido com a fundamentação do cenário (não um
+//   1.0000 silencioso); `coeficienteFonte` registra a regra aplicada.
+export const ciapApropriacoes = pgTable(
+  'ciap_apropriacoes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    bemId: uuid('bem_id')
+      .notNull()
+      .references(() => ciapAtivoPermanente.id, { onDelete: 'cascade' }),
+
+    // Competência da apropriação (primeiro dia do mês).
+    competencia: date('competencia').notNull(),
+
+    // R1.5/R1.6 — versionamento temporal. A versão 1 é a apropriação original;
+    // correções retroativas incrementam a versão. Apenas uma versão por
+    // (cliente, bem, competência) fica `ativa = true`.
+    versao: integer('versao').notNull().default(1),
+    ativa: boolean('ativa').notNull().default(true),
+
+    // R1.4 — número da parcela derivado do calendário (1..quantidadeParcelas).
+    numeroParcela: integer('numero_parcela').notNull(),
+
+    // Base de controle do crédito na competência (ICMS passível acumulado).
+    baseControle: numeric('base_controle', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+
+    // R2.2 — parcela passível (base ÷ quantidade de parcelas), antes do rateio.
+    parcelaPassivel: numeric('parcela_passivel', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+
+    // R2.3/R2.4 — coeficiente do cenário (índice de participação), 4 casas.
+    coeficiente: numeric('coeficiente', {
+      precision: 9,
+      scale: 4,
+    }).notNull(),
+    // Fundamentação do coeficiente (regra aplicada: tributada, exportação,
+    // sem-saidas, etc.). Nunca presume 1.0000 silencioso (R2.4).
+    coeficienteFonte: varchar('coeficiente_fonte', { length: 40 }).notNull(),
+
+    // R2.2 — parcela admitida (passível × coeficiente) e parcela vedada
+    // (passível − admitida). A soma reconstitui a parcela passível.
+    parcelaAdmitida: numeric('parcela_admitida', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    parcelaVedada: numeric('parcela_vedada', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+
+    // Movimento patrimonial que originou a apropriação, quando houver (razão).
+    movimentoId: uuid('movimento_id').references(() => ciapMovimentos.id, {
+      onDelete: 'set null',
+    }),
+
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('idx_ciap_aprop_cliente').on(table.clienteId),
+    index('idx_ciap_aprop_bem').on(table.bemId),
+    index('idx_ciap_aprop_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    // R1.1/R1.2/R1.5 — identidade da razão: uma linha por bem/competência/versão.
+    uniqueIndex('uidx_ciap_aprop_bem_competencia_versao').on(
+      table.bemId,
+      table.competencia,
+      table.versao,
+    ),
+    // R1.1/R1.2 — no máximo UMA versão ativa por bem/competência. O unique
+    // parcial impede que retries/concorrência gerem dupla parcela ativa.
+    uniqueIndex('uidx_ciap_aprop_bem_competencia_ativa')
+      .on(table.bemId, table.competencia)
+      .where(sql`${table.ativa}`),
+    check('chk_ciap_aprop_versao', sql`${table.versao} >= 1`),
+    check('chk_ciap_aprop_numero_parcela', sql`${table.numeroParcela} >= 1`),
+    // R2.3/R2.4 — coeficiente dentro de [0, 1].
+    check(
+      'chk_ciap_aprop_coeficiente',
+      sql`${table.coeficiente} >= 0 AND ${table.coeficiente} <= 1`,
+    ),
+    // R2.2 — admitida + vedada reconstituem a parcela passível.
+    check(
+      'chk_ciap_aprop_decomposicao',
+      sql`${table.parcelaAdmitida} + ${table.parcelaVedada} = ${table.parcelaPassivel}`,
     ),
   ],
 );
@@ -2362,6 +2609,84 @@ export const fiscalDecisoesItem = pgTable(
     check(
       'chk_fiscal_decisao_credito_nao_negativo',
       sql`${table.valorCreditoAdmitido} >= 0`,
+    ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catálogo de códigos fiscais versionados por vigência (Fase 2 / tarefa 3.4,
+// R2.6; compartilhado com a Fase 4 — design §Modelo de dados).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// R2.6: "O ajuste de crédito DEVE usar código estadual oficial validado (código
+// e vigência), não um valor fabricado só para passar no check." Esta tabela é a
+// FONTE ÚNICA dos códigos oficiais de ajuste (hoje o E111 de crédito do CIAP;
+// `tipo = 'E111_CIAP'`), substituindo o `${uf}02CIAP` fabricado em código. Cada
+// linha vincula um `codigo` a uma `uf` e a uma JANELA DE VIGÊNCIA
+// (`vigenciaInicio`..`vigenciaFim`), de modo que o ajuste de uma competência só
+// é emitido com um código catalogado E vigente naquela competência. Sem linha
+// válida (UF + vigência), a geração do ajuste é BLOQUEADA com inconsistência —
+// nunca emite código inválido (postura bloqueante da fase).
+//
+// Segue o mesmo padrão de vigência de `sped_responsabilidades_tributarias`
+// (codigo/uf/vigencia_inicio/vigencia_fim/ativo), aqui com `fonte` (origem
+// normativa do código) e `descricao`. É um CATÁLOGO GLOBAL (não por cliente):
+// o código estadual de ajuste é definido pela UF/legislação, não pela empresa.
+//
+// PRÉ-CONDIÇÃO FISCAL (bloqueante): os códigos REAIS por UF ainda dependem de
+// confirmação do responsável fiscal (requirements, "Pré-condições fiscais"). O
+// seed inicial (0015) carrega um default DOCUMENTADO e marcado como
+// `fonte = 'default_pendente_confirmacao'` para que o mecanismo de lookup/
+// validação funcione, deixando explícito que o código real ainda não foi
+// homologado — a `fonte` permite distinguir e substituir sem alterar o schema.
+//
+// O `codigo` respeita o leiaute do E111 (`^[A-Z]{2}0[0-5][A-Z0-9]{4}$`) com
+// natureza `2` (crédito, 4º caractere), coerente com `chk_sped_ajuste_coerencia`
+// e `chk_sped_ajuste_natureza_indicador` de `sped_ajustes_apuracao`.
+export const fiscalCatalogosVersoes = pgTable(
+  'fiscal_catalogos_versoes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Tipo do catálogo. Hoje apenas o ajuste E111 de crédito do CIAP; a coluna
+    // antecipa outros códigos estaduais (Fase 4) sem nova tabela.
+    tipo: varchar('tipo', { length: 20 }).notNull(),
+    uf: varchar('uf', { length: 2 }).notNull(),
+    codigo: text('codigo').notNull(),
+    descricao: text('descricao'),
+    // Origem normativa do código (ato/legislação). O valor
+    // `default_pendente_confirmacao` sinaliza um default ainda NÃO homologado
+    // pelo responsável fiscal (pré-condição bloqueante da fase).
+    fonte: varchar('fonte', { length: 60 }).notNull(),
+    vigenciaInicio: date('vigencia_inicio').notNull(),
+    vigenciaFim: date('vigencia_fim'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em').notNull().defaultNow(),
+    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  },
+  (table) => [
+    // Uma única vigência por (tipo, uf, inicio): novas vigências geram novas
+    // linhas (não sobrescrevem a anterior), preservando o histórico de códigos.
+    uniqueIndex('uidx_fiscal_catalogo_vigencia').on(
+      table.tipo,
+      table.uf,
+      table.vigenciaInicio,
+    ),
+    index('idx_fiscal_catalogo_tipo_uf').on(table.tipo, table.uf),
+    check('chk_fiscal_catalogo_uf', sql`${table.uf} ~ '^[A-Z]{2}$'`),
+    check(
+      'chk_fiscal_catalogo_tipo',
+      sql`${table.tipo} IN ('E111_CIAP')`,
+    ),
+    // Vigência fechada só quando o fim é posterior ou igual ao início.
+    check(
+      'chk_fiscal_catalogo_vigencia',
+      sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,
+    ),
+    // O código de E111_CIAP respeita o leiaute do E111 (crédito, natureza 2),
+    // coerente com `chk_sped_ajuste_coerencia` de `sped_ajustes_apuracao`.
+    check(
+      'chk_fiscal_catalogo_codigo_e111_ciap',
+      sql`${table.tipo} <> 'E111_CIAP' OR ${table.codigo} ~ '^[A-Z]{2}02[A-Z0-9]{4}$'`,
     ),
   ],
 );

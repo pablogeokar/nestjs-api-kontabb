@@ -232,6 +232,103 @@ describe('runPreflightPva', () => {
     );
   });
 
+  // Monta um par 0300 + G125 coerente com o leiaute oficial (bloco-g-leiaute.ts).
+  // 0300: COD_IND_BEM, IDENT_MERC, DESCR_ITEM, COD_PRNC, COD_CTA, NR_PARC.
+  // G125: COD_IND_BEM, DT_MOV, TIPO_MOV, VL_IMOB_ICMS_OP, VL_IMOB_ICMS_ST,
+  //       VL_IMOB_ICMS_FRT, VL_IMOB_ICMS_DIF, NUM_PARC, VL_PARC_PASS.
+  const cadastro0300 = (cod: string, nrParc: string) =>
+    createSpedRecord('0300', cod, '1', 'Maquina', null, '1.2.3', nrParc);
+  const movimentoG125 = (
+    cod: string,
+    numParc: string,
+    vlParcPass = '10,00',
+  ) =>
+    createSpedRecord(
+      'G125',
+      cod,
+      '01012026',
+      'SI',
+      '100,00',
+      '0,00',
+      '0,00',
+      '0,00',
+      numParc,
+      vlParcPass,
+    );
+
+  it('R3.6: lê NUM_PARC na posição correta — parcela acima do limite é acusada', () => {
+    const records = [cadastro0300('BEM-1', '48'), movimentoG125('BEM-1', '49')];
+    expect(runPreflightPva(records)).toContainEqual(
+      expect.objectContaining({ codigo: 'PVA_G125_PARCELA_INVALIDA' }),
+    );
+  });
+
+  it('R3.6: VL_IMOB_ICMS_DIF (antiga posição de NUM_PARC) não é confundido com a parcela', () => {
+    // VL_IMOB_ICMS_DIF = 999,99 na posição [6]; NUM_PARC válido = 5 na posição [7].
+    // A leitura antiga (g125[6]) interpretaria 999 como parcela e falharia.
+    const records = [
+      cadastro0300('BEM-1', '48'),
+      createSpedRecord(
+        'G125',
+        'BEM-1',
+        '01012026',
+        'SI',
+        '100,00',
+        '0,00',
+        '0,00',
+        '999,99', // VL_IMOB_ICMS_DIF
+        '5', // NUM_PARC
+        '10,00', // VL_PARC_PASS
+      ),
+    ];
+    expect(runPreflightPva(records)).not.toContainEqual(
+      expect.objectContaining({ codigo: 'PVA_G125_PARCELA_INVALIDA' }),
+    );
+  });
+
+  it('R3.6: NUM_PARC acima de NR_PARC do 0300 (abaixo de 48) é acusado', () => {
+    const records = [cadastro0300('BEM-1', '36'), movimentoG125('BEM-1', '40')];
+    const issues = runPreflightPva(records);
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        codigo: 'PVA_G125_PARCELA_INVALIDA',
+        mensagem: expect.stringContaining('1..36'),
+      }),
+    );
+  });
+
+  it('R3.6: parcela válida dentro de 1..NR_PARC não gera inconsistência', () => {
+    const records = [cadastro0300('BEM-1', '48'), movimentoG125('BEM-1', '12')];
+    expect(runPreflightPva(records)).toEqual([]);
+  });
+
+  it('R3.6: parcela zero/negativa é acusada', () => {
+    const records = [cadastro0300('BEM-1', '48'), movimentoG125('BEM-1', '0')];
+    expect(runPreflightPva(records)).toContainEqual(
+      expect.objectContaining({ codigo: 'PVA_G125_PARCELA_INVALIDA' }),
+    );
+  });
+
+  it('R3.3: G125 que referencia bem sem 0300 correspondente é acusado', () => {
+    const records = [
+      cadastro0300('BEM-1', '48'),
+      movimentoG125('BEM-OUTRO', '1'),
+    ];
+    expect(runPreflightPva(records)).toContainEqual(
+      expect.objectContaining({ codigo: 'PVA_G125_0300_INEXISTENTE' }),
+    );
+  });
+
+  it('R3.2: VL_PARC_PASS > 0 sem NUM_PARC é acusado', () => {
+    const records = [
+      cadastro0300('BEM-1', '48'),
+      movimentoG125('BEM-1', '', '10,00'),
+    ];
+    expect(runPreflightPva(records)).toContainEqual(
+      expect.objectContaining({ codigo: 'PVA_G125_PARCELA_AUSENTE' }),
+    );
+  });
+
   it('não gera inconsistências para catálogo íntegro', () => {
     const records = [
       createSpedRecord(
