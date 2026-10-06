@@ -7,15 +7,18 @@ import {
   inputTaxSignals,
   isInventoryDueForPeriod,
   pendingDocumentReviewMessage,
+  toDocumentoElegibilidade,
   validateFcpAdjustments,
   buildApuracaoAuditTrail,
   validateAdjustmentAuditTrail,
   type SpedFcpTaxSignals,
 } from './efd-icms-ipi.service';
+import type { documentosFiscais } from '../../database/schema';
 import type { DatabaseService } from '../../database/database.service';
 import type { StorageService } from '../../storage/storage.service';
 import type { AppLogger } from '../../common/logger.service';
 import type { CiapService } from '../services/ciap.service';
+import { FiscalPeriodSelectionService } from '../services/fiscal-period-selection.service';
 import type { SpedInconsistencia } from './sped-efd.types';
 
 type Adjustment = typeof spedAjustesApuracao.$inferSelect;
@@ -216,6 +219,7 @@ describe('F07 — bloqueio de geração por Bloco G pendente (R3.1/R3.3)', () =>
       logger,
       configService,
       ciapService,
+      new FiscalPeriodSelectionService(),
     );
     return { service, upload };
   }
@@ -324,5 +328,102 @@ describe('F07 — bloqueio de geração por Bloco G pendente (R3.1/R3.3)', () =>
         actorUserId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+});
+
+describe('universo excluído da apuração definitiva (R3.3/R3.4)', () => {
+  type DocumentoFiscal = typeof documentosFiscais.$inferSelect;
+
+  /**
+   * Monta uma linha de `documentos_fiscais` com os campos relevantes à
+   * elegibilidade. Os demais campos não participam da política e são
+   * preenchidos com placeholders apenas para satisfazer o tipo persistido.
+   */
+  function documento(overrides: Partial<DocumentoFiscal> = {}): DocumentoFiscal {
+    return {
+      id: '00000000-0000-0000-0000-000000000000',
+      situacao: 'AUTORIZADA',
+      escriturado: true,
+      escrituracaoStatus: 'ESCRITURADO',
+      integridadeStatus: 'OK',
+      valorTotal: '100.00',
+      ...overrides,
+    } as DocumentoFiscal;
+  }
+
+  // Mesma composição que `EfdIcmsIpiService.preparar` executa sobre o conjunto
+  // de documentos já recortado pelo período:
+  //   periodSelection.reportExclusoes(documents.map(toDocumentoElegibilidade))
+  // Exercitamos a política REAL (sem mock) para provar o comportamento ponta a
+  // ponta: o que é pendente não entra no fechamento e aparece no relatório.
+  const periodSelection = new FiscalPeriodSelectionService();
+  function universoExcluido(documentos: DocumentoFiscal[]) {
+    return periodSelection.reportExclusoes(
+      documentos.map(toDocumentoElegibilidade),
+    );
+  }
+
+  it('toDocumentoElegibilidade projeta apenas as colunas de elegibilidade', () => {
+    const projetado = toDocumentoElegibilidade(
+      documento({
+        situacao: 'CANCELADA',
+        escriturado: false,
+        escrituracaoStatus: 'PENDENTE_REVISAO',
+        integridadeStatus: 'DIVERGENTE',
+        valorTotal: '42.00',
+      }),
+    );
+    expect(projetado).toEqual({
+      situacao: 'CANCELADA',
+      escriturado: false,
+      escrituracaoStatus: 'PENDENTE_REVISAO',
+      integridadeStatus: 'DIVERGENTE',
+      valorTotal: '42.00',
+    });
+  });
+
+  it('documento pendente de revisão NÃO entra e é reportado (qtd/valor)', () => {
+    // escriturado=true mas sem a escrituração concluída: é exatamente o
+    // "pendente" do R3.3 que não pode compor a apuração definitiva.
+    const relatorio = universoExcluido([
+      documento({ valorTotal: '1000.00' }), // elegível, permanece na apuração
+      documento({
+        escrituracaoStatus: 'PENDENTE_REVISAO',
+        valorTotal: '250.00',
+      }),
+    ]);
+
+    expect(relatorio.quantidade).toBe(1);
+    expect(relatorio.valor).toBe('250.00');
+    expect(relatorio.porMotivo).toEqual([
+      { motivo: 'PENDENTE_REVISAO', quantidade: 1, valor: '250.00' },
+    ]);
+  });
+
+  it('reporta o universo excluído por motivo com totais de qtd e valor', () => {
+    const relatorio = universoExcluido([
+      documento({ valorTotal: '10.00' }), // elegível
+      documento({ situacao: 'CANCELADA', valorTotal: '30.00' }),
+      documento({ escriturado: false, valorTotal: '5.00' }),
+      documento({ integridadeStatus: 'NAO_CONFERIDA', valorTotal: '7.50' }),
+    ]);
+
+    expect(relatorio.quantidade).toBe(3);
+    expect(relatorio.valor).toBe('42.50');
+    expect(relatorio.porMotivo).toEqual([
+      { motivo: 'INTEGRIDADE_NAO_CONFERIDA', quantidade: 1, valor: '7.50' },
+      { motivo: 'NAO_ESCRITURADO', quantidade: 1, valor: '5.00' },
+      { motivo: 'SITUACAO_NAO_AUTORIZADA', quantidade: 1, valor: '30.00' },
+    ]);
+  });
+
+  it('conjunto totalmente elegível produz universo excluído vazio', () => {
+    const relatorio = universoExcluido([
+      documento({ valorTotal: '1.00' }),
+      documento({ valorTotal: '2.00' }),
+    ]);
+    expect(relatorio.quantidade).toBe(0);
+    expect(relatorio.valor).toBe('0.00');
+    expect(relatorio.porMotivo).toHaveLength(0);
   });
 });

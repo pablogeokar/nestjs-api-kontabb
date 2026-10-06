@@ -37,6 +37,7 @@ import {
   monthsBetweenCompetencias,
   parseCompetenciaMensal,
 } from '../fiscal-date.util';
+import { FiscalClosingService } from './fiscal-closing.service';
 
 // Handle de transação do drizzle, derivado do callback de `db.transaction`.
 // Usado pelos helpers que operam dentro de uma transação (regravação do E111).
@@ -167,9 +168,17 @@ interface CiapRow {
   ciap: typeof ciapAtivoPermanente.$inferSelect;
 }
 
+// Obrigação acessória cujo fechamento é afetado por uma escrita do CIAP: o
+// crédito do ativo (1/48) compõe o E111 da EFD ICMS/IPI. Mutações do CIAP de
+// uma competência devem participar do lock desse escopo (R1.6).
+const OBRIGACAO_FECHAMENTO_CIAP = 'EFD_ICMS_IPI' as const;
+
 @Injectable()
 export class CiapService {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly closing: FiscalClosingService,
+  ) { }
 
   /**
    * Registra manualmente um bem do ativo permanente no CIAP.
@@ -991,44 +1000,82 @@ export class CiapService {
     dataBaixa: string;
     motivoBaixa: '01' | '02' | '03';
   }) {
-    return this.database.db.transaction(async (tx) => {
-      const rows = await tx
-        .update(ciapAtivoPermanente)
-        .set({
-          status: 'BAIXADO',
-          dataBaixa: input.dataBaixa,
-          motivoBaixa: input.motivoBaixa,
-          atualizadoEm: new Date(),
-        })
-        .where(
-          and(
-            eq(ciapAtivoPermanente.id, input.bemId),
-            eq(ciapAtivoPermanente.clienteId, input.clienteId),
-          ),
-        )
-        .returning();
-      const bem = rows[0];
-      if (!bem) throw new NotFoundException('Bem do CIAP não encontrado.');
+    // Competência afetada pela baixa = o mês do FATO (data da baixa). A baixa
+    // altera o saldo passível do CIAP dessa competência, logo altera o
+    // fechamento da EFD ICMS/IPI do período.
+    const competencia = this.competenciaDaData(input.dataBaixa);
+    const escopo = {
+      clienteId: input.clienteId,
+      obrigacao: OBRIGACAO_FECHAMENTO_CIAP,
+      competencia,
+    };
 
-      // R1.7: o fato de baixa é o cancelamento residual do saldo passível de
-      // controle. Registra-se como `valorIcmsPassivel` NEGATIVO (saída de saldo
-      // da razão) na data do fato, com o motivo. Zero quando não há saldo
-      // residual (bem já apropriado por completo).
-      const saldoResidualScaled = toScaledInteger(bem.saldoCredorRestante);
-      const cancelamentoResidual =
-        saldoResidualScaled > 0n ? -saldoResidualScaled : 0n;
-      await tx.insert(ciapMovimentos).values({
-        clienteId: input.clienteId,
-        bemId: input.bemId,
-        tipo: 'baixa',
-        dataMovimento: input.dataBaixa,
-        valorIcmsPassivel: fromScaledInteger(cancelamentoResidual),
-        motivoBaixa: input.motivoBaixa,
-        observacao: `Baixa do bem CIAP em ${input.dataBaixa} (motivo ${input.motivoBaixa}).`,
-      });
+    return this.database.db.transaction(
+      async (tx) =>
+        // R1.6: a baixa participa do MESMO advisory lock por escopo
+        // (cliente/obrigação/competência) da geração/fechamento EFD, serializando
+        // contra importações, apropriações e a própria geração do SPED.
+        this.closing.withEscopoLock(tx, escopo, async () => {
+          // R1.3/R1.4: se a competência já tem versão CORRENTE FECHADA, a baixa
+          // NÃO sobrescreve a entrega congelada; abre (ou reutiliza) uma versão
+          // de revisão RASCUNHO a partir da corrente fechada (tarefa 3.5). A
+          // baixa do bem (fato patrimonial) prossegue na razão, mas a entrega
+          // fechada permanece imutável até a revisão ser aprovada.
+          await this.closing.sinalizarRevisaoPosFechamento(tx, escopo);
 
-      return this.toBemResponse(bem);
-    });
+          const rows = await tx
+            .update(ciapAtivoPermanente)
+            .set({
+              status: 'BAIXADO',
+              dataBaixa: input.dataBaixa,
+              motivoBaixa: input.motivoBaixa,
+              atualizadoEm: new Date(),
+            })
+            .where(
+              and(
+                eq(ciapAtivoPermanente.id, input.bemId),
+                eq(ciapAtivoPermanente.clienteId, input.clienteId),
+              ),
+            )
+            .returning();
+          const bem = rows[0];
+          if (!bem) throw new NotFoundException('Bem do CIAP não encontrado.');
+
+          // R1.7: o fato de baixa é o cancelamento residual do saldo passível de
+          // controle. Registra-se como `valorIcmsPassivel` NEGATIVO (saída de
+          // saldo da razão) na data do fato, com o motivo. Zero quando não há
+          // saldo residual (bem já apropriado por completo).
+          const saldoResidualScaled = toScaledInteger(bem.saldoCredorRestante);
+          const cancelamentoResidual =
+            saldoResidualScaled > 0n ? -saldoResidualScaled : 0n;
+          await tx.insert(ciapMovimentos).values({
+            clienteId: input.clienteId,
+            bemId: input.bemId,
+            tipo: 'baixa',
+            dataMovimento: input.dataBaixa,
+            valorIcmsPassivel: fromScaledInteger(cancelamentoResidual),
+            motivoBaixa: input.motivoBaixa,
+            observacao: `Baixa do bem CIAP em ${input.dataBaixa} (motivo ${input.motivoBaixa}).`,
+          });
+
+          return this.toBemResponse(bem);
+        }),
+      { isolationLevel: 'repeatable read' },
+    );
+  }
+
+  /**
+   * Deriva a competência mensal 'AAAA-MM' de uma data 'AAAA-MM-DD' (data de um
+   * fato: baixa, entrada). Usada para keyear o lock de fechamento ao mês do fato.
+   */
+  private competenciaDaData(data: string): string {
+    const match = /^(\d{4})-(0[1-9]|1[0-2])-\d{2}$/.exec(data ?? '');
+    if (!match) {
+      throw new BadRequestException(
+        `Data inválida: "${data}". Esperado AAAA-MM-DD.`,
+      );
+    }
+    return `${match[1]}-${match[2]}`;
   }
 
   async listarBens(input: {

@@ -1,4 +1,5 @@
 import type { SpedRecord } from './core';
+import type { RelatorioExclusao } from '../services/fiscal-period-selection.service';
 
 export type SpedInconsistenciaSeveridade = 'ERRO' | 'AVISO';
 
@@ -81,6 +82,18 @@ export interface SpedPreview {
     nfe: number;
     nfce: number;
     cte: number;
+    /**
+     * Universo excluído da apuração/entrega DEFINITIVA segundo a política única
+     * de elegibilidade (`FiscalPeriodSelectionService`), com quantidade e valor
+     * totais e por motivo (R3.3/R3.4). Diferente dos contadores `excluidos`/
+     * `pendentes` acima — que refletem as regras ESPECÍFICAS do SPED (ex.:
+     * documentos cancelados ainda entram como COD_SIT 02) —, este relatório é a
+     * leitura da política COMUM: só compõem o fechamento definitivo documentos
+     * autorizados, escriturados, com escrituração concluída e integridade OK;
+     * todos os demais (dentro do período) são reportados aqui com o motivo. É
+     * aditivo e não altera a seleção do arquivo em si.
+     */
+    universoExcluido: RelatorioExclusao;
   };
   apuracao: SpedApuracaoPreview;
   auditabilidade: {

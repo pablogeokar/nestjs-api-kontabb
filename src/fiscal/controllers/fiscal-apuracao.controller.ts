@@ -28,6 +28,8 @@ import {
 } from '../services/fiscal-guias.service';
 import { PisCofinsService } from '../services/pis-cofins.service';
 import { FiscalItensService } from '../services/fiscal-itens.service';
+import { FiscalClosingService } from '../services/fiscal-closing.service';
+import { parsePaginationParams } from '../../common/pagination';
 import { parseCompetenciaMensal } from '../fiscal-date.util';
 import {
   BaixarBemCiapDto,
@@ -54,7 +56,8 @@ export class ClienteFiscalApuracaoController {
     private readonly guiasService: FiscalGuiasService,
     private readonly pisCofinsService: PisCofinsService,
     private readonly fiscalItensService: FiscalItensService,
-  ) {}
+    private readonly closingService: FiscalClosingService,
+  ) { }
 
   private async clienteId(userId: string): Promise<string> {
     const cliente = await this.clientesService.getClientForUser(userId);
@@ -88,6 +91,35 @@ export class ClienteFiscalApuracaoController {
       dataFim: fim,
     });
     return { data };
+  }
+
+  // ── ResultadoApuracao (projeção do fechamento versionado) ─────────────────
+  // Endpoint ADITIVO (Tarefa 3.3): projeta o contrato ResultadoApuracao (plano
+  // §6.3) de uma versão de fechamento, com detalhamento PAGINADO a partir do
+  // snapshot congelado (R2.2). Não substitui nem altera `GET icms` acima — é um
+  // novo caminho de leitura sobre o fechamento versionado. O escopo do cliente
+  // é verificado: só é possível projetar fechamentos da própria empresa.
+  @Get('resultado/:fechamentoId')
+  @ApiOperation({
+    summary:
+      'Projeta o ResultadoApuracao de uma versão de fechamento (detalhamento paginado)',
+  })
+  async projetarResultado(
+    @Param('fechamentoId', ParseUUIDPipe) fechamentoId: string,
+    @Query('page') page: string | undefined,
+    @Query('pageSize') pageSize: string | undefined,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const clienteId = await this.clienteId(user.id);
+    const { offset, limit } = parsePaginationParams({ page, pageSize });
+    const resultado = await this.closingService.projetarApuracao(
+      fechamentoId,
+      { pagination: { offset, limit } },
+    );
+    if (resultado.clienteId !== clienteId) {
+      throw new NotFoundException('Fechamento não encontrado.');
+    }
+    return { data: resultado };
   }
 
   // ── CIAP (Bloco G) ──────────────────────────────────────────────────────
@@ -199,7 +231,7 @@ export class AdminFiscalApuracaoController {
     private readonly difalService: DifalEntradaService,
     private readonly guiasService: FiscalGuiasService,
     private readonly pisCofinsService: PisCofinsService,
-  ) {}
+  ) { }
 
   // ── CIAP ────────────────────────────────────────────────────────────────
   @Post('ciap/importar')

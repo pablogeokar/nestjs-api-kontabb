@@ -18,6 +18,11 @@ import {
   type SpedRecord,
 } from './core';
 import {
+  aggregateC190Analitico,
+  normalizeC190Cst,
+  type C190Analitico,
+} from './fiscal-c190-aggregator';
+import {
   fromScaledInteger,
   maximum,
   positive,
@@ -325,19 +330,6 @@ export interface SpedCiapBuilderData {
 export interface SpedEfdBuilderResult {
   records: SpedRecord[];
   apuracao: SpedApuracaoPreview;
-}
-
-interface AnaliticoC190 {
-  cst: string;
-  cfop: string;
-  aliquota: string;
-  valorOperacao: bigint;
-  valorBcIcms: bigint;
-  valorIcms: bigint;
-  valorBcIcmsSt: bigint;
-  valorIcmsSt: bigint;
-  valorReducaoBc: bigint;
-  valorIpi: bigint;
 }
 
 export function buildEfdIcmsIpiRecords(
@@ -1663,52 +1655,17 @@ function buildBloco1(indicadores: Record<string, 'S' | 'N'>): SpedRecord[] {
   ];
 }
 
-function aggregateC190(items: SpedItemDocumentoBuilderData[]): AnaliticoC190[] {
-  const groups = new Map<string, AnaliticoC190>();
-  for (const item of items) {
-    const row = item.row;
-    const cst = normalizeCstIcms(row);
-    const aliquota = row.aliquotaIcms ?? '0';
-    const key = `${cst}|${row.cfop}|${aliquota}`;
-    const group = groups.get(key) ?? {
-      cst,
-      cfop: row.cfop,
-      aliquota,
-      valorOperacao: 0n,
-      valorBcIcms: 0n,
-      valorIcms: 0n,
-      valorBcIcmsSt: 0n,
-      valorIcmsSt: 0n,
-      valorReducaoBc: 0n,
-      valorIpi: 0n,
-    };
-    const valorItemLiquido =
-      toScaledInteger(row.valorBrutoProduto) -
-      toScaledInteger(row.valorDesconto) +
-      toScaledInteger(row.valorFrete) +
-      toScaledInteger(row.valorSeguro) +
-      toScaledInteger(row.valorOutrasDespesas);
-    group.valorOperacao += itemOperationValue(row);
-    group.valorBcIcms += toScaledInteger(row.valorBcIcms);
-    group.valorIcms += toScaledInteger(row.valorIcms);
-    group.valorBcIcmsSt += toScaledInteger(row.valorBcIcmsSt);
-    group.valorIcmsSt += toScaledInteger(row.valorIcmsSt);
-    if (toScaledInteger(row.percentualReducaoBcIcms, 4) > 0n) {
-      group.valorReducaoBc += positive(
-        valorItemLiquido - toScaledInteger(row.valorBcIcms),
-      );
-    }
-    group.valorIpi += toScaledInteger(row.valorIpi);
-    groups.set(key, group);
-  }
-  return [...groups.values()].sort((a, b) =>
-    `${a.cst}|${a.cfop}|${a.aliquota}`.localeCompare(
-      `${b.cst}|${b.cfop}|${b.aliquota}`,
-      'pt-BR',
-    ),
-  );
+// F16 (R5.4): a decomposição analítica do C190 do TXT vem do agregador comum
+// `aggregateC190Analitico`, a MESMA fonte que a UI (`getC190`) projeta — não há
+// mais um cálculo independente aqui. R5.1 (redução só com percentual efetivo),
+// R5.2 (origem prefixada uma vez) e R5.3 (alíquota normalizada antes da chave,
+// escopo por documento) vivem no agregador.
+function aggregateC190(items: SpedItemDocumentoBuilderData[]): C190Analitico[] {
+  return aggregateC190Analitico(items.map((item) => item.row));
 }
 
+// Valor da operação de um item (líquido + ST + FCP ST + IPI). Usado pelo valor
+// contábil do livro de IPI; o C190 usa o mesmo cálculo via agregador comum.
 function itemOperationValue(row: ItemRow): bigint {
   return (
     toScaledInteger(row.valorBrutoProduto) -
@@ -1892,24 +1849,12 @@ function sumItems(
   );
 }
 
-// F10 (R4.4): o CST de ICMS do C170/C190 é a origem (1 dígito) seguida do CST
-// (2 dígitos). A origem deve ser prefixada exatamente UMA vez. Se o valor já
-// vem composto (3 dígitos, ex.: '000' = origem 0 + CST 00), não pode ser
-// prefixado de novo (viraria '0000'); se vem como CST puro (2 dígitos, ex.:
-// '00'), prefixa a origem uma vez (→ '000'). O guarda usa o CST sem espaços
-// para não depender de comprimento cru e evita compor comprimentos inesperados.
+// F10/F16 (R4.4/R5.2): o CST de ICMS do C170 e do C190 vem da MESMA
+// normalização (`normalizeC190Cst`, no agregador comum) — a origem é prefixada
+// exatamente uma vez, sem dupla concatenação ('00' → '000', '000' permanece
+// '000'). Centralizar aqui garante que C170 e C190 nunca divirjam no CST.
 function normalizeCstIcms(row: ItemRow): string {
-  const cstIcms = row.cstIcms?.trim();
-  if (cstIcms) {
-    // Já composto (origem + CST): mantém como está para não duplicar a origem.
-    if (cstIcms.length === 3) return cstIcms;
-    // CST puro: prefixa a origem exatamente uma vez.
-    if (cstIcms.length === 2)
-      return `${(row.origemMercadoria ?? '0').trim()}${cstIcms}`;
-    // Comprimento inesperado: não tenta compor para não inventar código.
-    return cstIcms;
-  }
-  return row.csosnIcms ?? '';
+  return normalizeC190Cst(row);
 }
 
 // F10: sem fallback inventado. O chamador (buildBlocoD) já garante que há

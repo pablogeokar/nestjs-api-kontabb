@@ -16,6 +16,25 @@ describe('ImportacaoXmlFiscalService', () => {
     info: jest.fn(),
     error: jest.fn(),
   };
+  // Double do FiscalClosingService (tarefas 3.4/3.5): `withEscopoLock` apenas
+  // executa a mutação (o lock é testado no serviço de fechamento), e a
+  // sinalização de revisão pós-fechamento é um no-op aqui — este spec cobre a
+  // persistência do documento, não a abertura de versão de revisão.
+  function createClosingMock() {
+    return {
+      withEscopoLock: jest.fn(
+        (_tx: unknown, _escopo: unknown, fn: () => Promise<unknown>) => fn(),
+      ),
+      sinalizarRevisaoPosFechamento: jest.fn().mockResolvedValue({
+        fechado: false,
+        fechamentoCorrenteId: null,
+        revisaoNecessaria: false,
+        revisaoId: null,
+        revisaoVersao: null,
+        revisaoAberta: false,
+      }),
+    };
+  }
   let service: ImportacaoXmlFiscalService;
 
   beforeEach(() => {
@@ -26,6 +45,7 @@ describe('ImportacaoXmlFiscalService', () => {
       logger as never,
       createCfopServiceMock() as never,
       {} as never,
+      createClosingMock() as never,
     );
   });
 
@@ -188,6 +208,7 @@ describe('ImportacaoXmlFiscalService', () => {
       logger as never,
       createCfopServiceMock() as never,
       {} as never,
+      createClosingMock() as never,
     );
     const parsed = parseManualFiscalXml(buildNfeProc());
     if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');
@@ -254,10 +275,10 @@ describe('ImportacaoXmlFiscalService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-              values: jest.fn().mockReturnValue({
-                onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
-              }),
-            }
+            values: jest.fn().mockReturnValue({
+              onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
+            }),
+          }
           : { values: itemValues },
       ),
     };
@@ -270,6 +291,7 @@ describe('ImportacaoXmlFiscalService', () => {
       logger as never,
       createCfopServiceMock() as never,
       {} as never,
+      createClosingMock() as never,
     );
     const parsed = parseManualFiscalXml(buildNfeProc());
     if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');

@@ -113,6 +113,20 @@
       "when": 1790881458930,
       "tag": "0015_fiscal_catalogos_versoes",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791313699291,
+      "tag": "0016_fiscal_lancamentos",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791320685009,
+      "tag": "0017_fiscal_fechamentos",
+      "breakpoints": true
     }
   ]
 }

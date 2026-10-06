@@ -2690,3 +2690,298 @@ export const fiscalCatalogosVersoes = pgTable(
     ),
   ],
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lançamentos fiscais normalizados (Fase 3 / tarefa 1.1, R2.1/R2.2; plano §7).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// FONTE COMUM de créditos e débitos: livros, painéis e SPED passam a projetar
+// desta tabela, em vez de cada um recalcular por caminho próprio (F03/F16). Como
+// todos consomem o MESMO lançamento, para a MESMA versão de fechamento os
+// créditos/débitos documentais são idênticos entre livro e SPED (R2.1), e a
+// ponte documentos → lançamentos → apuração → livro → E110 (R2.2) fica explícita.
+//
+// VALORES DECIMAIS (restrição da fase): `numeric` — nunca `Number`. O navegador
+// apenas FORMATA o decimal, não recalcula imposto (F15/§9.2). `valor` é a
+// magnitude; o SINAL do efeito no saldo vem de `sinal` (+1 normal, -1 estorno/
+// reversão), separado da NATUREZA contábil (`DEBITO`/`CREDITO`). Natureza e
+// sinal são EXPLÍCITOS para não inferir o efeito a partir do valor.
+//
+// ORIGEM: de onde o fato veio (`DOCUMENTO`, `CIAP`, `AJUSTE`, `SALDO_ANTERIOR`,
+// `APURACAO`), para a ponte conseguir atribuir cada parcela da apuração à sua
+// fonte. `documentoFiscalId`/`documentoFiscalItemId` são opcionais: só os
+// lançamentos de origem documental os referenciam.
+//
+// COMPETÊNCIA: primeiro dia do mês de competência fiscal (não a data crua do
+// XML; a política de datas por finalidade é a tarefa 2 da fase). Mantida AQUI,
+// no lançamento, para que a seleção por competência não dependa de recalcular
+// datas em cada módulo.
+//
+// CHAVE IDEMPOTENTE POR FATO/VERSÃO: `fatoChave` identifica o fato gerador de
+// forma estável (ex.: `item:<uuid>:icms`, `ciap:<ficha>:<competencia>`), e
+// `fechamentoVersao` isola a versão do fechamento. O unique
+// (cliente, origem, fato, versão, tributo, natureza) garante que reprocessar a
+// mesma versão NÃO duplica lançamentos (reexecução idempotente), enquanto uma
+// NOVA versão (reabertura/edição, R1.4) gera novas linhas sem sobrescrever as da
+// versão anterior — preservando a reprodutibilidade do fechamento (F20).
+//
+// ADITIVA: só cria estruturas novas; não altera nem remove nada existente.
+export const fiscalLancamentos = pgTable(
+  'fiscal_lancamentos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    // Versão do fechamento a que o lançamento pertence. Isola reprocessamentos
+    // (idempotência) de novas versões (reabertura/edição) — ver chave única.
+    fechamentoVersao: integer('fechamento_versao').notNull().default(1),
+    // Origem do fato gerador: permite atribuir cada parcela da apuração à fonte.
+    origem: varchar('origem', { length: 20 }).notNull(),
+    // Identidade estável do fato gerador dentro da origem (compõe a chave
+    // idempotente). Ex.: `item:<uuid>:icms`, `ciap:<ficha>:<competencia>`.
+    fatoChave: text('fato_chave').notNull(),
+    // Competência fiscal (primeiro dia do mês). Fixada no lançamento para a
+    // seleção por competência não recalcular datas em cada módulo.
+    competencia: date('competencia').notNull(),
+    // Tributo do lançamento (ICMS, ICMS_ST, IPI, PIS, COFINS, FCP, DIFAL).
+    tributo: varchar('tributo', { length: 12 }).notNull(),
+    // Natureza contábil EXPLÍCITA — não inferida pelo valor.
+    natureza: varchar('natureza', { length: 7 }).notNull(),
+    // Sinal do efeito no saldo: +1 lançamento normal, -1 estorno/reversão.
+    sinal: integer('sinal').notNull().default(1),
+    // Magnitude decimal do lançamento. `numeric`, nunca `Number`.
+    valor: numeric('valor', { precision: 15, scale: 2 }).notNull(),
+    // Base de cálculo e alíquota decimais (opcionais: ajustes/saldos não têm).
+    baseCalculo: numeric('base_calculo', { precision: 15, scale: 2 }),
+    aliquota: numeric('aliquota', { precision: 9, scale: 4 }),
+    // Lastro documental: só os lançamentos de origem documental referenciam.
+    documentoFiscalId: uuid('documento_fiscal_id').references(
+      () => documentosFiscais.id,
+      { onDelete: 'cascade' },
+    ),
+    documentoFiscalItemId: uuid('documento_fiscal_item_id').references(
+      () => documentosFiscaisItens.id,
+      { onDelete: 'cascade' },
+    ),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Chave idempotente por fato/versão (R2.1): reprocessar a mesma versão não
+    // duplica; uma nova versão gera novas linhas sem sobrescrever as anteriores.
+    uniqueIndex('uidx_fiscal_lancamento_fato_versao').on(
+      table.clienteId,
+      table.origem,
+      table.fatoChave,
+      table.fechamentoVersao,
+      table.tributo,
+      table.natureza,
+    ),
+    // Projeção por competência/versão (livros, painéis e SPED consomem daqui).
+    index('idx_fiscal_lancamento_competencia').on(
+      table.clienteId,
+      table.competencia,
+      table.fechamentoVersao,
+    ),
+    // Ponte documento → lançamento (R2.2).
+    index('idx_fiscal_lancamento_documento').on(table.documentoFiscalId),
+    check(
+      'chk_fiscal_lancamento_origem',
+      sql`${table.origem} IN ('DOCUMENTO', 'CIAP', 'AJUSTE', 'SALDO_ANTERIOR', 'APURACAO')`,
+    ),
+    check(
+      'chk_fiscal_lancamento_tributo',
+      sql`${table.tributo} IN ('ICMS', 'ICMS_ST', 'IPI', 'PIS', 'COFINS', 'FCP', 'DIFAL')`,
+    ),
+    check(
+      'chk_fiscal_lancamento_natureza',
+      sql`${table.natureza} IN ('DEBITO', 'CREDITO')`,
+    ),
+    check(
+      'chk_fiscal_lancamento_sinal',
+      sql`${table.sinal} IN (-1, 1)`,
+    ),
+    check('chk_fiscal_lancamento_versao', sql`${table.fechamentoVersao} >= 1`),
+    // Magnitude não-negativa: o efeito no saldo vem de natureza + sinal, não de
+    // um valor negativo (mantém a decomposição explícita e conciliável).
+    check('chk_fiscal_lancamento_valor', sql`${table.valor} >= 0`),
+    check(
+      'chk_fiscal_lancamento_base',
+      sql`${table.baseCalculo} IS NULL OR ${table.baseCalculo} >= 0`,
+    ),
+    check(
+      'chk_fiscal_lancamento_aliquota',
+      sql`${table.aliquota} IS NULL OR ${table.aliquota} >= 0`,
+    ),
+    // Competência é sempre o primeiro dia do mês (competência fiscal, não a
+    // data crua do documento).
+    check(
+      'chk_fiscal_lancamento_competencia_dia1',
+      sql`date_part('day', ${table.competencia}) = 1`,
+    ),
+    // Lastro documental coerente: o item só existe junto do documento, e o par
+    // só aparece em lançamentos de origem documental.
+    check(
+      'chk_fiscal_lancamento_item_exige_documento',
+      sql`${table.documentoFiscalItemId} IS NULL OR ${table.documentoFiscalId} IS NOT NULL`,
+    ),
+    check(
+      'chk_fiscal_lancamento_documento_origem',
+      sql`${table.documentoFiscalId} IS NULL OR ${table.origem} = 'DOCUMENTO'`,
+    ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fechamento fiscal versionado (Fase 3 / tarefa 3.1, R1.1; plano §7).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// MEMÓRIA DE CÁLCULO IMUTÁVEL por estabelecimento/competência/obrigação. Livros,
+// painéis e SPED deixam de ter motor próprio e passam a PROJETAR desta versão
+// congelada (F20). Cada fechamento guarda o conjunto de documentos, decisões,
+// regras, parâmetros e saldos vigentes no momento do fechamento, mais a versão
+// do motor (`motorVersao`) e o hash das entradas (`hashEntradas`) — de modo que
+// as mesmas entradas reproduzam o mesmo resultado/hash (R1.2).
+//
+// ESCOPO: `clienteId` (um estabelecimento por cliente, coerente com as tabelas
+// SPED que escopam por `cliente_id` + obrigação) e `obrigacao` (o domínio de
+// obrigação acessória: EFD ICMS/IPI, EFD Contribuições etc.). A competência é o
+// primeiro dia do mês (competência fiscal, mesma convenção da tarefa 1.1).
+//
+// VERSIONAMENTO: `versao` (>= 1) cresce a cada reabertura/edição (R1.4); a
+// entrega anterior permanece intacta (novas linhas, nunca sobrescrita). O unique
+// (cliente, obrigação, competência, versão) garante que não há duas linhas para
+// a mesma versão. Além disso, SOMENTE UMA versão pode ser a corrente aprovada
+// por (cliente, obrigação, competência): um unique PARCIAL em `corrente = true`
+// permite muitas versões históricas mas apenas uma corrente — enquanto estados
+// não-finais (RASCUNHO/PENDENTE/REVISADO) convivem com a corrente FECHADA.
+//
+// ESTADOS: `RASCUNHO → PENDENTE → REVISADO → FECHADO` (contrato ResultadoApuracao
+// do plano §6.3). `corrente` só pode ser verdadeiro quando o estado é `FECHADO`
+// (a corrente é a versão aprovada/entregue).
+//
+// SNAPSHOTS CONGELADOS: `documentos`, `decisoes`, `regras`, `parametros` e
+// `saldos` são `jsonb` imutáveis — a fotografia das entradas no fechamento, para
+// a conciliação não depender de recomputar o estado atual (que pode ter mudado).
+// Valores monetários dentro dos snapshots são SEMPRE strings decimais (nunca
+// `Number`); `hashEntradas` sela o conjunto para reprodutibilidade.
+//
+// ADITIVA: só cria estruturas novas; não altera nem remove nada existente.
+export const fiscalFechamentos = pgTable(
+  'fiscal_fechamentos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    // Obrigação acessória a que o fechamento se refere (escopo junto do
+    // estabelecimento/competência). Domínio restrito por CHECK.
+    obrigacao: varchar('obrigacao', { length: 20 }).notNull(),
+    // Competência fiscal (primeiro dia do mês), mesma convenção da tarefa 1.1.
+    competencia: date('competencia').notNull(),
+    // Versão do fechamento (>= 1). Cresce a cada reabertura/edição; versões
+    // anteriores permanecem intactas (reprodutibilidade — F20).
+    versao: integer('versao').notNull().default(1),
+    // Estado no ciclo RASCUNHO → PENDENTE → REVISADO → FECHADO.
+    estado: varchar('estado', { length: 10 }).notNull().default('RASCUNHO'),
+    // Versão corrente aprovada: no máximo uma por (cliente, obrigação,
+    // competência) — garantido pelo índice único parcial abaixo. Só pode ser
+    // verdadeira quando o estado é FECHADO.
+    corrente: boolean('corrente').notNull().default(false),
+    // Versão do motor de apuração que produziu o resultado (reprodutibilidade).
+    motorVersao: varchar('motor_versao', { length: 40 }).notNull(),
+    // Hash SHA-256 das entradas congeladas: mesmas entradas → mesmo hash (R1.2),
+    // mesmo formato dos arquivos SPED (`sped_arquivos_gerados.hash_sha256`).
+    hashEntradas: varchar('hash_entradas', { length: 64 }).notNull(),
+    // Snapshots congelados do fechamento (fotografia das entradas). Valores
+    // monetários sempre como strings decimais — nunca `Number`.
+    documentos: jsonb('documentos')
+      .$type<Array<Record<string, unknown>>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    decisoes: jsonb('decisoes')
+      .$type<Array<Record<string, unknown>>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    regras: jsonb('regras')
+      .$type<Array<Record<string, unknown>>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    parametros: jsonb('parametros')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    saldos: jsonb('saldos')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    aprovadoPor: text('aprovado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    fechadoEm: timestamp('fechado_em', { withTimezone: true }),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Unicidade de versão por estabelecimento/competência/obrigação (R1.1):
+    // não há duas linhas para a mesma versão do mesmo escopo.
+    uniqueIndex('uidx_fiscal_fechamento_versao').on(
+      table.clienteId,
+      table.obrigacao,
+      table.competencia,
+      table.versao,
+    ),
+    // SOMENTE UMA versão corrente aprovada por escopo: índice único PARCIAL em
+    // `corrente = true`. Permite muitas versões históricas, mas apenas uma
+    // corrente simultânea (uma corrente aprovada — R1.1).
+    uniqueIndex('uidx_fiscal_fechamento_corrente')
+      .on(table.clienteId, table.obrigacao, table.competencia)
+      .where(sql`${table.corrente} = true`),
+    // Consulta/projeção por escopo e competência (livros, painéis e SPED).
+    index('idx_fiscal_fechamento_competencia').on(
+      table.clienteId,
+      table.competencia,
+      table.obrigacao,
+    ),
+    check(
+      'chk_fiscal_fechamento_obrigacao',
+      sql`${table.obrigacao} IN ('EFD_ICMS_IPI', 'EFD_CONTRIBUICOES', 'GIA', 'DAS', 'DAPI')`,
+    ),
+    check(
+      'chk_fiscal_fechamento_estado',
+      sql`${table.estado} IN ('RASCUNHO', 'PENDENTE', 'REVISADO', 'FECHADO')`,
+    ),
+    check('chk_fiscal_fechamento_versao', sql`${table.versao} >= 1`),
+    // A corrente é a versão aprovada/entregue: só pode ser verdadeira quando o
+    // fechamento está FECHADO.
+    check(
+      'chk_fiscal_fechamento_corrente_fechado',
+      sql`${table.corrente} = false OR ${table.estado} = 'FECHADO'`,
+    ),
+    // Hash SHA-256 das entradas no mesmo formato dos arquivos SPED.
+    check(
+      'chk_fiscal_fechamento_hash',
+      sql`${table.hashEntradas} ~ '^[0-9a-f]{64}$'`,
+    ),
+    // Competência é sempre o primeiro dia do mês (competência fiscal).
+    check(
+      'chk_fiscal_fechamento_competencia_dia1',
+      sql`date_part('day', ${table.competencia}) = 1`,
+    ),
+    // Fechamento FECHADO precisa registrar quando foi fechado; estados não-finais
+    // não têm `fechado_em`.
+    check(
+      'chk_fiscal_fechamento_fechado_em',
+      sql`(${table.estado} = 'FECHADO') = (${table.fechadoEm} IS NOT NULL)`,
+    ),
+  ],
+);

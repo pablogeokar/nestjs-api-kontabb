@@ -41,6 +41,11 @@ import {
 } from '../../database/schema';
 import { resolverContadorDoCliente } from '../../cadastros/contadores/contador-resolver';
 import { CiapService } from '../services/ciap.service';
+import {
+  FiscalPeriodSelectionService,
+  type DocumentoElegibilidade,
+  type RelatorioExclusao,
+} from '../services/fiscal-period-selection.service';
 import { StorageService } from '../../storage/storage.service';
 import { buildSpedFile, validateSpedFile } from './core';
 import { runPreflightPva } from './sped-preflight-pva';
@@ -105,6 +110,17 @@ interface PreparedInternal extends SpedPreparedGeneration {
   itensCatalogo: CatalogItem[];
 }
 
+/**
+ * Universo excluído vazio (nenhum documento), usado nas prévias que não chegam
+ * a carregar documentos (empresa inexistente, configuração ausente). Mantém o
+ * contrato `documentos.universoExcluido` sempre presente (R3.4).
+ */
+const EMPTY_UNIVERSO_EXCLUIDO: RelatorioExclusao = {
+  quantidade: 0,
+  valor: '0.00',
+  porMotivo: [],
+};
+
 const EMPTY_APURACAO: SpedPreview['apuracao'] = {
   icmsProprio: {
     debitos: '0.00',
@@ -133,6 +149,7 @@ export class EfdIcmsIpiService {
     private readonly logger: AppLogger,
     private readonly configService: ConfigService,
     private readonly ciapService: CiapService,
+    private readonly periodSelection: FiscalPeriodSelectionService,
   ) { }
 
   /**
@@ -911,6 +928,16 @@ export class EfdIcmsIpiService {
     }
 
     const included = nfe.length + cteDocuments.length;
+    // R3.3/R3.4: universo excluído da apuração DEFINITIVA pela política ÚNICA de
+    // elegibilidade. `documents` já está recortado pelo período (mesma data
+    // fiscal da finalidade EMISSAO), então classificamos cada documento desse
+    // recorte e reportamos quantidade e valor dos que NÃO são elegíveis — sem
+    // reimplementar o critério aqui: ele vem de `FiscalPeriodSelectionService`,
+    // a mesma fonte que o `where` definitivo (`definitiva: true`) usaria. Assim a
+    // exclusão e sua justificativa partem da MESMA política.
+    const universoExcluido = this.periodSelection.reportExclusoes(
+      documents.map(toDocumentoElegibilidade),
+    );
     const preview: SpedPreview = {
       podeGerar: !inconsistencias.some((item) => item.severidade === 'ERRO'),
       competencia,
@@ -928,6 +955,7 @@ export class EfdIcmsIpiService {
         nfe: nfe.filter((document) => document.row.modelo === '55').length,
         nfce: nfe.filter((document) => document.row.modelo === '65').length,
         cte: cteDocuments.length,
+        universoExcluido,
       },
       apuracao: builtRecords.apuracao,
       auditabilidade: {
@@ -1910,6 +1938,7 @@ export class EfdIcmsIpiService {
           nfe: 0,
           nfce: 0,
           cte: 0,
+          universoExcluido: EMPTY_UNIVERSO_EXCLUIDO,
         },
         apuracao: EMPTY_APURACAO,
         auditabilidade: { contador: null, apuracao: [] },
@@ -2061,6 +2090,23 @@ export function isInventoryDueForPeriod(
 
 function normalizeIdentifier(value: string): string {
   return value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+/**
+ * Projeta um documento fiscal persistido para a visão mínima que a política de
+ * elegibilidade consome (`DocumentoElegibilidade`). Mantém o acoplamento num só
+ * ponto: se as colunas de elegibilidade mudarem, só este mapeamento muda.
+ */
+export function toDocumentoElegibilidade(
+  document: typeof documentosFiscais.$inferSelect,
+): DocumentoElegibilidade {
+  return {
+    situacao: document.situacao,
+    escriturado: document.escriturado,
+    escrituracaoStatus: document.escrituracaoStatus,
+    integridadeStatus: document.integridadeStatus,
+    valorTotal: document.valorTotal,
+  };
 }
 
 function normalizeCountryCode(value?: string | null): string {

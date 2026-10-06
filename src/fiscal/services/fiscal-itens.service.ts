@@ -17,6 +17,12 @@ import {
 import { FiscalCteService } from './fiscal-cte.service';
 import { convertDirection } from './cfop.service';
 import {
+  aggregateC190Analitico,
+  normalizeC190Cst,
+  type C190ItemInput,
+} from '../sped/fiscal-c190-aggregator';
+import { fromScaledInteger } from '../sped/sped-decimal';
+import {
   CFOP_FINAIS_VEDA_CREDITO,
   CFOP_PREFIXOS_ENTRADA,
   CSOSN_ICMS_PERMITE_CREDITO,
@@ -121,26 +127,46 @@ export class FiscalItensService {
   async getC190(input: ItemFilters) {
     const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
     const where = this.buildWhere(input, true);
-    const cst = sql<string>`CASE WHEN ${documentosFiscaisItens.cstIcms} IS NOT NULL THEN COALESCE(${documentosFiscaisItens.origemMercadoria}, '0') || ${documentosFiscaisItens.cstIcms} ELSE COALESCE(${documentosFiscaisItens.csosnIcms}, '') END`;
-    const operacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) + COALESCE(${documentosFiscaisItens.valorIcmsSt}, 0) + COALESCE(${documentosFiscaisItens.valorFcpSt}, 0) + COALESCE(${documentosFiscaisItens.valorIpi}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
 
-    const rows = await this.database.db
+    // F16 (R5.4): a UI projeta o C190 do MESMO agregador analítico comum que o
+    // TXT (`aggregateC190Analitico`), não de um cálculo independente. Buscamos
+    // as linhas por item (sem agregação no SQL) e deixamos a decomposição —
+    // CST normalizado (R5.2), alíquota decimal antes da chave e escopo por
+    // documento (R5.3), redução só com percentual efetivo (R5.1) — a cargo do
+    // agregador, para que livro e arquivo coincidam por construção.
+    //
+    // Fonte da projeção (R5.4, design "C190 alinhado"): o modelo-alvo é a
+    // tabela comum `fiscal_lancamentos` (migração aditiva 0016). Nesta fase,
+    // porém, nenhum escritor ainda popula os lançamentos — o fechamento
+    // versionado (tarefas 3.x) é quem passa a gravá-los. Até lá, projetamos a
+    // partir de `documentosFiscaisItens`, que são os MESMOS valores documentais
+    // já persistidos que o builder EFD consome. Como UI e TXT atravessam o
+    // ÚNICO agregador comum, há um só caminho de cálculo e a decomposição
+    // coincide por construção; migrar a origem para `fiscal_lancamentos`
+    // (quando houver escritor) não reintroduz um segundo cálculo — apenas troca
+    // a tabela de leitura por uma projeção equivalente dos mesmos fatos.
+    const itens = await this.database.db
       .select({
-        tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
         documento_fiscal_id: documentosFiscaisItens.documentoFiscalId,
-        cst_icms_csosn: cst,
+        tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
+        cfop_xml: documentosFiscaisItens.cfopXml,
+        cstIcms: documentosFiscaisItens.cstIcms,
+        csosnIcms: documentosFiscaisItens.csosnIcms,
+        origemMercadoria: documentosFiscaisItens.origemMercadoria,
         cfop: documentosFiscaisItens.cfop,
-        cfops_xml: sql<
-          string[]
-        >`array_remove(array_agg(DISTINCT ${documentosFiscaisItens.cfopXml}), NULL)`,
-        aliquota_icms: documentosFiscaisItens.aliquotaIcms,
-        vl_opr: sql<string>`COALESCE(SUM(${operacao}), 0)`,
-        vl_bc_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcms}), 0)`,
-        vl_icms: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcms}), 0)`,
-        vl_bc_icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorBcIcmsSt}), 0)`,
-        vl_icms_st: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIcmsSt}), 0)`,
-        vl_red_bc: sql<string>`COALESCE(SUM(GREATEST(COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0) - COALESCE(${documentosFiscaisItens.valorBcIcms}, 0), 0)), 0)`,
-        vl_ipi: sql<string>`COALESCE(SUM(${documentosFiscaisItens.valorIpi}), 0)`,
+        aliquotaIcms: documentosFiscaisItens.aliquotaIcms,
+        percentualReducaoBcIcms: documentosFiscaisItens.percentualReducaoBcIcms,
+        valorBrutoProduto: documentosFiscaisItens.valorBrutoProduto,
+        valorDesconto: documentosFiscaisItens.valorDesconto,
+        valorFrete: documentosFiscaisItens.valorFrete,
+        valorSeguro: documentosFiscaisItens.valorSeguro,
+        valorOutrasDespesas: documentosFiscaisItens.valorOutrasDespesas,
+        valorBcIcms: documentosFiscaisItens.valorBcIcms,
+        valorIcms: documentosFiscaisItens.valorIcms,
+        valorBcIcmsSt: documentosFiscaisItens.valorBcIcmsSt,
+        valorIcmsSt: documentosFiscaisItens.valorIcmsSt,
+        valorFcpSt: documentosFiscaisItens.valorFcpSt,
+        valorIpi: documentosFiscaisItens.valorIpi,
       })
       .from(documentosFiscaisItens)
       .innerJoin(
@@ -148,19 +174,14 @@ export class FiscalItensService {
         eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
       )
       .where(where)
-      .groupBy(
-        documentosFiscaisItens.documentoFiscalId,
-        documentosFiscaisItens.tipoOperacaoEscriturada,
-        cst,
-        documentosFiscaisItens.cfop,
-        documentosFiscaisItens.aliquotaIcms,
-      )
       .orderBy(
         documentosFiscaisItens.documentoFiscalId,
         documentosFiscaisItens.tipoOperacaoEscriturada,
         documentosFiscaisItens.cfop,
         documentosFiscaisItens.aliquotaIcms,
       );
+
+    const data = projectC190FromItens(itens);
 
     const icmsCompoeApuracao = fiscalConfig
       ? !simplesNacionalSemApuracaoIcms(fiscalConfig)
@@ -172,7 +193,7 @@ export class FiscalItensService {
       ? RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO
       : `${SIMPLES_C190_OBSERVACAO} ${RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO}`;
     return {
-      data: rows,
+      data,
       icms_compoe_apuracao: icmsCompoeApuracao,
       parcial: true,
       observacao,
@@ -629,6 +650,95 @@ export class FiscalItensService {
       atualizado_em: item.atualizadoEm.toISOString(),
     };
   }
+}
+
+/** Linha por item consumida pela projeção do C190 na UI. */
+export interface C190ItemRow extends C190ItemInput {
+  documento_fiscal_id: string;
+  tipo_operacao: string;
+  cfop_xml: string | null;
+}
+
+/**
+ * F16 (R5.4): projeta a decomposição do C190 para a UI a partir das linhas por
+ * item, usando o MESMO agregador analítico comum (`aggregateC190Analitico`) que
+ * o builder EFD. O escopo é por documento (R5.3): os itens são particionados
+ * por (documento, tipo de operação) antes da agregação. Além da decomposição,
+ * preserva o CFOP XML distinto por linha analítica (auditoria), sem reintroduzir
+ * um cálculo independente. Os valores decimais são formatados (string), não
+ * recalculados.
+ */
+export function projectC190FromItens(itens: readonly C190ItemRow[]) {
+  // Partição por documento + sentido (escopo por documento do agregador).
+  const buckets = new Map<
+    string,
+    {
+      documento_fiscal_id: string;
+      tipo_operacao: string;
+      itens: C190ItemRow[];
+    }
+  >();
+  for (const item of itens) {
+    const partitionKey = `${item.documento_fiscal_id}|${item.tipo_operacao}`;
+    const bucket = buckets.get(partitionKey) ?? {
+      documento_fiscal_id: item.documento_fiscal_id,
+      tipo_operacao: item.tipo_operacao,
+      itens: [],
+    };
+    bucket.itens.push(item);
+    buckets.set(partitionKey, bucket);
+  }
+
+  const linhas: Array<{
+    tipo_operacao: string;
+    documento_fiscal_id: string;
+    cst_icms_csosn: string;
+    cfop: string;
+    cfops_xml: string[];
+    aliquota_icms: string;
+    vl_opr: string;
+    vl_bc_icms: string;
+    vl_icms: string;
+    vl_bc_icms_st: string;
+    vl_icms_st: string;
+    vl_red_bc: string;
+    vl_ipi: string;
+  }> = [];
+
+  for (const bucket of buckets.values()) {
+    for (const analitico of aggregateC190Analitico(bucket.itens)) {
+      // CFOP XML distinto dos itens que compõem esta linha analítica, para
+      // auditoria (a chave analítica usa o CFOP escriturado).
+      const cfopsXml = [
+        ...new Set(
+          bucket.itens
+            .filter(
+              (item) =>
+                normalizeC190Cst(item) === analitico.cst &&
+                item.cfop === analitico.cfop,
+            )
+            .map((item) => item.cfop_xml)
+            .filter((value): value is string => value != null),
+        ),
+      ];
+      linhas.push({
+        tipo_operacao: bucket.tipo_operacao,
+        documento_fiscal_id: bucket.documento_fiscal_id,
+        cst_icms_csosn: analitico.cst,
+        cfop: analitico.cfop,
+        cfops_xml: cfopsXml,
+        aliquota_icms: analitico.aliquota,
+        vl_opr: fromScaledInteger(analitico.valorOperacao),
+        vl_bc_icms: fromScaledInteger(analitico.valorBcIcms),
+        vl_icms: fromScaledInteger(analitico.valorIcms),
+        vl_bc_icms_st: fromScaledInteger(analitico.valorBcIcmsSt),
+        vl_icms_st: fromScaledInteger(analitico.valorIcmsSt),
+        vl_red_bc: fromScaledInteger(analitico.valorReducaoBc),
+        vl_ipi: fromScaledInteger(analitico.valorIpi),
+      });
+    }
+  }
+  return linhas;
 }
 
 function moneyToCents(value: string) {

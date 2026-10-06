@@ -24,6 +24,8 @@ import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.servic
 import { CiapService } from './services/ciap.service';
 import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
+import { FiscalPeriodSelectionService } from './services/fiscal-period-selection.service';
+import { FiscalClosingService } from './services/fiscal-closing.service';
 import { PisCofinsService } from './services/pis-cofins.service';
 import { RegrasFiscaisService } from './services/regras-fiscais.service';
 import {
@@ -80,6 +82,8 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
+    FiscalPeriodSelectionService,
+    FiscalClosingService,
     PisCofinsService,
     RegrasFiscaisService,
   ],
@@ -92,7 +96,9 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
+    FiscalPeriodSelectionService,
+    FiscalClosingService,
     PisCofinsService,
   ],
 })
-export class FiscalModule {}
+export class FiscalModule { }
