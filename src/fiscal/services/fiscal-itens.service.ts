@@ -10,10 +10,11 @@ import {
   documentosFiscais,
   documentosFiscaisItens,
 } from '../../database/schema';
+import { type RegimeTributario } from '../../clientes/clientes.types';
 import {
-  simplesNacionalSemApuracaoIcms,
-  type RegimeTributario,
-} from '../../clientes/clientes.types';
+  apuraIcmsProprioParaConsumidores,
+  competenciaDeIntervalo,
+} from './politica-simples';
 import { FiscalCteService } from './fiscal-cte.service';
 import { convertDirection } from './cfop.service';
 import {
@@ -183,8 +184,14 @@ export class FiscalItensService {
 
     const data = projectC190FromItens(itens);
 
+    // Política única (R6.3): a decisão de o ICMS próprio compor a apuração sai
+    // da MESMA matriz fiscal que o builder/CT-e consultam. Sem fiscalConfig
+    // (cliente desconhecido) o C190 segue documental completo (compõe).
     const icmsCompoeApuracao = fiscalConfig
-      ? !simplesNacionalSemApuracaoIcms(fiscalConfig)
+      ? apuraIcmsProprioParaConsumidores(
+        fiscalConfig,
+        competenciaDeIntervalo(input),
+      )
       : true;
     // O C190 é um resumo DOCUMENTAL: sempre parcial em relação ao imposto final
     // apurado (R7.3). Preserva a observação do Simples quando aplicável,
@@ -282,7 +289,9 @@ export class FiscalItensService {
         documentosFiscaisItens.cfop,
       );
 
-    if (fiscalConfig && simplesNacionalSemApuracaoIcms(fiscalConfig)) {
+    // Política única (R6.3): zera crédito/débito do livro quando a matriz
+    // fiscal resolve que o cliente NÃO apura ICMS próprio na competência.
+    if (fiscalConfig && !this.apuraIcmsProprio(fiscalConfig, input)) {
       return rows.map((row) => ({
         ...row,
         icms_creditado_debitado: '0.00',
@@ -295,7 +304,9 @@ export class FiscalItensService {
 
   async getApuracaoIcms(input: ItemFilters) {
     const fiscalConfig = await this.getClienteFiscalConfig(input.clienteId);
-    if (fiscalConfig && simplesNacionalSemApuracaoIcms(fiscalConfig)) {
+    // Política única (R6.3): sem apuração de ICMS próprio pela matriz fiscal,
+    // a apuração documental é zerada (ICMS recolhido via DAS).
+    if (fiscalConfig && !this.apuraIcmsProprio(fiscalConfig, input)) {
       return {
         total_creditos: '0.00',
         total_debitos: '0.00',
@@ -379,6 +390,21 @@ export class FiscalItensService {
     // função pura `cfopVedaCreditoIcms` (replace(/\D/g,'') + length === 4).
     const digitos = sql`regexp_replace(COALESCE(${documentosFiscaisItens.cfop}, ''), '[^0-9]', '', 'g')`;
     return sql`(LENGTH(${digitos}) = 4 AND LEFT(${digitos}, 1) IN (${sql.raw(prefixos)}) AND RIGHT(${digitos}, 3) IN (${sql.raw(finais)}))`;
+  }
+
+  /**
+   * Ponte dos livros para a POLÍTICA ÚNICA (R6.3): consulta a mesma matriz
+   * fiscal que o builder/CT-e, derivando a competência do intervalo do filtro.
+   * É o único ponto do serviço que decide apuração de ICMS próprio.
+   */
+  private apuraIcmsProprio(
+    fiscalConfig: { regimeTributario: RegimeTributario | null; apuraIcms: boolean },
+    input: ItemFilters,
+  ): boolean {
+    return apuraIcmsProprioParaConsumidores(
+      fiscalConfig,
+      competenciaDeIntervalo(input),
+    );
   }
 
   private async getClienteFiscalConfig(clienteId?: string) {

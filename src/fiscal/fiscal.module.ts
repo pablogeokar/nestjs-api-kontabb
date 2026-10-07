@@ -26,6 +26,7 @@ import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
 import { FiscalPeriodSelectionService } from './services/fiscal-period-selection.service';
 import { FiscalClosingService } from './services/fiscal-closing.service';
+import { FiscalBooksProjectionService } from './services/fiscal-books-projection.service';
 import { PisCofinsService } from './services/pis-cofins.service';
 import { RegrasFiscaisService } from './services/regras-fiscais.service';
 import {
@@ -84,6 +85,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     FiscalGuiasService,
     FiscalPeriodSelectionService,
     FiscalClosingService,
+    FiscalBooksProjectionService,
     PisCofinsService,
     RegrasFiscaisService,
   ],
@@ -98,6 +100,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     FiscalGuiasService,
     FiscalPeriodSelectionService,
     FiscalClosingService,
+    FiscalBooksProjectionService,
     PisCofinsService,
   ],
 })

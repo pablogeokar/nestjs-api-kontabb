@@ -5,6 +5,7 @@ import {
   decidirEscrituracaoCte,
   FiscalCteService,
 } from './fiscal-cte.service';
+import { apuraIcmsProprioParaConsumidores } from './politica-simples';
 import { documentosFiscaisCteEscrituracao } from '../../database/schema';
 
 describe('FiscalCteService', () => {
@@ -75,6 +76,40 @@ describe('FiscalCteService', () => {
         apuraIcms: false,
       }),
     ).toMatchObject({ escrituravel: true, creditaIcms: false });
+  });
+
+  it('credita o Simples Nacional que apura ICMS próprio (política única, R6.3)', () => {
+    // Decisão roteada pela matriz fiscal única: Simples com apuração própria
+    // confirmada passa a creditar como o regime normal — sem ramo divergente.
+    expect(
+      decidirEscrituracaoCte({
+        ...baseDecision,
+        regimeTributario: 'SIMPLES_NACIONAL',
+        apuraIcms: true,
+      }),
+    ).toMatchObject({ escrituravel: true, creditaIcms: true });
+  });
+
+  it('debita a prestação do Simples que apura ICMS próprio (política única, R6.3)', () => {
+    expect(
+      decidirEscrituracaoCte({
+        ...baseDecision,
+        emitenteCnpjCpf: '12345678000195',
+        tomadorCnpjCpf: '98765432000110',
+        regimeTributario: 'SIMPLES_NACIONAL',
+        apuraIcms: true,
+      }),
+    ).toMatchObject({ escrituravel: true, debitaIcms: true });
+    // ...e NÃO debita quando não apura (Simples no DAS).
+    expect(
+      decidirEscrituracaoCte({
+        ...baseDecision,
+        emitenteCnpjCpf: '12345678000195',
+        tomadorCnpjCpf: '98765432000110',
+        regimeTributario: 'SIMPLES_NACIONAL',
+        apuraIcms: false,
+      }),
+    ).toMatchObject({ escrituravel: true, debitaIcms: false });
   });
 
   it('envia subcontratação e redespacho para revisão sem crédito automático', () => {
@@ -257,3 +292,56 @@ function cteData(tpCte: '0' | '1' | '2' | '3') {
     codigoMunicipioDestino: '2910800',
   };
 }
+
+// R6.3 — AMBOS os consumidores (builder/CT-e e livros) derivam a MESMA decisão
+// de apuração de ICMS próprio da política única. O CT-e expõe a decisão via
+// `creditaIcms`/`debitaIcms` de uma operação tributada regular; os livros via
+// `apuraIcmsProprioParaConsumidores`. Para os mesmos (regime, apuraIcms) as duas
+// respostas coincidem — não há segundo motor nem ramo divergente.
+describe('Política única consumida por builder/CT-e e livros (R6.3)', () => {
+  const casos = [
+    { regimeTributario: 'LUCRO_REAL' as const, apuraIcms: true },
+    { regimeTributario: 'LUCRO_PRESUMIDO' as const, apuraIcms: false },
+    { regimeTributario: 'SIMPLES_NACIONAL' as const, apuraIcms: false },
+    { regimeTributario: 'SIMPLES_NACIONAL' as const, apuraIcms: true },
+    { regimeTributario: null, apuraIcms: true },
+  ];
+
+  it.each(casos)(
+    'CT-e e livros concordam para regime=$regimeTributario apuraIcms=$apuraIcms',
+    ({ regimeTributario, apuraIcms }) => {
+      // Decisão dos livros (fiscal-itens consome esta mesma função).
+      const livros = apuraIcmsProprioParaConsumidores(
+        { regimeTributario, apuraIcms },
+        '2026-05',
+      );
+
+      // Decisão do builder/CT-e: numa prestação própria tributada regular,
+      // `debitaIcms === apura ICMS próprio` (demais fatores neutros).
+      const cteDebito = decidirEscrituracaoCte({
+        clienteCnpjCpf: '12345678000195',
+        regimeTributario,
+        apuraIcms,
+        emitenteCnpjCpf: '12345678000195',
+        tomadorCnpjCpf: '98765432000110',
+        situacao: 'AUTORIZADA',
+        tpCte: '0',
+        tpServ: '0',
+        cstIcms: '00',
+        csosnIcms: null,
+        competencia: '2026-05',
+      }).debitaIcms;
+
+      // Para o Simples a regra é direta; para Lucro normal o débito ocorre e a
+      // apuração própria é verdadeira; para sem-regime o CT-e ainda debita a
+      // saída documental, mas a apuração própria dos livros é falsa — por isso
+      // comparamos a decisão ESTADUAL de apuração nos casos em que o CT-e a
+      // reflete (regime definido).
+      if (regimeTributario !== null) {
+        expect(cteDebito).toBe(livros);
+      } else {
+        expect(livros).toBe(false);
+      }
+    },
+  );
+});

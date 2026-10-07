@@ -21,6 +21,7 @@ import type {
   RegimeTributario,
   TipoContribuinteIcms,
 } from './clientes.types';
+import { resolveApuraIcms } from './clientes.types';
 
 export interface StoredAddress {
   postalCode: string;
@@ -65,7 +66,7 @@ export class ClientesService {
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
     private readonly crmService: CrmService,
-  ) {}
+  ) { }
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
     const searchDocument = input.search
@@ -73,10 +74,10 @@ export class ClientesService {
       .toUpperCase();
     const where = input.search
       ? or(
-          ilike(clientes.razaoSocial, `%${input.search}%`),
-          ilike(clientes.cnpj, `%${searchDocument}%`),
-          ilike(clientes.cpf, `%${searchDocument}%`),
-        )
+        ilike(clientes.razaoSocial, `%${input.search}%`),
+        ilike(clientes.cnpj, `%${searchDocument}%`),
+        ilike(clientes.cpf, `%${searchDocument}%`),
+      )
       : undefined;
 
     const [countResult, rows] = await Promise.all([
@@ -151,9 +152,9 @@ export class ClientesService {
         address: this.mapAddress(client),
         primary_activity: client.cnaePrincipalCodigo
           ? {
-              code: client.cnaePrincipalCodigo,
-              description: client.cnaePrincipalDescricao ?? '',
-            }
+            code: client.cnaePrincipalCodigo,
+            description: client.cnaePrincipalDescricao ?? '',
+          }
           : null,
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
@@ -180,10 +181,10 @@ export class ClientesService {
         contador_nome: client.contadorNome,
         certificado: client.certStatus
           ? {
-              status: client.certStatus as
-                'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
-              validade_fim: client.certValidadeFim!,
-            }
+            status: client.certStatus as
+              'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
+            validade_fim: client.certValidadeFim!,
+          }
           : null,
       })),
     );
@@ -403,11 +404,22 @@ export class ClientesService {
       audit_event AS (
         INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
         SELECT ${input.actorUserId}, 'CLIENTE_ATUALIZADO', 'CLIENTE', id::text,
-          CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN jsonb_build_object(
-            'consultaSimplesAtualizada', true,
-            'optanteSimplesNacional', ${simplesNacionalUpdate.optanteSimplesNacional}::boolean,
-            'simplesNacionalFonte', ${simplesNacionalUpdate.simplesNacionalFonte}::text
-          ) ELSE '{}'::jsonb END
+          (
+            CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN jsonb_build_object(
+              'consultaSimplesAtualizada', true,
+              'optanteSimplesNacional', ${simplesNacionalUpdate.optanteSimplesNacional}::boolean,
+              'simplesNacionalFonte', ${simplesNacionalUpdate.simplesNacionalFonte}::text
+            ) ELSE '{}'::jsonb END
+          )
+          -- Rastreabilidade da resolução de apuraIcms (R6.2): quando o valor é
+          -- escrito, registra o valor resolvido e a ORIGEM da decisão, de modo
+          -- que a derivação seja auditável e nunca silenciosa.
+          || (
+            CASE WHEN ${fiscalUpdate.writeApuraIcms} THEN jsonb_build_object(
+              'apuraIcms', ${fiscalUpdate.apuraIcms}::boolean,
+              'apuraIcmsOrigem', ${fiscalUpdate.apuraIcmsOrigem}::text
+            ) ELSE '{}'::jsonb END
+          )
         FROM updated_client
         RETURNING id
       )
@@ -623,9 +635,9 @@ export class ClientesService {
       address: this.mapAddress(client),
       primary_activity: client.cnaePrincipalCodigo
         ? {
-            code: client.cnaePrincipalCodigo,
-            description: client.cnaePrincipalDescricao ?? '',
-          }
+          code: client.cnaePrincipalCodigo,
+          description: client.cnaePrincipalDescricao ?? '',
+        }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
       regime_tributario: client.regimeTributario as RegimeTributario | null,
@@ -684,9 +696,9 @@ export class ClientesService {
     const fullRows = (
       fullCnpjs.length
         ? await this.database.db
-            .select({ cnpj: clientes.cnpj })
-            .from(clientes)
-            .where(inArray(clientes.cnpj, fullCnpjs))
+          .select({ cnpj: clientes.cnpj })
+          .from(clientes)
+          .where(inArray(clientes.cnpj, fullCnpjs))
         : []
     ) as Array<{ cnpj: string }>;
     const rootRows = await Promise.all(
@@ -828,11 +840,17 @@ export class ClientesService {
       );
     }
 
+    const regimeTributario = optanteSimplesNacional
+      ? ('SIMPLES_NACIONAL' as const)
+      : null;
+    // No cadastro inicial não há valor informado de apuraIcms: a resolução é
+    // feita pelo resolvedor explícito (origem documentada), não por um default
+    // oculto. Para Simples/sem regime o resultado é não apurar (R6.2).
+    const { apuraIcms } = resolveApuraIcms({ regimeTributario });
+
     return {
-      regimeTributario: optanteSimplesNacional
-        ? ('SIMPLES_NACIONAL' as const)
-        : null,
-      apuraIcms: false,
+      regimeTributario,
+      apuraIcms,
       optanteSimplesNacional,
       simplesNacionalFonte,
     };
@@ -946,6 +964,9 @@ export class ClientesService {
         regimeTributario: null,
         writeApuraIcms: input.apuraIcms !== undefined,
         apuraIcms: false,
+        // PF não tem regime tributário: a ausência de apuração é explícita,
+        // não um default silencioso derivado de regime.
+        apuraIcmsOrigem: 'SEM_REGIME' as const,
         writeInscricaoEstadual: hasInscricaoEstadual,
         inscricaoEstadual: null,
         writeTipoContribuinteIcms,
@@ -956,16 +977,16 @@ export class ClientesService {
     const regimeTributario = (
       writeRegimeTributario ? input.regimeTributario : existing.regimeTributario
     ) as RegimeTributario | null;
-    const lucroNormal =
-      regimeTributario === 'LUCRO_PRESUMIDO' ||
-      regimeTributario === 'LUCRO_REAL';
+    // Resolução EXPLÍCITA e AUDITÁVEL de apuraIcms (R6.2): nunca inferir um
+    // valor silenciosamente. O resolvedor devolve a origem da decisão
+    // (INFORMADO/REGIME_LUCRO_NORMAL/REGIME_SIMPLES_PADRAO/SEM_REGIME), que
+    // fica disponível para auditoria. Ver semântica em clientes.types.ts.
     const writeApuraIcms =
       input.apuraIcms !== undefined || writeRegimeTributario;
-    const apuraIcms = lucroNormal
-      ? true
-      : regimeTributario === 'SIMPLES_NACIONAL'
-        ? (input.apuraIcms ?? false)
-        : false;
+    const { apuraIcms, origem: apuraIcmsOrigem } = resolveApuraIcms({
+      regimeTributario,
+      informado: input.apuraIcms,
+    });
 
     const tipoContribuinteIcms = (
       writeTipoContribuinteIcms
@@ -979,6 +1000,7 @@ export class ClientesService {
       regimeTributario: input.regimeTributario ?? null,
       writeApuraIcms,
       apuraIcms,
+      apuraIcmsOrigem,
       writeInscricaoEstadual:
         hasInscricaoEstadual || (writeTipoContribuinteIcms && !contribuinte),
       inscricaoEstadual: contribuinte ? inscricaoEstadual : null,
