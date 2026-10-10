@@ -58,6 +58,7 @@ export class PisCofinsService {
    *  - Simples Nacional: recolhido via DAS, sem apuração destacada.
    *  - Lucro Presumido: cumulativo (0,65%/3,00%) sobre receita, sem créditos.
    *  - Lucro Real: não-cumulativo (1,65%/7,60%) com créditos das entradas.
+   *  - Regime ausente: PENDÊNCIA — não se presume cumulativo (R2.5).
    *
    * Segrega receita tributada de receita monofásica/ST/alíquota zero para não
    * tributar em duplicidade (base do Bloco M da EFD Contribuições).
@@ -76,12 +77,45 @@ export class PisCofinsService {
         regime_apuracao: 'DAS',
         observacao:
           'Optante do Simples Nacional — PIS/COFINS recolhidos via DAS (PGDAS-D). Apuração destacada não aplicável.',
+        // R2.6: o Simples recolhe via DAS; não há apuração destacada a rotular
+        // como provisória. Único caso em que o rótulo "demonstrativo" NÃO se
+        // aplica — não há demonstrativo de PIS/COFINS a emitir.
+        demonstrativo: false,
+        demonstrativo_motivo: null,
         pis: this.zeroTributo(),
         cofins: this.zeroTributo(),
       };
     }
 
-    const naoCumulativo = regime === 'LUCRO_REAL';
+    // R2.5 (regime ausente → pendência) e R2.7 (presumido/real não equiparam
+    // todas as receitas a um único tratamento): o regime de apuração é
+    // resolvido EXPLICITAMENTE por regime, não por um booleano
+    // `regime === 'LUCRO_REAL'` que colapsava "tudo que não é real" em
+    // cumulativo — inclusive o regime AUSENTE. Quando não há regime definido,
+    // NÃO se presume cumulativo: a apuração sai como PENDÊNCIA, sem valor
+    // tratado como guia (mesmo princípio do calculador por natureza em
+    // `pis-cofins-natureza.ts`, que devolve `PENDENTE` para `regime == null`).
+    const regimeApuracao = resolverRegimeApuracao(regime);
+    if (regimeApuracao === 'PENDENTE') {
+      return {
+        competencia,
+        regime,
+        regime_apuracao: 'PENDENTE' as const,
+        observacao:
+          'Regime tributário ausente — PIS/COFINS em PENDÊNCIA (R2.5). O ' +
+          'sistema NÃO presume regime cumulativo nem apura valor como guia; o ' +
+          'regime deve ser definido para que a apuração seja calculada.',
+        // R2.6: pendência é, por definição, demonstrativo — não há guia.
+        demonstrativo: true,
+        demonstrativo_motivo:
+          'Regime tributário ausente: apuração em pendência (R2.5), sem valor ' +
+          'tratado como guia definitiva.',
+        pis: this.zeroTributo(),
+        cofins: this.zeroTributo(),
+      };
+    }
+
+    const naoCumulativo = regimeApuracao === 'NAO_CUMULATIVO';
     const aliquotas = naoCumulativo
       ? ALIQUOTAS.NAO_CUMULATIVO
       : ALIQUOTAS.CUMULATIVO;
@@ -128,11 +162,41 @@ export class PisCofinsService {
       pendencias: saidas.cofins.pendencias,
     });
 
+    // ── Rótulo "demonstrativo" (Fase 4 / tarefa 3.6 — R2.6) ──────────────────
+    // O rótulo provisório DEVE ser mantido enquanto a cobertura não está
+    // completa (R2.6). Nesta entrega a apuração ainda é alimentada apenas pelos
+    // itens de documentos fiscais (XML): receitas sem NF-e, retenções sofridas
+    // e saldos anteriores — exigidos por R2.6 — e a geração do TXT da
+    // EFD-Contribuições NÃO fazem parte deste serviço (plano §8.5, fora de
+    // escopo). Portanto o resultado calculado permanece DEMONSTRATIVO: nunca é
+    // anunciado como apuração definitiva/pronta para transmissão.
+    //
+    // Além da baseline de cobertura incompleta, o motivo é ESCALADO quando há
+    // itens tributados sem valor apurável (`itens_pendentes > 0`, R2.2/R5.4):
+    // a receita não coberta aparece como pendência, reforçando o caráter
+    // provisório do demonstrativo.
+    const itensPendentes = pis.itens_pendentes + cofins.itens_pendentes;
+    const demonstrativoMotivo =
+      itensPendentes > 0
+        ? `Demonstrativo provisório (R2.6): ${itensPendentes} item(ns) ` +
+        'tributado(s) em pendência (sem valor apurável, R2.2/R5.4) e ' +
+        'cobertura incompleta — receitas sem NF-e, retenções e saldos ' +
+        'anteriores ainda não incorporados; EFD-Contribuições fora desta ' +
+        'entrega. Não é apuração definitiva.'
+        : 'Demonstrativo provisório (R2.6): cobertura ainda incompleta — ' +
+        'receitas sem NF-e, retenções e saldos anteriores ainda não ' +
+        'incorporados; EFD-Contribuições fora desta entrega. Não é ' +
+        'apuração definitiva.';
+
     return {
       competencia,
       regime,
-      regime_apuracao: naoCumulativo ? 'NAO_CUMULATIVO' : 'CUMULATIVO',
+      regime_apuracao: regimeApuracao,
       observacao: null,
+      // R2.6: mantido enquanto a cobertura não está completa (sempre, nesta
+      // entrega) — a apuração calculada é um demonstrativo, não guia definitiva.
+      demonstrativo: true,
+      demonstrativo_motivo: demonstrativoMotivo,
       pis,
       cofins,
     };
@@ -311,6 +375,50 @@ export class PisCofinsService {
       .limit(1);
     if (!rows[0]) throw new NotFoundException('Empresa não encontrada.');
     return rows[0];
+  }
+}
+
+/**
+ * Regime de apuração de PIS/COFINS resolvido a partir do regime tributário do
+ * cliente (Fase 4 / tarefa 3.5 — R2.5/R2.7).
+ *
+ * - `CUMULATIVO`: Lucro Presumido (Lei 9.718/98) — débito sobre receita, sem
+ *   créditos.
+ * - `NAO_CUMULATIVO`: Lucro Real (Leis 10.637/02 e 10.833/03) — com créditos.
+ * - `PENDENTE`: regime AUSENTE/indefinido. É o estado que substitui o
+ *   "cumulativo presumido" (R2.5): sem regime não se apura valor como guia.
+ */
+export type PisCofinsRegimeApuracao =
+  | 'CUMULATIVO'
+  | 'NAO_CUMULATIVO'
+  | 'PENDENTE';
+
+/**
+ * Mapeia o regime tributário do cliente para o regime de apuração de
+ * PIS/COFINS de forma EXPLÍCITA, por regime (R2.5/R2.7).
+ *
+ * O estado anterior usava `const naoCumulativo = regime === 'LUCRO_REAL'`, que
+ * colapsava num único booleano "é real?" e tratava TODO o resto — inclusive o
+ * regime AUSENTE (`null`) — como cumulativo. Isso violava:
+ *  - R2.5: regime ausente NÃO deve presumir cumulativo (deve ser pendência);
+ *  - R2.7: Lucro Presumido/Real NÃO devem ser equiparados a um tratamento
+ *    único de todas as receitas — cada regime é mapeado ao seu próprio regime
+ *    de apuração, não derivado por exclusão de um só caso.
+ *
+ * `SIMPLES_NACIONAL` não chega aqui (tratado antes, via DAS). Qualquer regime
+ * ausente/não mapeado → `PENDENTE` (nunca cumulativo presumido).
+ */
+export function resolverRegimeApuracao(
+  regime: RegimeTributario | null,
+): PisCofinsRegimeApuracao {
+  switch (regime) {
+    case 'LUCRO_REAL':
+      return 'NAO_CUMULATIVO';
+    case 'LUCRO_PRESUMIDO':
+      return 'CUMULATIVO';
+    default:
+      // Regime ausente (null) ou não mapeado: pendência, não cumulativo (R2.5).
+      return 'PENDENTE';
   }
 }
 

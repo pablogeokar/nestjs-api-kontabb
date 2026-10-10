@@ -13,6 +13,7 @@ import type {
   TipoGuia,
   TributoGuia,
 } from '../services/fiscal-guias.service';
+import type { DifalCalculoStatus } from '../services/difal-calculador';
 
 const COMPETENCIA_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const DATA_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -43,6 +44,14 @@ export const TIPOS_GUIA = [
 ] as const satisfies readonly TipoGuia[];
 
 export const STATUS_PAGAMENTO_GUIA = ['PENDENTE', 'PAGO', 'VENCIDO'] as const;
+
+// Estados do cálculo de DIFAL (espelha DifalCalculoStatus). Só CALCULADO pode
+// virar guia (tarefa 2.3 / R1.2); SIMULACAO/PENDENTE são barrados no serviço.
+export const DIFAL_CALCULO_STATUS = [
+  'CALCULADO',
+  'SIMULACAO',
+  'PENDENTE',
+] as const satisfies readonly DifalCalculoStatus[];
 
 /**
  * DTO para criação de guia de recolhimento. Espelha CriarGuiaInput do serviço.
@@ -105,6 +114,16 @@ export class CriarGuiaDto implements CriarGuiaInput {
   @IsString()
   @Matches(VALOR_NAO_NEGATIVO_PATTERN, { message: VALOR_MENSAGEM })
   valorJuros?: string;
+
+  @ApiPropertyOptional({
+    enum: DIFAL_CALCULO_STATUS,
+    description:
+      'Estado do cálculo do DIFAL. Obrigatório para DIFAL_ENTRADA/DIFAL_SAIDA: ' +
+      'só CALCULADO gera guia; SIMULACAO/PENDENTE são bloqueados (R1.2).',
+  })
+  @IsOptional()
+  @IsIn(DIFAL_CALCULO_STATUS)
+  difalStatus?: DifalCalculoStatus;
 }
 
 /**

@@ -8,6 +8,11 @@ import { DatabaseService } from '../../database/database.service';
 import { clientes, fiscalApuracoesGuias } from '../../database/schema';
 import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 import { parseCompetenciaMensal } from '../fiscal-date.util';
+import {
+  difalMotivoInelegibilidadeGuia,
+  difalPodeGerarGuia,
+  type DifalCalculoStatus,
+} from './difal-calculador';
 
 export type TributoGuia =
   | 'ICMS_PROPRIO'
@@ -33,7 +38,24 @@ export interface CriarGuiaInput {
   valorPrincipal: string;
   valorMulta?: string;
   valorJuros?: string;
+  /**
+   * Estado do cálculo do DIFAL (R1.2 / tarefa 2.3), quando a guia tem origem no
+   * calculador parametrizado de DIFAL. Obrigatório na prática para os tributos
+   * `DIFAL_ENTRADA`/`DIFAL_SAIDA`: só um resultado `CALCULADO` (regra homologada
+   * e vigente) pode virar guia. `SIMULACAO`/`PENDENTE` são bloqueados aqui para
+   * que um item simulado/pendente NUNCA gere guia de recolhimento. Para tributos
+   * não-DIFAL o campo é ignorado.
+   */
+  difalStatus?: DifalCalculoStatus;
 }
+
+// Tributos cuja guia tem origem no cálculo parametrizado de DIFAL (tarefa 2.3).
+// Para eles, a criação de guia exige um estado `CALCULADO`; simulação/pendência
+// são barradas (R1.2 — "sem regra homologada, nunca guia").
+const TRIBUTOS_DIFAL: ReadonlySet<TributoGuia> = new Set<TributoGuia>([
+  'DIFAL_ENTRADA',
+  'DIFAL_SAIDA',
+]);
 
 @Injectable()
 export class FiscalGuiasService {
@@ -42,6 +64,13 @@ export class FiscalGuiasService {
   async criarGuia(input: CriarGuiaInput) {
     await this.assertCliente(input.clienteId);
     const { competencia } = this.competenciaRange(input.competencia);
+
+    // R1.2 / tarefa 2.3: um DIFAL em SIMULAÇÃO/PENDÊNCIA NUNCA vira guia. Este é
+    // o ponto do fluxo em que o estado do cálculo precisa barrar a emissão —
+    // sem este guard, um chamador poderia criar uma guia DIFAL a partir de um
+    // item simulado/pendente. A decisão delega a `difalPodeGerarGuia` (fonte
+    // única da regra); a referência legada jamais é fonte de verdade para guia.
+    this.assertDifalElegivel(input);
 
     // R6.4/R6.3: reforça as invariantes do CriarGuiaDto no serviço para que um
     // chamador fora do HTTP (sem ValidationPipe) não as burle. Cada componente
@@ -194,6 +223,36 @@ export class FiscalGuiasService {
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : 'Competência inválida.',
+      );
+    }
+  }
+
+  /**
+   * R1.2 / tarefa 2.3: garante que uma guia de DIFAL (`DIFAL_ENTRADA`/
+   * `DIFAL_SAIDA`) só seja criada a partir de um resultado `CALCULADO`.
+   *
+   * - Para tributos não-DIFAL, não há nada a validar aqui.
+   * - Para tributos DIFAL, o `difalStatus` é OBRIGATÓRIO: criar uma guia de
+   *   DIFAL sem o estado do cálculo abriria a porta para emitir guia de um item
+   *   cujo escopo não foi verificado. Ausência do estado é rejeitada.
+   * - Com estado presente, só `CALCULADO` passa; `SIMULACAO`/`PENDENTE` são
+   *   barrados com o motivo auditável (nunca guia a partir de simulação/pendência).
+   */
+  private assertDifalElegivel(input: CriarGuiaInput) {
+    if (!TRIBUTOS_DIFAL.has(input.tributo)) return;
+
+    if (input.difalStatus == null) {
+      throw new BadRequestException(
+        `Guia de ${input.tributo} exige o estado do cálculo do DIFAL ` +
+        '(CALCULADO/SIMULACAO/PENDENTE). Sem ele, a emissão é bloqueada ' +
+        'para não gerar guia de um item cujo escopo não foi verificado (R1.2).',
+      );
+    }
+
+    if (!difalPodeGerarGuia(input.difalStatus)) {
+      throw new BadRequestException(
+        difalMotivoInelegibilidadeGuia(input.difalStatus) ??
+        `DIFAL em estado ${input.difalStatus} não pode gerar guia (R1.2).`,
       );
     }
   }

@@ -124,6 +124,60 @@ describe('FiscalGuiasService — invariantes fora do HTTP (R6.4)', () => {
   });
 });
 
+describe('FiscalGuiasService — DIFAL só vira guia quando CALCULADO (tarefa 2.3 / R1.2)', () => {
+  it('cria guia de DIFAL_ENTRADA quando o cálculo é CALCULADO (regra homologada)', async () => {
+    const db = createCriarGuiaDb({
+      insertedRow: defaultGuiaRow({ tributo: 'DIFAL_ENTRADA' }),
+    });
+    const service = new FiscalGuiasService(db as never);
+    const guia = await service.criarGuia(
+      baseInput({ tributo: 'DIFAL_ENTRADA', difalStatus: 'CALCULADO' }),
+    );
+    expect(guia.tributo).toBe('DIFAL_ENTRADA');
+    expect(db.db.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('BLOQUEIA guia de DIFAL_ENTRADA em SIMULAÇÃO (regra vigente não aprovada) — nunca guia', async () => {
+    const db = createCriarGuiaDb({});
+    const service = new FiscalGuiasService(db as never);
+    await expect(
+      service.criarGuia(
+        baseInput({ tributo: 'DIFAL_ENTRADA', difalStatus: 'SIMULACAO' }),
+      ),
+    ).rejects.toThrow('SIMULAÇÃO');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('BLOQUEIA guia de DIFAL_SAIDA em PENDÊNCIA (sem regra homologada) — nunca guia', async () => {
+    const db = createCriarGuiaDb({});
+    const service = new FiscalGuiasService(db as never);
+    await expect(
+      service.criarGuia(
+        baseInput({ tributo: 'DIFAL_SAIDA', difalStatus: 'PENDENTE' }),
+      ),
+    ).rejects.toThrow('PENDÊNCIA');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('BLOQUEIA guia de DIFAL sem o estado do cálculo (não emite item não verificado)', async () => {
+    const db = createCriarGuiaDb({});
+    const service = new FiscalGuiasService(db as never);
+    await expect(
+      service.criarGuia(baseInput({ tributo: 'DIFAL_ENTRADA' })),
+    ).rejects.toThrow('exige o estado do cálculo do DIFAL');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('tributo não-DIFAL ignora o estado do cálculo (campo não se aplica)', async () => {
+    const db = createCriarGuiaDb({});
+    const service = new FiscalGuiasService(db as never);
+    // ICMS_PROPRIO não é DIFAL: cria mesmo sem difalStatus, caminho inalterado.
+    const guia = await service.criarGuia(baseInput({ tributo: 'ICMS_PROPRIO' }));
+    expect(guia.id).toBe('guia-1');
+    expect(db.db.insert).toHaveBeenCalledTimes(1);
+  });
+});
+
 // DB falso para as mutações escopadas por (id, clienteId): marcarPagamento
 // (update().set().where().returning()) e removerGuia
 // (delete().where().returning()). Quando o WHERE por clienteId não casa (guia
