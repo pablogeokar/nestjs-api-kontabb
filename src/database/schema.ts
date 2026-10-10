@@ -2490,6 +2490,79 @@ export const fiscalApuracoesGuias = pgTable(
       .default('PENDENTE'),
     arquivoGuiaKey: text('arquivo_guia_key'),
 
+    // R1.1 (Fase 5, tarefa 1.2): separa os quatro conceitos — obrigação
+    // calculada, guia emitida, pagamento e conciliação. Esta linha é a GUIA
+    // EMITIDA; o PAGAMENTO vive em `fiscal_pagamentos_eventos` (nunca mais um
+    // mero `status_pagamento`), e a CONCILIAÇÃO se amarra à OBRIGAÇÃO CALCULADA
+    // pelo vínculo com a versão de apuração abaixo.
+    //
+    // `origem` identifica DE ONDE a guia veio: calculada a partir de um
+    // fechamento (APURACAO) ou lançada manualmente pelo responsável (MANUAL).
+    // Default 'MANUAL' preserva as linhas já existentes (migração aditiva).
+    origem: varchar('origem', { length: 20 }).notNull().default('MANUAL'),
+
+    // R1.7 (Fase 5, tarefa 1.2): VÍNCULO com a versão de apuração (fechamento
+    // da Fase 3). Uma guia criada a partir da obrigação calculada aponta o
+    // fechamento que a originou — base da conciliação guia ↔ apuração. Nullable
+    // para manter a migração aditiva e não invalidar guias manuais legadas; o
+    // serviço EXIGE o vínculo quando `origem = 'APURACAO'`. `set null` em delete
+    // preserva a guia e seu histórico mesmo se o fechamento for removido.
+    fechamentoId: uuid('fechamento_id').references(() => fiscalFechamentos.id, {
+      onDelete: 'set null',
+    }),
+
+    // R1.2 (Fase 5, tarefa 1.3): sinalização de guia DIVERGENTE da obrigação
+    // apurada. Quando a guia nasce da apuração (`origem = 'APURACAO'`), seu total
+    // é comparado ao total da obrigação projetado do fechamento vinculado
+    // (`projetarSaldoDevedorApurado` — o MESMO valor da conciliação, sem segundo
+    // motor). `divergente_obrigacao = true` marca que |guia − obrigação| excede a
+    // tolerância de centavos. SINAL informativo: não bloqueia a emissão (uma guia
+    // pode divergir legitimamente), apenas destaca para conciliação/cockpit.
+    // Default `false` preserva as linhas existentes (migração aditiva); guia
+    // MANUAL (sem obrigação apurada por trás) permanece `false`.
+    divergenteObrigacao: boolean('divergente_obrigacao')
+      .notNull()
+      .default(false),
+
+    // Total da OBRIGAÇÃO APURADA (saldo devedor documental) da versão de apuração
+    // vinculada, congelado no momento da emissão da guia — o valor contra o qual
+    // a guia foi comparada. Nullable: só é preenchido para guia `APURACAO` (guia
+    // MANUAL não tem obrigação apurada). Preservar o valor comparado torna a
+    // sinalização auditável mesmo que o fechamento mude depois (R1.2).
+    valorObrigacao: numeric('valor_obrigacao', { precision: 15, scale: 2 }),
+
+    // R1.4 (Fase 5, tarefa 1.4): CANCELAMENTO LÓGICO em vez de delete físico. A
+    // guia NUNCA é removida da tabela — "remover" uma guia é marcá-la como
+    // cancelada, preservando a linha e toda a trilha de pagamentos/estornos
+    // (`fiscal_pagamentos_eventos`) vinculada a ela. Default `false` preserva as
+    // linhas existentes (migração aditiva). `canceladaEm` registra QUANDO e
+    // `motivoCancelamento` (opcional) PORQUÊ — rastro mínimo do cancelamento.
+    cancelada: boolean('cancelada').notNull().default(false),
+    canceladaEm: timestamp('cancelada_em'),
+    motivoCancelamento: text('motivo_cancelamento'),
+
+    // R1.5 (Fase 5, tarefa 1.5): REGISTRAR uma guia ≠ EMITIDA no órgão
+    // arrecadador. Esta linha representa a guia REGISTRADA no sistema; só
+    // quando ela foi de fato emitida/transmitida no órgão (DAE/GNRE/DARF/DAS
+    // geradas no portal correspondente) é que `emitida_orgao` passa a `true`,
+    // com `emitida_orgao_em` registrando QUANDO. Default `false` preserva as
+    // linhas existentes (migração aditiva) e deixa explícito que uma guia
+    // recém-registrada NÃO está emitida no órgão. O flag é informativo e
+    // separado de `status_pagamento`: registrar, emitir no órgão e pagar são
+    // fatos distintos (R1.1/R1.5).
+    emitidaOrgao: boolean('emitida_orgao').notNull().default(false),
+    emitidaOrgaoEm: timestamp('emitida_orgao_em'),
+
+    // R1.6 (Fase 5, tarefa 1.6): CHAVE DE IDEMPOTÊNCIA fornecida pelo chamador
+    // (por requisição) para deduplicar guias criadas por RETRY. Um retry que
+    // carrega a MESMA chave NÃO cria uma guia duplicada — o serviço retorna a já
+    // criada. A chave é a FRONTEIRA de deduplicação, NUNCA uma unicidade por
+    // tributo/período/UF: duas obrigações LEGÍTIMAS do mesmo tributo/período/UF
+    // continuam permitidas (chaves distintas, ou sem chave). Nullable para manter
+    // a migração aditiva e não bloquear guias legadas/sem chave; a unicidade é um
+    // índice PARCIAL escopado por cliente (abaixo), que só vale quando há chave.
+    idempotencyKey: text('idempotency_key'),
+
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
@@ -2499,6 +2572,8 @@ export const fiscalApuracoesGuias = pgTable(
       table.competencia,
     ),
     index('idx_fiscal_guias_status').on(table.statusPagamento),
+    // Conciliação guia ↔ versão de apuração: projeção por fechamento (R1.7).
+    index('idx_fiscal_guias_fechamento').on(table.fechamentoId),
     check(
       'chk_fiscal_guias_tributo',
       sql`${table.tributo} IN ('ICMS_PROPRIO', 'ICMS_ST', 'DIFAL_ENTRADA', 'DIFAL_SAIDA', 'FCP', 'IPI', 'PIS', 'COFINS', 'DAS_SIMPLES')`,
@@ -2512,6 +2587,54 @@ export const fiscalApuracoesGuias = pgTable(
       sql`${table.statusPagamento} IN ('PENDENTE', 'PAGO', 'VENCIDO')`,
     ),
     check('chk_fiscal_guias_uf', sql`${table.ufFavorecida} ~ '^[A-Z]{2}$'`),
+    // Origem da guia: calculada de um fechamento ou lançada manualmente (R1.1).
+    check(
+      'chk_fiscal_guias_origem',
+      sql`${table.origem} IN ('APURACAO', 'MANUAL')`,
+    ),
+    // R1.7: guia de origem APURACAO DEVE ter vínculo com a versão de apuração;
+    // guia MANUAL não exige fechamento. O serviço reforça isto antes do insert,
+    // e o banco é a última linha de defesa contra guia calculada sem vínculo.
+    check(
+      'chk_fiscal_guias_apuracao_vinculo',
+      sql`${table.origem} <> 'APURACAO' OR ${table.fechamentoId} IS NOT NULL`,
+    ),
+    // R1.2 (tarefa 1.3): só guia de origem APURAÇÃO pode divergir — uma guia
+    // MANUAL não tem obrigação apurada por trás, logo não há do que divergir
+    // nem valor de obrigação a comparar. O banco é a última linha de defesa
+    // contra marcar divergência/obrigação em guia que não nasceu de apuração.
+    check(
+      'chk_fiscal_guias_divergencia_apuracao',
+      sql`${table.origem} = 'APURACAO' OR (${table.divergenteObrigacao} = false AND ${table.valorObrigacao} IS NULL)`,
+    ),
+    // R1.4 (tarefa 1.4): uma guia cancelada DEVE ter a data do cancelamento —
+    // coerência mínima do cancelamento lógico. Guia não cancelada não exige
+    // data. Última linha de defesa no banco contra marcar cancelada sem rastro.
+    check(
+      'chk_fiscal_guias_cancelamento',
+      sql`${table.cancelada} = false OR ${table.canceladaEm} IS NOT NULL`,
+    ),
+    // R1.5 (tarefa 1.5): coerência mínima da emissão no órgão — guia emitida no
+    // órgão DEVE ter a data da emissão. Guia apenas registrada (não emitida)
+    // não exige data. Última linha de defesa no banco contra marcar
+    // "emitida no órgão" sem rastro de quando.
+    check(
+      'chk_fiscal_guias_emissao_orgao',
+      sql`${table.emitidaOrgao} = false OR ${table.emitidaOrgaoEm} IS NOT NULL`,
+    ),
+    // R1.6 (tarefa 1.6): deduplicação por CHAVE DE IDEMPOTÊNCIA escopada por
+    // cliente, como índice PARCIAL (só vale quando há chave). Dois efeitos:
+    // (1) um RETRY com a MESMA chave não cria guia duplicada — o banco é a última
+    //     linha de defesa contra concorrência/corrida que escape ao lookup do
+    //     serviço (duas requisições simultâneas com a mesma chave colidem aqui);
+    // (2) a unicidade é SÓ pela chave — NUNCA por tributo/período/UF —, de modo
+    //     que múltiplas obrigações legítimas do mesmo tributo/período/UF (chaves
+    //     distintas, ou sem chave) permanecem permitidas.
+    // `WHERE idempotency_key IS NOT NULL` mantém a migração aditiva: linhas
+    // legadas/sem chave não participam do índice e não são bloqueadas.
+    uniqueIndex('uidx_fiscal_guias_cliente_idempotency')
+      .on(table.clienteId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
   ],
 );
 
@@ -3170,6 +3293,292 @@ export const fiscalRegrasVersoes = pgTable(
     check(
       'chk_fiscal_regra_vigencia',
       sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,
+    ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Eventos de pagamento/estorno de guias — trilha append-only (Fase 5 / tarefa
+// 1.1, R1.1/R1.3; design "Guias conciliadas (F21)" §7).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// SEPARA pagamento e conciliação da guia emitida (R1.1): a `fiscal_apuracoes_guias`
+// descreve a OBRIGAÇÃO/guia; cada PAGAMENTO, PAGAMENTO PARCIAL ou ESTORNO é um
+// EVENTO imutável aqui — nunca uma mudança de status que sobrescreve a anterior.
+// O saldo da obrigação é o `valorTotal` da guia MENOS a soma dos efeitos destes
+// eventos (pagamentos somam, estornos subtraem), de modo que a trilha completa é
+// sempre reconstruível e o saldo preservado (R1.3).
+//
+// VÍNCULO: `guiaId` liga o evento à guia/obrigação; `fechamentoId` liga,
+// opcionalmente, à VERSÃO de apuração que originou a obrigação (fechamento da
+// Fase 3), para a conciliação amarrar pagamento ↔ apuração. Ambos cascateiam na
+// remoção do escopo-pai, mas NUNCA são apagados em operação normal (cancelamento
+// lógico, não delete físico — R1.4, coberto nas tarefas seguintes).
+//
+// EVIDÊNCIA: só a `comprovanteKey` do storage fica no banco — nunca URLs
+// (restrição da fase/SKILL). URLs assinadas são geradas sob autorização.
+//
+// ESTORNO: um evento `ESTORNO` referencia, em `eventoEstornadoId`, o pagamento
+// que reverte — mantendo o par original/reversão explícito sem sobrescrever o
+// evento revertido. Pagamentos têm efeito +valor; estornos, -valor (via `sinal`).
+//
+// VALORES: `valor` é a MAGNITUDE decimal não-negativa (string, nunca `Number`);
+// o efeito no saldo vem de `sinal` (+1 pagamento, -1 estorno), mantendo a
+// decomposição explícita e conciliável (mesma convenção de `fiscal_lancamentos`).
+//
+// ADITIVA: só cria estrutura nova; não altera nem remove nada existente.
+export const fiscalPagamentosEventos = pgTable(
+  'fiscal_pagamentos_eventos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    // Guia/obrigação a que o evento se refere (vínculo guia/obrigação — R1.1).
+    guiaId: uuid('guia_id')
+      .notNull()
+      .references(() => fiscalApuracoesGuias.id, { onDelete: 'cascade' }),
+    // Versão de apuração que originou a obrigação (fechamento da Fase 3), quando
+    // disponível. Amarra pagamento ↔ apuração para a conciliação (R1.1/R1.7).
+    fechamentoId: uuid('fechamento_id').references(() => fiscalFechamentos.id, {
+      onDelete: 'set null',
+    }),
+    // Tipo do evento na trilha: pagamento (total ou parcial) ou estorno.
+    tipo: varchar('tipo', { length: 20 }).notNull(),
+    // Origem do evento (de onde o lançamento do pagamento veio): registro
+    // manual pelo responsável, importação de extrato/arquivo, ou conciliação.
+    origem: varchar('origem', { length: 20 }).notNull(),
+    // Magnitude decimal não-negativa do evento. `numeric`, nunca `Number`.
+    valor: numeric('valor', { precision: 15, scale: 2 }).notNull(),
+    // Efeito no saldo da obrigação: +1 pagamento, -1 estorno. O saldo = total da
+    // guia menos a soma de (sinal * valor) dos eventos (R1.3).
+    sinal: integer('sinal').notNull().default(1),
+    // Data em que o pagamento/estorno de fato ocorreu (não a de registro).
+    dataEvento: date('data_evento').notNull(),
+    // Evidência: SOMENTE a key do storage (comprovante). Nunca URL (SKILL).
+    comprovanteKey: text('comprovante_key'),
+    // Marcação explícita de declaração manual sem comprovante anexado — "PAGO"
+    // exige evidência OU esta indicação (R1.5, aplicada nas tarefas seguintes).
+    declaracaoManual: boolean('declaracao_manual').notNull().default(false),
+    // Documento externo/identificador do evento (ex.: autenticação bancária,
+    // nº do comprovante) — torna a origem externa rastreável (R1.1).
+    documentoExterno: text('documento_externo'),
+    // Estorno: evento de pagamento que este evento reverte. Preenchido só em
+    // eventos de tipo ESTORNO, mantendo o par original/reversão explícito.
+    eventoEstornadoId: uuid('evento_estornado_id'),
+    observacao: text('observacao'),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Auto-referência: estorno aponta o pagamento revertido (trilha preservada).
+    foreignKey({
+      columns: [table.eventoEstornadoId],
+      foreignColumns: [table.id],
+      name: 'fiscal_pagamentos_eventos_estornado_fk',
+    }).onDelete('set null'),
+    // Projeção da trilha por guia (ordem cronológica reconstrói o saldo — R1.3).
+    index('idx_fiscal_pagamento_evento_guia').on(table.guiaId, table.dataEvento),
+    // Conciliação por versão de apuração (pagamento ↔ apuração).
+    index('idx_fiscal_pagamento_evento_fechamento').on(table.fechamentoId),
+    index('idx_fiscal_pagamento_evento_cliente').on(
+      table.clienteId,
+      table.dataEvento,
+    ),
+    check(
+      'chk_fiscal_pagamento_evento_tipo',
+      sql`${table.tipo} IN ('PAGAMENTO', 'PAGAMENTO_PARCIAL', 'ESTORNO')`,
+    ),
+    check(
+      'chk_fiscal_pagamento_evento_origem',
+      sql`${table.origem} IN ('MANUAL', 'IMPORTACAO', 'CONCILIACAO')`,
+    ),
+    check('chk_fiscal_pagamento_evento_sinal', sql`${table.sinal} IN (-1, 1)`),
+    // Magnitude não-negativa: o efeito no saldo vem de `sinal`, não do valor.
+    check('chk_fiscal_pagamento_evento_valor', sql`${table.valor} > 0`),
+    // Estorno é coerente: tipo ESTORNO ⇔ sinal -1 e referencia um evento; os
+    // demais tipos somam (+1) e não referenciam estorno.
+    check(
+      'chk_fiscal_pagamento_evento_estorno',
+      sql`(${table.tipo} = 'ESTORNO') = (${table.sinal} = -1)`,
+    ),
+    check(
+      'chk_fiscal_pagamento_evento_estorno_ref',
+      sql`${table.tipo} <> 'ESTORNO' OR ${table.eventoEstornadoId} IS NOT NULL`,
+    ),
+    check(
+      'chk_fiscal_pagamento_evento_estorno_ref_tipo',
+      sql`${table.tipo} = 'ESTORNO' OR ${table.eventoEstornadoId} IS NULL`,
+    ),
+    // "PAGO" exige evidência OU declaração manual explícita (R1.5): todo evento
+    // de pagamento precisa de comprovante OU da marcação de declaração manual.
+    check(
+      'chk_fiscal_pagamento_evento_evidencia',
+      sql`${table.tipo} = 'ESTORNO' OR ${table.comprovanteKey} IS NOT NULL OR ${table.declaracaoManual} = true`,
+    ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entregas fiscais — arquivo, hash, PVA, validação, assinatura, protocolo/recibo
+// e vínculo de retificação (Fase 5 / tarefa 2.1, R2.1; design "Entrega e
+// retificação (F20/F21 operacional)" §7).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A ENTREGA é o ato de homologar/transmitir o arquivo de uma obrigação acessória
+// (EFD-ICMS-IPI, EFD-Contribuições etc.) de um escopo (cliente/competência/
+// obrigação), amarrada à VERSÃO DE APURAÇÃO que a originou (fechamento da Fase 3,
+// via `fechamentoId`) — a entrega projeta a mesma memória de cálculo versionada,
+// nunca o estado atual (que pode ter mudado). R2.1 exige persistir: ARQUIVO
+// (`arquivoKey`), HASH do conteúdo, PVA UTILIZADO (programa + versão), VALIDAÇÃO
+// (status + resultado), ASSINATURA, PROTOCOLO/RECIBO (número + `reciboKey`) e o
+// VÍNCULO DE RETIFICAÇÃO.
+//
+// STORAGE SÓ COM KEYS: apenas `arquivoKey` e `reciboKey` do storage ficam no
+// banco — NUNCA URLs (restrição da fase/SKILL). URLs assinadas são geradas sob
+// autorização, fora da persistência.
+//
+// RETIFICAÇÃO IMUTÁVEL: uma entrega retificadora referencia, em
+// `entregaOriginalId`, a entrega que corrige — mantendo o par original/retificação
+// explícito SEM sobrescrever a entrega anterior (a anterior é imutável; a nova
+// linha carrega a diferença e o novo recibo — R2.2, aplicada na tarefa 2.4).
+// Auto-FK `set null`: remover a original não apaga a retificadora (append-only).
+//
+// VIGÊNCIA DO LEIAUTE: `leiauteVersao` registra a versão do leiaute aplicada por
+// VIGÊNCIA da competência (2026 = Guia 3.2.2; 2027 = 3.2.3 — N03/N04), tornando
+// explícito qual leiaute foi usado, sem reutilização silenciosa (R2.5, tarefa 2.4).
+//
+// VALIDAÇÃO/TRANSMISSÃO: `statusValidacao` cobre o ciclo da entrega — PENDENTE,
+// VALIDADA, REJEITADA (pelo PVA), TRANSMITIDA, FALHA_STORAGE (snapshot gravado,
+// upload externo falhou → compensação/retry rastreável, R2.3, tarefa 2.3).
+//
+// VALORES: `valorDiferenca` (diferença da retificação) é decimal (`numeric`),
+// nunca `Number`; só faz sentido em entrega retificadora.
+//
+// ADITIVA: só cria estrutura nova; não altera nem remove nada existente.
+export const fiscalEntregas = pgTable(
+  'fiscal_entregas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    // Versão de apuração que originou a entrega (fechamento da Fase 3). O
+    // comprovante/recibo do PVA fica vinculado ao hash do fechamento (R2.4).
+    // `set null` em delete preserva a entrega e seu histórico (append-only).
+    fechamentoId: uuid('fechamento_id').references(() => fiscalFechamentos.id, {
+      onDelete: 'set null',
+    }),
+    // Obrigação acessória entregue (mesmo domínio de `fiscal_fechamentos`).
+    obrigacao: varchar('obrigacao', { length: 20 }).notNull(),
+    // Competência fiscal (primeiro dia do mês), mesma convenção das demais
+    // tabelas fiscais.
+    competencia: date('competencia').notNull(),
+    // ARQUIVO entregue: SOMENTE a key do storage. Nunca URL (SKILL).
+    arquivoKey: text('arquivo_key').notNull(),
+    // HASH SHA-256 do conteúdo do arquivo entregue (mesmo formato dos arquivos
+    // SPED e do `hash_entradas` do fechamento) — sela o que foi transmitido.
+    hashArquivo: varchar('hash_arquivo', { length: 64 }).notNull(),
+    // PVA UTILIZADO: programa validador e sua VERSÃO operacional, confirmada na
+    // homologação (N05) — nunca presumida como "a última".
+    pvaPrograma: varchar('pva_programa', { length: 40 }).notNull(),
+    pvaVersao: varchar('pva_versao', { length: 20 }).notNull(),
+    // VALIDAÇÃO: status do ciclo da entrega + resultado estruturado do PVA
+    // (ocorrências/advertências) congelado como snapshot JSONB. Decimais, se
+    // houver, sempre como string — nunca `Number`.
+    statusValidacao: varchar('status_validacao', { length: 20 })
+      .notNull()
+      .default('PENDENTE'),
+    validacaoResultado: jsonb('validacao_resultado')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    // ASSINATURA digital do arquivo (ex.: titular/thumbprint do certificado) e
+    // o momento em que foi assinado — rastro mínimo da assinatura (N02).
+    assinaturaTitular: text('assinatura_titular'),
+    assinaturaEm: timestamp('assinatura_em', { withTimezone: true }),
+    // PROTOCOLO/RECIBO da transmissão: número do protocolo/recibo emitido pelo
+    // órgão e a KEY do comprovante no storage (nunca URL — SKILL).
+    protocoloNumero: text('protocolo_numero'),
+    reciboKey: text('recibo_key'),
+    // VÍNCULO DE RETIFICAÇÃO: entrega que esta retifica (auto-FK). Preenchido só
+    // em entrega retificadora, mantendo o par original/retificação explícito sem
+    // sobrescrever a anterior (R2.2). `valorDiferenca` guarda a diferença da
+    // retificação (decimal, nunca `Number`).
+    entregaOriginalId: uuid('entrega_original_id'),
+    valorDiferenca: numeric('valor_diferenca', { precision: 15, scale: 2 }),
+    // VIGÊNCIA DO LEIAUTE aplicada por competência (2026 vs. 2027 — N03/N04),
+    // explícita para impedir reutilização silenciosa (R2.5).
+    leiauteVersao: varchar('leiaute_versao', { length: 20 }).notNull(),
+    transmitidaEm: timestamp('transmitida_em', { withTimezone: true }),
+    // RETRY RASTREÁVEL DO STORAGE (R2.3, tarefa 2.3): a geração do snapshot usa
+    // transação no banco; o upload externo (R2) NÃO participa dela. Quando o
+    // upload falha APÓS o snapshot gravado, o status vai a FALHA_STORAGE e o
+    // objeto parcial/órfão é compensado pela fila de limpeza. O retry é AMARRADO
+    // ao MESMO snapshot (não cria entrega nova): `tentativasStorage` conta cada
+    // tentativa de upload (começa em 0 e sobe a cada falha/retry) e
+    // `ultimoErroStorage` guarda o rastro do último erro — a trilha completa fica
+    // em `eventos_auditoria`. Num retry bem-sucedido o status volta a um estado
+    // de sucesso (PENDENTE/VALIDADA) sem perder o histórico de tentativas.
+    tentativasStorage: integer('tentativas_storage').notNull().default(0),
+    ultimoErroStorage: text('ultimo_erro_storage'),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Auto-referência: retificação aponta a entrega original (trilha preservada).
+    foreignKey({
+      columns: [table.entregaOriginalId],
+      foreignColumns: [table.id],
+      name: 'fiscal_entregas_original_fk',
+    }).onDelete('set null'),
+    // Projeção por escopo/competência (painéis, livros, status de entrega).
+    index('idx_fiscal_entrega_competencia').on(
+      table.clienteId,
+      table.competencia,
+      table.obrigacao,
+    ),
+    // Conciliação entrega ↔ versão de apuração (recibo ↔ hash do fechamento).
+    index('idx_fiscal_entrega_fechamento').on(table.fechamentoId),
+    // Trilha de retificação: entregas que retificam uma dada original.
+    index('idx_fiscal_entrega_original').on(table.entregaOriginalId),
+    check(
+      'chk_fiscal_entrega_obrigacao',
+      sql`${table.obrigacao} IN ('EFD_ICMS_IPI', 'EFD_CONTRIBUICOES', 'GIA', 'DAS', 'DAPI')`,
+    ),
+    // Competência é sempre o primeiro dia do mês (competência fiscal).
+    check(
+      'chk_fiscal_entrega_competencia_dia1',
+      sql`date_part('day', ${table.competencia}) = 1`,
+    ),
+    // Hash SHA-256 do arquivo no mesmo formato dos arquivos SPED/fechamento.
+    check(
+      'chk_fiscal_entrega_hash',
+      sql`${table.hashArquivo} ~ '^[0-9a-f]{64}$'`,
+    ),
+    // Ciclo da entrega: validação do PVA, transmissão e falha de storage (R2.3).
+    check(
+      'chk_fiscal_entrega_status',
+      sql`${table.statusValidacao} IN ('PENDENTE', 'VALIDADA', 'REJEITADA', 'TRANSMITIDA', 'FALHA_STORAGE')`,
+    ),
+    // A diferença só faz sentido numa entrega retificadora (vínculo à original):
+    // sem vínculo de retificação, não há `valor_diferenca`.
+    check(
+      'chk_fiscal_entrega_retificacao_diferenca',
+      sql`${table.entregaOriginalId} IS NOT NULL OR ${table.valorDiferenca} IS NULL`,
+    ),
+    // Uma entrega não retifica a si mesma (par original/retificação distinto).
+    check(
+      'chk_fiscal_entrega_nao_autoretifica',
+      sql`${table.entregaOriginalId} IS NULL OR ${table.entregaOriginalId} <> ${table.id}`,
     ),
   ],
 );

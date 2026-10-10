@@ -134,6 +134,62 @@
       "when": 1791632484903,
       "tag": "0018_fase4_catalogo_normativo",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791671015568,
+      "tag": "0019_fase5_fiscal_pagamentos_eventos",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791671241504,
+      "tag": "0020_fase5_guias_vinculo_apuracao",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791671598265,
+      "tag": "0021_fase5_guias_divergencia_obrigacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791671865895,
+      "tag": "0022_fase5_guias_cancelamento_logico",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791672323083,
+      "tag": "0023_fase5_guias_emitida_orgao",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791672715854,
+      "tag": "0024_fase5_guias_idempotency_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791673224244,
+      "tag": "0025_fase5_fiscal_entregas",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791673869930,
+      "tag": "0026_fase5_fiscal_entregas_retry_storage",
+      "breakpoints": true
     }
   ]
 }

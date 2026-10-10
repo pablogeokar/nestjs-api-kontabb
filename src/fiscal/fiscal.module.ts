@@ -24,6 +24,7 @@ import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.servic
 import { CiapService } from './services/ciap.service';
 import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
+import { FiscalEntregasService } from './services/fiscal-entregas.service';
 import { FiscalPeriodSelectionService } from './services/fiscal-period-selection.service';
 import { FiscalClosingService } from './services/fiscal-closing.service';
 import { FiscalBooksProjectionService } from './services/fiscal-books-projection.service';
@@ -84,6 +85,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
+    FiscalEntregasService,
     FiscalPeriodSelectionService,
     FiscalClosingService,
     FiscalBooksProjectionService,
@@ -100,6 +102,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
+    FiscalEntregasService,
     FiscalPeriodSelectionService,
     FiscalClosingService,
     FiscalBooksProjectionService,

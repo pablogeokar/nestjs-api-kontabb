@@ -4,8 +4,6 @@ import {
   Controller,
   Delete,
   Get,
-  HttpCode,
-  HttpStatus,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -26,6 +24,10 @@ import {
   FiscalGuiasService,
   type TributoGuia,
 } from '../services/fiscal-guias.service';
+import {
+  FiscalEntregasService,
+  type ObrigacaoEntrega,
+} from '../services/fiscal-entregas.service';
 import { PisCofinsService } from '../services/pis-cofins.service';
 import { FiscalItensService } from '../services/fiscal-itens.service';
 import { FiscalClosingService } from '../services/fiscal-closing.service';
@@ -38,7 +40,17 @@ import {
   CorrigirApropriacaoCiapDto,
   RegistrarBemCiapDto,
 } from '../dto/ciap.dto';
-import { CriarGuiaDto, MarcarPagamentoGuiaDto } from '../dto/guias-fiscais.dto';
+import {
+  CancelarGuiaDto,
+  CriarGuiaDto,
+  MarcarEmitidaOrgaoDto,
+  MarcarPagamentoGuiaDto,
+  RegistrarEventoPagamentoDto,
+} from '../dto/guias-fiscais.dto';
+import {
+  RegistrarEntregaDto,
+  RetificarEntregaDto,
+} from '../dto/entregas-fiscais.dto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Controller do CLIENTE logado (escopo da própria empresa)
@@ -54,6 +66,7 @@ export class ClienteFiscalApuracaoController {
     private readonly ciapService: CiapService,
     private readonly difalService: DifalEntradaService,
     private readonly guiasService: FiscalGuiasService,
+    private readonly entregasService: FiscalEntregasService,
     private readonly pisCofinsService: PisCofinsService,
     private readonly fiscalItensService: FiscalItensService,
     private readonly closingService: FiscalClosingService,
@@ -214,6 +227,41 @@ export class ClienteFiscalApuracaoController {
       competencia,
     });
   }
+
+  // R1.3 (tarefa 1.4): trilha append-only de pagamentos/estornos de uma guia e
+  // o saldo da obrigação reconstruído dela (nunca de um status mutável).
+  @Get('guias/:id/trilha')
+  @ApiOperation({
+    summary: 'Trilha de pagamentos/estornos de uma guia e saldo da obrigação',
+  })
+  async trilhaGuia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.guiasService.trilhaPagamentos({
+      clienteId: await this.clienteId(user.id),
+      guiaId: id,
+    });
+  }
+
+  // ── Entregas (R2.1/R2.2) ──────────────────────────────────────────────────
+  // Trilha original → retificações de uma competência/obrigação. Escopado à
+  // própria empresa; a entrega anterior permanece na trilha (nunca sobrescrita).
+  @Get('entregas')
+  @ApiOperation({
+    summary: 'Lista as entregas (originais e retificações) da empresa',
+  })
+  async listarEntregas(
+    @Query('competencia') competencia: string | undefined,
+    @Query('obrigacao') obrigacao: ObrigacaoEntrega | undefined,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.entregasService.listarEntregas({
+      clienteId: await this.clienteId(user.id),
+      competencia,
+      obrigacao,
+    });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -230,6 +278,7 @@ export class AdminFiscalApuracaoController {
     private readonly ciapService: CiapService,
     private readonly difalService: DifalEntradaService,
     private readonly guiasService: FiscalGuiasService,
+    private readonly entregasService: FiscalEntregasService,
     private readonly pisCofinsService: PisCofinsService,
   ) { }
 
@@ -322,13 +371,90 @@ export class AdminFiscalApuracaoController {
     });
   }
 
-  @Delete('guias/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Remove uma guia' })
-  async removerGuia(
+  // R1.5 (tarefa 1.5): REGISTRAR a guia ≠ EMITIDA no órgão arrecadador. Este
+  // endpoint registra o fato distinto de a guia ter sido de fato emitida/
+  // transmitida no órgão, sem confundir com pagamento nem com o mero registro.
+  @Patch('guias/:id/emissao-orgao')
+  @ApiOperation({
+    summary:
+      'Marca a guia como emitida no órgão arrecadador (registrar ≠ emitir no órgão)',
+  })
+  async marcarEmitidaNoOrgao(
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('clienteId') clienteId: string,
+    @Body() body: MarcarEmitidaOrgaoDto,
   ) {
-    await this.guiasService.removerGuia({ clienteId, guiaId: id });
+    return this.guiasService.marcarEmitidaNoOrgao({
+      clienteId: body.clienteId,
+      guiaId: id,
+    });
+  }
+
+  // R1.3 (tarefa 1.4): registra um EVENTO de pagamento/estorno na trilha da
+  // guia — nunca sobrescreve. Pagamento parcial, pagamento total e estorno
+  // coexistem; o saldo da obrigação é reconstruído da trilha e preservado.
+  @Post('guias/:id/eventos')
+  @ApiOperation({
+    summary:
+      'Registra um evento de pagamento/estorno (trilha append-only, preserva o saldo)',
+  })
+  async registrarEventoPagamento(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RegistrarEventoPagamentoDto,
+  ) {
+    return this.guiasService.registrarEventoPagamento({
+      clienteId: body.clienteId,
+      guiaId: id,
+      tipo: body.tipo,
+      valor: body.valor,
+      dataEvento: body.dataEvento,
+      origem: body.origem,
+      comprovanteKey: body.comprovanteKey,
+      declaracaoManual: body.declaracaoManual,
+      documentoExterno: body.documentoExterno,
+      eventoEstornadoId: body.eventoEstornadoId,
+      observacao: body.observacao,
+    });
+  }
+
+  // R1.4 (tarefa 1.4): CANCELAMENTO LÓGICO em vez de delete físico. A guia e a
+  // trilha de pagamentos NUNCA são apagadas; a guia é marcada como cancelada,
+  // preservando o histórico relevante.
+  @Delete('guias/:id')
+  @ApiOperation({
+    summary: 'Cancela logicamente uma guia (preserva histórico, sem delete físico)',
+  })
+  async cancelarGuia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CancelarGuiaDto,
+  ) {
+    return this.guiasService.cancelarGuia({
+      clienteId: body.clienteId,
+      guiaId: id,
+      motivo: body.motivo,
+    });
+  }
+
+  // ── Entregas (R2.1/R2.2/R2.4) ─────────────────────────────────────────────
+  // Registra uma ENTREGA ORIGINAL: arquivo (key), hash, PVA/versão, validação,
+  // assinatura, protocolo/recibo (key) e vigência do leiaute. Quando vinculada a
+  // um fechamento, o recibo fica amarrado ao hash do fechamento (R2.4).
+  @Post('entregas')
+  @ApiOperation({
+    summary:
+      'Registra uma entrega original (arquivo/hash/PVA/validação/recibo, R2.1)',
+  })
+  async registrarEntrega(@Body() body: RegistrarEntregaDto) {
+    return this.entregasService.registrarEntrega(body);
+  }
+
+  // RETIFICAÇÃO (R2.2): cria uma entrega NOVA que referencia a original, carrega
+  // a diferença e tem recibo próprio — a entrega anterior permanece IMUTÁVEL.
+  @Post('entregas/retificar')
+  @ApiOperation({
+    summary:
+      'Retifica uma entrega (nova entrega: original + diferença + recibo, R2.2)',
+  })
+  async retificarEntrega(@Body() body: RetificarEntregaDto) {
+    return this.entregasService.retificarEntrega(body);
   }
 }
