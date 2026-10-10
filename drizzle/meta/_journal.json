@@ -127,6 +127,13 @@
       "when": 1791320685009,
       "tag": "0017_fiscal_fechamentos",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791632484903,
+      "tag": "0018_fase4_catalogo_normativo",
+      "breakpoints": true
     }
   ]
 }

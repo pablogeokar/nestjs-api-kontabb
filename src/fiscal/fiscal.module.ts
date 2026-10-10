@@ -29,6 +29,7 @@ import { FiscalClosingService } from './services/fiscal-closing.service';
 import { FiscalBooksProjectionService } from './services/fiscal-books-projection.service';
 import { PisCofinsService } from './services/pis-cofins.service';
 import { RegrasFiscaisService } from './services/regras-fiscais.service';
+import { FiscalNormativeCatalogService } from './services/fiscal-normative-catalog.service';
 import {
   AdminFiscalApuracaoController,
   ClienteFiscalApuracaoController,
@@ -88,6 +89,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     FiscalBooksProjectionService,
     PisCofinsService,
     RegrasFiscaisService,
+    FiscalNormativeCatalogService,
   ],
   exports: [
     CertificadoService,
@@ -102,6 +104,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     FiscalClosingService,
     FiscalBooksProjectionService,
     PisCofinsService,
+    FiscalNormativeCatalogService,
   ],
 })
 export class FiscalModule { }

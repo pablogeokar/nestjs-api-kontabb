@@ -2660,6 +2660,40 @@ export const fiscalCatalogosVersoes = pgTable(
     vigenciaInicio: date('vigencia_inicio').notNull(),
     vigenciaFim: date('vigencia_fim'),
     ativo: boolean('ativo').notNull().default(true),
+    // ───────────────── Fase 4 (R1.1/R2.1/R3.1) — ADITIVO ─────────────────
+    // A coluna `tipo` já antecipava "outros códigos estaduais (Fase 4) sem nova
+    // tabela"; a Fase 4 amplia o domínio para DIFAL/ST_FCP/PIS_COFINS e
+    // acrescenta os atributos que o design §6.2/§7 exige para um catálogo que
+    // seja FONTE DE VERDADE versionada (fonte, hash, escopo aprovado, carga),
+    // e consultável por COMPETÊNCIA — nunca "o último catálogo" para histórico.
+    //
+    // URL/identificador externo da fonte normativa (ato, convênio, legislação
+    // estadual). Complementa `fonte` com um ponteiro verificável.
+    fonteUrl: text('fonte_url'),
+    // Hash do conteúdo carregado (R3.1 "fonte, hash, vigência, UF"): garante que
+    // a versão do catálogo é imutável e auditável — mesma carga → mesmo hash.
+    // SHA-256 em hex, mesmo formato de `fiscal_fechamentos.hash_entradas`.
+    hashConteudo: varchar('hash_conteudo', { length: 64 }),
+    // Payload estruturado da versão do catálogo (ex.: tabela de enquadramento
+    // produto/CEST/UF para ST/FCP, ou parâmetros de DIFAL/PIS-COFINS). Decimais
+    // sempre como string — nunca `Number` (restrição da fase).
+    conteudo: jsonb('conteudo')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    // Escopo aprovado (design §6.2): só uma versão com `escopo_aprovado = true`
+    // alimenta decisão fiscal definitiva. Enquanto não aprovada, o consumo
+    // produz pendência/simulação, não guia (R1.2).
+    escopoAprovado: boolean('escopo_aprovado').notNull().default(false),
+    aprovadoPor: text('aprovado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    // Data de carga da versão (design §7: "não usar último catálogo para
+    // competência histórica"): o lookup é por competência via vigência, e a
+    // carga apenas registra QUANDO a versão entrou no sistema.
+    dataCarga: timestamp('data_carga', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
@@ -2675,7 +2709,7 @@ export const fiscalCatalogosVersoes = pgTable(
     check('chk_fiscal_catalogo_uf', sql`${table.uf} ~ '^[A-Z]{2}$'`),
     check(
       'chk_fiscal_catalogo_tipo',
-      sql`${table.tipo} IN ('E111_CIAP')`,
+      sql`${table.tipo} IN ('E111_CIAP', 'DIFAL', 'ST_FCP', 'PIS_COFINS')`,
     ),
     // Vigência fechada só quando o fim é posterior ou igual ao início.
     check(
@@ -2687,6 +2721,17 @@ export const fiscalCatalogosVersoes = pgTable(
     check(
       'chk_fiscal_catalogo_codigo_e111_ciap',
       sql`${table.tipo} <> 'E111_CIAP' OR ${table.codigo} ~ '^[A-Z]{2}02[A-Z0-9]{4}$'`,
+    ),
+    // Hash do conteúdo (quando presente) em SHA-256 hex, igual aos arquivos
+    // SPED e a `fiscal_fechamentos.hash_entradas`.
+    check(
+      'chk_fiscal_catalogo_hash',
+      sql`${table.hashConteudo} IS NULL OR ${table.hashConteudo} ~ '^[0-9a-f]{64}$'`,
+    ),
+    // Aprovação coerente: há aprovador se, e somente se, o escopo foi aprovado.
+    check(
+      'chk_fiscal_catalogo_aprovacao',
+      sql`${table.escopoAprovado} = (${table.aprovadoPor} IS NOT NULL)`,
     ),
   ],
 );
@@ -2982,6 +3027,149 @@ export const fiscalFechamentos = pgTable(
     check(
       'chk_fiscal_fechamento_fechado_em',
       sql`(${table.estado} = 'FECHADO') = (${table.fechadoEm} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catálogo normativo versionado — perfis de vigência e regras versionadas
+// (Fase 4 / tarefa 1.1, R1.1/R2.1/R3.1; plano §6.2/§7).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Base comum da Fase 4: parametriza tributos que dependem de JURISDIÇÃO, REGIME
+// e VIGÊNCIA (DIFAL, ST/FCP, PIS-COFINS). Nenhuma tabela estática é fonte de
+// verdade — a seleção é SEMPRE por competência via vigência, não "o último".
+// Sem regra homologada vigente, o consumo produz pendência/simulação/bloqueio,
+// nunca guia definitiva (R1.2/R3.4).
+//
+// Todas ADITIVAS: só criam estruturas novas; não alteram nem removem nada.
+
+// `fiscal_perfis_vigencia` (design §7): o perfil fiscal de um estabelecimento
+// (cliente) por UF/regime/obrigação, com janela de vigência e fonte. É o que
+// liga a empresa à matriz legal aplicável numa competência — ex.: "cliente X,
+// UF SP, Simples, EFD_ICMS_IPI, vigente a partir de 2026-01-01". Impede
+// sobreposição indevida de perfis do mesmo escopo (índice GiST de exclusão
+// sobre o intervalo de vigência).
+export const fiscalPerfisVigencia = pgTable(
+  'fiscal_perfis_vigencia',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    // UF do perfil (jurisdição). Catálogo e regras são resolvidos por esta UF.
+    uf: varchar('uf', { length: 2 }).notNull(),
+    // Regime tributário vigente no período (coerente com `clientes`).
+    regime: varchar('regime', { length: 20 }).notNull(),
+    // Obrigação acessória a que o perfil se aplica (mesmo domínio de
+    // `fiscal_fechamentos.obrigacao`).
+    obrigacao: varchar('obrigacao', { length: 20 }).notNull(),
+    // Janela de vigência do perfil (fim aberto = ainda vigente).
+    vigenciaInicio: date('vigencia_inicio').notNull(),
+    vigenciaFim: date('vigencia_fim'),
+    // Origem da definição do perfil (matriz legal/inventário fiscal — a
+    // pré-condição bloqueante da fase). Deixa EXPLÍCITO de onde veio.
+    fonte: varchar('fonte', { length: 60 }).notNull(),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Um perfil por (cliente, uf, obrigacao, inicio): novas vigências geram
+    // novas linhas, preservando o histórico (não sobrescrevem a anterior).
+    uniqueIndex('uidx_fiscal_perfil_vigencia').on(
+      table.clienteId,
+      table.uf,
+      table.obrigacao,
+      table.vigenciaInicio,
+    ),
+    // Lookup por competência: perfis de um escopo ordenados por vigência.
+    index('idx_fiscal_perfil_lookup').on(
+      table.clienteId,
+      table.uf,
+      table.obrigacao,
+      table.vigenciaInicio,
+    ),
+    check('chk_fiscal_perfil_uf', sql`${table.uf} ~ '^[A-Z]{2}$'`),
+    check(
+      'chk_fiscal_perfil_regime',
+      sql`${table.regime} IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL')`,
+    ),
+    check(
+      'chk_fiscal_perfil_obrigacao',
+      sql`${table.obrigacao} IN ('EFD_ICMS_IPI', 'EFD_CONTRIBUICOES', 'GIA', 'DAS', 'DAPI')`,
+    ),
+    // Vigência fechada só quando o fim é posterior ou igual ao início.
+    check(
+      'chk_fiscal_perfil_vigencia',
+      sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,
+    ),
+  ],
+);
+
+// `fiscal_regras_versoes` (design §7): REVISÕES IMUTÁVEIS de uma regra fiscal,
+// ancoradas numa versão de catálogo. Cada linha é uma versão de regra com
+// conteúdo, fonte, responsável e vigência — nunca editada no lugar: uma nova
+// revisão cria uma nova linha (`revisao` crescente), preservando o histórico
+// (reprodutibilidade — a competência histórica usa a regra vigente à época,
+// não a mais recente). O conteúdo guarda os parâmetros aplicáveis (ex.:
+// composição de base DIFAL, enquadramento ST/FCP, naturezas PIS-COFINS), com
+// decimais sempre como string — nunca `Number` (restrição da fase).
+export const fiscalRegrasVersoes = pgTable(
+  'fiscal_regras_versoes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Versão de catálogo que ancora a regra (fonte/hash/vigência/UF).
+    catalogoVersaoId: uuid('catalogo_versao_id')
+      .notNull()
+      .references(() => fiscalCatalogosVersoes.id, { onDelete: 'cascade' }),
+    // Chave estável da regra dentro do catálogo (ex.: hipótese DIFAL, CEST/UF
+    // de ST, natureza de receita de PIS/COFINS). Agrupa suas revisões.
+    chave: text('chave').notNull(),
+    // Revisão imutável e crescente (>= 1): nova revisão = nova linha.
+    revisao: integer('revisao').notNull().default(1),
+    // Conteúdo versionado da regra (parâmetros). Decimais como string.
+    conteudo: jsonb('conteudo')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    // Origem normativa da revisão (ato/legislação/convênio).
+    fonte: varchar('fonte', { length: 60 }).notNull(),
+    fonteUrl: text('fonte_url'),
+    // Responsável fiscal que registrou/homologou a revisão.
+    responsavelPor: text('responsavel_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    // Janela de vigência da revisão (fim aberto = ainda vigente).
+    vigenciaInicio: date('vigencia_inicio').notNull(),
+    vigenciaFim: date('vigencia_fim'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Imutabilidade por revisão: uma linha por (catálogo, chave, revisão).
+    uniqueIndex('uidx_fiscal_regra_revisao').on(
+      table.catalogoVersaoId,
+      table.chave,
+      table.revisao,
+    ),
+    // Lookup por competência: revisões de uma regra ordenadas por vigência.
+    index('idx_fiscal_regra_lookup').on(
+      table.catalogoVersaoId,
+      table.chave,
+      table.vigenciaInicio,
+    ),
+    check('chk_fiscal_regra_revisao', sql`${table.revisao} >= 1`),
+    // Vigência fechada só quando o fim é posterior ou igual ao início.
+    check(
+      'chk_fiscal_regra_vigencia',
+      sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,
     ),
   ],
 );
