@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard, seconds } from '@nestjs/throttler';
 import { validate } from './config/env.validation';
 import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
@@ -25,6 +27,10 @@ import { CrmModule } from './crm/crm.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, expandVariables: true, validate }),
+    // Rate limiting global por IP. O tracker padrão do ThrottlerGuard usa req.ip;
+    // atrás de proxy sem `trust proxy` configurado no Express, req.ip pode refletir
+    // o IP do proxy (ajuste de infra fora do escopo desta tarefa).
+    ThrottlerModule.forRoot([{ name: 'default', ttl: seconds(60), limit: 100 }]),
     CommonModule,
     DatabaseModule,
     AuthModule,
@@ -48,5 +54,6 @@ import { CrmModule } from './crm/crm.module';
     CronController,
     StorageAdminController,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
-export class AppModule {}
+export class AppModule { }
