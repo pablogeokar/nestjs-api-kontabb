@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppLogger } from './common/logger.service';
 import { HttpExceptionFilter } from './common/http-exception.filter';
@@ -12,6 +13,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const appLogger = app.get(AppLogger);
+
+  const nodeEnv = configService.get<string>('NODE_ENV') ?? 'development';
+  const isProduction = nodeEnv === 'production';
 
   const configuredAppUrl = configService.getOrThrow<string>('APP_URL');
   app.enableCors({
@@ -23,6 +27,20 @@ async function bootstrap() {
     ],
     credentials: true,
   });
+
+  app.use(
+    helmet({
+      // Disabled so helmet does not interfere with the CORS allowlist or the
+      // inline DANFE PDF download (getDanfe serves Content-Disposition: inline).
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: false,
+      // X-Content-Type-Options: nosniff (xContentTypeOptions is on by default).
+      frameguard: { action: 'deny' },
+      hsts: isProduction
+        ? { maxAge: 15552000, includeSubDomains: true }
+        : false,
+    }),
+  );
 
   app.use(cookieParser());
   app.use(requestIdMiddleware);
@@ -37,38 +55,41 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
-  // Swagger / OpenAPI documentation
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Kontabb API')
-    .setDescription(
-      'API do sistema Kontabb — gestão de obrigações fiscais, clientes e guias contábeis.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth(
-      { type: 'http', scheme: 'bearer', bearerFormat: 'Token' },
-      'session-token',
-    )
-    .addTag('Health', 'Verificação de saúde da API')
-    .addTag('Dashboard', 'Dados do painel administrativo')
-    .addTag('Clientes (Admin)', 'CRUD de clientes — acesso staff')
-    .addTag('Cliente', 'Operações do próprio cliente autenticado')
-    .addTag('Guias', 'Acesso a guias e confirmação de pagamento')
-    .addTag('Guias (Admin)', 'Gestão administrativa de guias')
-    .addTag('Guias (Cliente)', 'Listagem de guias do cliente')
-    .addTag('Upload', 'Upload de guias fiscais — acesso staff')
-    .addTag('Usuários', 'CRUD de usuários do sistema — acesso admin')
-    .addTag('Storage', 'Operações de limpeza de armazenamento — acesso admin')
-    .addTag('Cron', 'Endpoints de rotinas automatizadas')
-    .build();
+  // Swagger / OpenAPI documentation — only outside production to avoid
+  // exposing the full API contract in production.
+  if (nodeEnv !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Kontabb API')
+      .setDescription(
+        'API do sistema Kontabb — gestão de obrigações fiscais, clientes e guias contábeis.',
+      )
+      .setVersion('1.0')
+      .addBearerAuth(
+        { type: 'http', scheme: 'bearer', bearerFormat: 'Token' },
+        'session-token',
+      )
+      .addTag('Health', 'Verificação de saúde da API')
+      .addTag('Dashboard', 'Dados do painel administrativo')
+      .addTag('Clientes (Admin)', 'CRUD de clientes — acesso staff')
+      .addTag('Cliente', 'Operações do próprio cliente autenticado')
+      .addTag('Guias', 'Acesso a guias e confirmação de pagamento')
+      .addTag('Guias (Admin)', 'Gestão administrativa de guias')
+      .addTag('Guias (Cliente)', 'Listagem de guias do cliente')
+      .addTag('Upload', 'Upload de guias fiscais — acesso staff')
+      .addTag('Usuários', 'CRUD de usuários do sistema — acesso admin')
+      .addTag('Storage', 'Operações de limpeza de armazenamento — acesso admin')
+      .addTag('Cron', 'Endpoints de rotinas automatizadas')
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document, {
-    swaggerOptions: {
-      persistAuthorization: true,
-      tagsSorter: 'alpha',
-      operationsSorter: 'method',
-    },
-  });
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        tagsSorter: 'alpha',
+        operationsSorter: 'method',
+      },
+    });
+  }
 
   const port = configService.get<string>('PORT') ?? '3001';
   await app.listen(port);

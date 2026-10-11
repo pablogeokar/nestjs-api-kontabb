@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-002",
+  "type": "fix",
+  "description": "[MÉDIA] 9 — Add helmet HTTP header hardening and gate Swagger by environment in src/main.ts. No security headers today; Swagger (api/docs) is registered unconditionally, exposing the full API contract in production. The API serves DANFE PDF binaries inline and is consumed cross-origin by the front, so helmet's CSP and CORP must be tuned not to break CORS or PDF downloads. Independent of the other features.",
+  "status": "completed",
+  "steps": [
+    "Install helmet as a production dependency: run `pnpm add helmet` from the worktree root (ABSOLUTE path /Users/pablo/dev/kontabb/api/.worktrees/sec-fix-medias). This updates package.json and pnpm-lock.yaml. Note the postinstall patch-cte-schema.js log is expected.",
+    "In src/main.ts import helmet (`import helmet from 'helmet'`) and add `app.use(helmet({ ... }))` early, preserving existing order: enableCors(...) → helmet → cookieParser() → requestIdMiddleware → ValidationPipe → filters → setGlobalPrefix('api').",
+    "Configure helmet: enable nosniff (xContentTypeOptions, default on), frameguard ({ action: 'deny' }), and HSTS only in production (`hsts: isProduction ? { maxAge: 15552000, includeSubDomains: true } : false`). Set `contentSecurityPolicy: false` and `crossOriginResourcePolicy: false` so helmet does not break the existing CORS allowlist or the inline DANFE PDF download (getDanfe uses Content-Disposition: inline). Derive isProduction from the ConfigService NODE_ENV already fetched in bootstrap (add one if not present).",
+    "Wrap the Swagger block (DocumentBuilder + SwaggerModule.createDocument + SwaggerModule.setup('api/docs', ...)) in `if (nodeEnv !== 'production') { ... }` so docs are only registered outside production. Keep the swaggerOptions unchanged for dev."
+  ],
+  "acceptance_criteria": [
+    "helmet appears in package.json dependencies and pnpm-lock.yaml.",
+    "Responses include X-Content-Type-Options: nosniff and X-Frame-Options: DENY; HSTS present only when NODE_ENV=production.",
+    "/api/docs is reachable when NODE_ENV!=production and not registered when NODE_ENV=production.",
+    "Existing CORS allowlist and the inline PDF download path are not broken (CSP and CORP disabled)."
+  ],
+  "verification": [
+    "pnpm exec tsc --noEmit — no new errors outside the baseline fiscal spec files.",
+    "pnpm build — succeeds.",
+    "pnpm audit --prod — record output; helmet must not add a new critical/high advisory.",
+    "Start the app in dev (or reason from code) and confirm /api/docs responds and a response carries the nosniff header."
+  ],
+  "blocked_reason": null,
+  "findings": "Installed helmet 8.3.0 as a production dependency (package.json + pnpm-lock.yaml updated). In src/main.ts: added `import helmet from 'helmet'`; derived `nodeEnv`/`isProduction` from ConfigService NODE_ENV; inserted `app.use(helmet({...}))` right after enableCors and before cookieParser, preserving the CORS -> helmet -> cookie-parser -> request-id -> ValidationPipe -> filters -> setGlobalPrefix('api') order. Helmet config: xContentTypeOptions (nosniff) left on by default, frameguard { action: 'deny' } (X-Frame-Options: DENY), hsts enabled only in production ({ maxAge: 15552000, includeSubDomains: true }), contentSecurityPolicy:false and crossOriginResourcePolicy:false so the CORS allowlist and the inline DANFE PDF download (Content-Disposition: inline) are not broken. Wrapped the full Swagger block (DocumentBuilder + createDocument + setup('api/docs')) in `if (nodeEnv !== 'production') { ... }` so /api/docs is only registered outside production. Verification: `pnpm exec tsc --noEmit` shows exactly the 23 baseline errors (1 in fiscal-apuracao.controller.spec.ts, 22 in fiscal-entregas.service.spec.ts), no new errors. `pnpm build` succeeds. `pnpm audit --prod` reports 1 pre-existing HIGH advisory in node-forge (<=1.4.0) via @nfewizard/* transitive deps (GHSA-86w9-cpqp-85rv) — helmet introduced NO new critical/high advisory."
+}
