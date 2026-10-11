@@ -32,7 +32,6 @@ import { extractDadosFolhaPagamento } from '../common/pdf-extraction-rh';
 import {
   extractDadosFerias,
   isReciboFerias,
-  type DadosFerias,
 } from '../common/pdf-extraction-ferias';
 import { sanitizeFileName } from '../common/file-validation';
 import type { CurrentUser as CurrentUserType } from '../common/types';

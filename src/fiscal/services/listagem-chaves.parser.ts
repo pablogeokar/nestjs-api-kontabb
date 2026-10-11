@@ -76,6 +76,10 @@ interface ParseOptions {
   avisos?: string[];
 }
 
+interface ExtractOptions {
+  includeMalformed?: boolean;
+}
+
 export function parseChavesFromText(
   text: string,
   options: ParseOptions = {},
@@ -101,7 +105,9 @@ export async function parseChavesFromBuffer(
     const delimiter = detectCsvDelimiter(text);
     const rows = parseDelimitedRows(text, delimiter);
     const candidates = rows.flatMap((row) =>
-      row.flatMap((cell) => extractCandidates(cell)),
+      row.flatMap((cell) =>
+        extractCandidates(cell, { includeMalformed: false }),
+      ),
     );
     return buildResult(candidates, []);
   }
@@ -193,7 +199,10 @@ function buildResult(
   };
 }
 
-function extractCandidates(text: string): string[] {
+function extractCandidates(
+  text: string,
+  options: ExtractOptions = { includeMalformed: true },
+): string[] {
   const normalized = text.toUpperCase();
   const exactMatches = normalized.match(ACCESS_KEY_PATTERN) ?? [];
   const segments = normalized
@@ -220,7 +229,7 @@ function extractCandidates(text: string): string[] {
       for (let index = 0; index < compact.length; index += 44) {
         candidates.push(compact.slice(index, index + 44));
       }
-    } else if (compact.length >= 20) {
+    } else if (options.includeMalformed && compact.length >= 20) {
       candidates.push(compact.slice(0, 80));
     }
   }
@@ -291,7 +300,11 @@ async function parseXlsx(
         return;
       }
       const value = cell.text?.trim();
-      if (value) candidates.push(...extractCandidates(value));
+      if (value) {
+        candidates.push(
+          ...extractCandidates(value, { includeMalformed: false }),
+        );
+      }
     });
   });
 

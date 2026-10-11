@@ -34,8 +34,9 @@ describe('ColaboradorAuthGuard revocation (FEAT-003)', () => {
   }) {
     const request = {} as Request & { colaborador?: ColaboradorTokenPayload };
 
+    const extractFromRequest = jest.fn().mockReturnValue(opts.payload);
     const sessionService = {
-      extractFromRequest: jest.fn().mockReturnValue(opts.payload),
+      extractFromRequest,
     } as unknown as ColaboradorSessionService;
 
     const colaboradorService = {
@@ -58,7 +59,7 @@ describe('ColaboradorAuthGuard revocation (FEAT-003)', () => {
       reflector,
     );
 
-    return { guard, context, request, sessionService };
+    return { guard, context, request, sessionService, extractFromRequest };
   }
 
   it('rejects when the token version diverges from the stored version', async () => {
@@ -116,14 +117,14 @@ describe('ColaboradorAuthGuard revocation (FEAT-003)', () => {
   });
 
   it('allows @ColaboradorPublic() routes without any auth', async () => {
-    const { guard, context, request, sessionService } = buildGuard({
+    const { guard, context, request, extractFromRequest } = buildGuard({
       payload: null,
       revocation: null,
       isPublic: true,
     });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(sessionService.extractFromRequest).not.toHaveBeenCalled();
+    expect(extractFromRequest).not.toHaveBeenCalled();
     expect(request.colaborador).toBeUndefined();
   });
 });

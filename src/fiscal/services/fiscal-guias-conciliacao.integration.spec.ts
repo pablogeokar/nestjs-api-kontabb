@@ -184,7 +184,9 @@ function criarStore(seed: { clienteId: string }) {
                   g.clienteId === vals.clienteId && g.idempotencyKey === key,
               )
             ) {
-              return Promise.reject({ code: '23505' });
+              return Promise.reject(
+                Object.assign(new Error('unique_violation'), { code: '23505' }),
+              );
             }
             const row = novaGuia(vals);
             guias.push(row);

@@ -140,15 +140,15 @@ function criarStore(seed: {
           throw new Error('Tabela inesperada no select.');
         };
         return {
-          limit: (_n: number) => Promise.resolve(run()),
-          orderBy: (..._args: unknown[]) => Promise.resolve(run()),
+          limit: () => Promise.resolve(run()),
+          orderBy: () => Promise.resolve(run()),
         };
       },
     };
   }
 
   const db = {
-    select: (_projection?: unknown) => ({
+    select: () => ({
       from: (table: unknown) => selectFrom(table),
     }),
     insert: (table: unknown) => {
@@ -190,13 +190,13 @@ function criarStore(seed: {
     },
     // R2.2: a entrega anterior é IMUTÁVEL. Qualquer tentativa de UPDATE/DELETE
     // sobre `fiscal_entregas` é um defeito — o store derruba o teste na hora.
-    update: (_table: unknown) => {
+    update: () => {
       updateChamado = true;
       throw new Error(
         'UPDATE em fiscal_entregas é proibido: a entrega anterior é imutável (R2.2).',
       );
     },
-    delete: (_table: unknown) => {
+    delete: () => {
       deleteChamado = true;
       throw new Error(
         'DELETE em fiscal_entregas é proibido: a entrega anterior é imutável (R2.2).',

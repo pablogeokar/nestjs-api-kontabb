@@ -1009,7 +1009,7 @@ describe('FiscalGuiasService — registrar ≠ emitida no órgão (tarefa 1.5 / 
 function createIdempotencyDb(opts: {
   limitQueue: unknown[][];
   insertedRow?: Record<string, unknown>;
-  insertErro?: unknown;
+  insertErro?: { code?: string; message?: string };
 }) {
   const limitQueue = [...opts.limitQueue];
   const limit = jest.fn(() =>
@@ -1017,7 +1017,12 @@ function createIdempotencyDb(opts: {
   );
   const returning = jest.fn(() =>
     opts.insertErro !== undefined
-      ? Promise.reject(opts.insertErro)
+      ? Promise.reject(
+          Object.assign(
+            new Error(opts.insertErro.message ?? 'db error'),
+            opts.insertErro,
+          ),
+        )
       : Promise.resolve([opts.insertedRow ?? defaultGuiaRow()]),
   );
   const values = jest.fn().mockReturnValue({ returning });

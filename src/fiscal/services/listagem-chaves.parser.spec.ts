@@ -61,6 +61,34 @@ describe('listagem de chaves fiscais', () => {
     expect(result.itens[0].chaveAcesso).toBe(chave);
   });
 
+  it('interpreta o relatório CSV da SEFAZ/BA sem transformar outras colunas em chaves', async () => {
+    const first = buildAccessKey('55');
+    const second = buildAccessKey('55', '12345678000195', '000000124');
+    const csv = [
+      'Numero NF-e;CNPJ/CPF Destinatario;Razao Social Destinatario;Data de Emissao;Data de Autorizacao;Valor (R$);Chave de Acesso;UF Dest.;Situacao;Tipo Operacao;',
+      ` 000.000.123; 123.456.789-01; DESTINATARIO COM NOME MUITO EXTENSO; 01/09/2026 16:14:12 ; 01/09/2026 16:14:13 ;2.042,00;'${first}; BA; Autorizada; Entrada;`,
+      ` 000.000.124; 12.345.678/0001-95; OUTRO DESTINATARIO COM NOME EXTENSO; 01/09/2026 16:39:03 ; 01/09/2026 16:39:05 ;1.317,57;'${second}; BA; Autorizada; Saida;`,
+    ].join('\r\n');
+
+    const result = await parseChavesFromBuffer(
+      Buffer.from(csv, 'ascii'),
+      'rpt_cons_emit.csv',
+      'text/plain',
+    );
+
+    expect(result).toMatchObject({
+      totalRegistros: 2,
+      validas: 2,
+      aptasParaBusca: 2,
+      invalidas: 0,
+      duplicadas: 0,
+    });
+    expect(result.itens.map((item) => item.chaveAcesso)).toEqual([
+      first,
+      second,
+    ]);
+  });
+
   it('lê a primeira aba XLSX e alerta sobre células numéricas sem precisão', async () => {
     const chave = buildAccessKey('55');
     const workbook = new ExcelJS.Workbook();
@@ -96,8 +124,12 @@ describe('listagem de chaves fiscais', () => {
   });
 });
 
-function buildAccessKey(modelo: string): string {
-  const base = `29240812345678000195${modelo}001000000123112345678`;
+function buildAccessKey(
+  modelo: string,
+  cnpj = '12345678000195',
+  numero = '000000123',
+): string {
+  const base = `292408${cnpj}${modelo}001${numero}112345678`;
   let weight = 2;
   let sum = 0;
   for (let index = 42; index >= 0; index -= 1) {

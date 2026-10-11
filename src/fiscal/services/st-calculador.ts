@@ -357,7 +357,6 @@ export function calcularSt(
   const internaScaled = toScaledInteger(internaStr, ESCALA_ALIQUOTA);
   const propriaScaled = toScaledInteger(propriaStr, ESCALA_ALIQUOTA);
   const mvaScaled = toScaledInteger(mvaStr, ESCALA_ALIQUOTA);
-  const cemAliquota = 100n * 10n ** BigInt(ESCALA_ALIQUOTA);
 
   // IMPOSTO PRÓPRIO = base_propria × aliq_propria / 100 (componente separado).
   const impostoProprioScaled = aplicarAliquota(

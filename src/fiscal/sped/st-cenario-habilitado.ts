@@ -59,7 +59,7 @@
  */
 
 import type { SpedInconsistencia } from './sped-efd.types';
-import type { SpedRecord, SpedTypedField } from './core';
+import type { SpedRecord } from './core';
 import { fromScaledInteger, toScaledInteger } from './sped-decimal';
 import type { CatalogoVersaoResolvida } from '../services/fiscal-normative-catalog.service';
 import type { StVerificacaoStatus } from '../services/st-verificacao';

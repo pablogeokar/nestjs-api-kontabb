@@ -75,11 +75,11 @@ function createDb(opts: { catalogo: CatalogoRow[]; regras?: RegraRow[] }) {
             const capture = { where: clause, orderByDesc: false };
             captures.push(capture);
             const rendered = renderWhere(capture);
-            const competencia = String(
+            const competencia =
               rendered.params.find(
-                (p) => typeof p === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p),
-              ) ?? '',
-            );
+                (p): p is string =>
+                  typeof p === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p),
+              ) ?? '';
             const isRegra = rendered.sql.includes('fiscal_regras_versoes');
             const source = isRegra ? (opts.regras ?? []) : opts.catalogo;
             const filtradas = source

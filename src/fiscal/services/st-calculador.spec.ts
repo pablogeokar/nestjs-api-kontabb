@@ -6,7 +6,6 @@ import {
   type StCalculoStatus,
   type StRegraCalculo,
 } from './st-calculador';
-import type { StEnquadramentoStatus } from './st-enquadramento';
 
 // Regra de ST resolvida do catálogo ST_FCP, com overrides por teste. Reflete o
 // `conteudo` de `fiscal_regras_versoes` já tipado — o calculador (4.3) não

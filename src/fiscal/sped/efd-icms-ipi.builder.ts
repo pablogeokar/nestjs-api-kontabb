@@ -14,6 +14,7 @@ import {
   createSpedRecord,
   dateField,
   decimalField,
+  formatSpedField,
   integerField,
   type SpedRecord,
 } from './core';
@@ -401,8 +402,8 @@ export function buildEfdIcmsIpiRecords(
         codigo: 'CTE_SAIDA_D190_E110_DIVERGENTE',
         severidade: 'ERRO',
         mensagem:
-          `A síntese D190 do CT-e de saída (${money(conciliacao.totalD190)}) não reconcilia com o débito do E110 ` +
-          `(${money(conciliacao.totalE110)}) e o livro de saídas (${money(conciliacao.totalLivroSaidas)}). ` +
+          `A síntese D190 do CT-e de saída (${formatSpedField(money(conciliacao.totalD190))}) não reconcilia com o débito do E110 ` +
+          `(${formatSpedField(money(conciliacao.totalE110))}) e o livro de saídas (${formatSpedField(money(conciliacao.totalLivroSaidas))}). ` +
           'Reveja CT-e de anulação/substituição com ICMS destacado antes de gerar o SPED.',
       });
     }

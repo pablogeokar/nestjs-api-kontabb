@@ -52,7 +52,6 @@ import {
   createSpedRecord,
   dateField,
   decimalField,
-  integerField,
   type SpedRecord,
 } from './core';
 import { fromScaledInteger, toScaledInteger } from './sped-decimal';
