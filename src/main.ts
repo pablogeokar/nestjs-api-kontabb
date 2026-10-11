@@ -18,13 +18,16 @@ async function bootstrap() {
   const isProduction = nodeEnv === 'production';
 
   const configuredAppUrl = configService.getOrThrow<string>('APP_URL');
+  // Origens permitidas pelo CORS, montadas condicionalmente por ambiente:
+  // origens de desenvolvimento (localhost) só entram fora de produção.
+  const corsOrigins = [
+    'https://www.kontabb.com.br',
+    'https://kontabb.com.br',
+    configuredAppUrl,
+    ...(isProduction ? [] : ['http://localhost:3000']),
+  ];
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'https://www.kontabb.com.br',
-      'https://kontabb.com.br',
-      configuredAppUrl,
-    ],
+    origin: [...new Set(corsOrigins)],
     credentials: true,
   });
 

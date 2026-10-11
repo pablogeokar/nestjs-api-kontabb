@@ -76,6 +76,38 @@ export class StorageService {
     return Buffer.concat(chunks);
   }
 
+  /**
+   * Valida e normaliza um segmento de chave de objeto antes de compô-lo.
+   *
+   * Defesa em profundidade contra path traversal / injeção de caminho no R2:
+   * mesmo que as origens atuais (CNPJ restrito a [0-9A-Z], CPF numérico, UUIDs)
+   * já sejam seguras, qualquer segmento derivado de dados deve ser rejeitado
+   * aqui caso contenha separadores de caminho (`/`, `\`), sequências de
+   * traversal (`..`), caracteres de controle, ou seja vazio.
+   *
+   * A validação é transparente para entradas legítimas: segmentos válidos são
+   * retornados inalterados, preservando o formato das chaves já em produção.
+   */
+  private assertSafeKeySegment(value: string, label: string): string {
+    if (typeof value !== 'string' || value.length === 0) {
+      throw new Error(
+        `Segmento de chave R2 inválido (${label}): valor vazio ou ausente.`,
+      );
+    }
+    if (
+      value.includes('/') ||
+      value.includes('\\') ||
+      value.includes('..') ||
+      // eslint-disable-next-line no-control-regex
+      /[\u0000-\u001f\u007f]/.test(value)
+    ) {
+      throw new Error(
+        `Segmento de chave R2 inválido (${label}): contém caractere não permitido.`,
+      );
+    }
+    return value;
+  }
+
   documentObjectKey(input: {
     cnpj: string;
     period: string;
@@ -83,7 +115,15 @@ export class StorageService {
     type: string;
   }) {
     const [month, year] = input.period.split('/');
-    return `clientes/${input.cnpj}/${year}/${month}/${input.obligationId}/${input.type}.pdf`;
+    const cnpj = this.assertSafeKeySegment(input.cnpj, 'cnpj');
+    const safeYear = this.assertSafeKeySegment(year ?? '', 'period.year');
+    const safeMonth = this.assertSafeKeySegment(month ?? '', 'period.month');
+    const obligationId = this.assertSafeKeySegment(
+      input.obligationId,
+      'obligationId',
+    );
+    const type = this.assertSafeKeySegment(input.type, 'type');
+    return `clientes/${cnpj}/${safeYear}/${safeMonth}/${obligationId}/${type}.pdf`;
   }
 
   receiptObjectKey(input: {
@@ -91,10 +131,15 @@ export class StorageService {
     receiptId: string;
     extension: string;
   }) {
-    return `clientes/${input.cnpjCpf}/comprovantes/${input.receiptId}.${input.extension}`;
+    const cnpjCpf = this.assertSafeKeySegment(input.cnpjCpf, 'cnpjCpf');
+    const receiptId = this.assertSafeKeySegment(input.receiptId, 'receiptId');
+    const extension = this.assertSafeKeySegment(input.extension, 'extension');
+    return `clientes/${cnpjCpf}/comprovantes/${receiptId}.${extension}`;
   }
 
   logoObjectKey(input: { cnpjCpf: string; extension: string }) {
-    return `clientes/${input.cnpjCpf}/logo.${input.extension}`;
+    const cnpjCpf = this.assertSafeKeySegment(input.cnpjCpf, 'cnpjCpf');
+    const extension = this.assertSafeKeySegment(input.extension, 'extension');
+    return `clientes/${cnpjCpf}/logo.${extension}`;
   }
 }

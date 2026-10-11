@@ -741,7 +741,9 @@ export class ClientesService {
     const oldLogoKey = existing[0].logoKey;
     const cnpjCpf =
       existing[0].tipoPessoa === 'PF' && existing[0].cpf
-        ? existing[0].cpf
+        ? // CPF saneado para dígitos antes de virar segmento de chave R2
+        // (transparente para o formato numérico já armazenado).
+        existing[0].cpf.replace(/\D/g, '')
         : existing[0].cnpj;
     const newKey = this.storage.logoObjectKey({
       cnpjCpf,
