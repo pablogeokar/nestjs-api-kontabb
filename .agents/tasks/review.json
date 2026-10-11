@@ -1,1 +1,12 @@
-{ "verdict": "APPROVED" }
+{
+    "verdict": "APPROVED",
+    "findings": [
+        {
+            "severity": "non-blocking",
+            "confidence": "possible",
+            "label": "Summary bucket semantics",
+            "detail": "Aborted-certificate keys count toward `falhas`, consistent with the existing `ABORTADO_CONSUMO_INDEVIDO` convention and required by point 4. No change needed; noted so the UI relies on the `certificado_indisponivel` flag to show a distinct message rather than inferring from `falhas`."
+        }
+    ],
+    "reviewDoc": "/Users/pablo/dev/kontabb/api/.agents/tasks/review.md"
+}

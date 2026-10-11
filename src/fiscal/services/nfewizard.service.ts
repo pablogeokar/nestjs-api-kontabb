@@ -145,6 +145,18 @@ export class NfeWizardService {
   }
 
   /**
+   * Confere o acesso ao PFX e a inicialização da biblioteca antes de iniciar
+   * um lote. Não realiza chamada externa à SEFAZ.
+   */
+  async validarAmbienteCliente(input: {
+    clienteId: string;
+    cnpj: string;
+    uf: string;
+  }): Promise<void> {
+    await this.getClientWizardInstance(input.clienteId, input.uf, input.cnpj);
+  }
+
+  /**
    * Consulta Distribuição de DF-e na SEFAZ via NFeDistribuicaoDFe.
    * Retorna documentos a partir do ultimoNsu informado.
    */

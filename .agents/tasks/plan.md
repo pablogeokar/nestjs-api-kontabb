@@ -1,122 +1,65 @@
-# Implementation Plan — Correção das 3 vulnerabilidades ALTAS (Kontabb API)
+# Implementation Plan — Fast-fail certificate-access failures in DF-e key import
 
-Worktree (todos os caminhos são absolutos dentro dele): `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas`
+Scope: two files only — the service and its spec. Do not touch `certificado.service.ts`, `nfewizard.service.ts`, or any other file. Do not change the DB-only `assertCertificadoDisponivel` preflight.
 
-Relatório de origem: `/Users/pablo/dev/kontabb/api/.agents/tasks/security-scan-2026-10-11.md` — achados `[ALTA] 2`, `[ALTA] 3`, `[ALTA] 4`.
+Root cause (already diagnosed): `CertificateAccessService.getDecryptedCertificate` throws `CertificateAccessError` (code `CERTIFICATE_OBJECT_NOT_FOUND`) because the encrypted certificate file can't be fetched from object storage even though the DB row is valid. The certificate is per-client, so one failure means every key in the batch will fail. Current code classifies all keys as generic `FALHA` and keeps looping, hammering SEFAZ. The fix is to detect the (possibly wrapped) `CertificateAccessError` in the per-key catch, abort the batch with a dedicated status, and give an actionable message.
 
-## Baseline (medido, NÃO é regressão desta tarefa)
+Confirmed current shapes (file: `/Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.ts`):
+- `ImportacaoChaveStatus` union ends with `| 'FALHA' | 'ABORTADO_CONSUMO_INDEVIDO';` (around lines 44–53).
+- `executar(...)` declares `let consumoIndevido = false;` before the `for (const item of parsed.itens)` loop. The loop's first guard is `if (consumoIndevido) { resultados.push(this.result(item, 'ABORTADO_CONSUMO_INDEVIDO', 'Lote interrompido para respeitar o bloqueio temporário da SEFAZ.')); continue; }`.
+- The per-key `catch (error: unknown)` block computes `const message = this.rootCause(error);`, sets `consumoIndevido` on a `/consumo indevido|\b656\b/` match, logs `fiscal_key_import_item_failed`, then pushes a `FALHA`/`ABORTADO_CONSUMO_INDEVIDO` result.
+- `rootCause(error)` is a private helper that walks `.cause` and returns the deepest `message` string (does NOT return the error object).
+- `summarize(...)` has `const count = (...statuses) => ...`; `falhas: count('FALHA', 'ABORTADO_CONSUMO_INDEVIDO'),` and `consumo_indevido: count('ABORTADO_CONSUMO_INDEVIDO') > 0,`.
+- The `result(...)` helper signature is `result(item, status, mensagem, documento?, emitente?, valorTotal?)`.
 
-- `pnpm exec tsc --noEmit` reporta **exatamente 22 erros pré-existentes**, todos em specs fiscais:
-  - `src/fiscal/controllers/fiscal-apuracao.controller.spec.ts` → 1 erro (TS2554 em 31,22).
-  - `src/fiscal/services/fiscal-entregas.service.spec.ts` → 21 erros (TS2554).
-- Além disso, 2 testes "meta-presence" falham no `pnpm test` (aceitável).
-- **Critério de aceite transversal:** nenhum erro `tsc` NOVO fora dessa lista; nenhuma falha de teste NOVA além das 2 já conhecidas. Build (`pnpm build`) deve passar.
-- O worktree não tem `node_modules` próprio; a resolução cai em `/Users/pablo/dev/kontabb/api/node_modules` (workspace pnpm). Rodar os comandos a partir do worktree funciona (`pnpm exec`/`pnpm build`/`pnpm test` resolvem corretamente).
+Reference (file: `/Users/pablo/dev/kontabb/api/src/fiscal/services/certificado.service.ts`, do NOT modify): exports `class CertificateAccessError extends Error` with `readonly code: CertificateAccessErrorCode` and `CertificateAccessErrorCode = 'CERTIFICATE_OBJECT_NOT_FOUND' | 'CERTIFICATE_STORAGE_UNAVAILABLE' | 'CERTIFICATE_PAYLOAD_INVALID' | 'CERTIFICATE_DECRYPTION_FAILED'`. The error is constructed with `{ cause: error }`, so it may appear anywhere in a `.cause` chain.
 
-## Decisões de design (resumo + razão)
-
-- **FIX 1 — throttler:** `@nestjs/throttler` instalado é **v6.5.0**. A API é a de v5+: `ThrottlerModuleOptions` é um **array de throttlers nomeados** `{ name, ttl, limit }` e **`ttl` é em milissegundos** (confirmado no `.d.ts` e no `throttler.service.js`; existe helper `seconds()` exportado). Vou usar `ThrottlerModule.forRoot([{ name: 'default', ttl: seconds(60), limit: 100 }])` + `APP_GUARD` global `ThrottlerGuard`. Não há convenção de env para esses limites no projeto, então uso baseline fixo 60s/100req.
-- **FIX 1 — ordem de guards:** `ThrottlerGuard` registrado como `APP_GUARD` roda como guard global ANTES dos guards de controller (`AuthGuard` continua declarado por controller via `@UseGuards`). São independentes: o throttler só conta requisições por IP, não lê a sessão; não interfere no `AuthGuard` nem no `RateLimitService` por identidade (que roda dentro dos handlers). Mantém-se tudo complementar.
-- **FIX 1 — proxy/`req.ip`:** o tracker padrão do `ThrottlerGuard` usa `req.ip`. Como `trust proxy` não está configurado no Express, atrás de proxy o `req.ip` pode ser o IP do proxy. Mantemos o default de IP e deixamos NOTA no código/plano (ver item 3) — ajustar `trust proxy` é decisão de infra fora do escopo e com risco próprio (o report classifica `proxy-addr`/spoofing como item de dependências, já tratado em outra tarefa).
-- **FIX 3 — abordagem (a) `tokenVersion`:** o schema NÃO possui tabela de sessão de colaborador (só existe `session` do fluxo principal, ligada a `user`). Portanto a opção (b) não é trivial. Adoto **(a) tokenVersion por funcionário**: coluna `token_version integer NOT NULL DEFAULT 0` em `funcionarios_rh`, embutida no payload do token; `verifyToken` continua síncrono (assinatura + exp) e a checagem de revogação é feita no controller via consulta ao banco (compara versão do token com a do banco e também exige `ativo = true`). Incremento da versão em: troca de senha e logout. Mínima superfície, uma migração puramente aditiva.
+Test command (confirmed working, 5 tests pass): `npx jest importacao-chaves-fiscal` run from `/Users/pablo/dev/kontabb/api`.
 
 ---
 
-## FIX 1 — Rate limiting global ([ALTA] 2)
+- [ ] 1. Import `CertificateAccessError` into the service file.
+      Add `import { CertificateAccessError } from './certificado.service';` to the import block at the top of the service file (place it near the other `./`-relative service imports such as `DistribuicaoDfeService` / `NfeWizardService`). Type-only import is fine since it's used with `instanceof` — use a value import (not `import type`) because `instanceof` needs the runtime class.
+      Files: /Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.ts
+      Verify: `npx jest importacao-chaves-fiscal` from /Users/pablo/dev/kontabb/api — suite still compiles and all 5 existing tests pass.
 
-- [ ] 1. Registrar o ThrottlerModule global em `app.module.ts`.
-      Importar `ThrottlerModule` e `ThrottlerGuard` (e `seconds`) de `@nestjs/throttler` e `APP_GUARD` de `@nestjs/core`. Adicionar `ThrottlerModule.forRoot([{ name: 'default', ttl: seconds(60), limit: 100 }])` ao array `imports`, e adicionar `{ provide: APP_GUARD, useClass: ThrottlerGuard }` a um array `providers` do `@Module` (criar o campo `providers`, hoje inexistente). Não alterar os demais módulos nem a ordem de `imports` existente.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/app.module.ts`
-      Verify: `pnpm exec tsc --noEmit` — contagem de erros permanece 22 (lista inalterada). `pnpm build` passa.
+- [ ] 2. Add the new status to the `ImportacaoChaveStatus` union.
+      Append `| 'ABORTADO_CERTIFICADO_INDISPONIVEL'` after `| 'ABORTADO_CONSUMO_INDEVIDO'` in the `ImportacaoChaveStatus` union (near lines 44–53).
+      Files: /Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.ts
+      Verify: `npx jest importacao-chaves-fiscal` — compiles and 5 existing tests still pass.
 
-- [ ] 2. Confirmar o ValidationPipe/CORS em `main.ts` e deixar o IP default do throttler.
-      Nenhuma mudança obrigatória em `main.ts` para o throttler (o `APP_GUARD` basta). Confirmar apenas que o `ValidationPipe` global já tem `whitelist: true` e `forbidNonWhitelisted: true` (tem — necessário para o FIX 2). NÃO adicionar `app.set('trust proxy', ...)` nesta tarefa.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/main.ts` (apenas leitura/confirmação; sem edição)
-      Verify: `pnpm build` passa; inspeção confirma `whitelist`/`forbidNonWhitelisted` presentes.
+- [ ] 3. Add a `findCertificateAccessError` private helper that walks the cause chain.
+      Add a private method mirroring the `rootCause` walk pattern but returning the first `CertificateAccessError` found (or `null`). It must check `error instanceof CertificateAccessError` AND each `.cause` link, using a `seen` set to guard cycles (same structure as `rootCause`). Signature: `private findCertificateAccessError(error: unknown): CertificateAccessError | null`. Place it next to `rootCause` at the bottom of the class.
+      Files: /Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.ts
+      Verify: `npx jest importacao-chaves-fiscal` — compiles and 5 existing tests still pass.
 
-- [ ] 3. (Opcional, só se trivial) `@Throttle` mais estrito em relatórios/apurações fiscais pesados.
-      Se e somente se for trivial e sem risco, aplicar `@Throttle({ default: { ttl: seconds(60), limit: 20 } })` nos controllers de `fiscal/relatorios/*` e `fiscal/apuracao/*` (SPED EFD). Caso contrário, PULAR e deixar comentário/nota de que o baseline global já cobre. Adicionar comentário curto no `app.module.ts` registrando a limitação de `req.ip` atrás de proxy (ver decisão acima).
-      Files: controllers em `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/fiscal/controllers/` (apenas se trivial)
-      Verify: `pnpm build` passa; `pnpm exec tsc --noEmit` mantém 22 erros.
+- [ ] 4. Add the `certificadoIndisponivel` abort flag and its top-of-loop guard, mirroring `consumoIndevido`.
+      In `executar(...)`, add `let certificadoIndisponivel = false;` directly after `let consumoIndevido = false;`. At the TOP of the `for (const item of parsed.itens)` loop, add a guard BEFORE the existing `if (consumoIndevido) { ... }` guard: `if (certificadoIndisponivel) { resultados.push(this.result(item, 'ABORTADO_CERTIFICADO_INDISPONIVEL', 'Lote interrompido: o certificado digital não pôde ser utilizado.')); continue; }`.
+      Files: /Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.ts
+      Verify: `npx jest importacao-chaves-fiscal` — compiles and 5 existing tests still pass (flag is unset, so behavior unchanged).
 
-## FIX 2 — DTOs com class-validator no módulo usuarios (+ revisão auth) ([ALTA] 3)
+- [ ] 5. Detect the certificate error inside the per-key `catch` block and fast-fail.
+      In the `catch (error: unknown)` block, FIRST (before computing `message`/the consumo-indevido logic) call `const certError = this.findCertificateAccessError(error);`. If `certError` is non-null: set `certificadoIndisponivel = true;`, choose the message by `certError.code` — `CERTIFICATE_OBJECT_NOT_FOUND` and `CERTIFICATE_STORAGE_UNAVAILABLE` → 'O certificado está cadastrado, mas o arquivo não pôde ser lido do armazenamento. Verifique a configuração de storage ou contate o suporte.'; `CERTIFICATE_PAYLOAD_INVALID` and `CERTIFICATE_DECRYPTION_FAILED` → 'O arquivo do certificado está corrompido ou a senha foi alterada. Reenvie o certificado digital A1.' — optionally log via `this.logger.error('fiscal_key_import_item_failed', error, { ... result: 'CERTIFICATE_UNAVAILABLE' })` to preserve observability, then `resultados.push(this.result(item, 'ABORTADO_CERTIFICADO_INDISPONIVEL', <message>));` and `continue;`. The existing `consumoIndevido`/`FALHA` push stays as the fall-through for all other errors (a `CertificateAccessError` message never matches the consumo-indevido regex, so ordering is safe).
+      Files: /Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.ts
+      Verify: `npx jest importacao-chaves-fiscal` — compiles and 5 existing tests still pass (no cert error in those paths).
 
-- [ ] 4. Criar o arquivo de DTOs do módulo usuarios.
-      Criar `CreateUsuarioDto`, `UpdateUsuarioDto` e `ChangePasswordDto` seguindo o padrão de `clientes/clientes.dto.ts` (decorators `@ApiProperty`/`@ApiPropertyOptional` + class-validator). Regras: `name` `@IsString` `@Length(1,160)`; `email` `@IsEmail`; `password` `@IsString` `@MinLength(6)` (alinhado à política existente — auth usa mínimo 6); `role` opcional com `@IsIn(['ADMIN','COLABORADOR'])` e default `'COLABORADOR'`. `UpdateUsuarioDto`: `name?`/`role?` todos `@IsOptional`, `role` com `@IsIn(['ADMIN','COLABORADOR'])`. `ChangePasswordDto`: `password` `@IsString` `@MinLength(6)`. Exportar um `const ROLES_SISTEMA = ['ADMIN','COLABORADOR'] as const` reutilizável pelo service (item 6).
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/usuarios/usuarios.dto.ts` (novo)
-      Verify: `pnpm exec tsc --noEmit` — 22 erros (inalterado); arquivo compila.
+- [ ] 6. Update `summarize(...)` to count the new status in `falhas` and add the summary flag.
+      Change `falhas: count('FALHA', 'ABORTADO_CONSUMO_INDEVIDO'),` to `falhas: count('FALHA', 'ABORTADO_CONSUMO_INDEVIDO', 'ABORTADO_CERTIFICADO_INDISPONIVEL'),`. Add `certificado_indisponivel: count('ABORTADO_CERTIFICADO_INDISPONIVEL') > 0,` immediately after the existing `consumo_indevido:` line.
+      Files: /Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.ts
+      Verify: `npx jest importacao-chaves-fiscal` — compiles and 5 existing tests still pass.
 
-- [ ] 5. Trocar as assinaturas dos handlers de `usuarios.controller.ts` para usar os DTOs.
-      Em `create` usar `@Body() body: CreateUsuarioDto`; em `update` usar `@Body() body: UpdateUsuarioDto`; em `changePassword` usar `@Body() body: ChangePasswordDto`. Substituir os `@ApiBody({ schema: ... })` por `@ApiBody({ type: CreateUsuarioDto })` etc. (coerência Swagger). Manter a lógica dos handlers (trim/lowercase de email, checagem de email duplicado, bloqueio de auto-edição/auto-exclusão) exatamente como está. O `ValidationPipe` global (whitelist/forbidNonWhitelisted) passa a validar e descartar campos não previstos automaticamente.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/usuarios/usuarios.controller.ts`
-      Verify: `pnpm build` passa; `pnpm exec tsc --noEmit` mantém 22 erros.
+- [ ] 7. Add a unit test for the certificate fast-fail path, mirroring the consumo-indevido test.
+      In the spec file, add `import { CertificateAccessError } from './certificado.service';` at the top. Add a new `it(...)` after the "interrompe as chaves restantes ao receber consumo indevido" test. Build two keys via `buildAccessKey('55', '000000001')` and `buildAccessKey('55', '000000002')`. Set up `databaseWithResponses([[cliente], [{ id: 'cert-1', validadeFim: futureDate() }], []])` (cliente row, valid cert row for the DB preflight, empty existing-docs row). Create the nfeWizard mock so `consultarPorChave` REJECTS: build it manually like `{ consultarPorChave: jest.fn().mockRejectedValue(new CertificateAccessError('CERTIFICATE_OBJECT_NOT_FOUND', 'arquivo não encontrado')), enviarManifestacao: jest.fn() }` (the `nfeWizardMock()` helper only supports resolved values, so construct the rejecting mock inline — cast with `as unknown as ...` if TS complains, matching the `makeService` cast style). Run `service.executar({ clienteId: cliente.id, chaves: [first, second], actorUserId, requestId: 'req-cert' })`. Assert: (a) `result.itens[0].status === 'ABORTADO_CERTIFICADO_INDISPONIVEL'`; (b) `result.itens[1].status === 'ABORTADO_CERTIFICADO_INDISPONIVEL'` (via `result.itens.map((i) => i.status)` equals both aborted) — not `FALHA`; (c) `nfeWizard.consultarPorChave` was called exactly once (`toHaveBeenCalledTimes(1)`), proving fast-fail with no pointless retries; optionally assert `result.resumo.certificado_indisponivel === true`.
+      Files: /Users/pablo/dev/kontabb/api/src/fiscal/services/importacao-chaves-fiscal.service.spec.ts
+      Verify: `npx jest importacao-chaves-fiscal` from /Users/pablo/dev/kontabb/api — the new test plus all 5 existing tests pass (6 total).
 
-- [ ] 6. Defesa em profundidade: validar `role` no service antes de INSERT/UPDATE.
-      Em `createSystemUser` e `updateSystemUser` de `usuarios.service.ts`, antes de montar o SQL, validar `input.role` contra a whitelist `ROLES_SISTEMA` (importada do dto). Em `create`, se `role` inválido → lançar/retornar erro (`return { ok: false, code: 'INVALID_ROLE' }` e o controller converte em `BadRequestException`); em `update`, só validar quando `role` vier definido (ignora quando `undefined`, preservando o `COALESCE`). Não alterar as queries parametrizadas em si.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/usuarios/usuarios.service.ts`, e ajuste do mapeamento de erro em `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/usuarios/usuarios.controller.ts`
-      Verify: `pnpm build` passa; `pnpm exec tsc --noEmit` mantém 22 erros.
+- [ ] 8. Final full verification.
+      Run the service's lint and the targeted test suite to confirm no regressions and style compliance.
+      Files: (none — verification only)
+      Verify: `npx jest importacao-chaves-fiscal` passes all tests, and `npx eslint src/fiscal/services/importacao-chaves-fiscal.service.ts src/fiscal/services/importacao-chaves-fiscal.service.spec.ts` reports no errors.
 
-- [ ] 7. Revisar `auth` (login/change-password) aplicando DTO sem mudar a lógica de autenticação.
-      Criar `LoginDto` (`email` `@IsEmail`/`@IsString`; `password` `@IsString`) e `ChangePasswordDto` (`currentPassword` `@IsString`; `newPassword` `@IsString` `@MinLength(6)`) e, se trivial, `ForgotPasswordDto`/`ResetPasswordDto`. Trocar os `@Body()` inline de `login` e `change-password` por esses DTOs e `@ApiBody({ type: ... })`. MANTER toda a lógica de autenticação, normalização (`trim().toLowerCase()`), rate limit por identidade e verificações de senha inalteradas. Atenção: o login aceita `identificador@kontabb.local` para CLIENTE — portanto `@IsEmail` é adequado (continua um email). Se algum formato não-email for aceito, usar `@IsString` em vez de `@IsEmail` no `email` do login para não quebrar clientes.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/auth/auth.dto.ts` (novo), `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/auth/auth.controller.ts`
-      Verify: `pnpm build` passa; `pnpm exec tsc --noEmit` mantém 22 erros. Rodar `pnpm test -- auth` e confirmar que `auth.guard.spec.ts`/`session-token.spec.ts` continuam passando.
-
-## FIX 3 — Sessão de colaborador revogável via tokenVersion ([ALTA] 4)
-
-- [ ] 8. Adicionar a coluna `token_version` ao schema `funcionarios_rh`.
-      Em `database/schema.ts`, na definição de `funcionariosRh`, adicionar `tokenVersion: integer('token_version').notNull().default(0)` (garantir que `integer` já está importado de `drizzle-orm/pg-core`; se não, adicionar ao import). Mudança puramente aditiva.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/database/schema.ts`
-      Verify: `pnpm exec tsc --noEmit` mantém 22 erros.
-
-- [ ] 9. Gerar a migração Drizzle `0027` (não rodar contra banco).
-      Rodar `pnpm db:generate` a partir do worktree para gerar `drizzle/0027_*.sql` + atualização de `drizzle/meta/_journal.json` e snapshot. A migração deve conter apenas `ALTER TABLE "funcionarios_rh" ADD COLUMN "token_version" integer DEFAULT 0 NOT NULL`. NÃO editar o baseline `0000_base_inicial.sql` nem migrações existentes; NÃO rodar `db:migrate`. Se `db:generate` exigir `DATABASE_URL`, usar uma URL dummy só para geração (drizzle-kit generate não conecta ao banco) ou o padrão já usado pelo projeto.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/drizzle/0027_*.sql` (gerado), `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/drizzle/meta/*` (gerado)
-      Verify: inspecionar o `.sql` gerado — contém só o `ADD COLUMN` aditivo e nenhuma alteração em outras tabelas. `pnpm build` passa.
-
-- [ ] 10. Embutir `tokenVersion` no payload do token do colaborador.
-      Em `colaborador-session.service.ts`, adicionar `tokenVersion: number` à interface `ColaboradorTokenPayload`. O `createToken` já recebe `Omit<..., 'exp'>`, então quem chama passa `tokenVersion`. `verifyToken` permanece síncrono (assinatura + exp); NÃO fazer DB aqui. Tokens antigos sem `tokenVersion` ficarão com `undefined` → tratar no item 12 como versão divergente (rejeitar).
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/colaborador/colaborador-session.service.ts`
-      Verify: `pnpm exec tsc --noEmit` — pode acusar erros nos pontos que criam token sem `tokenVersion`; esses são resolvidos nos itens 11-12 (deixar o worktree compilável só ao fim do FIX 3; concluir 10→12 juntos antes de verificar).
-
-- [ ] 11. Fornecer a versão atual (e `ativo`) a partir do service e incrementá-la nas revogações.
-      Em `colaborador.service.ts`:
-      (a) `authenticate` deve passar a selecionar e retornar `tokenVersion` e já seleciona `ativo`; incluir `tokenVersion` no objeto `ColaboradorSession` e na interface.
-      (b) Adicionar método `getRevocationState(funcionarioId)` que retorna `{ ativo: boolean; tokenVersion: number } | null` consultando `funcionariosRh`.
-      (c) Em `changePassword`, no `.set({...})`, incrementar a versão: `tokenVersion: sql\`${funcionariosRh.tokenVersion} + 1\`` (import `sql` já existe).
-      (d) Adicionar método `logout(funcionarioId)` que faz `UPDATE funcionarios_rh SET token_version = token_version + 1` para o funcionário (revoga tokens emitidos).
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/colaborador/colaborador.service.ts`
-      Verify: parte do FIX 3; verificar junto com o item 12.
-
-- [ ] 12. Checar revogação no controller e tornar `requireAuth` assíncrono.
-      Em `colaborador.controller.ts`:
-      - `login`: passar `tokenVersion: session.tokenVersion` ao `createToken`.
-      - `trocarSenha`: após `changePassword` (que incrementou a versão), buscar a nova versão via `getRevocationState` e emitir o novo token com a versão atualizada (senão o próprio usuário se autorrevoga). Manter `primeiroAcesso: false`.
-      - `logout`: tornar o handler assíncrono, extrair o payload do request (se houver), chamar `colaboradorService.logout(payload.funcionarioId)` e então `clearCookie`. Se não houver payload válido, apenas limpar cookie.
-      - Converter o helper privado `requireAuth` em `async requireAuth(req): Promise<ColaboradorTokenPayload>`: após `extractFromRequest`, chamar `getRevocationState(payload.funcionarioId)`; se `null`, ou `ativo === false`, ou `estado.tokenVersion !== payload.tokenVersion` → `UnauthorizedException`. Atualizar todos os call sites para `await this.requireAuth(req)` (`trocarSenha`, `getPerfil`, `listRecibos`, `getRecibo`, `getReciboPdf`).
-      - `getSession` e `getLogo` chamam `extractFromRequest` direto: após obter o payload, fazer a mesma checagem de revogação (`getRevocationState`); em `getSession` retornar `{ user: null }` quando revogado, em `getLogo` lançar `UnauthorizedException`. Tornar `getSession` assíncrono.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/colaborador/colaborador.controller.ts`
-      Verify: `pnpm build` passa; `pnpm exec tsc --noEmit` volta a 22 erros (nenhum novo). Fim do FIX 3 — worktree compilável.
-
-## Verificação final (rodar no worktree)
-
-- [ ] 13. Verificação integrada de toda a tarefa.
-      Rodar em sequência a partir de `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas`:
-      1. `pnpm exec tsc --noEmit` → **exatamente os mesmos 22 erros** pré-existentes (fiscal specs). Qualquer erro fora dessa lista é regressão desta tarefa e deve ser corrigido.
-      2. `pnpm build` → sucesso.
-      3. `pnpm test` → as 2 falhas meta-presence pré-existentes são aceitáveis; QUALQUER falha nova deve ser investigada/corrigida. Prestar atenção a `src/auth/auth.guard.spec.ts` e `src/auth/session-token.spec.ts` (podem depender de formatos de corpo/sessão).
-      Files: — (apenas execução)
-      Verify: os três comandos acima com os resultados descritos.
-
-## Testes leves recomendados (não planejar suíte extensa)
-
-- [ ] 14. (Recomendado, leve) Dois testes unitários pequenos cobrindo os novos caminhos de segurança.
-      (a) DTO rejeita `role` fora de `['ADMIN','COLABORADOR']` (validar `CreateUsuarioDto`/`UpdateUsuarioDto` via `validate()` do class-validator). (b) Revogação por versão: `requireAuth`/`getRevocationState` rejeita token cuja `tokenVersion` difere da do banco (teste do service/controller com `DatabaseService` mockado, no padrão dos specs existentes). Não adicionar além disso.
-      Files: `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/usuarios/usuarios.dto.spec.ts` (novo), `/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas/src/colaborador/colaborador-revocation.spec.ts` (novo)
-      Verify: `pnpm test` — os novos specs passam; total de falhas continua sendo apenas as 2 meta-presence pré-existentes.
-
-## Notas / lacunas assumidas
-
-- Não existe hoje endpoint que inative (`ativo=false`) ou desligue funcionário fora do fluxo de colaborador; a checagem `ativo` em `requireAuth` já bloqueia tokens de inativos no servidor. Qualquer rota futura de desligamento deve também incrementar `token_version` (deixar comentário no service).
-- Política mínima de senha = 6 caracteres (consistente em auth e colaborador); DTOs usam `@MinLength(6)`. Não é escopo endurecer a política.
-- `trust proxy`/`req.ip` atrás de proxy: mantido o default; ajuste é de infra e fora do escopo (apenas NOTA no código).
-- Redução de TTL/refresh do token de colaborador: NÃO implementado (bônus opcional); deixado como nota.
+## Notes / assumptions
+- Keep all status strings and user messages in Portuguese exactly as specified.
+- The `rootCause` helper returns a string, so step 3 adds a separate helper that returns the error object; do not try to reuse `rootCause` for the `instanceof` detection.
+- Place the new catch-block cert check BEFORE the existing `consumoIndevido` regex logic so a wrapped `CertificateAccessError` is never misclassified; a cert error cannot match the `/consumo indevido|\b656\b/` regex, so no existing path changes.
+- Logging in step 5 is optional but recommended to preserve the existing `fiscal_key_import_item_failed` observability; if added, use a distinct `result` value so it's distinguishable from generic failures.

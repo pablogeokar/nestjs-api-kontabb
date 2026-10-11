@@ -30,6 +30,23 @@ export interface DecryptedCertificate {
   senha: string;
 }
 
+export type CertificateAccessErrorCode =
+  | 'CERTIFICATE_OBJECT_NOT_FOUND'
+  | 'CERTIFICATE_STORAGE_UNAVAILABLE'
+  | 'CERTIFICATE_PAYLOAD_INVALID'
+  | 'CERTIFICATE_DECRYPTION_FAILED';
+
+export class CertificateAccessError extends Error {
+  constructor(
+    readonly code: CertificateAccessErrorCode,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'CertificateAccessError';
+  }
+}
+
 const CNPJ_PATTERN = /^[0-9A-Z]{12}[0-9]{2}$/;
 const CNPJ_IN_TEXT_PATTERN =
   /(^|[^0-9A-Z])([0-9A-Z]{2}[.\s]?[0-9A-Z]{3}[.\s]?[0-9A-Z]{3}[/\s]?[0-9A-Z]{4}[-\s]?[0-9]{2})(?![0-9A-Z])/i;
@@ -362,21 +379,76 @@ export class CertificadoService {
     if (!cert[0]) return null;
 
     // Baixar o arquivo criptografado diretamente do R2 via SDK (sem presigned URL)
-    const encryptedBuffer = await this.storage.download(cert[0].arquivoKey);
+    let encryptedBuffer: Buffer;
+    try {
+      encryptedBuffer = await this.storage.download(cert[0].arquivoKey);
+    } catch (error: unknown) {
+      const errorName =
+        error && typeof error === 'object' && 'name' in error
+          ? String(error.name)
+          : '';
+      if (errorName === 'NoSuchKey' || errorName === 'NotFound') {
+        throw new CertificateAccessError(
+          'CERTIFICATE_OBJECT_NOT_FOUND',
+          'O arquivo criptografado do certificado não foi encontrado no storage.',
+          { cause: error },
+        );
+      }
+      throw new CertificateAccessError(
+        'CERTIFICATE_STORAGE_UNAVAILABLE',
+        'Não foi possível acessar o arquivo criptografado do certificado.',
+        { cause: error },
+      );
+    }
 
-    const encryptedJson = JSON.parse(encryptedBuffer.toString('utf-8')) as {
+    let encryptedJson: {
       encryptedData: string;
       iv: string;
       authTag: string;
     };
+    try {
+      const parsed: unknown = JSON.parse(encryptedBuffer.toString('utf-8'));
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !('encryptedData' in parsed) ||
+        typeof parsed.encryptedData !== 'string' ||
+        !('iv' in parsed) ||
+        typeof parsed.iv !== 'string' ||
+        !('authTag' in parsed) ||
+        typeof parsed.authTag !== 'string'
+      ) {
+        throw new Error('Envelope criptografado inválido.');
+      }
+      encryptedJson = {
+        encryptedData: parsed.encryptedData,
+        iv: parsed.iv,
+        authTag: parsed.authTag,
+      };
+    } catch (error: unknown) {
+      throw new CertificateAccessError(
+        'CERTIFICATE_PAYLOAD_INVALID',
+        'O arquivo criptografado do certificado está corrompido.',
+        { cause: error },
+      );
+    }
 
-    const pfxBuffer = CryptoUtil.decrypt(
-      encryptedJson.encryptedData,
-      encryptedJson.iv,
-      encryptedJson.authTag,
-    );
-
-    const senha = CryptoUtil.decryptString(cert[0].senhaCriptografada);
+    let pfxBuffer: Buffer;
+    let senha: string;
+    try {
+      pfxBuffer = CryptoUtil.decrypt(
+        encryptedJson.encryptedData,
+        encryptedJson.iv,
+        encryptedJson.authTag,
+      );
+      senha = CryptoUtil.decryptString(cert[0].senhaCriptografada);
+    } catch (error: unknown) {
+      throw new CertificateAccessError(
+        'CERTIFICATE_DECRYPTION_FAILED',
+        'Não foi possível descriptografar o certificado armazenado.',
+        { cause: error },
+      );
+    }
 
     return { buffer: pfxBuffer, senha };
   }
