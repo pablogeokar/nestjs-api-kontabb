@@ -124,6 +124,15 @@ export function validate(config: Record<string, unknown>) {
     );
   }
 
+  if (config.NODE_ENV === 'production') {
+    const cronSecret = config.CRON_SECRET;
+    if (typeof cronSecret !== 'string' || cronSecret.length < 32) {
+      throw new Error(
+        'CRON_SECRET é obrigatório em produção e deve ter no mínimo 32 caracteres.',
+      );
+    }
+  }
+
   const normalizedConfig: Record<string, unknown> = {
     ...config,
     BETTER_AUTH_SECRET: currentSecret ?? legacySecret,

@@ -122,4 +122,43 @@ describe('environment validation', () => {
       ).toThrow('SPED_BLOCO_G_LEIAUTE_HOMOLOGADO');
     },
   );
+
+  describe('CRON_SECRET production requirement', () => {
+    const prodConfig = {
+      ...baseConfig,
+      NODE_ENV: 'production',
+      BETTER_AUTH_SECRET: 'canonical-secret-with-at-least-32-chars',
+    };
+
+    it('throws in production when CRON_SECRET is missing', () => {
+      expect(() => validate({ ...prodConfig, CRON_SECRET: undefined })).toThrow(
+        'CRON_SECRET é obrigatório em produção',
+      );
+    });
+
+    it('throws in production when CRON_SECRET is shorter than 32 chars', () => {
+      expect(() =>
+        validate({ ...prodConfig, CRON_SECRET: 'too-short' }),
+      ).toThrow('CRON_SECRET é obrigatório em produção');
+    });
+
+    it('passes in production with a 32+ char CRON_SECRET', () => {
+      const result = validate({
+        ...prodConfig,
+        CRON_SECRET: 'a'.repeat(32),
+      });
+
+      expect(result.CRON_SECRET).toBe('a'.repeat(32));
+    });
+
+    it('keeps CRON_SECRET optional outside production', () => {
+      const result = validate({
+        ...baseConfig,
+        NODE_ENV: 'development',
+        BETTER_AUTH_SECRET: 'canonical-secret-with-at-least-32-chars',
+      });
+
+      expect(result.CRON_SECRET).toBeUndefined();
+    });
+  });
 });
