@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   Res,
   ServiceUnavailableException,
   UploadedFile,
@@ -59,6 +60,10 @@ import {
   RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
 } from '../services/fiscal-itens.service';
 import { FiscalCteService } from '../services/fiscal-cte.service';
+import { AnalisarListagemChavesDto } from '../dto/analisar-listagem-chaves.dto';
+import { ExecutarImportacaoChavesDto } from '../dto/executar-importacao-chaves.dto';
+import { ImportacaoChavesFiscalService } from '../services/importacao-chaves-fiscal.service';
+import { getRequestId, type RequestWithId } from '../../common/request-id';
 
 @ApiTags('Fiscal (Cliente)')
 @ApiBearerAuth('session-token')
@@ -77,6 +82,7 @@ export class ClienteFiscalController {
     private readonly logger: AppLogger,
     private readonly fiscalItensService: FiscalItensService,
     private readonly fiscalCteService: FiscalCteService,
+    private readonly importacaoChavesService: ImportacaoChavesFiscalService,
   ) {}
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
@@ -268,6 +274,69 @@ export class ClienteFiscalController {
         (result.erros > 0 || result.pendentes_revisao > 0),
       data: result,
     };
+  }
+
+  @Post('documentos/importar-chaves/preview')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('arquivo', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Validar uma listagem de chaves fiscais antes da importação',
+  })
+  async analisarListagemChaves(
+    @UploadedFile() arquivo: Express.Multer.File | undefined,
+    @Body() body: AnalisarListagemChavesDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    await this.rateLimit.consume({
+      key: `fiscal-key-preview:${user.id}`,
+      limit: 20,
+      windowMs: 5 * 60_000,
+    });
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
+    }
+    const data = await this.importacaoChavesService.analisar({
+      clienteId: cliente.id,
+      chavesTexto: body.chavesTexto,
+      arquivo,
+    });
+    return { success: true, data };
+  }
+
+  @Post('documentos/importar-chaves/executar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Importar documentos fiscais por chaves de acesso' })
+  async executarImportacaoChaves(
+    @Body() body: ExecutarImportacaoChavesDto,
+    @CurrentUser() user: CurrentUserType,
+    @Req() request: RequestWithId,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
+    }
+    await this.rateLimit.consume({
+      key: `fiscal-key-import:${user.id}:${cliente.id}`,
+      limit: 3,
+      windowMs: 60 * 60_000,
+    });
+    const data = await this.importacaoChavesService.executar({
+      clienteId: cliente.id,
+      chaves: body.chaves,
+      forcarReimportacao: body.forcarReimportacao,
+      manifestarAutomaticamente: body.manifestarAutomaticamente,
+      actorUserId: user.id,
+      requestId: getRequestId(request),
+    });
+    return { success: data.resumo.falhas === 0, data };
   }
 
   @Get('documentos')

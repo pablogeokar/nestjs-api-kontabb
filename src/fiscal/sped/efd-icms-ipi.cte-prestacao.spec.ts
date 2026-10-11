@@ -66,7 +66,7 @@ function makeCte(
       criadoEm: new Date('2026-08-05T12:00:00.000Z'),
       atualizadoEm: new Date('2026-08-05T12:00:00.000Z'),
       ...cteOverrides,
-    } as unknown as CteRow,
+    },
   };
 }
 
@@ -112,7 +112,11 @@ describe('totalIcmsCtePrestacao', () => {
       [
         makeCte({}, { valorIcms: '12.00' }),
         makeCte(
-          { id: 'cte-documento-2', chaveAcesso: '3'.repeat(44), codSituacaoSped: '02' },
+          {
+            id: 'cte-documento-2',
+            chaveAcesso: '3'.repeat(44),
+            codSituacaoSped: '02',
+          },
           { id: 'cte-2', valorIcms: '99.00' },
         ),
       ],
@@ -129,7 +133,11 @@ describe('totalIcmsCtePrestacao', () => {
       [
         makeCte({}, { valorIcms: '12.00' }),
         makeCte(
-          { id: 'cte-documento-2', chaveAcesso: '3'.repeat(44), codSituacaoSped: '06' },
+          {
+            id: 'cte-documento-2',
+            chaveAcesso: '3'.repeat(44),
+            codSituacaoSped: '06',
+          },
           {
             id: 'cte-2',
             tpCte: '1',
@@ -172,12 +180,13 @@ describe('totalIcmsCtePrestacao', () => {
   it('não duplica o imposto quando o original é cancelado e o substituto o refaz', () => {
     const total = totalIcmsCtePrestacao(
       [
+        makeCte({ codSituacaoSped: '02' }, { valorIcms: '12.00' }),
         makeCte(
-          { codSituacaoSped: '02' },
-          { valorIcms: '12.00' },
-        ),
-        makeCte(
-          { id: 'cte-documento-2', chaveAcesso: '3'.repeat(44), codSituacaoSped: '06' },
+          {
+            id: 'cte-documento-2',
+            chaveAcesso: '3'.repeat(44),
+            codSituacaoSped: '06',
+          },
           {
             id: 'cte-2',
             tpCte: '3',
@@ -258,7 +267,11 @@ describe('conciliarD190CteSaida', () => {
     const conciliacao = conciliarD190CteSaida([
       makeCte({}, { valorIcms: '12.00' }),
       makeCte(
-        { id: 'cte-documento-2', chaveAcesso: '3'.repeat(44), codSituacaoSped: '02' },
+        {
+          id: 'cte-documento-2',
+          chaveAcesso: '3'.repeat(44),
+          codSituacaoSped: '02',
+        },
         { id: 'cte-2', valorIcms: '99.00' },
       ),
     ]);

@@ -41,10 +41,7 @@
  * aqui como eixos, ainda que o cálculo de crédito completo seja da 3.3/3.4.
  */
 
-import {
-  fromScaledInteger,
-  toScaledInteger,
-} from '../sped/sped-decimal';
+import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 
 // Escala monetária (centavos), padrão das colunas `numeric(_,2)` do fiscal.
 const ESCALA_VALOR = 2;
@@ -119,10 +116,7 @@ export type PisCofinsNaturezaReceita =
  * - `NENHUM`: natureza de receita (sem crédito) ou regime cumulativo.
  */
 export type PisCofinsNaturezaCredito =
-  | 'BASICO'
-  | 'PRESUMIDO'
-  | 'IMPORTACAO'
-  | 'NENHUM';
+  'BASICO' | 'PRESUMIDO' | 'IMPORTACAO' | 'NENHUM';
 
 /**
  * VINCULAÇÃO da receita/crédito à natureza da operação — eixo exigido por R2.1
@@ -320,7 +314,7 @@ export function calcularPisCofinsNatureza(
       status: 'PENDENTE',
       aliquota: null,
       naturezaCredito: regra.geraCredito
-        ? regra.naturezaCredito ?? 'BASICO'
+        ? (regra.naturezaCredito ?? 'BASICO')
         : null,
       debito: zero,
       credito: zero,
@@ -354,7 +348,7 @@ export function calcularPisCofinsNatureza(
   const debitoStr = fromScaledInteger(debitoScaled, ESCALA_VALOR);
   const creditoStr = fromScaledInteger(creditoScaled, ESCALA_VALOR);
   const naturezaCredito = regra.geraCredito
-    ? regra.naturezaCredito ?? 'BASICO'
+    ? (regra.naturezaCredito ?? 'BASICO')
     : null;
 
   return {

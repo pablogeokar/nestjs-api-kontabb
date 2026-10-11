@@ -133,17 +133,14 @@ function criarStore(seed: { clienteId: string; entregas?: EntregaRow[] }) {
           throw new Error('Tabela inesperada no select.');
         };
         return {
-          limit: (_n: number) => Promise.resolve(run()),
-          orderBy: (..._args: unknown[]) => Promise.resolve(run()),
+          limit: () => Promise.resolve(run()),
+          orderBy: () => Promise.resolve(run()),
         };
       },
     };
   }
 
-  function resolveIncremento(
-    valor: unknown,
-    row: EntregaRow,
-  ): number {
+  function resolveIncremento(valor: unknown, row: EntregaRow): number {
     // O serviço usa `sql\`tentativas_storage + 1\`` (incremento atômico). No
     // store o valor chega como objeto SQL do drizzle — resolvemos a semântica
     // "atual + 1" lendo a linha corrente; qualquer número literal passa direto.
@@ -152,7 +149,7 @@ function criarStore(seed: { clienteId: string; entregas?: EntregaRow[] }) {
   }
 
   const db = {
-    select: (_projection?: unknown) => ({
+    select: () => ({
       from: (table: unknown) => selectFrom(table),
     }),
     insert: (table: unknown) => {
@@ -196,7 +193,7 @@ function criarStore(seed: { clienteId: string; entregas?: EntregaRow[] }) {
         return {
           values: (values: Partial<CleanupJobRow>) => ({
             onConflictDoNothing: () => ({
-              returning: (_projection?: unknown) => {
+              returning: () => {
                 // Idempotência por object_key: não re-enfileira a mesma key.
                 const existente = cleanupJobs.find(
                   (j) => j.objectKey === values.objectKey,
@@ -344,11 +341,14 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
     const store = criarStore({ clienteId: 'c1' });
     const uploadErr = new Error('R2 indisponível');
     uploadErr.name = 'R2_UNAVAILABLE';
+    const processJobs = jest
+      .fn()
+      .mockResolvedValue({ processed: 1, completed: 1, failed: 0 });
     const storage = {
       upload: jest.fn().mockRejectedValue(uploadErr),
     } as unknown as StorageService;
     const cleanup = {
-      processJobs: jest.fn().mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
+      processJobs,
     } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
@@ -375,7 +375,7 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
     expect(store.cleanupJobs[0].entidadeTipo).toBe('FISCAL_ENTREGA');
     expect(store.cleanupJobs[0].entidadeId).toBe(snapshot.id);
     // Limpeza tentada já na requisição (best-effort).
-    expect(cleanup.processJobs).toHaveBeenCalled();
+    expect(processJobs).toHaveBeenCalled();
 
     // Trilha de auditoria da falha + compensação.
     const evento = store.auditoria.find(
@@ -387,11 +387,12 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
 
   it('upload OK → sem compensação; entrega não vai a FALHA_STORAGE', async () => {
     const store = criarStore({ clienteId: 'c1' });
+    const processJobs = jest.fn();
     const storage = {
       upload: jest.fn().mockResolvedValue(undefined),
     } as unknown as StorageService;
     const cleanup = {
-      processJobs: jest.fn(),
+      processJobs,
     } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
@@ -405,7 +406,7 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
     expect(entrega.status_validacao).toBe('PENDENTE');
     expect(entrega.tentativas_storage).toBe(1);
     expect(store.cleanupJobs).toHaveLength(0);
-    expect(cleanup.processJobs).not.toHaveBeenCalled();
+    expect(processJobs).not.toHaveBeenCalled();
     expect(
       store.auditoria.some((a) => a.acao === 'FISCAL_ENTREGA_STORAGE_OK'),
     ).toBe(true);
@@ -413,8 +414,11 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
 
   it('rejeita quando a key do upload diverge da arquivoKey do snapshot', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const storage = { upload: jest.fn() } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const upload = jest.fn();
+    const storage = { upload } as unknown as StorageService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,
@@ -435,7 +439,7 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
     ).rejects.toThrow('mesma `arquivoKey`');
     // Falhou antes de qualquer snapshot/upload.
     expect(store.entregas).toHaveLength(0);
-    expect(storage.upload).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
   });
 });
 
@@ -458,10 +462,13 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
       clienteId: 'c1',
       entregas: [entregaFalhaStorageRow()],
     });
+    const upload = jest.fn().mockResolvedValue(undefined);
     const storage = {
-      upload: jest.fn().mockResolvedValue(undefined),
+      upload,
     } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,
@@ -477,7 +484,7 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
     expect(resultado.ultimo_erro_storage).toBeNull();
     expect(resultado.tentativas_storage).toBe(2);
     // Reenviou à MESMA key selada no snapshot (não duplicou snapshot).
-    expect(storage.upload).toHaveBeenCalledWith(
+    expect(upload).toHaveBeenCalledWith(
       'cliente/c1/efd/2026-08/original.txt',
       expect.anything(),
       'text/plain; charset=ISO-8859-1',
@@ -500,7 +507,9 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
       upload: jest.fn().mockRejectedValue(err),
     } as unknown as StorageService;
     const cleanup = {
-      processJobs: jest.fn().mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
+      processJobs: jest
+        .fn()
+        .mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
     } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
@@ -525,8 +534,11 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
       clienteId: 'c1',
       entregas: [entregaFalhaStorageRow({ statusValidacao: 'TRANSMITIDA' })],
     });
-    const storage = { upload: jest.fn() } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const upload = jest.fn();
+    const storage = { upload } as unknown as StorageService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,
@@ -537,7 +549,7 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
     await expect(service.retentarUpload(baseRetry())).rejects.toThrow(
       'FALHA_STORAGE',
     );
-    expect(storage.upload).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it('rejeita retry de entrega inexistente/de outro cliente (NotFound)', async () => {
@@ -546,7 +558,9 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
       entregas: [entregaFalhaStorageRow({ clienteId: 'c2' })],
     });
     const storage = { upload: jest.fn() } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,

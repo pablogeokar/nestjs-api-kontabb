@@ -30,12 +30,12 @@ function makeItem(overrides: Partial<C190ItemInput> = {}): C190ItemInput {
 
 describe('normalizeC190Cst (R5.2)', () => {
   it('prefixa a origem exatamente uma vez em CST puro de 2 dígitos', () => {
-    expect(normalizeC190Cst(makeItem({ cstIcms: '00', origemMercadoria: '0' }))).toBe(
-      '000',
-    );
-    expect(normalizeC190Cst(makeItem({ cstIcms: '20', origemMercadoria: '2' }))).toBe(
-      '220',
-    );
+    expect(
+      normalizeC190Cst(makeItem({ cstIcms: '00', origemMercadoria: '0' })),
+    ).toBe('000');
+    expect(
+      normalizeC190Cst(makeItem({ cstIcms: '20', origemMercadoria: '2' })),
+    ).toBe('220');
   });
 
   it('não reprefixa a origem em CST já composto de 3 dígitos', () => {
@@ -143,7 +143,11 @@ describe('aggregateC190Analitico', () => {
 
   it('R5.3: normaliza a alíquota antes da chave (18 e 18.00 agrupam juntos)', () => {
     const linhas = aggregateC190Analitico([
-      makeItem({ aliquotaIcms: '18', valorIcms: '18.00', valorBcIcms: '100.00' }),
+      makeItem({
+        aliquotaIcms: '18',
+        valorIcms: '18.00',
+        valorBcIcms: '100.00',
+      }),
       makeItem({
         aliquotaIcms: '18.00',
         valorIcms: '18.00',
@@ -161,7 +165,11 @@ describe('aggregateC190Analitico', () => {
     // '18', '18,0000' e '18.0000' são a mesma alíquota: um único grupo,
     // emitido a 2 casas.
     const linhas = aggregateC190Analitico([
-      makeItem({ aliquotaIcms: '18', valorIcms: '18.00', valorBcIcms: '100.00' }),
+      makeItem({
+        aliquotaIcms: '18',
+        valorIcms: '18.00',
+        valorBcIcms: '100.00',
+      }),
       makeItem({
         aliquotaIcms: '18,0000',
         valorIcms: '18.00',

@@ -55,11 +55,7 @@ import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 
 /** As etapas da ponte, na ORDEM do fluxo documentos→E110. */
 export type EtapaPonte =
-  | 'DOCUMENTOS'
-  | 'LANCAMENTOS'
-  | 'APURACAO'
-  | 'LIVRO'
-  | 'E110';
+  'DOCUMENTOS' | 'LANCAMENTOS' | 'APURACAO' | 'LIVRO' | 'E110';
 
 /** Ordem canônica das etapas — a trilha é percorrida nesta sequência. */
 export const ORDEM_ETAPAS: readonly EtapaPonte[] = [
@@ -293,7 +289,7 @@ function lerDecimalCentavos(
   if (typeof valor !== 'string') {
     throw new Error(
       `Valor monetário "${chave}" do documento congelado deve ser string ` +
-      `decimal (nunca Number); recebido: ${typeof valor}.`,
+        `decimal (nunca Number); recebido: ${typeof valor}.`,
     );
   }
   return BigInt(decimalParaCentavos(valor, chave));
@@ -473,7 +469,7 @@ function toScaledIntegerSeguro(
     if (bruto !== undefined && bruto !== null && typeof bruto !== 'string') {
       throw new Error(
         `Valor monetário "${chave}" do documento congelado deve ser string ` +
-        `decimal (nunca Number); recebido: ${typeof bruto}.`,
+          `decimal (nunca Number); recebido: ${typeof bruto}.`,
       );
     }
     return 0n;

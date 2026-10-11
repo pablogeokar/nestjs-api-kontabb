@@ -59,7 +59,7 @@
  */
 
 import type { SpedInconsistencia } from './sped-efd.types';
-import type { SpedRecord, SpedTypedField } from './core';
+import type { SpedRecord } from './core';
 import { fromScaledInteger, toScaledInteger } from './sped-decimal';
 import type { CatalogoVersaoResolvida } from '../services/fiscal-normative-catalog.service';
 import type { StVerificacaoStatus } from '../services/st-verificacao';
@@ -309,8 +309,8 @@ export function avaliarCenarioHabilitadoSt(
       inconsistencias,
       conciliacao,
       prefixo +
-      'cenário não habilitado: bloqueado em uma das camadas (fonte/' +
-      'enquadramento/cálculo). Ver inconsistência(s) de bloqueio (4.5).',
+        'cenário não habilitado: bloqueado em uma das camadas (fonte/' +
+        'enquadramento/cálculo). Ver inconsistência(s) de bloqueio (4.5).',
     );
   }
 
@@ -440,7 +440,7 @@ function montarInconsistencia(
 function valorDoCampo(campo: SpedRecord['fields'][number]): bigint {
   if (campo == null) return 0n;
   if (typeof campo === 'string') return toScaledInteger(campo, ESCALA_VALOR);
-  const tipado = campo as SpedTypedField;
+  const tipado = campo;
   if (tipado.value == null) return 0n;
   // `value` de um decimalField é string | bigint. bigint já está em escala?
   // Não: `decimalField` recebe o valor decimal (string ex. '18.00' ou bigint em

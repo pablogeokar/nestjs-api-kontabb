@@ -38,11 +38,7 @@ import { parseCompetenciaMensal } from '../fiscal-date.util';
 
 // Tipos de catálogo suportados pela Fase 4 (coerente com o CHECK
 // `chk_fiscal_catalogo_tipo` e com o consumo legado do CIAP).
-export type CatalogoTipo =
-  | 'E111_CIAP'
-  | 'DIFAL'
-  | 'ST_FCP'
-  | 'PIS_COFINS';
+export type CatalogoTipo = 'E111_CIAP' | 'DIFAL' | 'ST_FCP' | 'PIS_COFINS';
 
 /**
  * Versão de catálogo RESOLVIDA para uma competência (design §7).
@@ -165,7 +161,7 @@ export class FiscalNormativeCatalogService {
       fonte: row.fonte,
       fonteUrl: row.fonteUrl ?? null,
       hashConteudo: row.hashConteudo ?? null,
-      conteudo: (row.conteudo ?? {}) as Record<string, unknown>,
+      conteudo: row.conteudo ?? {},
       vigenciaInicio: row.vigenciaInicio,
       vigenciaFim: row.vigenciaFim ?? null,
       competencia,
@@ -310,7 +306,7 @@ export class FiscalNormativeCatalogService {
       catalogoVersaoId: row.catalogoVersaoId,
       chave: row.chave,
       revisao: row.revisao,
-      conteudo: (row.conteudo ?? {}) as Record<string, unknown>,
+      conteudo: row.conteudo ?? {},
       fonte: row.fonte,
       fonteUrl: row.fonteUrl ?? null,
       responsavelPor: row.responsavelPor ?? null,

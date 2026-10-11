@@ -238,11 +238,7 @@ describe('runPreflightPva', () => {
   //       VL_IMOB_ICMS_FRT, VL_IMOB_ICMS_DIF, NUM_PARC, VL_PARC_PASS.
   const cadastro0300 = (cod: string, nrParc: string) =>
     createSpedRecord('0300', cod, '1', 'Maquina', null, '1.2.3', nrParc);
-  const movimentoG125 = (
-    cod: string,
-    numParc: string,
-    vlParcPass = '10,00',
-  ) =>
+  const movimentoG125 = (cod: string, numParc: string, vlParcPass = '10,00') =>
     createSpedRecord(
       'G125',
       cod,
@@ -292,7 +288,7 @@ describe('runPreflightPva', () => {
     expect(issues).toContainEqual(
       expect.objectContaining({
         codigo: 'PVA_G125_PARCELA_INVALIDA',
-        mensagem: expect.stringContaining('1..36'),
+        mensagem: expect.stringContaining('1..36') as unknown,
       }),
     );
   });

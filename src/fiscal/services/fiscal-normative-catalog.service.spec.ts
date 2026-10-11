@@ -50,10 +50,7 @@ function renderWhere(captured: { where?: SQL }): {
 // teste exercite a semântica "a versão cuja vigência contém a competência",
 // não apenas a forma da query. A primeira chamada a `select` resolve o
 // catálogo; a segunda (quando houver) resolve as revisões de regra.
-function createDb(opts: {
-  catalogo: CatalogoRow[];
-  regras?: RegraRow[];
-}) {
+function createDb(opts: { catalogo: CatalogoRow[]; regras?: RegraRow[] }) {
   const captures: Array<{ where?: SQL; orderByDesc: boolean }> = [];
 
   // Aplica a MESMA regra do serviço: início <= competência e (fim nulo OU fim
@@ -78,11 +75,11 @@ function createDb(opts: {
             const capture = { where: clause, orderByDesc: false };
             captures.push(capture);
             const rendered = renderWhere(capture);
-            const competencia = String(
+            const competencia =
               rendered.params.find(
-                (p) => typeof p === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p),
-              ) ?? '',
-            );
+                (p): p is string =>
+                  typeof p === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p),
+              ) ?? '';
             const isRegra = rendered.sql.includes('fiscal_regras_versoes');
             const source = isRegra ? (opts.regras ?? []) : opts.catalogo;
             const filtradas = source

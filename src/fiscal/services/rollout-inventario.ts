@@ -130,11 +130,7 @@ export interface CompetenciaAberta {
 
 /** Eixo das operações afetadas (eixo 3), com presença e contagem por tipo. */
 export interface OperacaoAfetada {
-  tipo:
-    | 'CIAP'
-    | 'CTE_SAIDA'
-    | 'CREDITO_VEDADO'
-    | 'PIS_MISTO';
+  tipo: 'CIAP' | 'CTE_SAIDA' | 'CREDITO_VEDADO' | 'PIS_MISTO';
   /** `true` quando há ao menos uma ocorrência do tipo no escopo. */
   presente: boolean;
   /** Quantidade representativa da operação (contagem). */

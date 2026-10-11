@@ -65,10 +65,7 @@ import { stCenarioPodeSerHabilitado, stMotivoBloqueio } from './st-verificacao';
  *   não é suportado; bloqueio explicável (R3.4). Precede o portão de regra.
  */
 export type StEnquadramentoStatus =
-  | 'SUJEITO'
-  | 'NAO_SUJEITO'
-  | 'PENDENCIA'
-  | 'BLOQUEADO';
+  'SUJEITO' | 'NAO_SUJEITO' | 'PENDENCIA' | 'BLOQUEADO';
 
 /**
  * Identificação do produto a enquadrar. O CEST é a CHAVE do catálogo `ST_FCP`

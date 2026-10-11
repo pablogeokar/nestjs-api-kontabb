@@ -142,7 +142,7 @@ const TRIBUTOS_DIFAL: ReadonlySet<TributoGuia> = new Set<TributoGuia>([
 
 @Injectable()
 export class FiscalGuiasService {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(private readonly database: DatabaseService) {}
 
   async criarGuia(input: CriarGuiaInput) {
     await this.assertCliente(input.clienteId);
@@ -363,13 +363,16 @@ export class FiscalGuiasService {
     guiaId: string;
     statusPagamento: 'PENDENTE' | 'PAGO' | 'VENCIDO';
   }) {
-    const guia = await this.carregarGuiaDoCliente(input.clienteId, input.guiaId);
+    const guia = await this.carregarGuiaDoCliente(
+      input.clienteId,
+      input.guiaId,
+    );
 
     if (input.statusPagamento === 'PAGO') {
       if (guia.cancelada) {
         throw new BadRequestException(
           'Guia cancelada não pode ser marcada como PAGO (R1.4 congela a ' +
-          'obrigação).',
+            'obrigação).',
         );
       }
       // Respaldo pela trilha: o saldo é reconstruído dos eventos preservados
@@ -383,9 +386,9 @@ export class FiscalGuiasService {
       if (saldo.quantidadeEventos === 0 || !saldo.quitada) {
         throw new BadRequestException(
           'Marcar a guia como PAGO exige um pagamento respaldado por evidência ' +
-          'ou declaração manual na trilha, com o saldo quitado (R1.5). ' +
-          'Registre o pagamento em /guias/:id/eventos; registrar a guia não ' +
-          'significa que ela foi paga.',
+            'ou declaração manual na trilha, com o saldo quitado (R1.5). ' +
+            'Registre o pagamento em /guias/:id/eventos; registrar a guia não ' +
+            'significa que ela foi paga.',
         );
       }
     }
@@ -420,7 +423,10 @@ export class FiscalGuiasService {
     guiaId: string;
     emitidaOrgaoEm?: Date;
   }) {
-    const guia = await this.carregarGuiaDoCliente(input.clienteId, input.guiaId);
+    const guia = await this.carregarGuiaDoCliente(
+      input.clienteId,
+      input.guiaId,
+    );
     if (guia.cancelada) {
       throw new BadRequestException(
         'Guia cancelada não pode ser emitida no órgão (R1.4 congela a guia).',
@@ -481,11 +487,14 @@ export class FiscalGuiasService {
    * exige evidência OU declaração manual (R1.5).
    */
   async registrarEventoPagamento(input: RegistrarEventoPagamentoInput) {
-    const guia = await this.carregarGuiaDoCliente(input.clienteId, input.guiaId);
+    const guia = await this.carregarGuiaDoCliente(
+      input.clienteId,
+      input.guiaId,
+    );
     if (guia.cancelada) {
       throw new BadRequestException(
         'Guia cancelada não aceita novos eventos de pagamento/estorno. O ' +
-        'cancelamento preserva a trilha, mas congela a obrigação (R1.4).',
+          'cancelamento preserva a trilha, mas congela a obrigação (R1.4).',
       );
     }
 
@@ -500,7 +509,7 @@ export class FiscalGuiasService {
     if (valor <= 0n) {
       throw new BadRequestException(
         'O valor do evento de pagamento/estorno deve ser maior que zero. O ' +
-        'efeito no saldo (somar/subtrair) vem do tipo, não do sinal do valor.',
+          'efeito no saldo (somar/subtrair) vem do tipo, não do sinal do valor.',
       );
     }
 
@@ -514,7 +523,7 @@ export class FiscalGuiasService {
       if (input.eventoEstornadoId == null) {
         throw new BadRequestException(
           'Estorno exige a referência ao evento de pagamento revertido ' +
-          '(eventoEstornadoId), para manter o par original/reversão explícito.',
+            '(eventoEstornadoId), para manter o par original/reversão explícito.',
         );
       }
       await this.assertEventoDaGuia(input.guiaId, input.eventoEstornadoId);
@@ -529,7 +538,7 @@ export class FiscalGuiasService {
       if (input.comprovanteKey == null && input.declaracaoManual !== true) {
         throw new BadRequestException(
           'Pagamento exige evidência (comprovante) OU indicação explícita de ' +
-          'declaração manual (R1.5). Registrar guia ≠ pagamento comprovado.',
+            'declaração manual (R1.5). Registrar guia ≠ pagamento comprovado.',
         );
       }
     }
@@ -562,7 +571,10 @@ export class FiscalGuiasService {
    * de modo que a conciliação sempre reflete todos os eventos preservados.
    */
   async trilhaPagamentos(input: { clienteId: string; guiaId: string }) {
-    const guia = await this.carregarGuiaDoCliente(input.clienteId, input.guiaId);
+    const guia = await this.carregarGuiaDoCliente(
+      input.clienteId,
+      input.guiaId,
+    );
     const eventos = await this.database.db
       .select()
       .from(fiscalPagamentosEventos)
@@ -715,7 +727,7 @@ export class FiscalGuiasService {
       if (fechamentoId != null) {
         throw new BadRequestException(
           'Guia de origem MANUAL não deve referenciar uma versão de apuração ' +
-          '(fechamento). Informe origem APURACAO para vincular à apuração (R1.1).',
+            '(fechamento). Informe origem APURACAO para vincular à apuração (R1.1).',
         );
       }
       // Guia manual não tem obrigação apurada por trás: nada do que divergir.
@@ -726,8 +738,8 @@ export class FiscalGuiasService {
     if (fechamentoId == null) {
       throw new BadRequestException(
         'Guia de origem APURACAO exige vínculo com a versão de apuração ' +
-        '(fechamentoId). Sem ele, a guia calculada ficaria sem rastro da ' +
-        'apuração que a originou (R1.7).',
+          '(fechamentoId). Sem ele, a guia calculada ficaria sem rastro da ' +
+          'apuração que a originou (R1.7).',
       );
     }
 
@@ -749,8 +761,8 @@ export class FiscalGuiasService {
     if (!row) {
       throw new NotFoundException(
         'Versão de apuração (fechamento) não encontrada para esta empresa. A ' +
-        'guia calculada só pode vincular-se a um fechamento do próprio cliente ' +
-        '(R1.7).',
+          'guia calculada só pode vincular-se a um fechamento do próprio cliente ' +
+          '(R1.7).',
       );
     }
     return {
@@ -766,9 +778,7 @@ export class FiscalGuiasService {
    * nada: o valor sai dos `saldos` congelados da versão de apuração. É o total
    * contra o qual a guia é comparada para sinalizar divergência.
    */
-  private obrigacaoApurada(
-    row: typeof fiscalFechamentos.$inferSelect,
-  ): string {
+  private obrigacaoApurada(row: typeof fiscalFechamentos.$inferSelect): string {
     const snapshots: FechamentoSnapshots = {
       documentos: row.documentos,
       saldos: row.saldos,
@@ -820,15 +830,15 @@ export class FiscalGuiasService {
     if (input.difalStatus == null) {
       throw new BadRequestException(
         `Guia de ${input.tributo} exige o estado do cálculo do DIFAL ` +
-        '(CALCULADO/SIMULACAO/PENDENTE). Sem ele, a emissão é bloqueada ' +
-        'para não gerar guia de um item cujo escopo não foi verificado (R1.2).',
+          '(CALCULADO/SIMULACAO/PENDENTE). Sem ele, a emissão é bloqueada ' +
+          'para não gerar guia de um item cujo escopo não foi verificado (R1.2).',
       );
     }
 
     if (!difalPodeGerarGuia(input.difalStatus)) {
       throw new BadRequestException(
         difalMotivoInelegibilidadeGuia(input.difalStatus) ??
-        `DIFAL em estado ${input.difalStatus} não pode gerar guia (R1.2).`,
+          `DIFAL em estado ${input.difalStatus} não pode gerar guia (R1.2).`,
       );
     }
   }
@@ -842,9 +852,7 @@ export class FiscalGuiasService {
     try {
       escalado = toScaledInteger(valor);
     } catch {
-      throw new BadRequestException(
-        `Valor ${rotulo} inválido: "${valor}".`,
-      );
+      throw new BadRequestException(`Valor ${rotulo} inválido: "${valor}".`);
     }
     if (escalado < 0n) {
       throw new BadRequestException(
@@ -898,9 +906,7 @@ export class FiscalGuiasService {
     };
   }
 
-  private toEventoResponse(
-    row: typeof fiscalPagamentosEventos.$inferSelect,
-  ) {
+  private toEventoResponse(row: typeof fiscalPagamentosEventos.$inferSelect) {
     return {
       id: row.id,
       cliente_id: row.clienteId,

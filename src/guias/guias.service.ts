@@ -35,7 +35,7 @@ export class GuiasService {
     private readonly storageCleanup: StorageCleanupService,
     private readonly mail: MailService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   // ─── Admin: List all guias ───
   async listAdminGuias(input: {
@@ -142,10 +142,10 @@ export class GuiasService {
         numero_parcelamento: doc.installmentNumber,
         client: doc.client
           ? {
-            company_name: doc.client.companyName,
-            cnpj: doc.client.cnpj,
-            has_email: (doc.client.emails ?? []).length > 0,
-          }
+              company_name: doc.client.companyName,
+              cnpj: doc.client.cnpj,
+              has_email: (doc.client.emails ?? []).length > 0,
+            }
           : null,
         visualizado: doc.visualizado ?? false,
         primeira_visualizacao: doc.primeiraVisualizacao ?? null,
@@ -368,10 +368,10 @@ export class GuiasService {
       visualizado_em: view.viewedAt.toISOString(),
       usuario: view.viewer
         ? {
-          id: view.viewer.id,
-          nome: view.viewer.name,
-          email: view.viewer.email,
-        }
+            id: view.viewer.id,
+            nome: view.viewer.name,
+            email: view.viewer.email,
+          }
         : null,
     }));
   }
@@ -494,7 +494,7 @@ export class GuiasService {
         throw new Error('GUIA_INSERT_FAILED');
       }
     } catch (error) {
-      await this.storage.delete(r2Key).catch(() => { });
+      await this.storage.delete(r2Key).catch(() => {});
       this.logger.error('guia_upload_database_failed', error, {
         requestId: input.requestId,
         guiaId,
@@ -528,9 +528,9 @@ export class GuiasService {
             WHERE id = ${guiaId}::uuid
           `,
             )
-            .catch(() => { });
+            .catch(() => {});
         })
-        .catch(() => { });
+        .catch(() => {});
     }
 
     return { ok: true as const, obligationId: guiaId, r2Key };
@@ -589,8 +589,8 @@ export class GuiasService {
       const cnpjCpf =
         guiaRow[0].tipoPessoa === 'PF' && guiaRow[0].cpf
           ? // CPF saneado para dígitos antes de virar segmento de chave R2
-          // (transparente para o formato numérico já armazenado).
-          guiaRow[0].cpf.replace(/\D/g, '')
+            // (transparente para o formato numérico já armazenado).
+            guiaRow[0].cpf.replace(/\D/g, '')
           : guiaRow[0].cnpj;
 
       receiptKey = this.storage.receiptObjectKey({
@@ -638,11 +638,11 @@ export class GuiasService {
       const updated = resultRows<{ updated: boolean }>(updateResult)[0]
         ?.updated;
       if (!updated) {
-        if (receiptKey) await this.storage.delete(receiptKey).catch(() => { });
+        if (receiptKey) await this.storage.delete(receiptKey).catch(() => {});
         return { ok: false as const, code: 'ALREADY_PAID' };
       }
     } catch (error) {
-      if (receiptKey) await this.storage.delete(receiptKey).catch(() => { });
+      if (receiptKey) await this.storage.delete(receiptKey).catch(() => {});
       this.logger.error('payment_database_failed', error, {
         requestId: input.requestId,
       });

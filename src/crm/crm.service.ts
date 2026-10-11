@@ -8,13 +8,10 @@ import { MailService } from '../mail/mail.service';
 export const CLIENT_PROVISIONAL_PASSWORD = '123456';
 
 type WelcomeEmailFailureCode =
-  | 'CLIENTE_NAO_ENCONTRADO'
-  | 'SEM_EMAIL'
-  | 'ENVIO_FALHOU';
+  'CLIENTE_NAO_ENCONTRADO' | 'SEM_EMAIL' | 'ENVIO_FALHOU';
 
 export type WelcomeEmailResult =
-  | { ok: true }
-  | { ok: false; code: WelcomeEmailFailureCode };
+  { ok: true } | { ok: false; code: WelcomeEmailFailureCode };
 
 export interface WelcomeEmailClientData {
   clienteId: string;
@@ -101,9 +98,7 @@ export class CrmService {
   async enviarEmailBoasVindasParaDados(
     input: WelcomeEmailClientData,
   ): Promise<WelcomeEmailResult> {
-    const emails = input.emails
-      .map((email) => email.trim())
-      .filter(Boolean);
+    const emails = input.emails.map((email) => email.trim()).filter(Boolean);
 
     // Nesta v1, cliente suspenso compartilha SEM_EMAIL para não expor um novo
     // contrato de erro; o log diferencia a razão da não entrega.
@@ -120,7 +115,7 @@ export class CrmService {
     }
 
     const loginIdentifier =
-      input.tipoPessoa === 'PF' ? input.cpf ?? input.cnpj : input.cnpj;
+      input.tipoPessoa === 'PF' ? (input.cpf ?? input.cnpj) : input.cnpj;
     const provisionalPassword =
       input.provisionalPassword ?? CLIENT_PROVISIONAL_PASSWORD;
 

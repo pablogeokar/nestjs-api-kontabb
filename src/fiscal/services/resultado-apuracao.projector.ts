@@ -53,7 +53,7 @@ function lerDecimalOpcional(
   if (typeof valor !== 'string') {
     throw new Error(
       `Valor monetário "${chave}" do snapshot de fechamento deve ser string ` +
-      `decimal (nunca Number); recebido: ${typeof valor}.`,
+        `decimal (nunca Number); recebido: ${typeof valor}.`,
     );
   }
   return valor;
@@ -158,11 +158,13 @@ function projetarInconsistencias(
   const bruto = parametros.inconsistencias;
   if (!Array.isArray(bruto)) return [];
   return bruto
-    .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
+    .filter(
+      (i): i is Record<string, unknown> => typeof i === 'object' && i !== null,
+    )
     .map((i) => ({
-      codigo: String(i.codigo ?? ''),
+      codigo: typeof i.codigo === 'string' ? i.codigo : '',
       severidade: i.severidade === 'ERRO' ? 'ERRO' : 'AVISO',
-      mensagem: String(i.mensagem ?? ''),
+      mensagem: typeof i.mensagem === 'string' ? i.mensagem : '',
       ...(typeof i.campo === 'string' ? { campo: i.campo } : {}),
       ...(typeof i.documentoId === 'string'
         ? { documentoId: i.documentoId }

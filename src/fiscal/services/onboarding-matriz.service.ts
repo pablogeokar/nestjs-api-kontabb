@@ -35,7 +35,7 @@ import {
  */
 @Injectable()
 export class OnboardingMatrizService {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(private readonly database: DatabaseService) {}
 
   /**
    * Monta a matriz de onboarding do estabelecimento (`clienteId`) para a
@@ -72,14 +72,14 @@ export class OnboardingMatrizService {
       },
       configuracao: cabecalho.temConfiguracao
         ? {
-          perfilEfd: cabecalho.perfilEfd,
-          indAtiv: cabecalho.indAtiv,
-          obrigadoEfdIcmsIpi: cabecalho.obrigadoEfdIcmsIpi ?? false,
-          inventarioObrigatorio: cabecalho.inventarioObrigatorio ?? false,
-          mesEntregaInventario: cabecalho.mesEntregaInventario ?? 2,
-          blocoKComMovimento: cabecalho.blocoKComMovimento ?? false,
-          indicadores1010: cabecalho.indicadores1010 ?? {},
-        }
+            perfilEfd: cabecalho.perfilEfd,
+            indAtiv: cabecalho.indAtiv,
+            obrigadoEfdIcmsIpi: cabecalho.obrigadoEfdIcmsIpi ?? false,
+            inventarioObrigatorio: cabecalho.inventarioObrigatorio ?? false,
+            mesEntregaInventario: cabecalho.mesEntregaInventario ?? 2,
+            blocoKComMovimento: cabecalho.blocoKComMovimento ?? false,
+            indicadores1010: cabecalho.indicadores1010 ?? {},
+          }
         : null,
       modelosContagem,
       sinaisItens,

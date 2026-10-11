@@ -44,10 +44,7 @@ import {
   creditosMesmaNatureza,
   resolverHipoteseCst,
 } from './pis-cofins-cst';
-import {
-  PisCofinsService,
-  resolverRegimeApuracao,
-} from './pis-cofins.service';
+import { PisCofinsService, resolverRegimeApuracao } from './pis-cofins.service';
 
 // Regra não-cumulativa (Lucro Real): débito 1,65%/7,60% da receita tributada.
 function regraDebitoNaoCumulativo(): PisCofinsRegra {
@@ -62,9 +59,7 @@ function regraDebitoNaoCumulativo(): PisCofinsRegra {
 
 // Regra de crédito não-cumulativo, parametrizável pela natureza do crédito
 // (BÁSICO × PRESUMIDO), para provar que os tipos não se misturam (R2.4).
-function regraCredito(
-  naturezaCredito: 'BASICO' | 'PRESUMIDO',
-): PisCofinsRegra {
+function regraCredito(naturezaCredito: 'BASICO' | 'PRESUMIDO'): PisCofinsRegra {
   return {
     regime: 'NAO_CUMULATIVO',
     aliquotaPis: '1.6500',
@@ -274,9 +269,12 @@ describe('PIS/COFINS — matriz de risco (Fase 4 / tarefa 3.7 — R2.2–R2.5)',
       const basico = resolverHipoteseCst('50')!;
       expect(presumido.naturezaCredito).toBe('PRESUMIDO');
       expect(basico.naturezaCredito).toBe('BASICO');
-      expect(creditosMesmaNatureza(presumido.naturezaCredito, basico.naturezaCredito)).toBe(
-        false,
-      );
+      expect(
+        creditosMesmaNatureza(
+          presumido.naturezaCredito,
+          basico.naturezaCredito,
+        ),
+      ).toBe(false);
     });
 
     it('créditos básico e presumido ficam em baldes separados — não somados num total único', () => {

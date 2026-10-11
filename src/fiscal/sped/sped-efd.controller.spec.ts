@@ -120,8 +120,12 @@ describe('SPED EFD cliente — resolução de escopo pela sessão (contrato)', (
       user,
     );
 
-    expect(deps.clientesService.getClientForUser).toHaveBeenCalledWith('user-1');
-    const call = deps.configuracaoService.atualizar.mock.calls[0][0];
+    expect(deps.clientesService.getClientForUser).toHaveBeenCalledWith(
+      'user-1',
+    );
+    const [call] = deps.configuracaoService.atualizar.mock.calls[0] as [
+      { clienteId: string; actorUserId: string },
+    ];
     expect(call.clienteId).toBe('cliente-1');
     expect(call.actorUserId).toBe('user-1');
   });
@@ -132,7 +136,7 @@ describe('SPED EFD cliente — resolução de escopo pela sessão (contrato)', (
     });
 
     await expect(
-      controller.obterContextoApuracao({ competencia: '2026-08' } as never, user),
+      controller.obterContextoApuracao({ competencia: '2026-08' }, user),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(deps.apuracaoContextoService.obter).not.toHaveBeenCalled();
   });
@@ -161,9 +165,7 @@ describe('SPED EFD admin — escopo explícito por DTO (contrato)', () => {
   it('usa o clienteId do DTO (não da sessão) e mantém o envelope { data }', async () => {
     const { controller, deps } = createAdminController();
 
-    const resposta = await controller.obterConfiguracao(
-      'cliente-xyz' as never,
-    );
+    const resposta = await controller.obterConfiguracao('cliente-xyz');
 
     expect(deps.configuracaoService.obter).toHaveBeenCalledWith('cliente-xyz');
     expect(resposta).toEqual({ data: { obrigadoEfdIcmsIpi: true } });
@@ -195,7 +197,9 @@ describe('SPED EFD — contrato de resposta de ARQUIVO (gerar)', () => {
     );
 
     // O escopo resolvido pela sessão chega ao serviço.
-    const gerarCall = deps.efdService.gerar.mock.calls[0][0];
+    const [gerarCall] = deps.efdService.gerar.mock.calls[0] as [
+      { clienteId: string; competencia: string; actorUserId: string },
+    ];
     expect(gerarCall.clienteId).toBe('cliente-1');
     expect(gerarCall.competencia).toBe('2026-08');
     expect(gerarCall.actorUserId).toBe('user-1');
@@ -209,6 +213,7 @@ describe('SPED EFD — contrato de resposta de ARQUIVO (gerar)', () => {
     expect(headers['X-Content-Type-Options']).toBe('nosniff');
     expect(headers['X-SPED-Generation-Id']).toBe('ger-1');
     expect(headers['ETag']).toBe(`"${'f'.repeat(64)}"`);
-    expect((res.end as jest.Mock).mock.calls[0][0]).toBe(buffer);
+    const [endArg] = (res.end as jest.Mock).mock.calls[0] as [Buffer];
+    expect(endArg).toBe(buffer);
   });
 });

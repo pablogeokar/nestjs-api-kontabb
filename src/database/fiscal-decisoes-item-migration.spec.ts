@@ -21,9 +21,7 @@ describe('migração fiscal_decisoes_item (0009)', () => {
   });
 
   it('chaveia por item + versão da regra para não sobrescrever versões (R3.4)', () => {
-    expect(sql).toContain(
-      'PRIMARY KEY("item_id","regra_versao_id")',
-    );
+    expect(sql).toContain('PRIMARY KEY("item_id","regra_versao_id")');
   });
 
   it('vincula item e cliente por chave estrangeira (propriedade)', () => {

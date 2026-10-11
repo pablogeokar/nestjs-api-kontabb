@@ -69,7 +69,10 @@ export function isReciboFerias(text: string): boolean {
 }
 
 export function extractDadosFerias(text: string): DadosFerias | null {
-  if (!text.includes('RECIBO DE FÉRIAS') && !text.includes('NOTIFICAÇÃO DE FÉRIAS')) {
+  if (
+    !text.includes('RECIBO DE FÉRIAS') &&
+    !text.includes('NOTIFICAÇÃO DE FÉRIAS')
+  ) {
     return null;
   }
 
@@ -165,8 +168,7 @@ export function extractDadosFerias(text: string): DadosFerias | null {
   const totalDescontos = rubricas
     .filter((r) => r.tipo === 'DESCONTO')
     .reduce((acc, r) => acc + r.valor, 0);
-  const totalLiquido =
-    Math.round((totalBruto - totalDescontos) * 100) / 100;
+  const totalLiquido = Math.round((totalBruto - totalDescontos) * 100) / 100;
 
   const inssRubrica = rubricas.find(
     (r) => r.codigo === '902' || r.descricao.toUpperCase().includes('INSS'),

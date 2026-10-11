@@ -954,18 +954,15 @@ describe('buildEfdIcmsIpiRecords', () => {
     const inconsistencias: SpedEfdBuilderInput['inconsistencias'] = [];
     // Entrada com o CST de saída do fornecedor (50) e IPI destacado de 7,00:
     // não gera crédito escriturado, mas o valor original do XML é preservado.
-    const entrada = makeNfe(
-      { id: 'ent-orig', chaveAcesso: '9'.repeat(44) },
-      [
-        makeItem({
-          numeroItem: 1,
-          cstIpi: '50',
-          valorBcIpi: '100.00',
-          aliquotaIpi: '7.00',
-          valorIpi: '7.00',
-        }),
-      ],
-    );
+    const entrada = makeNfe({ id: 'ent-orig', chaveAcesso: '9'.repeat(44) }, [
+      makeItem({
+        numeroItem: 1,
+        cstIpi: '50',
+        valorBcIpi: '100.00',
+        aliquotaIpi: '7.00',
+        valorIpi: '7.00',
+      }),
+    ]);
     // Saída tributada (CST 50) com IPI destacado de 5,00: debita e compõe o
     // original de saída.
     const saida = makeNfe(
@@ -1784,12 +1781,7 @@ describe('buildEfdIcmsIpiRecords', () => {
     );
 
     // Ordem/aninhamento no Bloco G: G110, G125, G130, G140.
-    expect(regs(result.records, 'G')).toEqual([
-      'G110',
-      'G125',
-      'G130',
-      'G140',
-    ]);
+    expect(regs(result.records, 'G')).toEqual(['G110', 'G125', 'G130', 'G140']);
     const g130 = fieldsOf(lineFor(result.records, 'G130'));
     // G130 com 6 campos após REG: IND_EMIT, COD_PART, COD_MOD, SERIE, NUM_DOC,
     // CHV_NFE_CTE.
@@ -1840,12 +1832,7 @@ describe('buildEfdIcmsIpiRecords', () => {
     const g130 = fieldsOf(lineFor(result.records, 'G130'));
     expect(g130[0]).toBe('0'); // IND_EMIT (própria)
     expect(g130[1]).toBe(''); // COD_PART omitido
-    expect(regs(result.records, 'G')).toEqual([
-      'G110',
-      'G125',
-      'G130',
-      'G140',
-    ]);
+    expect(regs(result.records, 'G')).toEqual(['G110', 'G125', 'G130', 'G140']);
   });
 
   // R3.4: movimentação que EXIGE origem (IM/IA/CI/MC) sem os dados do documento

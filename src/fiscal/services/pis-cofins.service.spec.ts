@@ -1,7 +1,4 @@
-import {
-  PisCofinsService,
-  resolverRegimeApuracao,
-} from './pis-cofins.service';
+import { PisCofinsService, resolverRegimeApuracao } from './pis-cofins.service';
 import {
   derivarLinhaSegmentoF12,
   PIS_COFINS_FIXTURE_ALIQUOTA_ITEM,

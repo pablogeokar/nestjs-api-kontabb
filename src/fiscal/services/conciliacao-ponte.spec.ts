@@ -305,14 +305,43 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
         snapshots({
           documentos: [
             // Revenda tributada: crédito admitido integral (CST 00).
-            { chave: 'REVENDA', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', cstIcms: '00', valorIcms: '20.00' },
+            {
+              chave: 'REVENDA',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1102',
+              cstIcms: '00',
+              valorIcms: '20.00',
+            },
             // Uso/consumo: CFOP veda o crédito (556).
-            { chave: 'CONS', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1556', cstIcms: '00', valorIcms: '5.00' },
+            {
+              chave: 'CONS',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1556',
+              cstIcms: '00',
+              valorIcms: '5.00',
+            },
             // Ativo imobilizado: CFOP veda o crédito integral (551 — via CIAP).
-            { chave: 'ATIVO', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1551', cstIcms: '00', valorIcms: '7.00' },
+            {
+              chave: 'ATIVO',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1551',
+              cstIcms: '00',
+              valorIcms: '7.00',
+            },
             // Substituído tributário (ST): CFOP veda o crédito próprio (403).
-            { chave: 'ST', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1403', cstIcms: '60', valorIcms: '3.00' },
-            { chave: 'SAIDA', tipoOperacaoEscriturada: 'SAIDA', cfop: '5405', valorIcms: '30.00' },
+            {
+              chave: 'ST',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1403',
+              cstIcms: '60',
+              valorIcms: '3.00',
+            },
+            {
+              chave: 'SAIDA',
+              tipoOperacaoEscriturada: 'SAIDA',
+              cfop: '5405',
+              valorIcms: '30.00',
+            },
           ],
           // Crédito admitido congelado = só a revenda (20.00); consumo/ativo/ST
           // são destacados mas NÃO admitidos. A apuração/livro/E110 partem daí.
@@ -326,13 +355,18 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
       expect(dca.admitido).toBe('20.00');
       expect(dca.diferenca).toBe('15.00');
       // Consumo/ativo/ST compartilham o motivo CFOP_VEDA_CREDITO: um grupo de 3.
-      const vedadoCfop = dca.parcelas.find((p) => p.motivo === 'CFOP_VEDA_CREDITO');
+      const vedadoCfop = dca.parcelas.find(
+        (p) => p.motivo === 'CFOP_VEDA_CREDITO',
+      );
       expect(vedadoCfop?.decisao).toBe('VEDADO');
       expect(vedadoCfop?.diferenca).toBe('15.00');
       expect(vedadoCfop?.quantidade).toBe(3);
       // A diferença documento×admitido também aparece como ajuste da ponte.
       const ajuste = ponte.ajustes.find(
-        (a) => a.de === 'DOCUMENTOS' && a.para === 'LANCAMENTOS' && a.campo === 'creditos',
+        (a) =>
+          a.de === 'DOCUMENTOS' &&
+          a.para === 'LANCAMENTOS' &&
+          a.campo === 'creditos',
       );
       expect(ajuste?.delta).toBe('-15.00');
     });
@@ -343,9 +377,21 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
         snapshots({
           documentos: [
             // Admitido (CST 00): 10.00.
-            { chave: 'OK', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', cstIcms: '00', valorIcms: '10.00' },
+            {
+              chave: 'OK',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1102',
+              cstIcms: '00',
+              valorIcms: '10.00',
+            },
             // CST 90 não autorizado → EXIGE_REVISAO (destaque não admitido).
-            { chave: 'REV', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', cstIcms: '90', valorIcms: '4.00' },
+            {
+              chave: 'REV',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1102',
+              cstIcms: '90',
+              valorIcms: '4.00',
+            },
             // Regra fiscal veda o crédito explicitamente → VEDADO.
             {
               chave: 'REGRA',
@@ -355,7 +401,12 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
               valorIcms: '6.00',
               regra: { apropriaCreditoIcms: false, regraVersaoId: 'r-veda-1' },
             },
-            { chave: 'SAIDA', tipoOperacaoEscriturada: 'SAIDA', cfop: '5102', valorIcms: '30.00' },
+            {
+              chave: 'SAIDA',
+              tipoOperacaoEscriturada: 'SAIDA',
+              cfop: '5102',
+              valorIcms: '30.00',
+            },
           ],
           saldos: { creditos: '10.00', debitos: '30.00' },
         }),
@@ -367,7 +418,9 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
       // Duas parcelas distintas por motivo, ordenadas de forma estável.
       const motivos = dca.parcelas.map((p) => p.motivo);
       expect(motivos).toEqual(['CST_NAO_AUTORIZADO', 'REGRA_VEDA_CREDITO']);
-      const revisao = dca.parcelas.find((p) => p.motivo === 'CST_NAO_AUTORIZADO');
+      const revisao = dca.parcelas.find(
+        (p) => p.motivo === 'CST_NAO_AUTORIZADO',
+      );
       expect(revisao?.decisao).toBe('EXIGE_REVISAO');
       expect(revisao?.diferenca).toBe('4.00');
       expect(revisao?.fundamento).toMatch(/revisão/i);
@@ -383,10 +436,27 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
         snapshots({
           documentos: [
             // CSOSN 101 permite crédito ao adquirente → admitido.
-            { chave: 'SN_OK', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', csosnIcms: '101', valorCreditoIcmsSn: '2.00' },
+            {
+              chave: 'SN_OK',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1102',
+              csosnIcms: '101',
+              valorCreditoIcmsSn: '2.00',
+            },
             // CSOSN 102 não transfere crédito → EXIGE_REVISAO.
-            { chave: 'SN_REV', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', csosnIcms: '102', valorCreditoIcmsSn: '1.50' },
-            { chave: 'SAIDA', tipoOperacaoEscriturada: 'SAIDA', cfop: '5102', valorIcms: '10.00' },
+            {
+              chave: 'SN_REV',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1102',
+              csosnIcms: '102',
+              valorCreditoIcmsSn: '1.50',
+            },
+            {
+              chave: 'SAIDA',
+              tipoOperacaoEscriturada: 'SAIDA',
+              cfop: '5102',
+              valorIcms: '10.00',
+            },
           ],
           saldos: { creditos: '2.00', debitos: '10.00' },
         }),
@@ -423,7 +493,9 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
       }
       // Nenhum ajuste declara ter gerado/derivado uma guia automaticamente.
       for (const ajuste of ponte.ajustes) {
-        expect(ajuste.fundamento).not.toMatch(/guia (a recolher|gerada|autom)/i);
+        expect(ajuste.fundamento).not.toMatch(
+          /guia (a recolher|gerada|autom)/i,
+        );
       }
       // O rótulo do saldo deixa claro que emitir a guia é um passo separado.
       expect(ponte.saldoDevedorApurado.rotulo).toMatch(/separad|deliberad/i);
@@ -434,8 +506,19 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
         registro(),
         snapshots({
           documentos: [
-            { chave: 'A', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', cstIcms: '00', valorIcms: '50.00' },
-            { chave: 'C', tipoOperacaoEscriturada: 'SAIDA', cfop: '5102', valorIcms: '10.00' },
+            {
+              chave: 'A',
+              tipoOperacaoEscriturada: 'ENTRADA',
+              cfop: '1102',
+              cstIcms: '00',
+              valorIcms: '50.00',
+            },
+            {
+              chave: 'C',
+              tipoOperacaoEscriturada: 'SAIDA',
+              cfop: '5102',
+              valorIcms: '10.00',
+            },
           ],
           saldos: {
             creditos: '50.00',
@@ -490,7 +573,10 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
       'saldoCredorTransportar',
     ] as const;
 
-    function totaisEtapa(nome: EtapaPonte, snaps: FechamentoSnapshots): TotaisEtapa {
+    function totaisEtapa(
+      nome: EtapaPonte,
+      snaps: FechamentoSnapshots,
+    ): TotaisEtapa {
       const ponte = montarPonteConciliacao(registro(), snaps);
       const etapa = ponte.etapas.find((e) => e.etapa === nome);
       if (!etapa) throw new Error(`etapa ${nome} ausente`);
@@ -566,10 +652,34 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
     function snapshotsExcecoesCombinadas(): FechamentoSnapshots {
       return snapshots({
         documentos: [
-          { chave: 'REVENDA', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', cstIcms: '00', valorIcms: '20.00' },
-          { chave: 'CONSUMO', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1556', cstIcms: '00', valorIcms: '5.00' },
-          { chave: 'ATIVO', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1551', cstIcms: '00', valorIcms: '7.00' },
-          { chave: 'ST', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1403', cstIcms: '60', valorIcms: '3.00' },
+          {
+            chave: 'REVENDA',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cfop: '1102',
+            cstIcms: '00',
+            valorIcms: '20.00',
+          },
+          {
+            chave: 'CONSUMO',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cfop: '1556',
+            cstIcms: '00',
+            valorIcms: '5.00',
+          },
+          {
+            chave: 'ATIVO',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cfop: '1551',
+            cstIcms: '00',
+            valorIcms: '7.00',
+          },
+          {
+            chave: 'ST',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cfop: '1403',
+            cstIcms: '60',
+            valorIcms: '3.00',
+          },
           {
             chave: 'REGRA',
             tipoOperacaoEscriturada: 'ENTRADA',
@@ -578,13 +688,35 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
             valorIcms: '6.00',
             regra: { apropriaCreditoIcms: false, regraVersaoId: 'r-veda-1' },
           },
-          { chave: 'CST_REV', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', cstIcms: '90', valorIcms: '4.00' },
-          { chave: 'CSOSN_REV', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1102', csosnIcms: '102', valorCreditoIcmsSn: '1.50' },
-          { chave: 'SAIDA', tipoOperacaoEscriturada: 'SAIDA', cfop: '5405', valorIcms: '30.00' },
+          {
+            chave: 'CST_REV',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cfop: '1102',
+            cstIcms: '90',
+            valorIcms: '4.00',
+          },
+          {
+            chave: 'CSOSN_REV',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cfop: '1102',
+            csosnIcms: '102',
+            valorCreditoIcmsSn: '1.50',
+          },
+          {
+            chave: 'SAIDA',
+            tipoOperacaoEscriturada: 'SAIDA',
+            cfop: '5405',
+            valorIcms: '30.00',
+          },
         ],
         // A versão fechada admite só a revenda (20.00); as demais são destacadas
         // mas NÃO admitidas. Apuração/livro/E110 partem desse crédito admitido.
-        saldos: { creditos: '20.00', debitos: '30.00', saldoApurado: '10.00', icmsRecolher: '10.00' },
+        saldos: {
+          creditos: '20.00',
+          debitos: '30.00',
+          saldoApurado: '10.00',
+          icmsRecolher: '10.00',
+        },
       });
     }
 
@@ -610,7 +742,10 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
     });
 
     it('cada tipo de exceção é EXPLICADO (não apagado) na reconciliação C190×admitido (R2.4, R2.3)', () => {
-      const ponte = montarPonteConciliacao(registro(), snapshotsExcecoesCombinadas());
+      const ponte = montarPonteConciliacao(
+        registro(),
+        snapshotsExcecoesCombinadas(),
+      );
       const dca = ponte.diferencaCreditoAdmitido;
 
       // Destaque documental PRESERVADO (46.50), admitido separado (20.00),
@@ -621,7 +756,9 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
 
       // Consumo (5) + ativo/CIAP (7) + ST (3) compartilham a vedação por CFOP:
       // um grupo de 3 documentos somando 15.00.
-      const vedadoCfop = dca.parcelas.find((p) => p.motivo === 'CFOP_VEDA_CREDITO');
+      const vedadoCfop = dca.parcelas.find(
+        (p) => p.motivo === 'CFOP_VEDA_CREDITO',
+      );
       expect(vedadoCfop?.decisao).toBe('VEDADO');
       expect(vedadoCfop?.quantidade).toBe(3);
       expect(vedadoCfop?.diferenca).toBe('15.00');
@@ -633,7 +770,9 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
       expect(regra?.diferenca).toBe('6.00');
 
       // CST 90 + CSOSN 102 não autorizados → EXIGE_REVISAO (4.00 + 1.50 = 5.50).
-      const revisao = dca.parcelas.find((p) => p.motivo === 'CST_NAO_AUTORIZADO');
+      const revisao = dca.parcelas.find(
+        (p) => p.motivo === 'CST_NAO_AUTORIZADO',
+      );
       expect(revisao?.decisao).toBe('EXIGE_REVISAO');
       expect(revisao?.quantidade).toBe(2);
       expect(revisao?.diferenca).toBe('5.50');
@@ -647,9 +786,15 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
     });
 
     it('o ajuste DOCUMENTOS→LANCAMENTOS carrega TODOS os motivos das exceções (R2.4)', () => {
-      const ponte = montarPonteConciliacao(registro(), snapshotsExcecoesCombinadas());
+      const ponte = montarPonteConciliacao(
+        registro(),
+        snapshotsExcecoesCombinadas(),
+      );
       const ajuste = ponte.ajustes.find(
-        (a) => a.de === 'DOCUMENTOS' && a.para === 'LANCAMENTOS' && a.campo === 'creditos',
+        (a) =>
+          a.de === 'DOCUMENTOS' &&
+          a.para === 'LANCAMENTOS' &&
+          a.campo === 'creditos',
       );
       // O ajuste de etapa compara o destaque de ICMS (regime normal, `valorIcms`)
       // somado em DOCUMENTOS — 45.00 — com o crédito admitido do lançamento
@@ -675,11 +820,27 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
         documentos: [
           // Entrada de ativo com destaque; o crédito efetivo é o que o fechamento
           // congelou (via CIAP/regra), não o destaque bruto.
-          { chave: 'ATIVO_APROVADO', tipoOperacaoEscriturada: 'ENTRADA', cfop: '1551', cstIcms: '00', valorIcms: '12.00' },
-          { chave: 'SAIDA', tipoOperacaoEscriturada: 'SAIDA', cfop: '5102', valorIcms: '40.00' },
+          {
+            chave: 'ATIVO_APROVADO',
+            tipoOperacaoEscriturada: 'ENTRADA',
+            cfop: '1551',
+            cstIcms: '00',
+            valorIcms: '12.00',
+          },
+          {
+            chave: 'SAIDA',
+            tipoOperacaoEscriturada: 'SAIDA',
+            cfop: '5102',
+            valorIcms: '40.00',
+          },
         ],
         // Fechamento congela, p.ex., 1/48 do crédito do ativo como admitido (0.25).
-        saldos: { creditos: '0.25', debitos: '40.00', saldoApurado: '39.75', icmsRecolher: '39.75' },
+        saldos: {
+          creditos: '0.25',
+          debitos: '40.00',
+          saldoApurado: '39.75',
+          icmsRecolher: '39.75',
+        },
       });
       const ponte = montarPonteConciliacao(registro(), snaps);
       const livro = ponte.etapas.find((e) => e.etapa === 'LIVRO')?.totais;
@@ -700,7 +861,7 @@ describe('conciliacao-ponte (F03 / R2.2, R2.4)', () => {
               {
                 chave: 'A',
                 tipoOperacaoEscriturada: 'ENTRADA',
-                valorIcms: 18.0 as unknown as string,
+                valorIcms: 18.0,
               },
             ],
           }),

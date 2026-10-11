@@ -29,7 +29,7 @@ export class ColaboradorService {
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
-  ) { }
+  ) {}
 
   /**
    * Authenticate an employee by CNPJ + employee code + password.

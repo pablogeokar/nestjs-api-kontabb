@@ -116,7 +116,7 @@ describe('fiscal-books-projection (livros como projeção do fechamento)', () =>
         avisoParcial: null,
         avisoAuxiliar: {
           auxiliar: true,
-          mensagem: expect.stringContaining('Relatório auxiliar'),
+          mensagem: expect.stringContaining('Relatório auxiliar') as unknown,
         },
         motorVersao: 'fase3-fechamento@1',
         hashEntradas: 'a'.repeat(64),
@@ -423,7 +423,7 @@ describe('fiscal-books-projection (livros como projeção do fechamento)', () =>
           {
             chave: 'A',
             cfop: '1102',
-            valorIcms: 18 as never,
+            valorIcms: 18,
           },
         ]),
       ).toThrow(/string decimal/i);

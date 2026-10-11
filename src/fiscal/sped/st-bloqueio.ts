@@ -46,14 +46,20 @@ import type {
 } from './sped-efd.types';
 import { toScaledInteger } from './sped-decimal';
 import type { StVerificacaoStatus } from '../services/st-verificacao';
-import { stCenarioPodeSerHabilitado, stMotivoBloqueio } from '../services/st-verificacao';
+import {
+  stCenarioPodeSerHabilitado,
+  stMotivoBloqueio,
+} from '../services/st-verificacao';
 import type { StEnquadramentoStatus } from '../services/st-enquadramento';
 import {
   stEnquadramentoHabilitaCalculo,
   stEnquadramentoMotivoInelegibilidade,
 } from '../services/st-enquadramento';
 import type { StCalculoStatus } from '../services/st-calculador';
-import { stPodeGerarGuia, stCalculoMotivoInelegibilidade } from '../services/st-calculador';
+import {
+  stPodeGerarGuia,
+  stCalculoMotivoInelegibilidade,
+} from '../services/st-calculador';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Códigos de inconsistência estáveis (padrão da Fase 0: um `codigo` por hipótese

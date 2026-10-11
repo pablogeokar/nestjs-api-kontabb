@@ -62,7 +62,9 @@ describe('XML emitido 31/08 23h fuso local — fuso vs timestamp (R3.2)', () => 
   it('o timestamp bruto UTC da nota cai em setembro (por que o fuso importa)', () => {
     // Documenta o motivo da política: confiar só no timestamp bruto erraria a
     // competência de uma nota de virada de mês.
-    expect(brasiliaLocal31Ago23h.toISOString()).toBe('2026-09-01T02:00:00.000Z');
+    expect(brasiliaLocal31Ago23h.toISOString()).toBe(
+      '2026-09-01T02:00:00.000Z',
+    );
   });
 
   it('a data fiscal 31/08 pertence à competência de agosto (date, não timestamp)', () => {
@@ -71,7 +73,9 @@ describe('XML emitido 31/08 23h fuso local — fuso vs timestamp (R3.2)', () => 
     expect(emissaoFiscal >= agosto.competencia).toBe(true);
     expect(emissaoFiscal <= '2026-08-31').toBe(true);
     // O timestamp bruto, ao contrário, cairia FORA da janela de agosto.
-    expect(brasiliaLocal31Ago23h.getTime()).toBeGreaterThan(agosto.fim.getTime());
+    expect(brasiliaLocal31Ago23h.getTime()).toBeGreaterThan(
+      agosto.fim.getTime(),
+    );
   });
 
   it('o mesmo instante bruto pertence à janela de timestamp de setembro', () => {

@@ -114,10 +114,7 @@ export interface PisCofinsHipoteseCst {
 // Cada CST tem UMA hipótese explícita, em vez de pertencer a um `Set`. CST 03 é
 // a única com `metodoCalculo: 'AD_REM'`; CST 67 é a única com `naturezaCredito:
 // 'PRESUMIDO'` — ambos tratados por hipótese, não por ampliação de `Set` (R2.4).
-const HIPOTESES_CST: Record<
-  string,
-  Omit<PisCofinsHipoteseCst, 'cst'>
-> = {
+const HIPOTESES_CST: Record<string, Omit<PisCofinsHipoteseCst, 'cst'>> = {
   // Receita tributada — base × percentual (hipótese padrão).
   '01': {
     efeito: 'RECEITA',
@@ -204,8 +201,7 @@ const HIPOTESES_CST: Record<
     metodoCalculo: 'NENHUM',
     geraDebito: false,
     geraCredito: false,
-    descricao:
-      'CST 08: receita sem incidência — base registrada, sem débito.',
+    descricao: 'CST 08: receita sem incidência — base registrada, sem débito.',
   },
   '09': {
     efeito: 'RECEITA',
@@ -214,26 +210,67 @@ const HIPOTESES_CST: Record<
     metodoCalculo: 'NENHUM',
     geraDebito: false,
     geraCredito: false,
-    descricao:
-      'CST 09: receita com suspensão — base registrada, sem débito.',
+    descricao: 'CST 09: receita com suspensão — base registrada, sem débito.',
   },
   // Créditos BÁSICOS (50–56): aquisições do mercado interno/exportação.
-  ...creditoBasico('50', 'operação com direito a crédito — vinculada à receita tributada no mercado interno'),
-  ...creditoBasico('51', 'operação com direito a crédito — vinculada à receita não tributada no mercado interno'),
-  ...creditoBasico('52', 'operação com direito a crédito — vinculada à receita de exportação'),
-  ...creditoBasico('53', 'operação com direito a crédito — vinculada a receitas tributadas e não tributadas no mercado interno'),
-  ...creditoBasico('54', 'operação com direito a crédito — vinculada a receitas tributadas no mercado interno e de exportação'),
-  ...creditoBasico('55', 'operação com direito a crédito — vinculada a receitas não tributadas no mercado interno e de exportação'),
-  ...creditoBasico('56', 'operação com direito a crédito — vinculada a receitas tributadas e não tributadas no mercado interno e de exportação'),
+  ...creditoBasico(
+    '50',
+    'operação com direito a crédito — vinculada à receita tributada no mercado interno',
+  ),
+  ...creditoBasico(
+    '51',
+    'operação com direito a crédito — vinculada à receita não tributada no mercado interno',
+  ),
+  ...creditoBasico(
+    '52',
+    'operação com direito a crédito — vinculada à receita de exportação',
+  ),
+  ...creditoBasico(
+    '53',
+    'operação com direito a crédito — vinculada a receitas tributadas e não tributadas no mercado interno',
+  ),
+  ...creditoBasico(
+    '54',
+    'operação com direito a crédito — vinculada a receitas tributadas no mercado interno e de exportação',
+  ),
+  ...creditoBasico(
+    '55',
+    'operação com direito a crédito — vinculada a receitas não tributadas no mercado interno e de exportação',
+  ),
+  ...creditoBasico(
+    '56',
+    'operação com direito a crédito — vinculada a receitas tributadas e não tributadas no mercado interno e de exportação',
+  ),
   // Créditos PRESUMIDOS da agroindústria (60–66). Natureza PRESUMIDO — NÃO se
   // mistura ao básico (R2.4).
-  ...creditoPresumido('60', 'crédito presumido da agroindústria — vinculado à receita tributada no mercado interno'),
-  ...creditoPresumido('61', 'crédito presumido da agroindústria — vinculado à receita não tributada no mercado interno'),
-  ...creditoPresumido('62', 'crédito presumido da agroindústria — vinculado à receita de exportação'),
-  ...creditoPresumido('63', 'crédito presumido da agroindústria — vinculado a receitas tributadas e não tributadas no mercado interno'),
-  ...creditoPresumido('64', 'crédito presumido da agroindústria — vinculado a receitas tributadas no mercado interno e de exportação'),
-  ...creditoPresumido('65', 'crédito presumido da agroindústria — vinculado a receitas não tributadas no mercado interno e de exportação'),
-  ...creditoPresumido('66', 'crédito presumido da agroindústria — vinculado a receitas tributadas e não tributadas no mercado interno e de exportação'),
+  ...creditoPresumido(
+    '60',
+    'crédito presumido da agroindústria — vinculado à receita tributada no mercado interno',
+  ),
+  ...creditoPresumido(
+    '61',
+    'crédito presumido da agroindústria — vinculado à receita não tributada no mercado interno',
+  ),
+  ...creditoPresumido(
+    '62',
+    'crédito presumido da agroindústria — vinculado à receita de exportação',
+  ),
+  ...creditoPresumido(
+    '63',
+    'crédito presumido da agroindústria — vinculado a receitas tributadas e não tributadas no mercado interno',
+  ),
+  ...creditoPresumido(
+    '64',
+    'crédito presumido da agroindústria — vinculado a receitas tributadas no mercado interno e de exportação',
+  ),
+  ...creditoPresumido(
+    '65',
+    'crédito presumido da agroindústria — vinculado a receitas não tributadas no mercado interno e de exportação',
+  ),
+  ...creditoPresumido(
+    '66',
+    'crédito presumido da agroindústria — vinculado a receitas tributadas e não tributadas no mercado interno e de exportação',
+  ),
   // CST 67: outros CRÉDITOS PRESUMIDOS. É o foco de R2.4: tratado como
   // PRESUMIDO por hipótese, NUNCA somado ao crédito básico num `Set` único.
   '67': {
@@ -337,7 +374,8 @@ export function calcularDebitoAdRem(input: PisCofinsAdRemInput): string {
   );
   // produto tem escala (4 + 4) = 8; divisor leva de 8 → 2 casas.
   const produtoScaled = quantidadeScaled * aliquotaScaled;
-  const divisor = 10n ** BigInt(ESCALA_QUANTIDADE + ESCALA_ALIQUOTA_AD_REM - ESCALA_VALOR);
+  const divisor =
+    10n ** BigInt(ESCALA_QUANTIDADE + ESCALA_ALIQUOTA_AD_REM - ESCALA_VALOR);
   const debitoScaled = roundScaledDivision(produtoScaled, divisor);
   return fromScaledInteger(debitoScaled, ESCALA_VALOR);
 }

@@ -2,9 +2,7 @@ import type {
   FechamentoRegistro,
   ObrigacaoFechamento,
 } from './fiscal-closing.service';
-import type {
-  ResultadoApuracaoTotais,
-} from './resultado-apuracao.contract';
+import type { ResultadoApuracaoTotais } from './resultado-apuracao.contract';
 import { projetarResultadoApuracao } from './resultado-apuracao.projector';
 import type { FechamentoSnapshots } from './resultado-apuracao.projector';
 

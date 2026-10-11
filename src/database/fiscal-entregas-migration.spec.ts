@@ -95,7 +95,7 @@ describe('migração fiscal_entregas (0025)', () => {
   it('fixa a competência no primeiro dia do mês (competência fiscal)', () => {
     expect(sql).toContain('chk_fiscal_entrega_competencia_dia1');
     expect(sql).toContain(
-      "date_part('day', \"fiscal_entregas\".\"competencia\") = 1",
+      'date_part(\'day\', "fiscal_entregas"."competencia") = 1',
     );
     // Índice de projeção por escopo/competência (painéis, livros, status).
     expect(sql).toContain('CREATE INDEX "idx_fiscal_entrega_competencia"');

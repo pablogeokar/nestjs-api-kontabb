@@ -186,10 +186,10 @@ function criarStore(seed: {
           throw new Error('Tabela inesperada no select.');
         };
         return {
-          limit: (_n: number) => Promise.resolve(run()),
+          limit: () => Promise.resolve(run()),
           // A ordenação real (competência, criadoEm) é preservada inserindo em
           // ordem cronológica nos testes; o store devolve na ordem de inserção.
-          orderBy: (..._args: unknown[]) => Promise.resolve(run()),
+          orderBy: () => Promise.resolve(run()),
         };
       },
     };
@@ -204,7 +204,7 @@ function criarStore(seed: {
   }
 
   const db = {
-    select: (_projection?: unknown) => ({
+    select: () => ({
       from: (table: unknown) => selectFrom(table),
     }),
     insert: (table: unknown) => {
@@ -248,7 +248,7 @@ function criarStore(seed: {
         return {
           values: (values: Partial<CleanupJobRow>) => ({
             onConflictDoNothing: () => ({
-              returning: (_projection?: unknown) => {
+              returning: () => {
                 // Idempotência por object_key: não re-enfileira a mesma key.
                 const existente = cleanupJobs.find(
                   (j) => j.objectKey === values.objectKey,
@@ -327,7 +327,7 @@ function criarStore(seed: {
       }
       throw new Error(
         'DELETE em fiscal_entregas é proibido: a entrega é preservada na ' +
-        'trilha, nunca deletada fisicamente (R2.2).',
+          'trilha, nunca deletada fisicamente (R2.2).',
       );
     },
   };
@@ -335,8 +335,8 @@ function criarStore(seed: {
   return {
     service: new FiscalEntregasService(
       { db } as never,
-      fakeStorage(),
-      fakeCleanup(),
+      fakeStorage() as unknown as StorageService,
+      fakeCleanup() as unknown as StorageCleanupService,
       fakeLogger(),
     ),
     db,
@@ -357,24 +357,23 @@ function criarStore(seed: {
  */
 function fakeStorage(opts: { falhasIniciais?: number; erro?: Error } = {}) {
   let restam = opts.falhasIniciais ?? 0;
-  const upload = jest.fn(async () => {
+  const upload = jest.fn(() => {
     if (restam > 0) {
       restam -= 1;
       const err = opts.erro ?? new Error('R2 indisponível');
       if (!opts.erro) err.name = 'R2_UNAVAILABLE';
-      throw err;
+      return Promise.reject(err);
     }
-    return undefined;
+    return Promise.resolve(undefined);
   });
-  return { upload } as unknown as StorageService;
+  return { upload };
 }
 
-function fakeCleanup(): StorageCleanupService {
-  return {
-    processJobs: jest
-      .fn()
-      .mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
-  } as unknown as StorageCleanupService;
+function fakeCleanup() {
+  const processJobs = jest
+    .fn()
+    .mockResolvedValue({ processed: 1, completed: 1, failed: 0 });
+  return { processJobs };
 }
 
 function fakeLogger(): AppLogger {
@@ -512,8 +511,8 @@ describe('Fase 5 · grupo 2 — falha de storage com compensação e retry (R2.3
     const cleanup = fakeCleanup();
     const service = new FiscalEntregasService(
       { db: store.db } as never,
-      storage,
-      cleanup,
+      storage as unknown as StorageService,
+      cleanup as unknown as StorageCleanupService,
       fakeLogger(),
     );
 
@@ -585,8 +584,8 @@ describe('Fase 5 · grupo 2 — falha de storage com compensação e retry (R2.3
     const cleanup = fakeCleanup();
     const service = new FiscalEntregasService(
       { db: store.db } as never,
-      storage,
-      cleanup,
+      storage as unknown as StorageService,
+      cleanup as unknown as StorageCleanupService,
       fakeLogger(),
     );
 

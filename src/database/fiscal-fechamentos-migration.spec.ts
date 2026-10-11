@@ -51,9 +51,7 @@ describe('migração fiscal_fechamentos (0017)', () => {
   it('modela os estados RASCUNHO → PENDENTE → REVISADO → FECHADO com CHECK', () => {
     expect(sql).toContain('"estado" varchar(10) DEFAULT \'RASCUNHO\' NOT NULL');
     expect(sql).toContain('chk_fiscal_fechamento_estado');
-    expect(sql).toContain(
-      "'RASCUNHO', 'PENDENTE', 'REVISADO', 'FECHADO'",
-    );
+    expect(sql).toContain("'RASCUNHO', 'PENDENTE', 'REVISADO', 'FECHADO'");
     // FECHADO ⇔ `fechado_em` preenchido (estados não-finais não têm data).
     expect(sql).toContain('chk_fiscal_fechamento_fechado_em');
     expect(sql).toContain('"fechado_em" timestamp with time zone');
@@ -71,28 +69,26 @@ describe('migração fiscal_fechamentos (0017)', () => {
     expect(sql).toContain('"hash_entradas" varchar(64) NOT NULL');
     // Mesmo formato SHA-256 dos arquivos SPED (`sped_arquivos_gerados`).
     expect(sql).toContain('chk_fiscal_fechamento_hash');
-    expect(sql).toContain("\"hash_entradas\" ~ '^[0-9a-f]{64}$'");
+    expect(sql).toContain('"hash_entradas" ~ \'^[0-9a-f]{64}$\'');
   });
 
   it('congela os snapshots do fechamento como JSONB imutáveis (R1.1)', () => {
     // Documentos, decisões, regras, parâmetros e saldos vigentes no fechamento
     // — a fotografia das entradas, não o estado atual (que pode ter mudado).
-    expect(sql).toContain("\"documentos\" jsonb DEFAULT '[]'::jsonb NOT NULL");
-    expect(sql).toContain("\"decisoes\" jsonb DEFAULT '[]'::jsonb NOT NULL");
-    expect(sql).toContain("\"regras\" jsonb DEFAULT '[]'::jsonb NOT NULL");
-    expect(sql).toContain("\"parametros\" jsonb DEFAULT '{}'::jsonb NOT NULL");
-    expect(sql).toContain("\"saldos\" jsonb DEFAULT '{}'::jsonb NOT NULL");
+    expect(sql).toContain('"documentos" jsonb DEFAULT \'[]\'::jsonb NOT NULL');
+    expect(sql).toContain('"decisoes" jsonb DEFAULT \'[]\'::jsonb NOT NULL');
+    expect(sql).toContain('"regras" jsonb DEFAULT \'[]\'::jsonb NOT NULL');
+    expect(sql).toContain('"parametros" jsonb DEFAULT \'{}\'::jsonb NOT NULL');
+    expect(sql).toContain('"saldos" jsonb DEFAULT \'{}\'::jsonb NOT NULL');
   });
 
   it('fixa a competência no primeiro dia do mês (competência fiscal)', () => {
     expect(sql).toContain('chk_fiscal_fechamento_competencia_dia1');
     expect(sql).toContain(
-      "date_part('day', \"fiscal_fechamentos\".\"competencia\") = 1",
+      'date_part(\'day\', "fiscal_fechamentos"."competencia") = 1',
     );
     // Índice de projeção por escopo/competência (livros, painéis e SPED).
-    expect(sql).toContain(
-      'CREATE INDEX "idx_fiscal_fechamento_competencia"',
-    );
+    expect(sql).toContain('CREATE INDEX "idx_fiscal_fechamento_competencia"');
     expect(sql).toContain('"cliente_id","competencia","obrigacao"');
   });
 

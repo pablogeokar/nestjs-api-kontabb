@@ -48,7 +48,10 @@ describe('CriarGuiaDto', () => {
   });
 
   it('rejeita tributo fora do domínio', async () => {
-    const dto = plainToInstance(CriarGuiaDto, { ...base, tributo: 'INVENTADO' });
+    const dto = plainToInstance(CriarGuiaDto, {
+      ...base,
+      tributo: 'INVENTADO',
+    });
     expect(await propriedadesInvalidas(dto)).toContain('tributo');
   });
 

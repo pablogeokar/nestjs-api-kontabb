@@ -61,7 +61,9 @@ export class RegistrarEntregaDto {
   @IsIn(OBRIGACOES_ENTREGA)
   obrigacao!: ObrigacaoEntrega;
 
-  @ApiProperty({ description: 'Key do arquivo entregue no storage (nunca URL).' })
+  @ApiProperty({
+    description: 'Key do arquivo entregue no storage (nunca URL).',
+  })
   @IsString()
   @Length(1, 1024)
   arquivoKey!: string;
@@ -135,7 +137,9 @@ export class RegistrarEntregaDto {
   @IsObject()
   validacaoResultado?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ description: 'Titular/thumbprint do certificado (N02).' })
+  @ApiPropertyOptional({
+    description: 'Titular/thumbprint do certificado (N02).',
+  })
   @IsOptional()
   @IsString()
   assinaturaTitular?: string;
@@ -271,7 +275,9 @@ export class RetificarEntregaDto {
   @IsObject()
   validacaoResultado?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ description: 'Titular/thumbprint do certificado (N02).' })
+  @ApiPropertyOptional({
+    description: 'Titular/thumbprint do certificado (N02).',
+  })
   @IsOptional()
   @IsString()
   assinaturaTitular?: string;

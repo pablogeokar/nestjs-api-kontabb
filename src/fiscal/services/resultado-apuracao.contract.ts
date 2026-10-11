@@ -51,9 +51,7 @@ export interface ResultadoApuracaoTotais {
  * R4.2) sem reclassificar nada.
  */
 export type ResultadoApuracaoOrigem =
-  | 'DOCUMENTOS_ESCRITURADOS'
-  | 'INFORMADO'
-  | 'PADRAO_ZERO';
+  'DOCUMENTOS_ESCRITURADOS' | 'INFORMADO' | 'PADRAO_ZERO';
 
 /**
  * Uma linha de memória de cálculo: explica como um total foi composto a partir

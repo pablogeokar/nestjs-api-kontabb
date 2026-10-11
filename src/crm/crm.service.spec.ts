@@ -10,10 +10,7 @@ const cliente = {
   suspenso: false,
 };
 
-function makeService(input: {
-  rows: typeof cliente[];
-  sent?: boolean;
-}) {
+function makeService(input: { rows: (typeof cliente)[]; sent?: boolean }) {
   const database = {
     db: {
       select: jest.fn().mockReturnValue({
@@ -35,7 +32,11 @@ function makeService(input: {
   };
 
   return {
-    service: new CrmService(database as never, mailService as never, logger as never),
+    service: new CrmService(
+      database as never,
+      mailService as never,
+      logger as never,
+    ),
     mailService,
   };
 }

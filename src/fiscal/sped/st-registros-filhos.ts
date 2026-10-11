@@ -52,14 +52,10 @@ import {
   createSpedRecord,
   dateField,
   decimalField,
-  integerField,
   type SpedRecord,
 } from './core';
 import { fromScaledInteger, toScaledInteger } from './sped-decimal';
-import type {
-  StAjusteTipo,
-  StCalculoStatus,
-} from '../services/st-calculador';
+import type { StAjusteTipo, StCalculoStatus } from '../services/st-calculador';
 import { stPodeGerarGuia } from '../services/st-calculador';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,8 +141,8 @@ export function decidirC191(entrada: C191Entrada): RegistrosFilhosDecisao {
   if (!temSt && !temFcp) {
     return naoExigido(
       'C191 não exigido: grupo analítico sem ICMS-ST nem FCP-ST efetivo ' +
-      '(base/valor > 0). Registro filho não é emitido para grupos sem ST/FCP ' +
-      '(R3.3).',
+        '(base/valor > 0). Registro filho não é emitido para grupos sem ST/FCP ' +
+        '(R3.3).',
     );
   }
 
@@ -220,20 +216,18 @@ export function decidirC195C197(
   if (bloqueio) return naoExigido(`C195/C197 não emitido: ${bloqueio}`);
 
   // Só ajustes com código de ajuste efetivo entram — não se inventa código.
-  const ajustes = entrada.ajustes.filter(
-    (a) => a.codigoAjuste.trim() !== '',
-  );
+  const ajustes = entrada.ajustes.filter((a) => a.codigoAjuste.trim() !== '');
   if (ajustes.length === 0) {
     return naoExigido(
       'C195/C197 não exigido: documento sem ajuste de ST (restituição/' +
-      'ressarcimento/complemento) com código apurado. Observação e ajuste ' +
-      'não são emitidos por padrão (R3.3).',
+        'ressarcimento/complemento) com código apurado. Observação e ajuste ' +
+        'não são emitidos por padrão (R3.3).',
     );
   }
   if (entrada.codigoObservacao.trim() === '') {
     return naoExigido(
       'C195/C197 não emitido: há ajuste de ST, porém sem código de observação ' +
-      '(0460) para abrigar o C197. Não se inventa observação (R3.6).',
+        '(0460) para abrigar o C197. Não se inventa observação (R3.6).',
     );
   }
 
@@ -359,8 +353,8 @@ export function decidirE112E113(
   if (!temE112 && !temE113) {
     return naoExigido(
       'E112/E113 não exigido: o ajuste da apuração (E111) não referencia ' +
-      'documento de arrecadação/processo nem documentos fiscais. Registros ' +
-      'filhos não são emitidos para ajustes sem referência (R3.3).',
+        'documento de arrecadação/processo nem documentos fiscais. Registros ' +
+        'filhos não são emitidos para ajustes sem referência (R3.3).',
     );
   }
 

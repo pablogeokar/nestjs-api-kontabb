@@ -195,7 +195,10 @@ export function separarPorHipotese<T extends DifalItemClassificavel>(
   itens: readonly T[],
   opcoes: { exigeAntecipacao?: boolean } = {},
 ): {
-  grupos: Record<DifalHipotese, Array<{ item: T; classificacao: DifalClassificacao }>>;
+  grupos: Record<
+    DifalHipotese,
+    Array<{ item: T; classificacao: DifalClassificacao }>
+  >;
   naoPertinentes: Array<{ item: T; classificacao: DifalClassificacao }>;
 } {
   const grupos: Record<

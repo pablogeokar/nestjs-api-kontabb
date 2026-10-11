@@ -289,7 +289,8 @@ describe('CiapService', () => {
             dataEntrada: '2026-01-10',
           },
         ],
-      ) as never, createClosingMock() as never,
+      ) as never,
+      createClosingMock() as never,
     );
     const result = await service.apurarCompetencia({
       clienteId: 'c1',
@@ -320,7 +321,8 @@ describe('CiapService', () => {
             dataEntrada: '2026-01-10',
           },
         ],
-      ) as never, createClosingMock() as never,
+      ) as never,
+      createClosingMock() as never,
     );
     const result = await service.apurarCompetencia({
       clienteId: 'c1',
@@ -338,7 +340,8 @@ describe('CiapService', () => {
       createApuracaoDb(
         { total_saidas: '0', saidas_tributadas: '0' },
         [],
-      ) as never, createClosingMock() as never,
+      ) as never,
+      createClosingMock() as never,
     );
     const result = await service.apurarCompetencia({
       clienteId: 'c1',
@@ -389,7 +392,8 @@ describe('CiapService', () => {
         createCoeficienteDb({
           total_saidas: '10000.00',
           saidas_tributadas: '10000.00',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
       expect(r.coeficiente).toBe('1.0000');
@@ -404,7 +408,8 @@ describe('CiapService', () => {
         createCoeficienteDb({
           total_saidas: '10000.00',
           saidas_tributadas: '6000.00',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
       expect(r.coeficiente).toBe('0.6000');
@@ -421,7 +426,8 @@ describe('CiapService', () => {
           total_saidas: '10000.00',
           saidas_tributadas: '6000.00',
           exportacoes: '2000.00',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
       expect(r.componentes.exportacoes).toBe('2000.00');
@@ -439,7 +445,8 @@ describe('CiapService', () => {
           saidas_tributadas: '5000.00',
           exportacoes: '1000.00',
           saidas_equiparadas: '1000.00',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
       expect(r.componentes.saidas_equiparadas).toBe('1000.00');
@@ -454,7 +461,8 @@ describe('CiapService', () => {
         createCoeficienteDb({
           total_saidas: '10000.00',
           saidas_tributadas: '4000.00',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
       expect(r.numerador).toBe('4000.00');
@@ -470,7 +478,8 @@ describe('CiapService', () => {
         createCoeficienteDb({
           total_saidas: '0',
           saidas_tributadas: '0',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
       expect(r.coeficiente).toBe('0.0000');
@@ -487,7 +496,8 @@ describe('CiapService', () => {
         createCoeficienteDb({
           total_saidas: '0',
           saidas_tributadas: '0',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
       expect(r.coeficiente).not.toBe('1.0000');
@@ -524,7 +534,10 @@ describe('CiapService', () => {
       inserted,
     });
     const db = createRootDbMock(tx);
-    const service = new CiapService({ db } as never, createClosingMock() as never);
+    const service = new CiapService(
+      { db } as never,
+      createClosingMock() as never,
+    );
 
     const result = await service.apropriarCompetencia({
       clienteId: 'c1',
@@ -610,7 +623,10 @@ describe('CiapService', () => {
       }),
     };
     const db = createRootDbMock(tx);
-    const service = new CiapService({ db } as never, createClosingMock() as never);
+    const service = new CiapService(
+      { db } as never,
+      createClosingMock() as never,
+    );
 
     await service.apropriarCompetencia({
       clienteId: 'c1',
@@ -651,7 +667,10 @@ describe('CiapService', () => {
       updates,
     });
     const db = createRootDbMock(tx);
-    const service = new CiapService({ db } as never, createClosingMock() as never);
+    const service = new CiapService(
+      { db } as never,
+      createClosingMock() as never,
+    );
 
     const result = await service.apropriarCompetencia({
       clienteId: 'c1',
@@ -724,7 +743,10 @@ describe('CiapService', () => {
       inserted,
     });
     const db = createRootDbMock(tx);
-    const service = new CiapService({ db } as never, createClosingMock() as never);
+    const service = new CiapService(
+      { db } as never,
+      createClosingMock() as never,
+    );
 
     const result = await service.apropriarCompetencia({
       clienteId: 'c1',
@@ -785,7 +807,10 @@ describe('CiapService', () => {
         inserted,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.apropriarCompetencia({
         clienteId: 'c1',
@@ -815,7 +840,10 @@ describe('CiapService', () => {
         codigoCatalogo: null,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       await expect(
         service.apropriarCompetencia({
@@ -833,7 +861,10 @@ describe('CiapService', () => {
         codigoCatalogo: null,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       // getUfCliente devolve 'SP' no createRootDbMock; a competência normalizada
       // é 2026-09-01. A mensagem deve nomear ambos para orientar o cadastro.
@@ -925,7 +956,10 @@ describe('CiapService', () => {
       }) as never;
 
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
       await service.apropriarCompetencia({
         clienteId: 'c1',
         competencia: '2026-09',
@@ -982,7 +1016,10 @@ describe('CiapService', () => {
       updates: updates,
     });
     const db = createRootDbMock(tx);
-    const service = new CiapService({ db } as never, createClosingMock() as never);
+    const service = new CiapService(
+      { db } as never,
+      createClosingMock() as never,
+    );
 
     const result = await service.apropriarCompetencia({
       clienteId: 'c1',
@@ -1019,7 +1056,10 @@ describe('CiapService', () => {
       updates,
     });
     const db = createRootDbMock(tx);
-    const service = new CiapService({ db } as never, createClosingMock() as never);
+    const service = new CiapService(
+      { db } as never,
+      createClosingMock() as never,
+    );
 
     const result = await service.apropriarCompetencia({
       clienteId: 'c1',
@@ -1059,7 +1099,10 @@ describe('CiapService', () => {
       updates,
     });
     const db = createRootDbMock(tx);
-    const service = new CiapService({ db } as never, createClosingMock() as never);
+    const service = new CiapService(
+      { db } as never,
+      createClosingMock() as never,
+    );
 
     const result = await service.apropriarCompetencia({
       clienteId: 'c1',
@@ -1164,7 +1207,10 @@ describe('CiapService', () => {
     const runInvocation = () => {
       const tx = buildTx();
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
       return service.apropriarCompetencia({
         clienteId: 'c1',
         competencia: '2026-09',
@@ -1280,7 +1326,10 @@ describe('CiapService', () => {
         updates,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.apropriarCompetencia({
         clienteId: 'c1',
@@ -1361,7 +1410,10 @@ describe('CiapService', () => {
           updates,
         });
         const db = createRootDbMock(tx);
-        const service = new CiapService({ db } as never, createClosingMock() as never);
+        const service = new CiapService(
+          { db } as never,
+          createClosingMock() as never,
+        );
         const result = await service.apropriarCompetencia({
           clienteId: 'c1',
           competencia: '2026-09',
@@ -1499,7 +1551,10 @@ describe('CiapService', () => {
         updates,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.corrigirApropriacao({
         clienteId: 'c1',
@@ -1552,7 +1607,10 @@ describe('CiapService', () => {
         inserted,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       await service.corrigirApropriacao({
         clienteId: 'c1',
@@ -1588,7 +1646,10 @@ describe('CiapService', () => {
         inserted,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.corrigirApropriacao({
         clienteId: 'c1',
@@ -1621,7 +1682,10 @@ describe('CiapService', () => {
         inserted,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.corrigirApropriacao({
         clienteId: 'c1',
@@ -1642,7 +1706,10 @@ describe('CiapService', () => {
     it('rejeita correção quando não há apropriação ativa na competência', async () => {
       const tx = createCorrecaoTxMock({ ativas: [] });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       await expect(
         service.corrigirApropriacao({
@@ -1660,7 +1727,10 @@ describe('CiapService', () => {
     it('rejeita coeficiente fora de [0, 1]', async () => {
       const tx = createCorrecaoTxMock({ ativas: [apropriacaoAtiva()] });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       await expect(
         service.corrigirApropriacao({
@@ -1681,7 +1751,10 @@ describe('CiapService', () => {
         inserted,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.corrigirApropriacao({
         clienteId: 'c1',
@@ -1817,7 +1890,10 @@ describe('CiapService', () => {
         updates,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.apropriarCompetencia({
         clienteId: 'c1',
@@ -1861,7 +1937,10 @@ describe('CiapService', () => {
         updates,
       });
       const db = createRootDbMock(tx);
-      const service = new CiapService({ db } as never, createClosingMock() as never);
+      const service = new CiapService(
+        { db } as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.apropriarCompetencia({
         clienteId: 'c1',
@@ -1889,7 +1968,8 @@ describe('CiapService', () => {
       // WHERE por (id, clienteId) do cliente dono não retorna linha ->
       // documento de outro cliente é indistinguível de inexistente -> rejeita.
       const service = new CiapService(
-        createRegistrarBemDb({ ownershipRows: [[]] }) as never, createClosingMock() as never,
+        createRegistrarBemDb({ ownershipRows: [[]] }) as never,
+        createClosingMock() as never,
       );
       await expect(
         service.registrarBem({
@@ -1906,7 +1986,8 @@ describe('CiapService', () => {
     it('rejeita registro quando o item de documento pertence a outro cliente', async () => {
       // Item scoped por clienteId não retorna linha -> rejeita.
       const service = new CiapService(
-        createRegistrarBemDb({ ownershipRows: [[]] }) as never, createClosingMock() as never,
+        createRegistrarBemDb({ ownershipRows: [[]] }) as never,
+        createClosingMock() as never,
       );
       await expect(
         service.registrarBem({
@@ -1934,7 +2015,10 @@ describe('CiapService', () => {
           documentoFiscalItemId: 'item-1',
         }),
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       const bem = await service.registrarBem({
         clienteId: 'c1',
         documentoFiscalId: 'doc-1',
@@ -1951,7 +2035,10 @@ describe('CiapService', () => {
 
     it('registra sem referências de documento/item (nenhuma checagem de propriedade)', async () => {
       const db = createRegistrarBemDb({ ownershipRows: [] });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       const bem = await service.registrarBem({
         clienteId: 'c1',
         codigoBem: 'BEM-1',
@@ -1970,7 +2057,10 @@ describe('CiapService', () => {
       // rejeita o mesmo limite sem depender do ValidationPipe. Falha ANTES de
       // qualquer acesso ao banco.
       const db = createRegistrarBemDb({ ownershipRows: [] });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.registrarBem({
           clienteId: 'c1',
@@ -1986,7 +2076,10 @@ describe('CiapService', () => {
 
     it('R6.4: rejeita quantidade de parcelas zero/negativa (fora do HTTP)', async () => {
       const db = createRegistrarBemDb({ ownershipRows: [] });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.registrarBem({
           clienteId: 'c1',
@@ -2004,7 +2097,10 @@ describe('CiapService', () => {
       // O DTO impõe não-negatividade via regex; o serviço reforça o mesmo para
       // impedir base de apropriação negativa vinda de um chamador não-HTTP.
       const db = createRegistrarBemDb({ ownershipRows: [] });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.registrarBem({
           clienteId: 'c1',
@@ -2019,7 +2115,10 @@ describe('CiapService', () => {
 
     it('R6.4/R6.3: rejeita valor de frete/DIFAL negativo (fora do HTTP)', async () => {
       const db = createRegistrarBemDb({ ownershipRows: [] });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.registrarBem({
           clienteId: 'c1',
@@ -2054,7 +2153,10 @@ describe('CiapService', () => {
             .mockImplementation((cb: (t: unknown) => unknown) => cb(tx)),
         },
       };
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.baixarBem({
           clienteId: 'c1',
@@ -2078,7 +2180,10 @@ describe('CiapService', () => {
           [{ id: 'item-1', documentoFiscalId: 'doc-OUTRO' }],
         ],
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.registrarBem({
           clienteId: 'c1',
@@ -2189,7 +2294,10 @@ describe('CiapService', () => {
           },
         ],
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.diagnosticarFichas({ clienteId: 'c1' });
 
@@ -2232,7 +2340,10 @@ describe('CiapService', () => {
         ],
         itens: [],
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.diagnosticarFichas({ clienteId: 'c1' });
 
@@ -2272,7 +2383,10 @@ describe('CiapService', () => {
           },
         ],
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.diagnosticarFichas({ clienteId: 'c1' });
 
@@ -2284,7 +2398,10 @@ describe('CiapService', () => {
 
     it('rejeita cliente inexistente', async () => {
       const db = createDiagnosticoDb({ cliente: [], fichas: [], itens: [] });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.diagnosticarFichas({ clienteId: 'inexistente' }),
       ).rejects.toThrow('Empresa não encontrada.');
@@ -2409,7 +2526,10 @@ describe('CiapService', () => {
         ],
         fichasPendentes: fichas,
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.migrarIdentidadePorAquisicao({
         clienteId: 'c1',
@@ -2457,7 +2577,10 @@ describe('CiapService', () => {
         itens: [],
         fichasPendentes: fichas,
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.migrarIdentidadePorAquisicao({
         clienteId: 'c1',
@@ -2485,7 +2608,10 @@ describe('CiapService', () => {
         itens: [],
         fichasPendentes: [],
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
 
       const result = await service.migrarIdentidadePorAquisicao({
         clienteId: 'c1',
@@ -2503,7 +2629,10 @@ describe('CiapService', () => {
         itens: [],
         fichasPendentes: [],
       });
-      const service = new CiapService(db as never, createClosingMock() as never);
+      const service = new CiapService(
+        db as never,
+        createClosingMock() as never,
+      );
       await expect(
         service.migrarIdentidadePorAquisicao({ clienteId: 'inexistente' }),
       ).rejects.toThrow('Empresa não encontrada.');
@@ -2546,9 +2675,7 @@ describe('CiapService', () => {
                 limit: jest.fn().mockImplementation(() =>
                   // Devolve tanto a linha de documento quanto a de item; a de
                   // item carrega o documentoFiscalId coerente consultado.
-                  Promise.resolve([
-                    { id: 'doc', documentoFiscalId: 'doc' },
-                  ]),
+                  Promise.resolve([{ id: 'doc', documentoFiscalId: 'doc' }]),
                 ),
               }),
             }),
@@ -2585,7 +2712,10 @@ describe('CiapService', () => {
       // documento+item próprios. Cada registro deve resultar num bem distinto
       // — o SKU NÃO funde as duas aquisições numa só ficha.
       const database = createRegistroIdentidadeDb();
-      const service = new CiapService(database as never, createClosingMock() as never);
+      const service = new CiapService(
+        database as never,
+        createClosingMock() as never,
+      );
 
       const bem1 = await service.registrarBem({
         clienteId: 'c1',
@@ -2629,7 +2759,8 @@ describe('CiapService', () => {
           total_saidas: '10000.00',
           saidas_tributadas: '6000.00',
           exportacoes: '2000.00',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
 
@@ -2650,7 +2781,8 @@ describe('CiapService', () => {
         createCoeficienteDb({
           total_saidas: '0',
           saidas_tributadas: '0',
-        }) as never, createClosingMock() as never,
+        }) as never,
+        createClosingMock() as never,
       );
       const r = await service.calcularCoeficiente(cenario);
 

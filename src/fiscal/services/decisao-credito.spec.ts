@@ -33,7 +33,17 @@ describe('decidirCreditoIcms (F05 / R3.1, R3.3)', () => {
   });
 
   describe('VEDADO por CFOP', () => {
-    it.each(['1556', '1557', '2407', '1403', '1405', '1406', '1401', '1551', '2552'])(
+    it.each([
+      '1556',
+      '1557',
+      '2407',
+      '1403',
+      '1405',
+      '1406',
+      '1401',
+      '1551',
+      '2552',
+    ])(
       'veda o crédito quando CFOP de entrada %s mesmo com CST autorizado',
       (cfop) => {
         const resultado = decidirCreditoIcms({
@@ -172,7 +182,7 @@ describe('decidirCreditoIcms (F05 / R3.1, R3.3)', () => {
     });
 
     it('entrada totalmente vazia não credita nada e não quebra', () => {
-      const resultado = decidirCreditoIcms({} as EntradaDecisaoCredito);
+      const resultado = decidirCreditoIcms({});
       expect(resultado.decisao).toBe('ADMITIDO');
       expect(resultado.motivo).toBe('SEM_VALOR_DESTACADO');
       expect(resultado.valorAdmitido).toBe(0n);

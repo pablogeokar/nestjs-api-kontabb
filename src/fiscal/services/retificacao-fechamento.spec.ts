@@ -136,7 +136,11 @@ describe('retificacao-fechamento', () => {
 
     it('aponta o original, expõe a diferença e deixa o recibo como seam da Fase 5', () => {
       const resultado = montarDiferencaRetificacao({
-        original: registro({ id: 'orig', versao: 1, hashEntradas: 'a'.repeat(64) }),
+        original: registro({
+          id: 'orig',
+          versao: 1,
+          hashEntradas: 'a'.repeat(64),
+        }),
         originalSnapshots: snapshots({ debitos: '100.00' }),
         retificadora: registro({
           id: 'retif',

@@ -14,6 +14,7 @@ import {
   createSpedRecord,
   dateField,
   decimalField,
+  formatSpedField,
   integerField,
   type SpedRecord,
 } from './core';
@@ -401,8 +402,8 @@ export function buildEfdIcmsIpiRecords(
         codigo: 'CTE_SAIDA_D190_E110_DIVERGENTE',
         severidade: 'ERRO',
         mensagem:
-          `A síntese D190 do CT-e de saída (${money(conciliacao.totalD190)}) não reconcilia com o débito do E110 ` +
-          `(${money(conciliacao.totalE110)}) e o livro de saídas (${money(conciliacao.totalLivroSaidas)}). ` +
+          `A síntese D190 do CT-e de saída (${formatSpedField(money(conciliacao.totalD190))}) não reconcilia com o débito do E110 ` +
+          `(${formatSpedField(money(conciliacao.totalE110))}) e o livro de saídas (${formatSpedField(money(conciliacao.totalLivroSaidas))}). ` +
           'Reveja CT-e de anulação/substituição com ICMS destacado antes de gerar o SPED.',
       });
     }
@@ -697,11 +698,11 @@ function buildBlocoC(input: SpedEfdBuilderInput): SpedRecord[] {
         regular ? dateField(row.dataEmissaoFiscal ?? row.dataEmissao) : null,
         regular
           ? dateField(
-            row.dataEntradaSaidaFiscal ??
-            row.dataEmissaoFiscal ??
-            row.dataEntradaSaida ??
-            row.dataEmissao,
-          )
+              row.dataEntradaSaidaFiscal ??
+                row.dataEmissaoFiscal ??
+                row.dataEntradaSaida ??
+                row.dataEmissao,
+            )
           : null,
         regular
           ? decimalField(totalValue(totals, 'vNF', row.valorTotal))
@@ -880,11 +881,11 @@ function buildBlocoD(input: SpedEfdBuilderInput): SpedRecord[] {
         regular ? dateField(row.dataEmissaoFiscal ?? row.dataEmissao) : null,
         regular
           ? dateField(
-            row.dataEntradaSaidaFiscal ??
-            row.dataEmissaoFiscal ??
-            row.dataEntradaSaida ??
-            row.dataEmissao,
-          )
+              row.dataEntradaSaidaFiscal ??
+                row.dataEmissaoFiscal ??
+                row.dataEntradaSaida ??
+                row.dataEmissao,
+            )
           : null,
         regular ? cte.tpCte : null,
         regular && cte.tpCte === '3' ? cte.chaveCteReferenciado : null,
@@ -948,17 +949,17 @@ function buildBlocoE(input: SpedEfdBuilderInput): {
   const debitos = simples
     ? 0n
     : totalIcmsDocumentos(input.nfe, 'SAIDA') +
-    totalIcmsCtePrestacao(input.cte, 'SAIDA');
+      totalIcmsCtePrestacao(input.cte, 'SAIDA');
   const creditosMercadorias = simples
     ? 0n
     : totalIcmsDocumentos(input.nfe, 'ENTRADA', input.inconsistencias);
   const creditosFrete = simples
     ? 0n
     : input.cte.reduce(
-      (sum, documento) =>
-        sum + toScaledInteger(documento.cte.valorIcmsCreditavel),
-      0n,
-    );
+        (sum, documento) =>
+          sum + toScaledInteger(documento.cte.valorIcmsCreditavel),
+        0n,
+      );
   const creditos = creditosMercadorias + creditosFrete;
   const ajustesDebitos = totalAjustes(ajustesIcms, 'DEBITO');
   const ajustesCreditos = totalAjustes(ajustesIcms, 'CREDITO');

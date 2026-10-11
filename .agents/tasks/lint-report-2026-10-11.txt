@@ -1,0 +1,221 @@
+$ eslint "{src,apps,libs,test}/**/*.ts" --fix
+
+/Users/pablo/dev/kontabb/api/src/colaborador/colaborador-revocation.spec.ts
+  126:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+
+/Users/pablo/dev/kontabb/api/src/fiscal/controllers/fiscal-apuracao.controller.spec.ts
+   51:11  error  Unsafe assignment of an `any` value                 @typescript-eslint/no-unsafe-assignment
+   51:72  error  Unsafe member access [0] on an `any` value          @typescript-eslint/no-unsafe-member-access
+   52:17  error  Unsafe member access .clienteId on an `any` value   @typescript-eslint/no-unsafe-member-access
+   53:12  error  Unsafe call of an `any` typed value                 @typescript-eslint/no-unsafe-call
+   53:17  error  Unsafe member access .dataInicio on an `any` value  @typescript-eslint/no-unsafe-member-access
+   55:12  error  Unsafe call of an `any` typed value                 @typescript-eslint/no-unsafe-call
+   55:17  error  Unsafe member access .dataFim on an `any` value     @typescript-eslint/no-unsafe-member-access
+   83:11  error  Unsafe assignment of an `any` value                 @typescript-eslint/no-unsafe-assignment
+   84:11  error  Unsafe assignment of an `any` value                 @typescript-eslint/no-unsafe-assignment
+   85:12  error  Unsafe call of an `any` typed value                 @typescript-eslint/no-unsafe-call
+   85:21  error  Unsafe member access .dataInicio on an `any` value  @typescript-eslint/no-unsafe-member-access
+   86:12  error  Unsafe call of an `any` typed value                 @typescript-eslint/no-unsafe-call
+   86:21  error  Unsafe member access .dataFim on an `any` value     @typescript-eslint/no-unsafe-member-access
+   87:12  error  Unsafe call of an `any` typed value                 @typescript-eslint/no-unsafe-call
+   87:20  error  Unsafe member access .dataInicio on an `any` value  @typescript-eslint/no-unsafe-member-access
+   88:12  error  Unsafe call of an `any` typed value                 @typescript-eslint/no-unsafe-call
+   88:20  error  Unsafe member access .dataFim on an `any` value     @typescript-eslint/no-unsafe-member-access
+  106:11  error  Unsafe assignment of an `any` value                 @typescript-eslint/no-unsafe-assignment
+  115:11  error  Unsafe assignment of an `any` value                 @typescript-eslint/no-unsafe-assignment
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/certificado.service.spec.ts
+  92:47  error  Async arrow function has no 'await' expression  @typescript-eslint/require-await
+  92:50  error  Unsafe return of a value of type `any`          @typescript-eslint/no-unsafe-return
+  92:50  error  Unsafe call of an `any` typed value             @typescript-eslint/no-unsafe-call
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/distribuicao-dfe.service.spec.ts
+  322:33  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-books-projection.spec.ts
+  119:11  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-closing.service.spec.ts
+   450:23  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   451:24  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   452:26  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   455:9   error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   459:23  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   475:16  error    Unsafe assignment of an `any` value                                                                                                                                                    @typescript-eslint/no-unsafe-assignment
+   487:15  error    Unsafe object destructuring of a property with an `any` value                                                                                                                          @typescript-eslint/no-unsafe-assignment
+   489:13  error    Unsafe assignment of an `any` value                                                                                                                                                    @typescript-eslint/no-unsafe-assignment
+   489:23  error    Unsafe call of an `any` typed value                                                                                                                                                    @typescript-eslint/no-unsafe-call
+   489:35  error    Unsafe member access .transaction on an `any` value                                                                                                                                    @typescript-eslint/no-unsafe-member-access
+   490:43  warning  Unsafe argument of type `any` assigned to a parameter of type `PgTransaction<PostgresJsQueryResultHKT, Record<string, unknown>, ExtractTablesWithRelations<Record<string, unknown>>>`  @typescript-eslint/no-unsafe-argument
+   492:16  error    Unsafe member access .fechado on an `any` value                                                                                                                                        @typescript-eslint/no-unsafe-member-access
+   493:16  error    Unsafe member access .revisaoNecessaria on an `any` value                                                                                                                              @typescript-eslint/no-unsafe-member-access
+   494:16  error    Unsafe member access .revisaoId on an `any` value                                                                                                                                      @typescript-eslint/no-unsafe-member-access
+   499:15  error    Unsafe object destructuring of a property with an `any` value                                                                                                                          @typescript-eslint/no-unsafe-assignment
+   505:13  error    Unsafe assignment of an `any` value                                                                                                                                                    @typescript-eslint/no-unsafe-assignment
+   505:23  error    Unsafe call of an `any` typed value                                                                                                                                                    @typescript-eslint/no-unsafe-call
+   505:35  error    Unsafe member access .transaction on an `any` value                                                                                                                                    @typescript-eslint/no-unsafe-member-access
+   506:43  warning  Unsafe argument of type `any` assigned to a parameter of type `PgTransaction<PostgresJsQueryResultHKT, Record<string, unknown>, ExtractTablesWithRelations<Record<string, unknown>>>`  @typescript-eslint/no-unsafe-argument
+   509:16  error    Unsafe member access .fechado on an `any` value                                                                                                                                        @typescript-eslint/no-unsafe-member-access
+   510:16  error    Unsafe member access .fechamentoCorrenteId on an `any` value                                                                                                                           @typescript-eslint/no-unsafe-member-access
+   511:16  error    Unsafe member access .revisaoNecessaria on an `any` value                                                                                                                              @typescript-eslint/no-unsafe-member-access
+   512:16  error    Unsafe member access .revisaoAberta on an `any` value                                                                                                                                  @typescript-eslint/no-unsafe-member-access
+   513:16  error    Unsafe member access .revisaoVersao on an `any` value                                                                                                                                  @typescript-eslint/no-unsafe-member-access
+   533:15  error    Unsafe object destructuring of a property with an `any` value                                                                                                                          @typescript-eslint/no-unsafe-assignment
+   538:13  error    Unsafe assignment of an `any` value                                                                                                                                                    @typescript-eslint/no-unsafe-assignment
+   538:23  error    Unsafe call of an `any` typed value                                                                                                                                                    @typescript-eslint/no-unsafe-call
+   538:35  error    Unsafe member access .transaction on an `any` value                                                                                                                                    @typescript-eslint/no-unsafe-member-access
+   539:43  warning  Unsafe argument of type `any` assigned to a parameter of type `PgTransaction<PostgresJsQueryResultHKT, Record<string, unknown>, ExtractTablesWithRelations<Record<string, unknown>>>`  @typescript-eslint/no-unsafe-argument
+   541:16  error    Unsafe member access .revisaoNecessaria on an `any` value                                                                                                                              @typescript-eslint/no-unsafe-member-access
+   542:16  error    Unsafe member access .revisaoAberta on an `any` value                                                                                                                                  @typescript-eslint/no-unsafe-member-access
+   543:16  error    Unsafe member access .revisaoId on an `any` value                                                                                                                                      @typescript-eslint/no-unsafe-member-access
+   544:16  error    Unsafe member access .revisaoVersao on an `any` value                                                                                                                                  @typescript-eslint/no-unsafe-member-access
+   551:15  error    Unsafe object destructuring of a property with an `any` value                                                                                                                          @typescript-eslint/no-unsafe-assignment
+   591:23  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   592:24  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   593:26  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   596:9   error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   600:23  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   624:16  error    Unsafe assignment of an `any` value                                                                                                                                                    @typescript-eslint/no-unsafe-assignment
+   711:25  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   712:26  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   715:11  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   741:25  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   742:26  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   745:11  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   758:25  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   759:26  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   762:11  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   807:23  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   808:24  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   809:26  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   812:9   error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   816:23  error    Unsafe return of a value of type `any`                                                                                                                                                 @typescript-eslint/no-unsafe-return
+   840:16  error    Unsafe assignment of an `any` value                                                                                                                                                    @typescript-eslint/no-unsafe-assignment
+  1108:17  error    Unsafe object destructuring of a property with an `any` value                                                                                                                          @typescript-eslint/no-unsafe-assignment
+  1114:15  error    Unsafe assignment of an `any` value                                                                                                                                                    @typescript-eslint/no-unsafe-assignment
+  1114:25  error    Unsafe call of an `any` typed value                                                                                                                                                    @typescript-eslint/no-unsafe-call
+  1114:37  error    Unsafe member access .transaction on an `any` value                                                                                                                                    @typescript-eslint/no-unsafe-member-access
+  1115:45  warning  Unsafe argument of type `any` assigned to a parameter of type `PgTransaction<PostgresJsQueryResultHKT, Record<string, unknown>, ExtractTablesWithRelations<Record<string, unknown>>>`  @typescript-eslint/no-unsafe-argument
+  1118:18  error    Unsafe member access .revisaoNecessaria on an `any` value                                                                                                                              @typescript-eslint/no-unsafe-member-access
+  1119:18  error    Unsafe member access .revisaoAberta on an `any` value                                                                                                                                  @typescript-eslint/no-unsafe-member-access
+  1120:18  error    Unsafe member access .revisaoVersao on an `any` value                                                                                                                                  @typescript-eslint/no-unsafe-member-access
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-entregas-storage.service.spec.ts
+  136:19  error  '_n' is defined but never used                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+  137:24  error  '_args' is defined but never used                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  152:14  error  '_projection' is defined but never used                                                                                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  196:27  error  '_projection' is defined but never used                                                                                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  377:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+  407:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+  439:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+  483:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+  547:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-entregas.integration.spec.ts
+  189:19  error  '_n' is defined but never used                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+  192:24  error  '_args' is defined but never used                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  207:14  error  '_projection' is defined but never used                                                                                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  251:27  error  '_projection' is defined but never used                                                                                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  360:35  error  Async arrow function has no 'await' expression                                                                                                                                                                                                                                                                                              @typescript-eslint/require-await
+  550:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+  569:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+  606:12  error  A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.
+Consider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. 
+If a function does not access `this`, it can be annotated with `this: void`  @typescript-eslint/unbound-method
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-entregas.service.spec.ts
+  143:19  error  '_n' is defined but never used           @typescript-eslint/no-unused-vars
+  144:24  error  '_args' is defined but never used        @typescript-eslint/no-unused-vars
+  151:14  error  '_projection' is defined but never used  @typescript-eslint/no-unused-vars
+  193:14  error  '_table' is defined but never used       @typescript-eslint/no-unused-vars
+  199:14  error  '_table' is defined but never used       @typescript-eslint/no-unused-vars
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-guias-conciliacao.integration.spec.ts
+  187:22  error  Expected the Promise rejection reason to be an Error  @typescript-eslint/prefer-promise-reject-errors
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-guias.service.spec.ts
+  1020:9  error  Expected the Promise rejection reason to be an Error  @typescript-eslint/prefer-promise-reject-errors
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/fiscal-normative-catalog.service.spec.ts
+  79:15  error  'rendered.params.find(
+                (p) => typeof p === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p),
+              ) ?? ''' will use Object's default stringification format ('[object Object]') when stringified  @typescript-eslint/no-base-to-string
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/resultado-apuracao.projector.spec.ts
+  240:9  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/resultado-apuracao.projector.ts
+  165:22  error  'i.codigo ?? ''' will use Object's default stringification format ('[object Object]') when stringified    @typescript-eslint/no-base-to-string
+  167:24  error  'i.mensagem ?? ''' will use Object's default stringification format ('[object Object]') when stringified  @typescript-eslint/no-base-to-string
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/st-calculador.spec.ts
+  9:15  error  'StEnquadramentoStatus' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/st-calculador.ts
+  360:9  error  'cemAliquota' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/pablo/dev/kontabb/api/src/fiscal/services/st-enquadramento.spec.ts
+  129:30  error  '_omit' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/pablo/dev/kontabb/api/src/fiscal/sped/efd-icms-ipi.bloco-g.cenarios-movimentacao.spec.ts
+  352:16  error  Unsafe assignment of an `any` value                @typescript-eslint/no-unsafe-assignment
+  352:62  error  Unsafe assignment of an `any` value                @typescript-eslint/no-unsafe-assignment
+  357:56  error  Computed name [indice] resolves to an `any` value  @typescript-eslint/no-unsafe-member-access
+  360:11  error  Unsafe assignment of an `any` value                @typescript-eslint/no-unsafe-assignment
+
+/Users/pablo/dev/kontabb/api/src/fiscal/sped/efd-icms-ipi.builder.ts
+  404:47  error  'money(conciliacao.totalD190)' will use Object's default stringification format ('[object Object]') when stringified         @typescript-eslint/no-base-to-string
+  404:47  error  Invalid type "SpedTypedField" of template literal expression                                                                 @typescript-eslint/restrict-template-expressions
+  405:15  error  'money(conciliacao.totalE110)' will use Object's default stringification format ('[object Object]') when stringified         @typescript-eslint/no-base-to-string
+  405:15  error  Invalid type "SpedTypedField" of template literal expression                                                                 @typescript-eslint/restrict-template-expressions
+  405:69  error  'money(conciliacao.totalLivroSaidas)' will use Object's default stringification format ('[object Object]') when stringified  @typescript-eslint/no-base-to-string
+  405:69  error  Invalid type "SpedTypedField" of template literal expression                                                                 @typescript-eslint/restrict-template-expressions
+
+/Users/pablo/dev/kontabb/api/src/fiscal/sped/sped-efd.controller.spec.ts
+  126:11  error  Unsafe assignment of an `any` value                  @typescript-eslint/no-unsafe-assignment
+  126:67  error  Unsafe member access [0] on an `any` value           @typescript-eslint/no-unsafe-member-access
+  127:17  error  Unsafe member access .clienteId on an `any` value    @typescript-eslint/no-unsafe-member-access
+  128:17  error  Unsafe member access .actorUserId on an `any` value  @typescript-eslint/no-unsafe-member-access
+  198:11  error  Unsafe assignment of an `any` value                  @typescript-eslint/no-unsafe-assignment
+  198:59  error  Unsafe member access [0] on an `any` value           @typescript-eslint/no-unsafe-member-access
+  199:22  error  Unsafe member access .clienteId on an `any` value    @typescript-eslint/no-unsafe-member-access
+  200:22  error  Unsafe member access .competencia on an `any` value  @typescript-eslint/no-unsafe-member-access
+  201:22  error  Unsafe member access .actorUserId on an `any` value  @typescript-eslint/no-unsafe-member-access
+  212:49  error  Unsafe member access [0] on an `any` value           @typescript-eslint/no-unsafe-member-access
+
+/Users/pablo/dev/kontabb/api/src/fiscal/sped/sped-preflight-pva.spec.ts
+  291:9  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+
+/Users/pablo/dev/kontabb/api/src/fiscal/sped/st-cenario-habilitado.ts
+  62:27  error  'SpedTypedField' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/pablo/dev/kontabb/api/src/fiscal/sped/st-registros-filhos.ts
+  55:3  error  'integerField' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/pablo/dev/kontabb/api/src/mail/mail.service.spec.ts
+  71:49  error  Unsafe member access [1] on an `any` value                                                           @typescript-eslint/no-unsafe-member-access
+  72:41  error  'request.body' may use Object's default stringification format ('[object Object]') when stringified  @typescript-eslint/no-base-to-string
+
+/Users/pablo/dev/kontabb/api/src/rh/rh-upload.controller.ts
+  35:8  error  'DadosFerias' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 145 problems (141 errors, 4 warnings)
+
+[ELIFECYCLE] Command failed with exit code 1.
+EXIT=1

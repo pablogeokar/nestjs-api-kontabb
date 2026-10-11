@@ -31,6 +31,7 @@ import {
   eventosFiscais,
   certificadosDigitais,
   clientes,
+  spedConfiguracoes,
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
 import { CfopService } from './cfop.service';
@@ -456,13 +457,15 @@ export class DistribuicaoDfeService {
         inscricaoEstadual: clientes.inscricaoEstadual,
         municipio: clientes.municipio,
         uf: clientes.uf,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+        optanteSimplesNacional: clientes.optanteSimplesNacional,
+        obrigadoEfdIcmsIpi: sql<boolean>`coalesce(${spedConfiguracoes.obrigadoEfdIcmsIpi}, false)`,
         totalDocumentos: sql<number>`count(${documentosFiscais.id})`,
       })
       .from(clientes)
-      .innerJoin(
-        documentosFiscais,
-        eq(documentosFiscais.clienteId, clientes.id),
-      )
+      .leftJoin(documentosFiscais, eq(documentosFiscais.clienteId, clientes.id))
+      .leftJoin(spedConfiguracoes, eq(spedConfiguracoes.clienteId, clientes.id))
       .groupBy(
         clientes.id,
         clientes.razaoSocial,
@@ -470,6 +473,10 @@ export class DistribuicaoDfeService {
         clientes.inscricaoEstadual,
         clientes.municipio,
         clientes.uf,
+        clientes.regimeTributario,
+        clientes.apuraIcms,
+        clientes.optanteSimplesNacional,
+        spedConfiguracoes.obrigadoEfdIcmsIpi,
       )
       .orderBy(asc(clientes.razaoSocial));
 
@@ -480,6 +487,10 @@ export class DistribuicaoDfeService {
       inscricao_estadual: row.inscricaoEstadual,
       municipio: row.municipio,
       uf: row.uf,
+      regime_tributario: row.regimeTributario,
+      apura_icms: row.apuraIcms,
+      optante_simples_nacional: row.optanteSimplesNacional,
+      obrigado_efd_icms_ipi: row.obrigadoEfdIcmsIpi,
       total_documentos: Number(row.totalDocumentos),
     }));
   }
@@ -821,6 +832,33 @@ export class DistribuicaoDfeService {
           .where(eq(documentosFiscais.id, input.documentoId));
       }
     });
+  }
+
+  /**
+   * Reaproveita o pipeline transacional da distribuição para documentos
+   * obtidos por consulta pontual de chave. Mantém uma única regra de
+   * armazenamento, reconciliação de itens e escrituração.
+   */
+  async salvarDocumentoConsultado(input: {
+    clienteId: string;
+    cnpj: string;
+    documento: ParsedDocumentoFiscal;
+    regimeTributario: RegimeTributario | null;
+    apuraIcms: boolean;
+  }): Promise<boolean> {
+    return this.salvarDocumento(input.clienteId, input.cnpj, input.documento, {
+      regimeTributario: input.regimeTributario,
+      apuraIcms: input.apuraIcms,
+    });
+  }
+
+  /** Persiste o resumo recebido antes da manifestação do destinatário. */
+  async salvarResumoConsultado(input: {
+    clienteId: string;
+    cnpj: string;
+    resumo: ParsedResumoNfe;
+  }): Promise<boolean> {
+    return this.salvarResumoNfe(input.clienteId, input.cnpj, input.resumo);
   }
 
   /**

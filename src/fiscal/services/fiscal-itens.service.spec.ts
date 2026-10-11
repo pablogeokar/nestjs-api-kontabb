@@ -172,9 +172,9 @@ describe('FiscalItensService', () => {
     const report = await service.getC190({ clienteId: 'cliente-1' });
 
     expect(report.data).toHaveLength(2);
-    expect(report.data.map((linha) => linha.documento_fiscal_id).sort()).toEqual(
-      ['doc-1', 'doc-2'],
-    );
+    expect(
+      report.data.map((linha) => linha.documento_fiscal_id).sort(),
+    ).toEqual(['doc-1', 'doc-2']);
   });
 
   it('rotula o C190 como resumo documental parcial (R7.3)', async () => {
@@ -501,17 +501,14 @@ describe('C190 UI × builder — mesma decomposição (R5.4)', () => {
         }),
       ],
     },
-  ])(
-    'projeção da UI = agregação do builder: $nome',
-    ({ itens }) => {
-      // Builder: todos os itens de um único documento passam pelo agregador.
-      const builder = aggregateC190Analitico(itens).map(builderDecomposition);
-      // UI: a projeção particiona por documento e usa o mesmo agregador.
-      const ui = uiDecomposition(projectC190FromItens(itens));
+  ])('projeção da UI = agregação do builder: $nome', ({ itens }) => {
+    // Builder: todos os itens de um único documento passam pelo agregador.
+    const builder = aggregateC190Analitico(itens).map(builderDecomposition);
+    // UI: a projeção particiona por documento e usa o mesmo agregador.
+    const ui = uiDecomposition(projectC190FromItens(itens));
 
-      expect(ui).toEqual(builder);
-    },
-  );
+    expect(ui).toEqual(builder);
+  });
 
   it('mantém a igualdade com múltiplos documentos (escopo por documento, R5.3)', () => {
     const itens = [

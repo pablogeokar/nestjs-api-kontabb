@@ -73,32 +73,30 @@ function createDb(
 
 // Catálogo falso: devolve uma regra de DIFAL homologada por hipótese/UF/
 // competência (fonte do cálculo, N12), ou `null` quando não há regra vigente.
-function createCatalogo(
-  regra: Partial<RegraVersaoResolvida> | null,
-): { resolverRegraVigente: jest.Mock } {
+function createCatalogo(regra: Partial<RegraVersaoResolvida> | null): {
+  resolverRegraVigente: jest.Mock;
+} {
   return {
-    resolverRegraVigente: jest
-      .fn()
-      .mockResolvedValue(
-        regra == null
-          ? null
-          : ({
-              id: 'reg-1',
-              catalogoVersaoId: 'cat-1',
-              chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
-              revisao: 1,
-              conteudo: {},
-              fonte: 'LC190/2022',
-              fonteUrl: null,
-              responsavelPor: null,
-              vigenciaInicio: '2026-01-01',
-              vigenciaFim: null,
-              competencia: '2026-09-01',
-              escopoAprovado: true,
-              pendente: false,
-              ...regra,
-            } as RegraVersaoResolvida),
-      ),
+    resolverRegraVigente: jest.fn().mockResolvedValue(
+      regra == null
+        ? null
+        : {
+            id: 'reg-1',
+            catalogoVersaoId: 'cat-1',
+            chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
+            revisao: 1,
+            conteudo: {},
+            fonte: 'LC190/2022',
+            fonteUrl: null,
+            responsavelPor: null,
+            vigenciaInicio: '2026-01-01',
+            vigenciaFim: null,
+            competencia: '2026-09-01',
+            escopoAprovado: true,
+            pendente: false,
+            ...regra,
+          },
+    ),
   };
 }
 
@@ -137,9 +135,13 @@ describe('DIFAL — matriz de risco (Fase 4 / tarefa 2.7 — R1.6, N09–N12)', 
   // ── Alíquotas interestaduais 4 / 7 / 12 (N10, Res. SF 13/2012) ────────────
   describe('alíquotas interestaduais 4/7/12 (N10)', () => {
     it('12% → DIFAL = base × (interna 18 − 12)/100 = 60,00', async () => {
-      const r = await apurar({ uf: 'SP' }, [item({ aliquotaIcms: '12.0000' })], {
-        aliquota_interna: '18.0000',
-      });
+      const r = await apurar(
+        { uf: 'SP' },
+        [item({ aliquotaIcms: '12.0000' })],
+        {
+          aliquota_interna: '18.0000',
+        },
+      );
       expect(r.itens[0].aliquota_interestadual).toBe('12.0000');
       expect(r.itens[0].valor_difal).toBe('60.00');
       expect(r.total_difal_recolher).toBe('60.00');

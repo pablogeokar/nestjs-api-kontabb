@@ -21,7 +21,7 @@ export class CronController {
     private readonly fiscalCron: FiscalCronService,
     private readonly configService: ConfigService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   @Get('storage-cleanup')
   @HttpCode(HttpStatus.OK)

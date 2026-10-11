@@ -27,9 +27,13 @@ describe('migração identidade por aquisição do CIAP (0014)', () => {
     // Duas aquisições do mesmo SKU recebem chaves distintas; o unique garante
     // uma ficha por (cliente, chave) sem derrubar fichas ainda não migradas
     // (chave nula fica fora do índice parcial).
-    expect(sql).toContain('CREATE UNIQUE INDEX "uidx_ciap_cliente_chave_aquisicao"');
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX "uidx_ciap_cliente_chave_aquisicao"',
+    );
     expect(sql).toContain('("cliente_id","chave_aquisicao")');
-    expect(sql).toContain('WHERE "ciap_ativo_permanente"."chave_aquisicao" IS NOT NULL');
+    expect(sql).toContain(
+      'WHERE "ciap_ativo_permanente"."chave_aquisicao" IS NOT NULL',
+    );
   });
 
   it('restringe o domínio da procedência da identidade', () => {

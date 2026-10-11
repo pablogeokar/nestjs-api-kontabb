@@ -63,6 +63,9 @@ import {
 import { FiscalCteService } from '../services/fiscal-cte.service';
 import { RegrasFiscaisService } from '../services/regras-fiscais.service';
 import { getRequestId, type RequestWithId } from '../../common/request-id';
+import { AnalisarListagemChavesDto } from '../dto/analisar-listagem-chaves.dto';
+import { ExecutarImportacaoChavesDto } from '../dto/executar-importacao-chaves.dto';
+import { ImportacaoChavesFiscalService } from '../services/importacao-chaves-fiscal.service';
 
 @ApiTags('Fiscal (Admin)')
 @ApiBearerAuth('session-token')
@@ -82,7 +85,8 @@ export class AdminFiscalController {
     private readonly fiscalItensService: FiscalItensService,
     private readonly fiscalCteService: FiscalCteService,
     private readonly regrasFiscaisService: RegrasFiscaisService,
-  ) { }
+    private readonly importacaoChavesService: ImportacaoChavesFiscalService,
+  ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
 
@@ -324,11 +328,68 @@ export class AdminFiscalController {
     };
   }
 
+  @Post('documentos/importar-chaves/preview')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('arquivo', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Validar uma listagem de chaves fiscais antes da importação',
+  })
+  async analisarListagemChaves(
+    @UploadedFile() arquivo: Express.Multer.File | undefined,
+    @Body() body: AnalisarListagemChavesDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    if (!body.clienteId) {
+      throw new BadRequestException('Selecione a empresa da importação.');
+    }
+    await this.rateLimit.consume({
+      key: `fiscal-key-preview:${user.id}`,
+      limit: 20,
+      windowMs: 5 * 60_000,
+    });
+    const data = await this.importacaoChavesService.analisar({
+      clienteId: body.clienteId,
+      chavesTexto: body.chavesTexto,
+      arquivo,
+    });
+    return { success: true, data };
+  }
+
+  @Post('documentos/importar-chaves/executar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Importar documentos fiscais por chaves de acesso' })
+  async executarImportacaoChaves(
+    @Body() body: ExecutarImportacaoChavesDto,
+    @CurrentUser() user: CurrentUserType,
+    @Req() request: RequestWithId,
+  ) {
+    if (!body.clienteId) {
+      throw new BadRequestException('Selecione a empresa da importação.');
+    }
+    await this.rateLimit.consume({
+      key: `fiscal-key-import:${user.id}:${body.clienteId}`,
+      limit: 3,
+      windowMs: 60 * 60_000,
+    });
+    const data = await this.importacaoChavesService.executar({
+      clienteId: body.clienteId,
+      chaves: body.chaves,
+      forcarReimportacao: body.forcarReimportacao,
+      manifestarAutomaticamente: body.manifestarAutomaticamente,
+      actorUserId: user.id,
+      requestId: getRequestId(request),
+    });
+    return { success: data.resumo.falhas === 0, data };
+  }
+
   @Get('documentos/clientes')
   @ApiOperation({
-    summary: 'Listar clientes com documentos fiscais',
+    summary: 'Listar clientes disponíveis no módulo fiscal',
     description:
-      'Retorna as empresas que possuem documentos fiscais e o total de documentos de cada uma.',
+      'Retorna todas as empresas, inclusive sem documentos, com enquadramento e total de documentos.',
   })
   @ApiResponse({
     status: 200,

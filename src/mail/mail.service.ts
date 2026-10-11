@@ -225,13 +225,8 @@ export class MailService {
     provisionalPassword: string;
     panelUrl?: string;
   }): Promise<boolean> {
-    const {
-      to,
-      clientName,
-      loginIdentifier,
-      loginEmail,
-      provisionalPassword,
-    } = params;
+    const { to, clientName, loginIdentifier, loginEmail, provisionalPassword } =
+      params;
 
     if (!this.apiToken) {
       this.logger.warn('mailtrap_not_configured', {

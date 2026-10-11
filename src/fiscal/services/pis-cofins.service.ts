@@ -51,7 +51,7 @@ const CST_CREDITO = new Set([
 
 @Injectable()
 export class PisCofinsService {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(private readonly database: DatabaseService) {}
 
   /**
    * Apura PIS e COFINS da competência conforme o regime do cliente:
@@ -131,13 +131,13 @@ export class PisCofinsService {
       }),
       naoCumulativo
         ? this.somarPorSegmento({
-          clienteId: input.clienteId,
-          tipoOperacao: 'ENTRADA',
-          inicio,
-          fim,
-          aliquotaPis: aliquotas.pis,
-          aliquotaCofins: aliquotas.cofins,
-        })
+            clienteId: input.clienteId,
+            tipoOperacao: 'ENTRADA',
+            inicio,
+            fim,
+            aliquotaPis: aliquotas.pis,
+            aliquotaCofins: aliquotas.cofins,
+          })
         : Promise.resolve(null),
     ]);
 
@@ -179,14 +179,14 @@ export class PisCofinsService {
     const demonstrativoMotivo =
       itensPendentes > 0
         ? `Demonstrativo provisório (R2.6): ${itensPendentes} item(ns) ` +
-        'tributado(s) em pendência (sem valor apurável, R2.2/R5.4) e ' +
-        'cobertura incompleta — receitas sem NF-e, retenções e saldos ' +
-        'anteriores ainda não incorporados; EFD-Contribuições fora desta ' +
-        'entrega. Não é apuração definitiva.'
+          'tributado(s) em pendência (sem valor apurável, R2.2/R5.4) e ' +
+          'cobertura incompleta — receitas sem NF-e, retenções e saldos ' +
+          'anteriores ainda não incorporados; EFD-Contribuições fora desta ' +
+          'entrega. Não é apuração definitiva.'
         : 'Demonstrativo provisório (R2.6): cobertura ainda incompleta — ' +
-        'receitas sem NF-e, retenções e saldos anteriores ainda não ' +
-        'incorporados; EFD-Contribuições fora desta entrega. Não é ' +
-        'apuração definitiva.';
+          'receitas sem NF-e, retenções e saldos anteriores ainda não ' +
+          'incorporados; EFD-Contribuições fora desta entrega. Não é ' +
+          'apuração definitiva.';
 
     return {
       competencia,
@@ -389,9 +389,7 @@ export class PisCofinsService {
  *   "cumulativo presumido" (R2.5): sem regime não se apura valor como guia.
  */
 export type PisCofinsRegimeApuracao =
-  | 'CUMULATIVO'
-  | 'NAO_CUMULATIVO'
-  | 'PENDENTE';
+  'CUMULATIVO' | 'NAO_CUMULATIVO' | 'PENDENTE';
 
 /**
  * Mapeia o regime tributário do cliente para o regime de apuração de

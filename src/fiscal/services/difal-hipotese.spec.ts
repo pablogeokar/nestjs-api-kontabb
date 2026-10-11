@@ -87,7 +87,11 @@ describe('classificarDifalHipotese (Fase 4 / tarefa 2.1 — R1.1)', () => {
 
     it('saída sob ST vira ST, não saída-não-contribuinte', () => {
       const r = classificarDifalHipotese(
-        item({ tipoOperacaoEscriturada: 'SAIDA', cfop: '6108', possuiSt: true }),
+        item({
+          tipoOperacaoEscriturada: 'SAIDA',
+          cfop: '6108',
+          possuiSt: true,
+        }),
       );
       expect(r.hipotese).toBe('ST');
     });
@@ -95,10 +99,9 @@ describe('classificarDifalHipotese (Fase 4 / tarefa 2.1 — R1.1)', () => {
 
   describe('antecipação (só quando a UF exige)', () => {
     it('classifica entrada interestadual como ANTECIPACAO quando exigeAntecipacao', () => {
-      const r = classificarDifalHipotese(
-        item({ cfop: '2102' }),
-        { exigeAntecipacao: true },
-      );
+      const r = classificarDifalHipotese(item({ cfop: '2102' }), {
+        exigeAntecipacao: true,
+      });
       expect(r.hipotese).toBe('ANTECIPACAO');
     });
 

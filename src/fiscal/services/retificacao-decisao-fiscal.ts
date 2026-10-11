@@ -41,8 +41,7 @@
  *    seguir o fluxo normal (a trava de R5.3 é só sobre o transmitido).
  */
 export type StatusPreparacaoDiferenca =
-  | 'AGUARDANDO_DECISAO_FISCAL'
-  | 'LIVRE_PARA_CORRECAO';
+  'AGUARDANDO_DECISAO_FISCAL' | 'LIVRE_PARA_CORRECAO';
 
 /**
  * Uma ENTREGA conhecida da obrigação (fato de entrada), reduzida ao que importa

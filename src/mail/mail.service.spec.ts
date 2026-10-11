@@ -51,7 +51,7 @@ describe('MailService - e-mail de boas-vindas', () => {
   it('normaliza destinatários e gera o HTML com imagens públicas', async () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn().mockResolvedValue({ ok: true });
-    global.fetch = fetchMock as typeof fetch;
+    global.fetch = fetchMock;
     try {
       const { service } = makeService({
         APP_URL: 'https://app.kontabb.example',
@@ -68,8 +68,8 @@ describe('MailService - e-mail de boas-vindas', () => {
         }),
       ).resolves.toBe(true);
 
-      const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
-      const payload = JSON.parse(String(request.body)) as {
+      const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const payload = JSON.parse(request.body as string) as {
         to: Array<{ email: string }>;
         html: string;
       };

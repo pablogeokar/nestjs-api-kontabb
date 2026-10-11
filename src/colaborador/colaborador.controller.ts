@@ -40,7 +40,7 @@ export class ColaboradorController {
     private readonly clientesService: ClientesService,
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   // ─── Auth endpoints ───
 
@@ -120,10 +120,7 @@ export class ColaboradorController {
   @HttpCode(HttpStatus.OK)
   @ColaboradorPublic()
   @ApiOperation({ summary: 'Logout do colaborador' })
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const payload = this.sessionService.extractFromRequest(req);
     if (payload) {
       // Revoke all outstanding tokens for this employee.

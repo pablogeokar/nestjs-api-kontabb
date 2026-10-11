@@ -93,23 +93,20 @@ describe('analisarBloqueioCenarioSt (Fase 4 / tarefa 4.5 — R3.4)', () => {
 
   describe('cálculo não gera guia (portão 4.3) bloqueia a entrega', () => {
     const semGuia: StCalculoStatus[] = ['SIMULACAO', 'PENDENTE', 'BLOQUEADO'];
-    it.each(semGuia)(
-      'calculo %s → ERRO CALCULO_NAO_SUPORTADO',
-      (calculo) => {
-        const r = analisarBloqueioCenarioSt(
-          cenario({
-            verificacao: 'VERIFICADO',
-            enquadramento: 'SUJEITO',
-            calculo,
-          }),
-        );
-        expect(r.bloqueado).toBe(true);
-        expect(r.inconsistencia!.severidade).toBe('ERRO');
-        expect(r.inconsistencia!.codigo).toBe(
-          ST_BLOQUEIO_CODIGOS.CALCULO_NAO_SUPORTADO,
-        );
-      },
-    );
+    it.each(semGuia)('calculo %s → ERRO CALCULO_NAO_SUPORTADO', (calculo) => {
+      const r = analisarBloqueioCenarioSt(
+        cenario({
+          verificacao: 'VERIFICADO',
+          enquadramento: 'SUJEITO',
+          calculo,
+        }),
+      );
+      expect(r.bloqueado).toBe(true);
+      expect(r.inconsistencia!.severidade).toBe('ERRO');
+      expect(r.inconsistencia!.codigo).toBe(
+        ST_BLOQUEIO_CODIGOS.CALCULO_NAO_SUPORTADO,
+      );
+    });
   });
 
   it('cenário suportado em todas as camadas → não bloqueia, sem inconsistência', () => {
@@ -178,9 +175,7 @@ describe('guardarFcpNaoGenerico (Fase 4 / tarefa 4.5 — R3.6)', () => {
   });
 
   it('RECUSA ajuste genérico mesmo com FCP homologado — FCP é componente, não ajuste', () => {
-    const r = guardarFcpNaoGenerico(
-      fcp({ tentandoAjusteGenerico: true }),
-    );
+    const r = guardarFcpNaoGenerico(fcp({ tentandoAjusteGenerico: true }));
     expect(r.ajusteGenericoRecusado).toBe(true);
     expect(r.inconsistencia!.codigo).toBe(
       ST_BLOQUEIO_CODIGOS.FCP_AJUSTE_GENERICO_RECUSADO,
@@ -220,9 +215,7 @@ describe('aplicarBloqueioSt (Fase 4 / tarefa 4.5): costura o padrão da Fase 0',
     expect(r.bloqueado).toBe(true);
     const codigos = inconsistencias.map((i) => i.codigo);
     expect(codigos).toContain(ST_BLOQUEIO_CODIGOS.CALCULO_NAO_SUPORTADO);
-    expect(codigos).toContain(
-      ST_BLOQUEIO_CODIGOS.FCP_AJUSTE_GENERICO_RECUSADO,
-    );
+    expect(codigos).toContain(ST_BLOQUEIO_CODIGOS.FCP_AJUSTE_GENERICO_RECUSADO);
     expect(inconsistencias.every((i) => i.severidade === 'ERRO')).toBe(true);
   });
 

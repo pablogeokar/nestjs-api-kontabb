@@ -161,11 +161,7 @@ export interface SublimiteResolucao {
 // Dimensão 4 — Obrigações fora do DAS (ST, DIFAL, antecipação)
 // ---------------------------------------------------------------------------
 
-export const OBRIGACOES_FORA_DAS = [
-  'ST',
-  'DIFAL',
-  'ANTECIPACAO',
-] as const;
+export const OBRIGACOES_FORA_DAS = ['ST', 'DIFAL', 'ANTECIPACAO'] as const;
 
 export type ObrigacaoForaDoDas = (typeof OBRIGACOES_FORA_DAS)[number];
 
@@ -179,7 +175,8 @@ export const OBRIGACOES_FORA_DAS_ORIGENS = [
   'SEM_OBRIGACOES',
 ] as const;
 
-export type ObrigacoesForaDasOrigem = (typeof OBRIGACOES_FORA_DAS_ORIGENS)[number];
+export type ObrigacoesForaDasOrigem =
+  (typeof OBRIGACOES_FORA_DAS_ORIGENS)[number];
 
 export interface ObrigacoesForaDasResolucao {
   /** Conjunto (ordenado, sem duplicatas) de obrigações estaduais fora do DAS vigentes na competência. */

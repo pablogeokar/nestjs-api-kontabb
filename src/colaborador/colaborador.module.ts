@@ -18,4 +18,4 @@ import { StorageModule } from '../storage/storage.module';
   ],
   exports: [ColaboradorService],
 })
-export class ColaboradorModule { }
+export class ColaboradorModule {}

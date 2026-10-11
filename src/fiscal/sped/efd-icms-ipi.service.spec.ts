@@ -339,7 +339,9 @@ describe('universo excluído da apuração definitiva (R3.3/R3.4)', () => {
    * elegibilidade. Os demais campos não participam da política e são
    * preenchidos com placeholders apenas para satisfazer o tipo persistido.
    */
-  function documento(overrides: Partial<DocumentoFiscal> = {}): DocumentoFiscal {
+  function documento(
+    overrides: Partial<DocumentoFiscal> = {},
+  ): DocumentoFiscal {
     return {
       id: '00000000-0000-0000-0000-000000000000',
       situacao: 'AUTORIZADA',

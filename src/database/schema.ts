@@ -495,10 +495,7 @@ export const folhasPagamento = pgTable(
       'chk_folhas_periodo',
       sql`${table.periodoInicio} <= ${table.periodoFim}`,
     ),
-    check(
-      'chk_folhas_tipo',
-      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`,
-    ),
+    check('chk_folhas_tipo', sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`),
     check(
       'chk_folhas_totais',
       sql`${table.totalBruto} >= 0 AND ${table.totalDescontos} >= 0 AND ${table.totalLiquido} >= 0 AND ${table.totalFuncionarios} >= 0 AND ${table.totalInss} >= 0 AND ${table.totalFgts} >= 0 AND ${table.totalIrrf} >= 0 AND ${table.totalSalarioFamilia} >= 0`,
@@ -2971,10 +2968,7 @@ export const fiscalLancamentos = pgTable(
       'chk_fiscal_lancamento_natureza',
       sql`${table.natureza} IN ('DEBITO', 'CREDITO')`,
     ),
-    check(
-      'chk_fiscal_lancamento_sinal',
-      sql`${table.sinal} IN (-1, 1)`,
-    ),
+    check('chk_fiscal_lancamento_sinal', sql`${table.sinal} IN (-1, 1)`),
     check('chk_fiscal_lancamento_versao', sql`${table.fechamentoVersao} >= 1`),
     // Magnitude não-negativa: o efeito no saldo vem de natureza + sinal, não de
     // um valor negativo (mantém a decomposição explícita e conciliável).
@@ -3151,6 +3145,361 @@ export const fiscalFechamentos = pgTable(
     check(
       'chk_fiscal_fechamento_fechado_em',
       sql`(${table.estado} = 'FECHADO') = (${table.fechadoEm} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Simples Nacional — tabelas normativas e memória mensal do DAS.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const fiscalSimplesTabelas = pgTable(
+  'fiscal_simples_tabelas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    versao: varchar('versao', { length: 30 }).notNull(),
+    descricao: text('descricao').notNull(),
+    vigenciaInicio: date('vigencia_inicio').notNull(),
+    vigenciaFim: date('vigencia_fim'),
+    ativo: boolean('ativo').notNull().default(true),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('uq_simples_tabelas_versao').on(table.versao),
+    index('idx_simples_tabelas_vigencia').on(
+      table.vigenciaInicio,
+      table.vigenciaFim,
+    ),
+    check(
+      'chk_simples_tabelas_vigencia',
+      sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,
+    ),
+  ],
+);
+
+export const fiscalSimplesAnexos = pgTable(
+  'fiscal_simples_anexos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tabelaId: uuid('tabela_id')
+      .notNull()
+      .references(() => fiscalSimplesTabelas.id, { onDelete: 'cascade' }),
+    anexo: varchar('anexo', { length: 20 }).notNull(),
+    descricao: text('descricao').notNull(),
+    tipoAtividade: varchar('tipo_atividade', { length: 30 }).notNull(),
+    permiteFatorR: boolean('permite_fator_r').notNull().default(false),
+    recolheCppNoDas: boolean('recolhe_cpp_no_das').notNull().default(true),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('uq_simples_anexos_tabela_anexo').on(table.tabelaId, table.anexo),
+    index('idx_simples_anexos_tabela').on(table.tabelaId),
+    check(
+      'chk_simples_anexos_anexo',
+      sql`${table.anexo} IN ('ANEXO_I', 'ANEXO_II', 'ANEXO_III', 'ANEXO_IV', 'ANEXO_V')`,
+    ),
+    check(
+      'chk_simples_anexos_atividade',
+      sql`${table.tipoAtividade} IN ('COMERCIO', 'INDUSTRIA', 'SERVICOS', 'LOCACAO')`,
+    ),
+  ],
+);
+
+export const fiscalSimplesFaixas = pgTable(
+  'fiscal_simples_faixas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    anexoId: uuid('anexo_id')
+      .notNull()
+      .references(() => fiscalSimplesAnexos.id, { onDelete: 'cascade' }),
+    faixa: integer('faixa').notNull(),
+    rbt12De: numeric('rbt12_de', { precision: 15, scale: 2 }).notNull(),
+    rbt12Ate: numeric('rbt12_ate', { precision: 15, scale: 2 }).notNull(),
+    aliquotaNominal: numeric('aliquota_nominal', {
+      precision: 7,
+      scale: 4,
+    }).notNull(),
+    parcelaDeduzir: numeric('parcela_deduzir', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    percentualIrpj: numeric('percentual_irpj', { precision: 7, scale: 4 })
+      .notNull()
+      .default('0'),
+    percentualCsll: numeric('percentual_csll', { precision: 7, scale: 4 })
+      .notNull()
+      .default('0'),
+    percentualCofins: numeric('percentual_cofins', {
+      precision: 7,
+      scale: 4,
+    })
+      .notNull()
+      .default('0'),
+    percentualPis: numeric('percentual_pis', { precision: 7, scale: 4 })
+      .notNull()
+      .default('0'),
+    percentualCpp: numeric('percentual_cpp', { precision: 7, scale: 4 })
+      .notNull()
+      .default('0'),
+    percentualIpi: numeric('percentual_ipi', { precision: 7, scale: 4 })
+      .notNull()
+      .default('0'),
+    percentualIcms: numeric('percentual_icms', { precision: 7, scale: 4 })
+      .notNull()
+      .default('0'),
+    percentualIss: numeric('percentual_iss', { precision: 7, scale: 4 })
+      .notNull()
+      .default('0'),
+  },
+  (table) => [
+    unique('uq_simples_faixa_anexo').on(table.anexoId, table.faixa),
+    index('idx_simples_faixas_anexo_rbt12').on(
+      table.anexoId,
+      table.rbt12De,
+      table.rbt12Ate,
+    ),
+    check('chk_simples_faixa_num', sql`${table.faixa} BETWEEN 1 AND 6`),
+    check(
+      'chk_simples_faixa_limites',
+      sql`${table.rbt12De} >= 0 AND ${table.rbt12Ate} >= ${table.rbt12De}`,
+    ),
+    check(
+      'chk_simples_faixa_valores',
+      sql`${table.aliquotaNominal} >= 0 AND ${table.parcelaDeduzir} >= 0`,
+    ),
+    check(
+      'chk_simples_faixa_partilha',
+      sql`${table.percentualIrpj} + ${table.percentualCsll} + ${table.percentualCofins} + ${table.percentualPis} + ${table.percentualCpp} + ${table.percentualIpi} + ${table.percentualIcms} + ${table.percentualIss} = 1.0000`,
+    ),
+  ],
+);
+
+export const fiscalSimplesSublimites = pgTable(
+  'fiscal_simples_sublimites',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    uf: varchar('uf', { length: 2 }).notNull(),
+    anoVigencia: integer('ano_vigencia').notNull(),
+    valorSublimite: numeric('valor_sublimite', {
+      precision: 15,
+      scale: 2,
+    })
+      .notNull()
+      .default('3600000.00'),
+    ativo: boolean('ativo').notNull().default(true),
+  },
+  (table) => [
+    unique('uq_simples_sublimite_uf_ano').on(table.uf, table.anoVigencia),
+    check('chk_simples_sublimite_uf', sql`${table.uf} ~ '^[A-Z]{2}$'`),
+    check(
+      'chk_simples_sublimite_valor',
+      sql`${table.anoVigencia} >= 2018 AND ${table.valorSublimite} > 0`,
+    ),
+  ],
+);
+
+export const fiscalSimplesApuracoes = pgTable(
+  'fiscal_simples_apuracoes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    tabelaId: uuid('tabela_id')
+      .notNull()
+      .references(() => fiscalSimplesTabelas.id, { onDelete: 'restrict' }),
+    competencia: date('competencia').notNull(),
+    versao: integer('versao').notNull().default(1),
+    corrente: boolean('corrente').notNull().default(false),
+    rbt12: numeric('rbt12', { precision: 15, scale: 2 }).notNull(),
+    rbt12Proporcional: boolean('rbt12_proporcional').notNull().default(false),
+    receitaBrutaMes: numeric('receita_bruta_mes', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    folhaSalarios12m: numeric('folha_salarios_12m', {
+      precision: 15,
+      scale: 2,
+    })
+      .notNull()
+      .default('0.00'),
+    fatorR: numeric('fator_r', { precision: 7, scale: 4 }),
+    valorTotalDas: numeric('valor_total_das', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('RASCUNHO'),
+    fechamentoId: uuid('fechamento_id').references(() => fiscalFechamentos.id, {
+      onDelete: 'set null',
+    }),
+    guiaId: uuid('guia_id').references(() => fiscalApuracoesGuias.id, {
+      onDelete: 'set null',
+    }),
+    origens: jsonb('origens')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    memoriaCalculo: jsonb('memoria_calculo')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uidx_simples_apuracao_versao').on(
+      table.clienteId,
+      table.competencia,
+      table.versao,
+    ),
+    uniqueIndex('uidx_simples_apuracao_corrente')
+      .on(table.clienteId, table.competencia)
+      .where(sql`${table.corrente} = true`),
+    index('idx_simples_apuracao_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    check('chk_simples_apuracao_versao', sql`${table.versao} >= 1`),
+    check(
+      'chk_simples_apuracao_competencia',
+      sql`date_part('day', ${table.competencia}) = 1`,
+    ),
+    check(
+      'chk_simples_status',
+      sql`${table.status} IN ('RASCUNHO', 'FECHADO', 'RETIFICADO')`,
+    ),
+    check(
+      'chk_simples_apuracao_corrente_fechada',
+      sql`${table.corrente} = false OR ${table.status} = 'FECHADO'`,
+    ),
+    check(
+      'chk_simples_apuracao_valores',
+      sql`${table.rbt12} >= 0 AND ${table.receitaBrutaMes} >= 0 AND ${table.folhaSalarios12m} >= 0 AND ${table.valorTotalDas} >= 0`,
+    ),
+    check(
+      'chk_simples_apuracao_fator_r',
+      sql`${table.fatorR} IS NULL OR (${table.fatorR} >= 0 AND ${table.fatorR} <= 9.9999)`,
+    ),
+  ],
+);
+
+export const fiscalSimplesApuracaoItens = pgTable(
+  'fiscal_simples_apuracao_itens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    apuracaoId: uuid('apuracao_id')
+      .notNull()
+      .references(() => fiscalSimplesApuracoes.id, { onDelete: 'cascade' }),
+    anexo: varchar('anexo', { length: 20 }).notNull(),
+    faixaEnquadrada: integer('faixa_enquadrada').notNull(),
+    aliquotaNominal: numeric('aliquota_nominal', {
+      precision: 7,
+      scale: 4,
+    }).notNull(),
+    parcelaDeduzir: numeric('parcela_deduzir', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    aliquotaEfetiva: numeric('aliquota_efetiva', {
+      precision: 7,
+      scale: 4,
+    }).notNull(),
+    receitaBrutaAtividade: numeric('receita_bruta_atividade', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    segregacao: varchar('segregacao', { length: 40 })
+      .notNull()
+      .default('TRIBUTACAO_INTEGRAL'),
+    aliquotaEfetivaAposDeducoes: numeric('aliquota_efetiva_apos_deducoes', {
+      precision: 7,
+      scale: 4,
+    }).notNull(),
+    valorDevido: numeric('valor_devido', {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    tributosPartilhados: jsonb('tributos_partilhados')
+      .$type<Record<string, string>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+  },
+  (table) => [
+    index('idx_simples_apuracao_itens_apuracao').on(table.apuracaoId),
+    check(
+      'chk_simples_apuracao_item_anexo',
+      sql`${table.anexo} IN ('ANEXO_I', 'ANEXO_II', 'ANEXO_III', 'ANEXO_IV', 'ANEXO_V')`,
+    ),
+    check(
+      'chk_simples_apuracao_item_faixa',
+      sql`${table.faixaEnquadrada} BETWEEN 1 AND 6`,
+    ),
+    check(
+      'chk_simples_apuracao_item_segregacao',
+      sql`${table.segregacao} IN ('TRIBUTACAO_INTEGRAL', 'ICMS_ST', 'ICMS_ISENTO', 'ISS_RETIDO', 'PIS_COFINS_MONOFASICO')`,
+    ),
+    check(
+      'chk_simples_apuracao_item_valores',
+      sql`${table.aliquotaNominal} >= 0 AND ${table.parcelaDeduzir} >= 0 AND ${table.aliquotaEfetiva} >= 0 AND ${table.receitaBrutaAtividade} >= 0 AND ${table.aliquotaEfetivaAposDeducoes} >= 0 AND ${table.valorDevido} >= 0`,
+    ),
+  ],
+);
+
+// Histórico mensal informado na migração de carteira. Valores manuais
+// substituem a fonte automática somente na competência explicitamente lançada,
+// evitando dupla contagem de documentos/folhas já importados.
+export const fiscalSimplesHistoricosMensais = pgTable(
+  'fiscal_simples_historicos_mensais',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    receitaBruta: numeric('receita_bruta', { precision: 15, scale: 2 }),
+    folhaSalariosEncargos: numeric('folha_salarios_encargos', {
+      precision: 15,
+      scale: 2,
+    }),
+    observacao: text('observacao'),
+    informadoPor: text('informado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('uq_simples_historico_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    index('idx_simples_historico_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    check(
+      'chk_simples_historico_competencia',
+      sql`date_part('day', ${table.competencia}) = 1`,
+    ),
+    check(
+      'chk_simples_historico_preenchido',
+      sql`${table.receitaBruta} IS NOT NULL OR ${table.folhaSalariosEncargos} IS NOT NULL`,
+    ),
+    check(
+      'chk_simples_historico_valores',
+      sql`(${table.receitaBruta} IS NULL OR ${table.receitaBruta} >= 0) AND (${table.folhaSalariosEncargos} IS NULL OR ${table.folhaSalariosEncargos} >= 0)`,
     ),
   ],
 );
@@ -3383,7 +3732,10 @@ export const fiscalPagamentosEventos = pgTable(
       name: 'fiscal_pagamentos_eventos_estornado_fk',
     }).onDelete('set null'),
     // Projeção da trilha por guia (ordem cronológica reconstrói o saldo — R1.3).
-    index('idx_fiscal_pagamento_evento_guia').on(table.guiaId, table.dataEvento),
+    index('idx_fiscal_pagamento_evento_guia').on(
+      table.guiaId,
+      table.dataEvento,
+    ),
     // Conciliação por versão de apuração (pagamento ↔ apuração).
     index('idx_fiscal_pagamento_evento_fechamento').on(table.fechamentoId),
     index('idx_fiscal_pagamento_evento_cliente').on(

@@ -9,6 +9,17 @@ import {
   type FechamentoEscopo,
 } from './fiscal-closing.service';
 import { FiscalPeriodSelectionService } from './fiscal-period-selection.service';
+import type { DbMock, QueryChain, TxMock } from '../testing/drizzle-query-mock';
+
+/**
+ * Tipo da transação que os métodos de `FiscalClosingService` recebem
+ * (`FechamentoTx`, não exportado) — derivado do próprio método. Os stubs de
+ * `tx` são `TxMock`; convertemos para este tipo no limite da chamada ao serviço
+ * via `as unknown as`, sem alterar o valor passado em runtime.
+ */
+type FechamentoTxArg = Parameters<
+  FiscalClosingService['sinalizarRevisaoPosFechamento']
+>[0];
 
 /** Entradas de exemplo com valores monetários sempre como STRINGS decimais. */
 function entradas(
@@ -199,9 +210,7 @@ describe('FiscalClosingService', () => {
             updateCalls.push(v);
             return {
               where: jest.fn().mockReturnValue({
-                returning: jest
-                  .fn()
-                  .mockResolvedValue([{ ...linha, ...v }]),
+                returning: jest.fn().mockResolvedValue([{ ...linha, ...v }]),
               }),
             };
           }),
@@ -447,8 +456,8 @@ describe('FiscalClosingService', () => {
     function makeTx(selectQueue: Array<Array<Record<string, unknown>>>) {
       const inserts: Array<Record<string, unknown>> = [];
       const next = () => Promise.resolve(selectQueue.shift() ?? []);
-      const chain = () => {
-        const api: any = {
+      const chain = (): QueryChain => {
+        const api: QueryChain = {
           from: () => api,
           where: () => api,
           orderBy: () => api,
@@ -456,7 +465,7 @@ describe('FiscalClosingService', () => {
         };
         return api;
       };
-      const tx: any = {
+      const tx: TxMock = {
         execute: jest.fn().mockResolvedValue(undefined),
         select: () => chain(),
         insert: () => ({
@@ -471,8 +480,8 @@ describe('FiscalClosingService', () => {
           },
         }),
       };
-      const db = {
-        transaction: (cb: (t: unknown) => unknown) => cb(tx),
+      const db: DbMock = {
+        transaction: (cb) => cb(tx),
       };
       return { tx, db, inserts };
     }
@@ -488,8 +497,11 @@ describe('FiscalClosingService', () => {
       // 1) carregarCorrenteFechada → vazio.
       const { tx, db, inserts } = makeTx([[]]);
       const svc = serviceComDb(db);
-      const r = await (db as any).transaction(() =>
-        svc.sinalizarRevisaoPosFechamento(tx, ESCOPO),
+      const r = await db.transaction(() =>
+        svc.sinalizarRevisaoPosFechamento(
+          tx as unknown as FechamentoTxArg,
+          ESCOPO,
+        ),
       );
       expect(r.fechado).toBe(false);
       expect(r.revisaoNecessaria).toBe(false);
@@ -504,8 +516,11 @@ describe('FiscalClosingService', () => {
         [{ versao: 1 }], // proximaVersao → próxima é 2
       ]);
       const svc = serviceComDb(db);
-      const r = await (db as any).transaction(() =>
-        svc.sinalizarRevisaoPosFechamento(tx, ESCOPO),
+      const r = await db.transaction(() =>
+        svc.sinalizarRevisaoPosFechamento(
+          tx as unknown as FechamentoTxArg,
+          ESCOPO,
+        ),
       );
 
       expect(r.fechado).toBe(true);
@@ -537,8 +552,11 @@ describe('FiscalClosingService', () => {
         [{ id: 'f2', versao: 2 }], // carregarRevisaoAberta → já existe
       ]);
       const svc = serviceComDb(db);
-      const r = await (db as any).transaction(() =>
-        svc.sinalizarRevisaoPosFechamento(tx, ESCOPO),
+      const r = await db.transaction(() =>
+        svc.sinalizarRevisaoPosFechamento(
+          tx as unknown as FechamentoTxArg,
+          ESCOPO,
+        ),
       );
       expect(r.revisaoNecessaria).toBe(true);
       expect(r.revisaoAberta).toBe(false);
@@ -588,8 +606,8 @@ describe('FiscalClosingService', () => {
       const inserts: Array<Record<string, unknown>> = [];
       const updates: Array<Record<string, unknown>> = [];
       const next = () => Promise.resolve(selectQueue.shift() ?? []);
-      const chain = () => {
-        const api: any = {
+      const chain = (): QueryChain => {
+        const api: QueryChain = {
           from: () => api,
           where: () => api,
           orderBy: () => api,
@@ -597,7 +615,7 @@ describe('FiscalClosingService', () => {
         };
         return api;
       };
-      const tx: any = {
+      const tx: TxMock = {
         execute: jest.fn().mockResolvedValue(undefined),
         select: () => chain(),
         update: () => ({
@@ -620,8 +638,8 @@ describe('FiscalClosingService', () => {
           },
         }),
       };
-      const db = {
-        transaction: (cb: (t: unknown) => unknown) => cb(tx),
+      const db: DbMock = {
+        transaction: (cb) => cb(tx),
       };
       return { tx, db, inserts, updates };
     }
@@ -708,8 +726,8 @@ describe('FiscalClosingService', () => {
         [originalFechada],
       ];
       const db = {
-        select: () => {
-          const api: any = {
+        select: (): QueryChain => {
+          const api: QueryChain = {
             from: () => api,
             where: () => api,
             limit: () => Promise.resolve(queue.shift() ?? []),
@@ -738,8 +756,8 @@ describe('FiscalClosingService', () => {
         parametros: { perfil: 'A' },
       };
       const db = {
-        select: () => {
-          const api: any = {
+        select: (): QueryChain => {
+          const api: QueryChain = {
             from: () => api,
             where: () => api,
             limit: () => Promise.resolve([naoRetificadora]),
@@ -755,8 +773,8 @@ describe('FiscalClosingService', () => {
 
     it('diferencaRetificacao lança 404 quando a retificadora não existe', async () => {
       const db = {
-        select: () => {
-          const api: any = {
+        select: (): QueryChain => {
+          const api: QueryChain = {
             from: () => api,
             where: () => api,
             limit: () => Promise.resolve([]),
@@ -804,8 +822,8 @@ describe('FiscalClosingService', () => {
         if (linhas[0]) ultimaLinha = linhas[0];
         return Promise.resolve(linhas);
       };
-      const chain = () => {
-        const api: any = {
+      const chain = (): QueryChain => {
+        const api: QueryChain = {
           from: () => api,
           where: () => api,
           orderBy: () => api,
@@ -813,7 +831,7 @@ describe('FiscalClosingService', () => {
         };
         return api;
       };
-      const tx: any = {
+      const tx: TxMock = {
         execute: jest.fn().mockResolvedValue(undefined),
         select: () => chain(),
         update: () => ({
@@ -838,7 +856,7 @@ describe('FiscalClosingService', () => {
           },
         }),
       };
-      const db = { transaction: (cb: (t: unknown) => unknown) => cb(tx) };
+      const db: DbMock = { transaction: (cb) => cb(tx) };
       return { tx, db, inserts, updates };
     }
 
@@ -897,7 +915,10 @@ describe('FiscalClosingService', () => {
         // abrir: proximaVersao (nenhuma anterior → 1) → insert.
         const aberto = makeTx([[]]);
         const svcAbrir = serviceComDb(aberto.db);
-        const rascunho = await svcAbrir.abrir({ ...ESCOPO, entradas: entradas() });
+        const rascunho = await svcAbrir.abrir({
+          ...ESCOPO,
+          entradas: entradas(),
+        });
         expect(aberto.inserts).toHaveLength(1);
         expect(aberto.inserts[0].hashEntradas).toBe(hashEsperado);
         expect(rascunho.hashEntradas).toBe(hashEsperado);
@@ -969,7 +990,11 @@ describe('FiscalClosingService', () => {
           decisoes: [],
           regras: [],
           parametros: {},
-          saldos: { debitos: '45.09', creditos: '18.00', saldoApurado: '27.09' },
+          saldos: {
+            debitos: '45.09',
+            creditos: '18.00',
+            saldoApurado: '27.09',
+          },
         };
         const svc = serviceComLinha(linhaFechada);
         const projecao1 = await svc.projetarApuracao('f1');
@@ -984,7 +1009,11 @@ describe('FiscalClosingService', () => {
         // Mesmo que a identidade da versão difira (id/versão), o resultado
         // projetado de entradas idênticas é o mesmo — reprodutibilidade entre
         // execuções/versões, não só entre chamadas de uma mesma linha.
-        const saldos = { debitos: '45.09', creditos: '18.00', saldoApurado: '27.09' };
+        const saldos = {
+          debitos: '45.09',
+          creditos: '18.00',
+          saldoApurado: '27.09',
+        };
         const documentos = [
           { chave: 'A', valorContabil: '100.00', valorIcms: '18.00' },
           { chave: 'B', valorContabil: '250.50', valorIcms: '45.09' },
@@ -1054,14 +1083,20 @@ describe('FiscalClosingService', () => {
 
         const nova = await svc.editar({
           ...ESCOPO,
-          entradas: entradas({ documentos: [{ chave: 'A', valorTotal: '123.45' }] }),
+          entradas: entradas({
+            documentos: [{ chave: 'A', valorTotal: '123.45' }],
+          }),
         });
 
         expect(nova.versao).toBe(2);
         expect(nova.estado).toBe('RASCUNHO');
         expect(nova.corrente).toBe(false);
         expect(inserts).toHaveLength(1);
-        expect(inserts[0]).toMatchObject({ versao: 2, estado: 'RASCUNHO', corrente: false });
+        expect(inserts[0]).toMatchObject({
+          versao: 2,
+          estado: 'RASCUNHO',
+          corrente: false,
+        });
         // A invariante central do R1.4: a versão anterior não recebe NENHUMA
         // escrita durante a edição.
         expect(updates).toHaveLength(0);
@@ -1096,7 +1131,7 @@ describe('FiscalClosingService', () => {
           [{ versao: 1 }], // proximaVersao → próxima é 2
         ]);
         const svc = serviceComDb(db);
-        const r = await (db as any).transaction(() =>
+        const r = await db.transaction(() =>
           svc.sinalizarRevisaoPosFechamento(tx, ESCOPO),
         );
 
@@ -1106,7 +1141,11 @@ describe('FiscalClosingService', () => {
         // A entrega fechada nunca é atualizada; só nasce a revisão.
         expect(updates).toHaveLength(0);
         expect(inserts).toHaveLength(1);
-        expect(inserts[0]).toMatchObject({ versao: 2, estado: 'RASCUNHO', corrente: false });
+        expect(inserts[0]).toMatchObject({
+          versao: 2,
+          estado: 'RASCUNHO',
+          corrente: false,
+        });
         // A revisão herda os snapshots da entrega fechada (ponto de partida),
         // sem alterá-la.
         expect(inserts[0].documentos).toEqual(correnteFechada.documentos);

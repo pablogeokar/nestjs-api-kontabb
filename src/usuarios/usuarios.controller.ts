@@ -47,7 +47,7 @@ export class UsuariosController {
   constructor(
     private readonly usuariosService: UsuariosService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   @Get()
   @ApiOperation({

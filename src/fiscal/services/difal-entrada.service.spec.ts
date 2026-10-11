@@ -32,16 +32,14 @@ function createDb(uf: string, itens: unknown[]) {
 // Catálogo falso (tarefa 2.2): devolve uma regra de DIFAL já resolvida por
 // hipótese/UF/competência, ou `null` quando não há regra vigente. Substitui a
 // tabela modal fixa como fonte do cálculo.
-function createCatalogo(
-  regra: Partial<RegraVersaoResolvida> | null,
-): { resolverRegraVigente: jest.Mock } {
+function createCatalogo(regra: Partial<RegraVersaoResolvida> | null): {
+  resolverRegraVigente: jest.Mock;
+} {
   return {
-    resolverRegraVigente: jest
-      .fn()
-      .mockResolvedValue(
-        regra == null
-          ? null
-          : ({
+    resolverRegraVigente: jest.fn().mockResolvedValue(
+      regra == null
+        ? null
+        : {
             id: 'reg-1',
             catalogoVersaoId: 'cat-1',
             chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
@@ -56,8 +54,8 @@ function createCatalogo(
             escopoAprovado: true,
             pendente: false,
             ...regra,
-          } as RegraVersaoResolvida),
-      ),
+          },
+    ),
   };
 }
 

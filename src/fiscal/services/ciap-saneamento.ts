@@ -41,9 +41,7 @@
  *    flag de saneamento) — a correção DEVE ser revisada por humano. O núcleo
  *    NUNCA reconstrói as competências ausentes a partir do contador.
  */
-export type ClassificacaoSaneamentoCiap =
-  | 'OK'
-  | 'AMBIGUO_SANEAMENTO_ASSISTIDO';
+export type ClassificacaoSaneamentoCiap = 'OK' | 'AMBIGUO_SANEAMENTO_ASSISTIDO';
 
 /**
  * Motivo auditável da ambiguidade (quando houver). Cada motivo descreve POR QUE

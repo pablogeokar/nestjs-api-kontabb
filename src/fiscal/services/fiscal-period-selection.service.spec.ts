@@ -53,9 +53,9 @@ describe('FiscalPeriodSelectionService', () => {
     });
 
     it('rejeita competência em formato inválido', () => {
-      expect(() =>
-        service.resolvePeriodo('2026/02', 'EMISSAO'),
-      ).toThrow(BadRequestException);
+      expect(() => service.resolvePeriodo('2026/02', 'EMISSAO')).toThrow(
+        BadRequestException,
+      );
       expect(() => service.resolvePeriodo('2026-13', 'EMISSAO')).toThrow(
         BadRequestException,
       );
@@ -324,7 +324,8 @@ describe('FiscalPeriodSelectionService', () => {
       // Visão do módulo de SAÍDA/EMISSÃO para agosto: a nota entra.
       const emissaoAgosto = competenciaDe(nota, 'EMISSAO') === '2026-08';
       // Visão do módulo de ENTRADA (crédito) para setembro: a MESMA nota entra.
-      const entradaSetembro = competenciaDe(nota, 'ENTRADA_SAIDA') === '2026-09';
+      const entradaSetembro =
+        competenciaDe(nota, 'ENTRADA_SAIDA') === '2026-09';
 
       expect(emissaoAgosto).toBe(true);
       expect(entradaSetembro).toBe(true);
@@ -382,7 +383,9 @@ describe('FiscalPeriodSelectionService', () => {
       // Escrituração recorta pela entrada efetiva, caindo para a emissão só
       // quando a entrada é nula — nunca copiando a emissão cegamente.
       expect(escrituracaoAgosto).toContain('data_entrada_saida_fiscal');
-      expect(escrituracaoAgosto).toContain('data_entrada_saida_fiscal" is null');
+      expect(escrituracaoAgosto).toContain(
+        'data_entrada_saida_fiscal" is null',
+      );
       expect(escrituracaoAgosto).toContain('data_emissao_fiscal');
       expect(escrituracaoAgosto).toContain('2026-08-01');
       expect(escrituracaoAgosto).toContain('2026-08-31');

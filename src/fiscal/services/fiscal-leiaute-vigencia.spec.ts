@@ -34,7 +34,9 @@ describe('leiauteDaVigencia — 2026 vs. 2027 por vigência da competência (R2.
 
   it('competência anterior à vigência coberta é rejeitada (sem reutilizar o mais antigo)', () => {
     expect(() => leiauteDaVigencia('2025-12')).toThrow(LeiauteVigenciaError);
-    expect(() => leiauteDaVigencia('2025-12')).toThrow('Não há leiaute definido');
+    expect(() => leiauteDaVigencia('2025-12')).toThrow(
+      'Não há leiaute definido',
+    );
   });
 
   it('competência malformada é rejeitada', () => {
@@ -92,7 +94,10 @@ describe('confirmarVersaoPva — versão confirmada explicitamente (N05)', () =>
     ).toBe('6.1.1');
     // Tolera espaços em volta.
     expect(
-      confirmarVersaoPva({ pvaVersao: ' 6.1.1 ', pvaVersaoConfirmada: '6.1.1' }),
+      confirmarVersaoPva({
+        pvaVersao: ' 6.1.1 ',
+        pvaVersaoConfirmada: '6.1.1',
+      }),
     ).toBe('6.1.1');
   });
 

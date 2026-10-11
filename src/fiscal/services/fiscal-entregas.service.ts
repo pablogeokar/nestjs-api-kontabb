@@ -29,11 +29,7 @@ import {
  * `fiscal_entregas.obrigacao` (schema) e em `fiscal_fechamentos.obrigacao`.
  */
 export type ObrigacaoEntrega =
-  | 'EFD_ICMS_IPI'
-  | 'EFD_CONTRIBUICOES'
-  | 'GIA'
-  | 'DAS'
-  | 'DAPI';
+  'EFD_ICMS_IPI' | 'EFD_CONTRIBUICOES' | 'GIA' | 'DAS' | 'DAPI';
 
 const OBRIGACOES_ENTREGA: ReadonlySet<ObrigacaoEntrega> =
   new Set<ObrigacaoEntrega>([
@@ -108,11 +104,7 @@ export interface RegistrarEntregaInput {
 }
 
 export type StatusValidacaoEntrega =
-  | 'PENDENTE'
-  | 'VALIDADA'
-  | 'REJEITADA'
-  | 'TRANSMITIDA'
-  | 'FALHA_STORAGE';
+  'PENDENTE' | 'VALIDADA' | 'REJEITADA' | 'TRANSMITIDA' | 'FALHA_STORAGE';
 
 /**
  * Entrada para RETIFICAR uma entrega (R2.2). Cria uma entrega NOVA que
@@ -218,7 +210,7 @@ export class FiscalEntregasService {
     private readonly storage: StorageService,
     private readonly storageCleanup: StorageCleanupService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   /**
    * R2.1/R2.4 (Fase 5, tarefa 2.2): registra uma ENTREGA ORIGINAL de uma
@@ -242,9 +234,15 @@ export class FiscalEntregasService {
     // R2.5 (N03/N04): o leiaute segue a VIGÊNCIA da competência — derivado
     // quando omitido, validado quando informado. Nunca reutiliza o leiaute de
     // outra vigência silenciosamente.
-    const leiauteVersao = this.resolverLeiaute(competencia, input.leiauteVersao);
+    const leiauteVersao = this.resolverLeiaute(
+      competencia,
+      input.leiauteVersao,
+    );
     // N05: a versão do PVA usada na homologação é a CONFIRMADA, nunca presumida.
-    const pvaVersao = this.confirmarPva(input.pvaVersao, input.pvaVersaoConfirmada);
+    const pvaVersao = this.confirmarPva(
+      input.pvaVersao,
+      input.pvaVersaoConfirmada,
+    );
 
     // R2.4: amarra o recibo/comprovante ao hash do fechamento. Quando há vínculo
     // de apuração, o hash do arquivo entregue tem de ser o das entradas
@@ -316,7 +314,7 @@ export class FiscalEntregasService {
     if (original.entregaOriginalId != null) {
       throw new BadRequestException(
         'A entrega indicada já é uma retificação. Retifique a entrega original ' +
-        '(a entrega-base), não uma retificadora, para preservar a trilha (R2.2).',
+          '(a entrega-base), não uma retificadora, para preservar a trilha (R2.2).',
       );
     }
 
@@ -336,7 +334,10 @@ export class FiscalEntregasService {
       input.leiauteVersao,
     );
     // N05: versão do PVA da retificadora também é CONFIRMADA, nunca presumida.
-    const pvaVersao = this.confirmarPva(input.pvaVersao, input.pvaVersaoConfirmada);
+    const pvaVersao = this.confirmarPva(
+      input.pvaVersao,
+      input.pvaVersaoConfirmada,
+    );
 
     // R2.4: a retificadora também amarra o recibo ao hash do fechamento. Herda o
     // fechamento da original por padrão; se um novo for informado, valida escopo
@@ -400,7 +401,7 @@ export class FiscalEntregasService {
     if (input.upload.arquivoKey !== input.arquivoKey) {
       throw new BadRequestException(
         'A key do upload deve ser a mesma `arquivoKey` do snapshot da entrega — ' +
-        'o arquivo entregue é selado no snapshot (R2.3).',
+          'o arquivo entregue é selado no snapshot (R2.3).',
       );
     }
 
@@ -427,8 +428,8 @@ export class FiscalEntregasService {
       });
       throw new ServiceUnavailableException(
         'A entrega foi registrada, mas o arquivo não pôde ser armazenado. O ' +
-        'registro ficou com status de falha de storage e pode ser retentado ' +
-        '(o objeto parcial foi enfileirado para limpeza).',
+          'registro ficou com status de falha de storage e pode ser retentado ' +
+          '(o objeto parcial foi enfileirado para limpeza).',
       );
     }
 
@@ -467,8 +468,8 @@ export class FiscalEntregasService {
     if (entrega.statusValidacao !== 'FALHA_STORAGE') {
       throw new BadRequestException(
         'Só é possível retentar o upload de uma entrega em FALHA_STORAGE. O ' +
-        'retry é amarrado ao snapshot que falhou, não a uma entrega íntegra ' +
-        '(R2.3).',
+          'retry é amarrado ao snapshot que falhou, não a uma entrega íntegra ' +
+          '(R2.3).',
       );
     }
 
@@ -496,7 +497,7 @@ export class FiscalEntregasService {
       });
       throw new ServiceUnavailableException(
         'O reenvio do arquivo ao storage falhou novamente. O registro ' +
-        'permanece em falha de storage e pode ser retentado.',
+          'permanece em falha de storage e pode ser retentado.',
       );
     }
 
@@ -584,18 +585,14 @@ export class FiscalEntregasService {
         .returning({ id: storageCleanupJobs.id });
       cleanupJobIds = jobs.map((job) => job.id);
     } catch (enqueueError) {
-      this.logger.error(
-        'fiscal_entrega_cleanup_enqueue_failed',
-        enqueueError,
-        {
-          requestId: input.requestId,
-          userId: input.actorUserId,
-          entityType: 'FISCAL_ENTREGA',
-          entityId: input.entregaId,
-          clienteId: input.clienteId,
-          operation: 'registrar_entrega_storage',
-        },
-      );
+      this.logger.error('fiscal_entrega_cleanup_enqueue_failed', enqueueError, {
+        requestId: input.requestId,
+        userId: input.actorUserId,
+        entityType: 'FISCAL_ENTREGA',
+        entityId: input.entregaId,
+        clienteId: input.clienteId,
+        operation: 'registrar_entrega_storage',
+      });
     }
 
     // 3) Trilha de auditoria da falha + compensação.
@@ -653,7 +650,10 @@ export class FiscalEntregasService {
   private async registrarTentativaUpload(entregaId: string) {
     const rows = await this.database.db
       .update(fiscalEntregas)
-      .set({ tentativasStorage: sqlTentativaIncremento(), atualizadoEm: new Date() })
+      .set({
+        tentativasStorage: sqlTentativaIncremento(),
+        atualizadoEm: new Date(),
+      })
       .where(eq(fiscalEntregas.id, entregaId))
       .returning();
     return rows[0] ? this.toEntregaResponse(rows[0]) : null;
@@ -700,7 +700,10 @@ export class FiscalEntregasService {
     const conditions = [eq(fiscalEntregas.clienteId, input.clienteId)];
     if (input.competencia) {
       conditions.push(
-        eq(fiscalEntregas.competencia, this.competenciaCompeta(input.competencia)),
+        eq(
+          fiscalEntregas.competencia,
+          this.competenciaCompeta(input.competencia),
+        ),
       );
     }
     if (input.obrigacao) {
@@ -758,7 +761,7 @@ export class FiscalEntregasService {
     if (rows[0]) {
       throw new BadRequestException(
         'A entrega indicada já foi retificada. Retifique a última entrega ' +
-        'vigente da trilha, não uma já superada (R2.2).',
+          'vigente da trilha, não uma já superada (R2.2).',
       );
     }
   }
@@ -790,14 +793,14 @@ export class FiscalEntregasService {
     if (!fechamento) {
       throw new NotFoundException(
         'Versão de apuração (fechamento) não encontrada para esta empresa. A ' +
-        'entrega só pode vincular-se a um fechamento do próprio cliente (R2.4).',
+          'entrega só pode vincular-se a um fechamento do próprio cliente (R2.4).',
       );
     }
     if (fechamento.hashEntradas !== hashArquivo) {
       throw new BadRequestException(
         'O hash do arquivo entregue não corresponde ao hash do fechamento ' +
-        'vinculado. O comprovante/recibo deve ficar amarrado ao hash do ' +
-        'fechamento (R2.4), nunca a um arquivo divergente da apuração.',
+          'vinculado. O comprovante/recibo deve ficar amarrado ao hash do ' +
+          'fechamento (R2.4), nunca a um arquivo divergente da apuração.',
       );
     }
     return fechamento.id;
@@ -815,9 +818,7 @@ export class FiscalEntregasService {
 
   private assertObrigacao(obrigacao: ObrigacaoEntrega) {
     if (!OBRIGACOES_ENTREGA.has(obrigacao)) {
-      throw new BadRequestException(
-        `Obrigação inválida: "${obrigacao}".`,
-      );
+      throw new BadRequestException(`Obrigação inválida: "${obrigacao}".`);
     }
   }
 
@@ -869,7 +870,7 @@ export class FiscalEntregasService {
     if (!HASH_SHA256_PATTERN.test(normalizado)) {
       throw new BadRequestException(
         'Hash do arquivo inválido: deve ser SHA-256 em hexadecimal (64 ' +
-        'caracteres 0-9a-f).',
+          'caracteres 0-9a-f).',
       );
     }
     return normalizado;
@@ -885,9 +886,7 @@ export class FiscalEntregasService {
     try {
       escalado = toScaledInteger(valor);
     } catch {
-      throw new BadRequestException(
-        `Valor da diferença inválido: "${valor}".`,
-      );
+      throw new BadRequestException(`Valor da diferença inválido: "${valor}".`);
     }
     return fromScaledInteger(escalado);
   }
@@ -921,7 +920,9 @@ export class FiscalEntregasService {
       entrega_original_id: row.entregaOriginalId,
       valor_diferenca: row.valorDiferenca,
       leiaute_versao: row.leiauteVersao,
-      transmitida_em: row.transmitidaEm ? row.transmitidaEm.toISOString() : null,
+      transmitida_em: row.transmitidaEm
+        ? row.transmitidaEm.toISOString()
+        : null,
       tentativas_storage: row.tentativasStorage,
       ultimo_erro_storage: row.ultimoErroStorage,
       criado_em: row.criadoEm.toISOString(),
