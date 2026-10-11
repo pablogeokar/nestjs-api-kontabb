@@ -3,6 +3,7 @@ import type { AppLogger } from '../../common/logger.service';
 import type { DistribuicaoDfeService } from './distribuicao-dfe.service';
 import type { NfeWizardService } from './nfewizard.service';
 import { ImportacaoChavesFiscalService } from './importacao-chaves-fiscal.service';
+import { CertificateAccessError } from './certificado.service';
 import { gzipSync } from 'node:zlib';
 
 describe('ImportacaoChavesFiscalService', () => {
@@ -92,6 +93,38 @@ describe('ImportacaoChavesFiscalService', () => {
     expect(result.itens.map((item) => item.status)).toEqual([
       'ABORTADO_CONSUMO_INDEVIDO',
       'ABORTADO_CONSUMO_INDEVIDO',
+    ]);
+    expect(nfeWizard.consultarPorChave).toHaveBeenCalledTimes(1);
+  });
+
+  it('interrompe o lote quando o certificado não pode ser lido do armazenamento', async () => {
+    const first = buildAccessKey('55', '000000001');
+    const second = buildAccessKey('55', '000000002');
+    const database = databaseWithResponses([
+      [cliente],
+      [{ id: 'cert-1', validadeFim: futureDate() }],
+      [],
+    ]);
+    const nfeWizard = nfeWizardMock();
+    nfeWizard.consultarPorChave.mockRejectedValue(
+      new CertificateAccessError(
+        'CERTIFICATE_OBJECT_NOT_FOUND',
+        'arquivo não encontrado',
+      ),
+    );
+    const service = makeService(database, nfeWizard);
+
+    const result = await service.executar({
+      clienteId: cliente.id,
+      chaves: [first, second],
+      actorUserId,
+      requestId: 'req-cert',
+    });
+
+    expect(result.resumo.certificado_indisponivel).toBe(true);
+    expect(result.itens.map((item) => item.status)).toEqual([
+      'ABORTADO_CERTIFICADO_INDISPONIVEL',
+      'ABORTADO_CERTIFICADO_INDISPONIVEL',
     ]);
     expect(nfeWizard.consultarPorChave).toHaveBeenCalledTimes(1);
   });
