@@ -12,6 +12,7 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
@@ -20,6 +21,10 @@ import {
   ColaboradorSessionService,
   type ColaboradorTokenPayload,
 } from './colaborador-session.service';
+import { ColaboradorAuthGuard } from './colaborador-auth.guard';
+import { ColaboradorRequirePasswordChangedGuard } from './colaborador-require-password-changed.guard';
+import { ColaboradorPublic } from './colaborador-public.decorator';
+import { Colaborador } from './colaborador.decorator';
 import { ClientesService } from '../clientes/clientes.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import { AppLogger } from '../common/logger.service';
@@ -27,6 +32,7 @@ import { parsePaginationParams } from '../common/pagination';
 
 @ApiTags('Colaborador')
 @Controller('colaborador')
+@UseGuards(ColaboradorAuthGuard)
 export class ColaboradorController {
   constructor(
     private readonly colaboradorService: ColaboradorService,
@@ -40,6 +46,7 @@ export class ColaboradorController {
 
   @Post('auth/login')
   @HttpCode(HttpStatus.OK)
+  @ColaboradorPublic()
   @ApiOperation({ summary: 'Login do colaborador (CNPJ + código + senha)' })
   async login(
     @Body() body: { cnpj: string; codigoFuncionario: string; senha: string },
@@ -111,6 +118,7 @@ export class ColaboradorController {
 
   @Post('auth/logout')
   @HttpCode(HttpStatus.OK)
+  @ColaboradorPublic()
   @ApiOperation({ summary: 'Logout do colaborador' })
   async logout(
     @Req() req: Request,
@@ -127,6 +135,7 @@ export class ColaboradorController {
 
   @Get('auth/session')
   @HttpCode(HttpStatus.OK)
+  @ColaboradorPublic()
   @ApiOperation({ summary: 'Obter sessão do colaborador' })
   async getSession(@Req() req: Request) {
     const payload = this.sessionService.extractFromRequest(req);
@@ -160,23 +169,7 @@ export class ColaboradorController {
   @Get('logo')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Obter logo da empresa do colaborador' })
-  async getLogo(@Req() req: Request) {
-    const payload = this.sessionService.extractFromRequest(req);
-    if (!payload) {
-      throw new UnauthorizedException('Não autorizado.');
-    }
-
-    const revocation = await this.colaboradorService.getRevocationState(
-      payload.funcionarioId,
-    );
-    if (
-      !revocation ||
-      !revocation.ativo ||
-      revocation.tokenVersion !== payload.tokenVersion
-    ) {
-      throw new UnauthorizedException('Não autorizado.');
-    }
-
+  async getLogo(@Colaborador() payload: ColaboradorTokenPayload) {
     const logoUrl = await this.clientesService.getLogoUrl(payload.clienteId);
     return { logo_url: logoUrl };
   }
@@ -188,11 +181,9 @@ export class ColaboradorController {
   })
   async trocarSenha(
     @Body() body: { senhaAtual: string; novaSenha: string },
-    @Req() req: Request,
+    @Colaborador() payload: ColaboradorTokenPayload,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const payload = await this.requireAuth(req);
-
     if (!body.senhaAtual || !body.novaSenha) {
       throw new BadRequestException(
         'Senha atual e nova senha são obrigatórias.',
@@ -252,11 +243,9 @@ export class ColaboradorController {
 
   @Get('perfil')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ColaboradorRequirePasswordChangedGuard)
   @ApiOperation({ summary: 'Perfil do colaborador' })
-  async getPerfil(@Req() req: Request) {
-    const payload = await this.requireAuth(req);
-    this.requirePasswordChanged(payload);
-
+  async getPerfil(@Colaborador() payload: ColaboradorTokenPayload) {
     const perfil = await this.colaboradorService.getPerfil(
       payload.funcionarioId,
     );
@@ -267,15 +256,13 @@ export class ColaboradorController {
 
   @Get('recibos')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ColaboradorRequirePasswordChangedGuard)
   @ApiOperation({ summary: 'Listar recibos de pagamento do colaborador' })
   async listRecibos(
-    @Req() req: Request,
+    @Colaborador() payload: ColaboradorTokenPayload,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
-    const payload = await this.requireAuth(req);
-    this.requirePasswordChanged(payload);
-
     const pagination = parsePaginationParams({ page, pageSize });
 
     const result = await this.colaboradorService.listRecibos(
@@ -298,11 +285,12 @@ export class ColaboradorController {
 
   @Get('recibos/:id')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ColaboradorRequirePasswordChangedGuard)
   @ApiOperation({ summary: 'Detalhes de um recibo de pagamento' })
-  async getRecibo(@Req() req: Request, @Param('id') id: string) {
-    const payload = await this.requireAuth(req);
-    this.requirePasswordChanged(payload);
-
+  async getRecibo(
+    @Colaborador() payload: ColaboradorTokenPayload,
+    @Param('id') id: string,
+  ) {
     const recibo = await this.colaboradorService.getReciboDetalhe(
       payload.funcionarioId,
       id,
@@ -317,11 +305,12 @@ export class ColaboradorController {
 
   @Get('recibos/:id/pdf')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ColaboradorRequirePasswordChangedGuard)
   @ApiOperation({ summary: 'Dados do recibo no formato para geração de PDF' })
-  async getReciboPdf(@Req() req: Request, @Param('id') id: string) {
-    const payload = await this.requireAuth(req);
-    this.requirePasswordChanged(payload);
-
+  async getReciboPdf(
+    @Colaborador() payload: ColaboradorTokenPayload,
+    @Param('id') id: string,
+  ) {
     const recibo = await this.colaboradorService.getReciboPdf(
       payload.funcionarioId,
       id,
@@ -332,35 +321,5 @@ export class ColaboradorController {
     }
 
     return recibo;
-  }
-
-  // ─── Helpers ───
-
-  private async requireAuth(req: Request): Promise<ColaboradorTokenPayload> {
-    const payload = this.sessionService.extractFromRequest(req);
-    if (!payload) {
-      throw new UnauthorizedException('Não autorizado.');
-    }
-
-    const revocation = await this.colaboradorService.getRevocationState(
-      payload.funcionarioId,
-    );
-    if (
-      !revocation ||
-      !revocation.ativo ||
-      revocation.tokenVersion !== payload.tokenVersion
-    ) {
-      throw new UnauthorizedException('Não autorizado.');
-    }
-
-    return payload;
-  }
-
-  private requirePasswordChanged(payload: ColaboradorTokenPayload): void {
-    if (payload.primeiroAcesso) {
-      throw new UnauthorizedException(
-        'É necessário alterar a senha antes de acessar o sistema.',
-      );
-    }
   }
 }
