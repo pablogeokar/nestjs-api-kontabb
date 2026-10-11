@@ -121,6 +121,15 @@ export class AuthController {
       ? await this.clientesService.isClientSuspended(result.id)
       : undefined;
 
+    // Finding [MÉDIA] 7: browser logins rely on the httpOnly session cookie and
+    // must NOT receive the raw session token in the JSON body (XSS could exfiltrate
+    // it). Server-to-server Bearer integrations opt in by carrying an Authorization
+    // header or the explicit x-auth-response-token:1 header, in which case we return
+    // the raw token they need for the Bearer flow.
+    const wantsResponseToken =
+      req.headers['authorization'] !== undefined ||
+      req.headers['x-auth-response-token'] === '1';
+
     return {
       user: {
         id: result.id,
@@ -131,7 +140,7 @@ export class AuthController {
         ...(suspenso !== undefined && { suspenso }),
       },
       session: {
-        token: sessionToken,
+        ...(wantsResponseToken && { token: sessionToken }),
         expiresAt: expiresAt.toISOString(),
       },
     };
