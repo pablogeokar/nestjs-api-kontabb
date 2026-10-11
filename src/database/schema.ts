@@ -495,10 +495,7 @@ export const folhasPagamento = pgTable(
       'chk_folhas_periodo',
       sql`${table.periodoInicio} <= ${table.periodoFim}`,
     ),
-    check(
-      'chk_folhas_tipo',
-      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`,
-    ),
+    check('chk_folhas_tipo', sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`),
     check(
       'chk_folhas_totais',
       sql`${table.totalBruto} >= 0 AND ${table.totalDescontos} >= 0 AND ${table.totalLiquido} >= 0 AND ${table.totalFuncionarios} >= 0 AND ${table.totalInss} >= 0 AND ${table.totalFgts} >= 0 AND ${table.totalIrrf} >= 0 AND ${table.totalSalarioFamilia} >= 0`,
@@ -2971,10 +2968,7 @@ export const fiscalLancamentos = pgTable(
       'chk_fiscal_lancamento_natureza',
       sql`${table.natureza} IN ('DEBITO', 'CREDITO')`,
     ),
-    check(
-      'chk_fiscal_lancamento_sinal',
-      sql`${table.sinal} IN (-1, 1)`,
-    ),
+    check('chk_fiscal_lancamento_sinal', sql`${table.sinal} IN (-1, 1)`),
     check('chk_fiscal_lancamento_versao', sql`${table.fechamentoVersao} >= 1`),
     // Magnitude não-negativa: o efeito no saldo vem de natureza + sinal, não de
     // um valor negativo (mantém a decomposição explícita e conciliável).
@@ -3299,10 +3293,7 @@ export const fiscalSimplesSublimites = pgTable(
     ativo: boolean('ativo').notNull().default(true),
   },
   (table) => [
-    unique('uq_simples_sublimite_uf_ano').on(
-      table.uf,
-      table.anoVigencia,
-    ),
+    unique('uq_simples_sublimite_uf_ano').on(table.uf, table.anoVigencia),
     check('chk_simples_sublimite_uf', sql`${table.uf} ~ '^[A-Z]{2}$'`),
     check(
       'chk_simples_sublimite_valor',
@@ -3325,9 +3316,7 @@ export const fiscalSimplesApuracoes = pgTable(
     versao: integer('versao').notNull().default(1),
     corrente: boolean('corrente').notNull().default(false),
     rbt12: numeric('rbt12', { precision: 15, scale: 2 }).notNull(),
-    rbt12Proporcional: boolean('rbt12_proporcional')
-      .notNull()
-      .default(false),
+    rbt12Proporcional: boolean('rbt12_proporcional').notNull().default(false),
     receitaBrutaMes: numeric('receita_bruta_mes', {
       precision: 15,
       scale: 2,
@@ -3460,6 +3449,57 @@ export const fiscalSimplesApuracaoItens = pgTable(
     check(
       'chk_simples_apuracao_item_valores',
       sql`${table.aliquotaNominal} >= 0 AND ${table.parcelaDeduzir} >= 0 AND ${table.aliquotaEfetiva} >= 0 AND ${table.receitaBrutaAtividade} >= 0 AND ${table.aliquotaEfetivaAposDeducoes} >= 0 AND ${table.valorDevido} >= 0`,
+    ),
+  ],
+);
+
+// Histórico mensal informado na migração de carteira. Valores manuais
+// substituem a fonte automática somente na competência explicitamente lançada,
+// evitando dupla contagem de documentos/folhas já importados.
+export const fiscalSimplesHistoricosMensais = pgTable(
+  'fiscal_simples_historicos_mensais',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => clientes.id, { onDelete: 'cascade' }),
+    competencia: date('competencia').notNull(),
+    receitaBruta: numeric('receita_bruta', { precision: 15, scale: 2 }),
+    folhaSalariosEncargos: numeric('folha_salarios_encargos', {
+      precision: 15,
+      scale: 2,
+    }),
+    observacao: text('observacao'),
+    informadoPor: text('informado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    criadoEm: timestamp('criado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('uq_simples_historico_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    index('idx_simples_historico_cliente_competencia').on(
+      table.clienteId,
+      table.competencia,
+    ),
+    check(
+      'chk_simples_historico_competencia',
+      sql`date_part('day', ${table.competencia}) = 1`,
+    ),
+    check(
+      'chk_simples_historico_preenchido',
+      sql`${table.receitaBruta} IS NOT NULL OR ${table.folhaSalariosEncargos} IS NOT NULL`,
+    ),
+    check(
+      'chk_simples_historico_valores',
+      sql`(${table.receitaBruta} IS NULL OR ${table.receitaBruta} >= 0) AND (${table.folhaSalariosEncargos} IS NULL OR ${table.folhaSalariosEncargos} >= 0)`,
     ),
   ],
 );
@@ -3692,7 +3732,10 @@ export const fiscalPagamentosEventos = pgTable(
       name: 'fiscal_pagamentos_eventos_estornado_fk',
     }).onDelete('set null'),
     // Projeção da trilha por guia (ordem cronológica reconstrói o saldo — R1.3).
-    index('idx_fiscal_pagamento_evento_guia').on(table.guiaId, table.dataEvento),
+    index('idx_fiscal_pagamento_evento_guia').on(
+      table.guiaId,
+      table.dataEvento,
+    ),
     // Conciliação por versão de apuração (pagamento ↔ apuração).
     index('idx_fiscal_pagamento_evento_fechamento').on(table.fechamentoId),
     index('idx_fiscal_pagamento_evento_cliente').on(

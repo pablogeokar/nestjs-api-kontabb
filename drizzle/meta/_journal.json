@@ -204,6 +204,13 @@
       "when": 1791729958101,
       "tag": "0028_special_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791731826016,
+      "tag": "0029_light_the_phantom",
+      "breakpoints": true
     }
   ]
 }

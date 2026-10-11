@@ -15,11 +15,15 @@ import {
   fiscalSimplesApuracaoItens,
   fiscalSimplesApuracoes,
   fiscalSimplesFaixas,
+  fiscalSimplesHistoricosMensais,
   fiscalSimplesSublimites,
   fiscalSimplesTabelas,
   folhasPagamento,
 } from '../../database/schema';
-import { monthsBetweenCompetencias, parseCompetenciaMensal } from '../fiscal-date.util';
+import {
+  monthsBetweenCompetencias,
+  parseCompetenciaMensal,
+} from '../fiscal-date.util';
 import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 import {
   SimplesCalculadorService,
@@ -30,6 +34,10 @@ import {
 } from './simples-calculador.service';
 import { FiscalClosingService } from './fiscal-closing.service';
 import { FiscalGuiasService } from './fiscal-guias.service';
+import type {
+  SalvarHistoricoSimplesDto,
+  SalvarSimplesTabelaDto,
+} from '../dto/simples-nacional.dto';
 
 const SIMPLES_MOTOR_VERSAO = 'simples-nacional@1';
 
@@ -65,6 +73,133 @@ export class SimplesNacionalService {
         anexos: await this.carregarAnexos(tabela.id),
       })),
     );
+  }
+
+  async criarTabela(input: SalvarSimplesTabelaDto) {
+    return this.salvarTabela(null, input);
+  }
+
+  async editarTabela(tabelaId: string, input: SalvarSimplesTabelaDto) {
+    return this.salvarTabela(tabelaId, input);
+  }
+
+  async listarHistorico(input: {
+    clienteId: string;
+    competenciaFinal: string;
+  }) {
+    await this.buscarClienteSimples(input.clienteId);
+    const meses = mesesAnteriores(input.competenciaFinal, 12);
+    const inicio = `${meses[0]}-01`;
+    const fim = `${meses[meses.length - 1]}-01`;
+    const [receitas, folhas, manuais] = await Promise.all([
+      this.carregarReceitasAutomaticasPeriodo(input.clienteId, inicio, fim),
+      this.carregarFolhasAutomaticasPeriodo(input.clienteId, inicio, fim),
+      this.database.db
+        .select()
+        .from(fiscalSimplesHistoricosMensais)
+        .where(
+          and(
+            eq(fiscalSimplesHistoricosMensais.clienteId, input.clienteId),
+            sql`${fiscalSimplesHistoricosMensais.competencia} >= ${inicio}`,
+            sql`${fiscalSimplesHistoricosMensais.competencia} <= ${fim}`,
+          ),
+        ),
+    ]);
+    const receitaPorMes = new Map(
+      receitas.map((item) => [item.mes, item.valor]),
+    );
+    const folhaPorMes = new Map(folhas.map((item) => [item.mes, item.valor]));
+    const manualPorMes = new Map(
+      manuais.map((item) => [item.competencia.slice(0, 7), item]),
+    );
+    return meses.map((competencia) => {
+      const manual = manualPorMes.get(competencia);
+      const receitaAutomatica = receitaPorMes.get(competencia) ?? '0.00';
+      const folhaAutomatica = folhaPorMes.get(competencia) ?? '0.00';
+      return {
+        id: manual?.id ?? null,
+        competencia,
+        receita_automatica: receitaAutomatica,
+        receita_manual: manual?.receitaBruta ?? null,
+        receita_efetiva: manual?.receitaBruta ?? receitaAutomatica,
+        origem_receita:
+          manual?.receitaBruta != null
+            ? 'INFORMADO_MANUALMENTE'
+            : 'DOCUMENTOS_FISCAIS',
+        folha_automatica: folhaAutomatica,
+        folha_manual: manual?.folhaSalariosEncargos ?? null,
+        folha_efetiva: manual?.folhaSalariosEncargos ?? folhaAutomatica,
+        origem_folha:
+          manual?.folhaSalariosEncargos != null
+            ? 'INFORMADO_MANUALMENTE'
+            : 'FOLHAS_PAGAMENTO',
+        observacao: manual?.observacao ?? null,
+        atualizado_em: manual?.atualizadoEm?.toISOString() ?? null,
+      };
+    });
+  }
+
+  async salvarHistorico(input: SalvarHistoricoSimplesDto, actorUserId: string) {
+    await this.buscarClienteSimples(input.clienteId);
+    const competencias = new Set<string>();
+    for (const item of input.itens) {
+      this.competencia(item.competencia);
+      if (competencias.has(item.competencia)) {
+        throw new BadRequestException(
+          `Competência duplicada no histórico: ${item.competencia}.`,
+        );
+      }
+      competencias.add(item.competencia);
+    }
+    await this.database.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`simples-historico:${input.clienteId}`}, 0))`,
+      );
+      for (const item of input.itens) {
+        if (item.receitaBruta == null && item.folhaSalariosEncargos == null) {
+          await tx
+            .delete(fiscalSimplesHistoricosMensais)
+            .where(
+              and(
+                eq(fiscalSimplesHistoricosMensais.clienteId, input.clienteId),
+                eq(
+                  fiscalSimplesHistoricosMensais.competencia,
+                  `${item.competencia}-01`,
+                ),
+              ),
+            );
+          continue;
+        }
+        await tx
+          .insert(fiscalSimplesHistoricosMensais)
+          .values({
+            clienteId: input.clienteId,
+            competencia: `${item.competencia}-01`,
+            receitaBruta: item.receitaBruta ?? null,
+            folhaSalariosEncargos: item.folhaSalariosEncargos ?? null,
+            observacao: item.observacao?.trim() || null,
+            informadoPor: actorUserId,
+          })
+          .onConflictDoUpdate({
+            target: [
+              fiscalSimplesHistoricosMensais.clienteId,
+              fiscalSimplesHistoricosMensais.competencia,
+            ],
+            set: {
+              receitaBruta: item.receitaBruta ?? null,
+              folhaSalariosEncargos: item.folhaSalariosEncargos ?? null,
+              observacao: item.observacao?.trim() || null,
+              informadoPor: actorUserId,
+              atualizadoEm: new Date(),
+            },
+          });
+      }
+    });
+    const ultimaCompetencia = [...competencias].sort().at(-1)!;
+    return this.listarHistorico({
+      clienteId: input.clienteId,
+      competenciaFinal: proximaCompetencia(ultimaCompetencia),
+    });
   }
 
   async obterApuracao(clienteId: string, competencia: string) {
@@ -106,7 +241,11 @@ export class SimplesNacionalService {
         const versao = (ultima?.versao ?? 0) + 1;
         await tx
           .update(fiscalSimplesApuracoes)
-          .set({ status: 'RETIFICADO', corrente: false, atualizadoEm: new Date() })
+          .set({
+            status: 'RETIFICADO',
+            corrente: false,
+            atualizadoEm: new Date(),
+          })
           .where(
             and(
               eq(fiscalSimplesApuracoes.clienteId, input.clienteId),
@@ -173,23 +312,31 @@ export class SimplesNacionalService {
       eq(fiscalSimplesApuracoes.clienteId, input.clienteId),
       eq(fiscalSimplesApuracoes.competencia, competenciaDate),
     ];
-    if (input.apuracaoId) conditions.push(eq(fiscalSimplesApuracoes.id, input.apuracaoId));
+    if (input.apuracaoId)
+      conditions.push(eq(fiscalSimplesApuracoes.id, input.apuracaoId));
     const [apuracaoInicial] = await this.database.db
       .select()
       .from(fiscalSimplesApuracoes)
       .where(and(...conditions))
       .orderBy(desc(fiscalSimplesApuracoes.versao))
       .limit(1);
-    if (!apuracaoInicial) throw new NotFoundException('Apuração do Simples Nacional não encontrada.');
-    if (apuracaoInicial.status === 'FECHADO') return this.carregarResposta(apuracaoInicial);
+    if (!apuracaoInicial)
+      throw new NotFoundException(
+        'Apuração do Simples Nacional não encontrada.',
+      );
+    if (apuracaoInicial.status === 'FECHADO')
+      return this.carregarResposta(apuracaoInicial);
     if (apuracaoInicial.status !== 'RASCUNHO') {
-      throw new ConflictException('Somente uma apuração em rascunho pode ser fechada.');
+      throw new ConflictException(
+        'Somente uma apuração em rascunho pode ser fechada.',
+      );
     }
     const pendencias = apuracaoInicial.memoriaCalculo.pendencias;
     if (Array.isArray(pendencias) && pendencias.length > 0) {
       throw new UnprocessableEntityException({
         code: 'APURACAO_SIMPLES_COM_PENDENCIAS',
-        message: 'Revise as pendências da memória de cálculo antes de fechar a apuração do Simples Nacional.',
+        message:
+          'Revise as pendências da memória de cálculo antes de fechar a apuração do Simples Nacional.',
         pendencias,
       });
     }
@@ -204,7 +351,12 @@ export class SimplesNacionalService {
         entradas: {
           documentos: itens.map((item) => ({ ...item })),
           decisoes: [],
-          regras: [{ motorVersao: SIMPLES_MOTOR_VERSAO, tabelaId: apuracaoInicial.tabelaId }],
+          regras: [
+            {
+              motorVersao: SIMPLES_MOTOR_VERSAO,
+              tabelaId: apuracaoInicial.tabelaId,
+            },
+          ],
           parametros: {
             regime: 'SIMPLES_NACIONAL',
             rbt12: apuracaoInicial.rbt12,
@@ -217,8 +369,14 @@ export class SimplesNacionalService {
           },
         },
       });
-      fechamento = await this.closingService.transicionar(fechamento.id, 'PENDENTE');
-      fechamento = await this.closingService.transicionar(fechamento.id, 'REVISADO');
+      fechamento = await this.closingService.transicionar(
+        fechamento.id,
+        'PENDENTE',
+      );
+      fechamento = await this.closingService.transicionar(
+        fechamento.id,
+        'REVISADO',
+      );
       fechamento = await this.closingService.fechar({
         fechamentoId: fechamento.id,
         aprovadoPor: input.actorUserId,
@@ -237,7 +395,10 @@ export class SimplesNacionalService {
         .from(clientes)
         .where(eq(clientes.id, input.clienteId))
         .limit(1);
-      if (!cliente?.uf) throw new UnprocessableEntityException('A UF da empresa é obrigatória para gerar a guia DAS.');
+      if (!cliente?.uf)
+        throw new UnprocessableEntityException(
+          'A UF da empresa é obrigatória para gerar a guia DAS.',
+        );
       const guia = await this.guiasService.criarGuia({
         clienteId: input.clienteId,
         competencia: input.competencia,
@@ -257,7 +418,11 @@ export class SimplesNacionalService {
     await this.database.db.transaction(async (tx) => {
       await tx
         .update(fiscalSimplesApuracoes)
-        .set({ corrente: false, status: 'RETIFICADO', atualizadoEm: new Date() })
+        .set({
+          corrente: false,
+          status: 'RETIFICADO',
+          atualizadoEm: new Date(),
+        })
         .where(
           and(
             eq(fiscalSimplesApuracoes.clienteId, input.clienteId),
@@ -267,7 +432,13 @@ export class SimplesNacionalService {
         );
       await tx
         .update(fiscalSimplesApuracoes)
-        .set({ status: 'FECHADO', corrente: true, fechamentoId, guiaId, atualizadoEm: new Date() })
+        .set({
+          status: 'FECHADO',
+          corrente: true,
+          fechamentoId,
+          guiaId,
+          atualizadoEm: new Date(),
+        })
         .where(eq(fiscalSimplesApuracoes.id, apuracaoInicial.id));
     });
     const [fechada] = await this.database.db
@@ -279,12 +450,23 @@ export class SimplesNacionalService {
   }
 
   private async calcular(clienteId: string, competencia: string) {
-    const { competencia: competenciaDate, inicio, fim } = this.competenciaRange(competencia);
+    const {
+      competencia: competenciaDate,
+      inicio,
+      fim,
+    } = this.competenciaRange(competencia);
     const [cliente, tabela] = await Promise.all([
       this.buscarClienteSimples(clienteId),
       this.buscarTabelaVigente(competenciaDate),
     ]);
-    const [receitasMensais, primeiraCompetencia, receitasAtividade, folha, sublimite, anexos] = await Promise.all([
+    const [
+      receitasMensais,
+      primeiraCompetencia,
+      receitasAtividade,
+      folha,
+      sublimite,
+      anexos,
+    ] = await Promise.all([
       this.carregarReceitasMensais(clienteId, competenciaDate),
       this.carregarPrimeiraCompetenciaReceita(clienteId),
       this.carregarReceitasAtividade(clienteId, inicio, fim),
@@ -292,21 +474,38 @@ export class SimplesNacionalService {
       this.carregarSublimite(cliente.uf, competencia.slice(0, 4)),
       this.carregarAnexosCalculo(tabela.id),
     ]);
-    const receitaMesDocumentos = receitasMensais.find((row) => row.mes === competencia)?.receita ?? '0.00';
-    const anteriores = receitasMensais.filter((row) => row.mes < competencia).map((row) => row.receita);
-    const mesesAnteriores = Math.max(0, monthsBetweenCompetencias(primeiraCompetencia ?? competencia, competencia));
+    const receitaMesDocumentos =
+      receitasMensais.rows.find((row) => row.mes === competencia)?.receita ??
+      '0.00';
+    const anteriores = receitasMensais.rows
+      .filter((row) => row.mes < competencia)
+      .map((row) => row.receita);
+    const mesesAnteriores = Math.max(
+      0,
+      monthsBetweenCompetencias(
+        primeiraCompetencia ?? competencia,
+        competencia,
+      ),
+    );
     const rbt = this.calculador.calcularRbt12({
       receitasAnteriores: anteriores,
       mesesAnteriores,
       receitaPrimeiroMes: receitaMesDocumentos,
     });
     const fatorR = this.calculador.calcularFatorR(folha.valor, rbt.rbt12);
-    const excedeuSublimite = toScaledInteger(rbt.rbt12) > toScaledInteger(sublimite.valor);
+    const excedeuSublimite =
+      toScaledInteger(rbt.rbt12) > toScaledInteger(sublimite.valor);
     const calculados: SimplesItemCalculoResult[] = [];
     for (const receita of receitasAtividade.grupos) {
-      const anexo = receita.anexo === 'ANEXO_V' ? this.calculador.resolverAnexoFatorR(fatorR) : receita.anexo;
+      const anexo =
+        receita.anexo === 'ANEXO_V'
+          ? this.calculador.resolverAnexoFatorR(fatorR)
+          : receita.anexo;
       const faixas = anexos.get(anexo);
-      if (!faixas) throw new UnprocessableEntityException(`Tabela do ${anexo} não encontrada.`);
+      if (!faixas)
+        throw new UnprocessableEntityException(
+          `Tabela do ${anexo} não encontrada.`,
+        );
       const faixa = this.calculador.selecionarFaixa(rbt.rbt12, faixas);
       calculados.push(
         this.calculador.calcularItem({
@@ -321,13 +520,19 @@ export class SimplesNacionalService {
       );
     }
     const valorTotalDas = fromScaledInteger(
-      calculados.reduce((sum, item) => sum + toScaledInteger(item.valorDevido), 0n),
+      calculados.reduce(
+        (sum, item) => sum + toScaledInteger(item.valorDevido),
+        0n,
+      ),
     );
     const receitaClassificada = fromScaledInteger(
       receitasAtividade.grupos.reduce((sum, item) => sum + item.receita, 0n),
     );
     const pendencias = [...receitasAtividade.pendencias];
-    if (toScaledInteger(receitaClassificada) !== toScaledInteger(receitaMesDocumentos)) {
+    if (
+      toScaledInteger(receitaClassificada) !==
+      toScaledInteger(receitaMesDocumentos)
+    ) {
       pendencias.push(
         'O total classificado por itens difere do faturamento documental do mês. Revise documentos sem itens, fretes, descontos e outras parcelas antes do fechamento.',
       );
@@ -351,7 +556,7 @@ export class SimplesNacionalService {
       fechamento_id: null,
       guia_id: null,
       origens: {
-        rbt12: rbt.origem,
+        rbt12: `${rbt.origem}:${receitasMensais.origem}`,
         receita: 'DOCUMENTOS_FISCAIS_SAIDA_AUTORIZADOS',
         folha: folha.origem,
         sublimite: sublimite.origem,
@@ -368,9 +573,161 @@ export class SimplesNacionalService {
     };
   }
 
+  private async salvarTabela(
+    tabelaId: string | null,
+    input: SalvarSimplesTabelaDto,
+  ) {
+    this.validarPacoteTabela(input);
+    const id = await this.database.db.transaction(
+      async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended('simples-tabelas-normativas', 0))`,
+        );
+        if (tabelaId) {
+          const [existente] = await tx
+            .select({ id: fiscalSimplesTabelas.id })
+            .from(fiscalSimplesTabelas)
+            .where(eq(fiscalSimplesTabelas.id, tabelaId))
+            .limit(1);
+          if (!existente)
+            throw new NotFoundException(
+              'Tabela do Simples Nacional não encontrada.',
+            );
+          const [uso] = await tx
+            .select({ total: sql<number>`count(*)` })
+            .from(fiscalSimplesApuracoes)
+            .where(eq(fiscalSimplesApuracoes.tabelaId, tabelaId));
+          if (Number(uso?.total ?? 0) > 0) {
+            throw new ConflictException({
+              code: 'TABELA_SIMPLES_IMUTAVEL',
+              message:
+                'Esta versão já foi usada em apurações e não pode ser alterada. Cadastre uma nova versão com outra vigência.',
+            });
+          }
+        }
+        const sobreposta = await tx
+          .select({ id: fiscalSimplesTabelas.id })
+          .from(fiscalSimplesTabelas)
+          .where(
+            and(
+              eq(fiscalSimplesTabelas.ativo, true),
+              ...(tabelaId
+                ? [sql`${fiscalSimplesTabelas.id} <> ${tabelaId}`]
+                : []),
+              sql`${fiscalSimplesTabelas.vigenciaInicio} <= coalesce(${input.vigenciaFim ?? null}::date, 'infinity'::date)`,
+              sql`coalesce(${fiscalSimplesTabelas.vigenciaFim}, 'infinity'::date) >= ${input.vigenciaInicio}::date`,
+            ),
+          )
+          .limit(1);
+        if (input.ativo && sobreposta.length > 0) {
+          throw new ConflictException({
+            code: 'VIGENCIA_SIMPLES_SOBREPOSTA',
+            message:
+              'Já existe uma tabela ativa com vigência sobreposta ao período informado.',
+          });
+        }
+
+        let savedId = tabelaId;
+        if (tabelaId) {
+          await tx
+            .update(fiscalSimplesTabelas)
+            .set({
+              versao: input.versao,
+              descricao: input.descricao,
+              vigenciaInicio: input.vigenciaInicio,
+              vigenciaFim: input.vigenciaFim ?? null,
+              ativo: input.ativo,
+            })
+            .where(eq(fiscalSimplesTabelas.id, tabelaId));
+          await tx
+            .delete(fiscalSimplesAnexos)
+            .where(eq(fiscalSimplesAnexos.tabelaId, tabelaId));
+        } else {
+          const [created] = await tx
+            .insert(fiscalSimplesTabelas)
+            .values({
+              versao: input.versao,
+              descricao: input.descricao,
+              vigenciaInicio: input.vigenciaInicio,
+              vigenciaFim: input.vigenciaFim ?? null,
+              ativo: input.ativo,
+            })
+            .returning({ id: fiscalSimplesTabelas.id });
+          savedId = created.id;
+        }
+        for (const anexo of input.anexos) {
+          const [createdAnexo] = await tx
+            .insert(fiscalSimplesAnexos)
+            .values({
+              tabelaId: savedId!,
+              anexo: anexo.anexo,
+              descricao: anexo.descricao,
+              tipoAtividade: anexo.tipoAtividade,
+              permiteFatorR: anexo.permiteFatorR,
+              recolheCppNoDas: anexo.recolheCppNoDas,
+            })
+            .returning({ id: fiscalSimplesAnexos.id });
+          await tx.insert(fiscalSimplesFaixas).values(
+            anexo.faixas.map((faixa) => ({
+              anexoId: createdAnexo.id,
+              ...faixa,
+            })),
+          );
+        }
+        return savedId!;
+      },
+      { isolationLevel: 'serializable' },
+    );
+    const tabelas = await this.listarTabelas();
+    return tabelas.find((tabela) => tabela.id === id)!;
+  }
+
+  private validarPacoteTabela(input: SalvarSimplesTabelaDto) {
+    if (input.vigenciaFim && input.vigenciaFim < input.vigenciaInicio) {
+      throw new BadRequestException(
+        'O fim da vigência não pode ser anterior ao início.',
+      );
+    }
+    const anexos = new Set(input.anexos.map((item) => item.anexo));
+    if (anexos.size !== 5 || input.anexos.length !== 5) {
+      throw new BadRequestException(
+        'A versão normativa deve conter uma vez cada Anexo I a V.',
+      );
+    }
+    for (const anexo of input.anexos) {
+      const faixas = new Set(anexo.faixas.map((item) => item.faixa));
+      if (faixas.size !== 6 || anexo.faixas.length !== 6) {
+        throw new BadRequestException(
+          `${anexo.anexo} deve conter exatamente as faixas 1 a 6.`,
+        );
+      }
+      for (const faixa of anexo.faixas) {
+        const soma = [
+          faixa.percentualIrpj,
+          faixa.percentualCsll,
+          faixa.percentualCofins,
+          faixa.percentualPis,
+          faixa.percentualCpp,
+          faixa.percentualIpi,
+          faixa.percentualIcms,
+          faixa.percentualIss,
+        ].reduce((total, valor) => total + toScaledInteger(valor, 4), 0n);
+        if (soma !== 10_000n) {
+          throw new BadRequestException(
+            `${anexo.anexo}, faixa ${faixa.faixa}: a partilha deve somar 100%.`,
+          );
+        }
+      }
+    }
+  }
+
   private async buscarClienteSimples(clienteId: string) {
     const [cliente] = await this.database.db
-      .select({ id: clientes.id, regimeTributario: clientes.regimeTributario, uf: clientes.uf })
+      .select({
+        id: clientes.id,
+        regimeTributario: clientes.regimeTributario,
+        uf: clientes.uf,
+      })
       .from(clientes)
       .where(eq(clientes.id, clienteId))
       .limit(1);
@@ -378,7 +735,8 @@ export class SimplesNacionalService {
     if (cliente.regimeTributario !== 'SIMPLES_NACIONAL') {
       throw new UnprocessableEntityException({
         code: 'EMPRESA_FORA_SIMPLES_NACIONAL',
-        message: 'A empresa selecionada não está enquadrada no Simples Nacional.',
+        message:
+          'A empresa selecionada não está enquadrada no Simples Nacional.',
       });
     }
     return cliente;
@@ -400,14 +758,18 @@ export class SimplesNacionalService {
     if (!tabela) {
       throw new UnprocessableEntityException({
         code: 'TABELA_SIMPLES_NAO_CONFIGURADA',
-        message: 'Não existe tabela do Simples Nacional vigente. Execute o seed normativo.',
+        message:
+          'Não existe tabela do Simples Nacional vigente. Execute o seed normativo.',
       });
     }
     return tabela;
   }
 
-  private async carregarReceitasMensais(clienteId: string, competencia: string) {
-    const rows = await this.database.db
+  private async carregarReceitasMensais(
+    clienteId: string,
+    competencia: string,
+  ) {
+    const automaticas = await this.database.db
       .select({
         mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
         receita: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}), 0)::text`,
@@ -422,28 +784,85 @@ export class SimplesNacionalService {
           sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) < (${competencia}::date + interval '1 month')`,
         ),
       )
-      .groupBy(sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`)
-      .orderBy(asc(sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`));
-    return rows;
+      .groupBy(
+        sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
+      )
+      .orderBy(
+        asc(
+          sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
+        ),
+      );
+    const manuais = await this.database.db
+      .select({
+        mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
+        receita: fiscalSimplesHistoricosMensais.receitaBruta,
+      })
+      .from(fiscalSimplesHistoricosMensais)
+      .where(
+        and(
+          eq(fiscalSimplesHistoricosMensais.clienteId, clienteId),
+          sql`${fiscalSimplesHistoricosMensais.competencia} >= (${competencia}::date - interval '12 months')`,
+          sql`${fiscalSimplesHistoricosMensais.competencia} < ${competencia}::date`,
+          sql`${fiscalSimplesHistoricosMensais.receitaBruta} IS NOT NULL`,
+        ),
+      );
+    const porMes = new Map(automaticas.map((row) => [row.mes, row.receita]));
+    for (const manual of manuais) {
+      if (manual.receita != null) porMes.set(manual.mes, manual.receita);
+    }
+    return {
+      rows: [...porMes.entries()]
+        .map(([mes, receita]) => ({ mes, receita }))
+        .sort((a, b) => a.mes.localeCompare(b.mes)),
+      origem:
+        manuais.length > 0
+          ? 'HISTORICO_MANUAL_COM_SOBRESCRITA_POR_COMPETENCIA'
+          : 'DOCUMENTOS_FISCAIS',
+    };
   }
 
   private async carregarPrimeiraCompetenciaReceita(clienteId: string) {
-    const [row] = await this.database.db
-      .select({
-        mes: sql<string | null>`to_char(min(coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
-      })
-      .from(documentosFiscais)
-      .where(
-        and(
-          eq(documentosFiscais.clienteId, clienteId),
-          eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
-          eq(documentosFiscais.situacao, 'AUTORIZADA'),
+    const [documento, manual] = await Promise.all([
+      this.database.db
+        .select({
+          mes: sql<
+            string | null
+          >`to_char(min(coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
+        })
+        .from(documentosFiscais)
+        .where(
+          and(
+            eq(documentosFiscais.clienteId, clienteId),
+            eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
+            eq(documentosFiscais.situacao, 'AUTORIZADA'),
+          ),
         ),
-      );
-    return row?.mes ?? null;
+      this.database.db
+        .select({
+          mes: sql<
+            string | null
+          >`to_char(min(${fiscalSimplesHistoricosMensais.competencia}), 'YYYY-MM')`,
+        })
+        .from(fiscalSimplesHistoricosMensais)
+        .where(
+          and(
+            eq(fiscalSimplesHistoricosMensais.clienteId, clienteId),
+            sql`${fiscalSimplesHistoricosMensais.receitaBruta} IS NOT NULL`,
+          ),
+        ),
+    ]);
+    return (
+      [documento[0]?.mes, manual[0]?.mes]
+        .filter((value): value is string => Boolean(value))
+        .sort()[0] ?? null
+    );
   }
 
-  private async carregarReceitasAtividade(clienteId: string, inicio: Date, fim: Date) {
+  private async carregarReceitasAtividade(
+    clienteId: string,
+    inicio: Date,
+    fim: Date,
+  ) {
     const rows = await this.database.db
       .select({
         documentoId: documentosFiscais.id,
@@ -460,7 +879,10 @@ export class SimplesNacionalService {
         outras: documentosFiscaisItens.valorOutrasDespesas,
       })
       .from(documentosFiscaisItens)
-      .innerJoin(documentosFiscais, eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId))
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
       .where(
         and(
           eq(documentosFiscaisItens.clienteId, clienteId),
@@ -512,7 +934,12 @@ export class SimplesNacionalService {
           ...(monofasico ? (['PIS', 'COFINS'] as const) : []),
         ];
         const key = `${anexo}:${deducoes.join('+') || 'INTEGRAL'}`;
-        const atual = grupos.get(key) ?? { anexo, segregacao, deducoes: [...deducoes], receita: 0n };
+        const atual = grupos.get(key) ?? {
+          anexo,
+          segregacao,
+          deducoes: [...deducoes],
+          receita: 0n,
+        };
         atual.receita += receita;
         grupos.set(key, atual);
       }
@@ -520,43 +947,103 @@ export class SimplesNacionalService {
     return {
       grupos: [...grupos.values()].filter((item) => item.receita > 0n),
       pendencias: rows.some((row) => row.indTotal !== '1')
-        ? ['Itens com indTot diferente de 1 foram excluídos da receita classificada.']
+        ? [
+            'Itens com indTot diferente de 1 foram excluídos da receita classificada.',
+          ]
         : [],
     };
   }
 
   private async carregarFolha12m(clienteId: string, competencia: string) {
-    const rows = await this.database.db
+    const meses = mesesAnteriores(competencia.slice(0, 7), 12);
+    const inicio = `${meses[0]}-01`;
+    const fim = `${meses[meses.length - 1]}-01`;
+    const [automaticas, manuais] = await Promise.all([
+      this.carregarFolhasAutomaticasPeriodo(clienteId, inicio, fim),
+      this.database.db
+        .select({
+          mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
+          valor: fiscalSimplesHistoricosMensais.folhaSalariosEncargos,
+        })
+        .from(fiscalSimplesHistoricosMensais)
+        .where(
+          and(
+            eq(fiscalSimplesHistoricosMensais.clienteId, clienteId),
+            sql`${fiscalSimplesHistoricosMensais.competencia} >= ${inicio}`,
+            sql`${fiscalSimplesHistoricosMensais.competencia} <= ${fim}`,
+            sql`${fiscalSimplesHistoricosMensais.folhaSalariosEncargos} IS NOT NULL`,
+          ),
+        ),
+    ]);
+    const porMes = new Map(automaticas.map((row) => [row.mes, row.valor]));
+    for (const manual of manuais) {
+      if (manual.valor != null) porMes.set(manual.mes, manual.valor);
+    }
+    return {
+      valor: fromScaledInteger(
+        [...porMes.values()].reduce(
+          (sum, valor) => sum + toScaledInteger(valor),
+          0n,
+        ),
+      ),
+      origem:
+        manuais.length > 0
+          ? 'HISTORICO_MANUAL_COM_SOBRESCRITA_POR_COMPETENCIA'
+          : 'FOLHAS_PAGAMENTO_TOTAL_LIQUIDO_MAIS_INSS_E_FGTS',
+    };
+  }
+
+  private async carregarReceitasAutomaticasPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+  ) {
+    return this.database.db
       .select({
-        liquido: folhasPagamento.totalLiquido,
-        inss: folhasPagamento.totalInss,
-        fgts: folhasPagamento.totalFgts,
+        mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
+        valor: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}), 0)::text`,
+      })
+      .from(documentosFiscais)
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
+          eq(documentosFiscais.situacao, 'AUTORIZADA'),
+          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}`,
+          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= (${fim}::date + interval '1 month' - interval '1 day')`,
+        ),
+      )
+      .groupBy(
+        sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
+      );
+  }
+
+  private async carregarFolhasAutomaticasPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+  ) {
+    return this.database.db
+      .select({
+        mes: sql<string>`to_char(to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY'), 'YYYY-MM')`,
+        valor: sql<string>`coalesce(sum(${folhasPagamento.totalLiquido} + ${folhasPagamento.totalInss} + ${folhasPagamento.totalFgts}), 0)::text`,
       })
       .from(folhasPagamento)
       .where(
         and(
           eq(folhasPagamento.clienteId, clienteId),
-          sql`to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY') >= (${competencia}::date - interval '12 months')`,
-          sql`to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY') < ${competencia}::date`,
+          sql`to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY') >= ${inicio}`,
+          sql`to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY') <= ${fim}`,
         ),
+      )
+      .groupBy(
+        sql`to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY')`,
       );
-    return {
-      valor: fromScaledInteger(
-        rows.reduce(
-          (sum, row) =>
-            sum +
-            toScaledInteger(row.liquido) +
-            toScaledInteger(row.inss) +
-            toScaledInteger(row.fgts),
-          0n,
-        ),
-      ),
-      origem: 'FOLHAS_PAGAMENTO_TOTAL_LIQUIDO_MAIS_INSS_E_FGTS',
-    };
   }
 
   private async carregarSublimite(uf: string | null, ano: string) {
-    if (!uf) return { valor: '3600000.00', origem: 'SIMPLES_SUBLIMITE_PADRAO_SEM_UF' };
+    if (!uf)
+      return { valor: '3600000.00', origem: 'SIMPLES_SUBLIMITE_PADRAO_SEM_UF' };
     const [row] = await this.database.db
       .select({ valor: fiscalSimplesSublimites.valorSublimite })
       .from(fiscalSimplesSublimites)
@@ -592,7 +1079,10 @@ export class SimplesNacionalService {
         percentualIss: fiscalSimplesFaixas.percentualIss,
       })
       .from(fiscalSimplesAnexos)
-      .innerJoin(fiscalSimplesFaixas, eq(fiscalSimplesFaixas.anexoId, fiscalSimplesAnexos.id))
+      .innerJoin(
+        fiscalSimplesFaixas,
+        eq(fiscalSimplesFaixas.anexoId, fiscalSimplesAnexos.id),
+      )
       .where(eq(fiscalSimplesAnexos.tabelaId, tabelaId))
       .orderBy(asc(fiscalSimplesAnexos.anexo), asc(fiscalSimplesFaixas.faixa));
     const result = new Map<SimplesAnexo, SimplesFaixaCalculo[]>();
@@ -635,7 +1125,11 @@ export class SimplesNacionalService {
         tipo_atividade: anexo.tipoAtividade,
         permite_fator_r: anexo.permiteFatorR,
         recolhe_cpp_no_das: anexo.recolheCppNoDas,
-        faixas: await this.database.db.select().from(fiscalSimplesFaixas).where(eq(fiscalSimplesFaixas.anexoId, anexo.id)).orderBy(asc(fiscalSimplesFaixas.faixa)),
+        faixas: await this.database.db
+          .select()
+          .from(fiscalSimplesFaixas)
+          .where(eq(fiscalSimplesFaixas.anexoId, anexo.id))
+          .orderBy(asc(fiscalSimplesFaixas.faixa)),
       })),
     );
   }
@@ -645,12 +1139,19 @@ export class SimplesNacionalService {
       .select()
       .from(fiscalSimplesApuracaoItens)
       .where(eq(fiscalSimplesApuracaoItens.apuracaoId, apuracaoId))
-      .orderBy(asc(fiscalSimplesApuracaoItens.anexo), asc(fiscalSimplesApuracaoItens.segregacao));
+      .orderBy(
+        asc(fiscalSimplesApuracaoItens.anexo),
+        asc(fiscalSimplesApuracaoItens.segregacao),
+      );
   }
 
-  private async carregarResposta(apuracao: typeof fiscalSimplesApuracoes.$inferSelect) {
+  private async carregarResposta(
+    apuracao: typeof fiscalSimplesApuracoes.$inferSelect,
+  ) {
     const itens = await this.carregarItens(apuracao.id);
-    const sublimite = (apuracao.memoriaCalculo.sublimiteEstadual as string | undefined) ?? '3600000.00';
+    const sublimite =
+      (apuracao.memoriaCalculo.sublimiteEstadual as string | undefined) ??
+      '3600000.00';
     return {
       id: apuracao.id,
       cliente_id: apuracao.clienteId,
@@ -665,7 +1166,8 @@ export class SimplesNacionalService {
       folha_salarios_12m: apuracao.folhaSalarios12m,
       fator_r: apuracao.fatorR,
       valor_total_das: apuracao.valorTotalDas,
-      excedeu_sublimite: toScaledInteger(apuracao.rbt12) > toScaledInteger(sublimite),
+      excedeu_sublimite:
+        toScaledInteger(apuracao.rbt12) > toScaledInteger(sublimite),
       sublimite_estadual: sublimite,
       fechamento_id: apuracao.fechamentoId,
       guia_id: apuracao.guiaId,
@@ -694,7 +1196,9 @@ export class SimplesNacionalService {
     try {
       return parseCompetenciaMensal(value);
     } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Competência inválida.');
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Competência inválida.',
+      );
     }
   }
 }
@@ -717,8 +1221,10 @@ function toItemResponse(item: SimplesItemCalculoResult) {
 
 function anexoPorCfop(cfop: string): SimplesAnexo {
   const operacao = cfop.slice(1);
-  if (/^(101|103|105|109|111|116|118|122|124|125)$/.test(operacao)) return 'ANEXO_II';
-  if (/^(351|352|353|354|355|356|357|358|359|360)$/.test(operacao)) return 'ANEXO_III';
+  if (/^(101|103|105|109|111|116|118|122|124|125)$/.test(operacao))
+    return 'ANEXO_II';
+  if (/^(351|352|353|354|355|356|357|358|359|360)$/.test(operacao))
+    return 'ANEXO_III';
   return 'ANEXO_I';
 }
 
@@ -734,5 +1240,37 @@ function isDiaUtilBancario(date: Date) {
   const day = date.getUTCDay();
   if (day === 0 || day === 6) return false;
   const key = `${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-  return !new Set(['01-01', '04-21', '05-01', '09-07', '10-12', '11-02', '11-15', '11-20', '12-25']).has(key);
+  return !new Set([
+    '01-01',
+    '04-21',
+    '05-01',
+    '09-07',
+    '10-12',
+    '11-02',
+    '11-15',
+    '11-20',
+    '12-25',
+  ]).has(key);
+}
+
+export function mesesAnteriores(
+  competencia: string,
+  quantidade: number,
+): string[] {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(competencia);
+  if (!match) throw new BadRequestException('Competência inválida.');
+  const indiceBase = Number(match[1]) * 12 + Number(match[2]) - 1;
+  return Array.from({ length: quantidade }, (_, index) => {
+    const indice = indiceBase - quantidade + index;
+    const ano = Math.floor(indice / 12);
+    const mes = (indice % 12) + 1;
+    return `${ano}-${String(mes).padStart(2, '0')}`;
+  });
+}
+
+export function proximaCompetencia(competencia: string): string {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(competencia);
+  if (!match) throw new BadRequestException('Competência inválida.');
+  const indice = Number(match[1]) * 12 + Number(match[2]);
+  return `${Math.floor(indice / 12)}-${String((indice % 12) + 1).padStart(2, '0')}`;
 }

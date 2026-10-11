@@ -3,20 +3,26 @@ import {
   Controller,
   Get,
   NotFoundException,
+  Param,
+  ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
-import { StaffOnly } from '../../auth/roles.decorator';
+import { AdminOnly, StaffOnly } from '../../auth/roles.decorator';
 import type { CurrentUser as CurrentUserType } from '../../common/types';
 import { ClientesService } from '../../clientes/clientes.service';
 import {
   AdminCompetenciaSimplesDto,
   CompetenciaSimplesDto,
   FecharSimplesDto,
+  HistoricoSimplesQueryDto,
+  SalvarHistoricoSimplesDto,
+  SalvarSimplesTabelaDto,
 } from '../dto/simples-nacional.dto';
 import { SimplesNacionalService } from '../services/simples-nacional.service';
 
@@ -44,11 +50,15 @@ export class ClienteSimplesNacionalController {
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
-    return { data: await this.service.obterApuracao(cliente.id, query.competencia) };
+    return {
+      data: await this.service.obterApuracao(cliente.id, query.competencia),
+    };
   }
 
   @Get('elegibilidade')
-  @ApiOperation({ summary: 'Informa o enquadramento da empresa no Simples Nacional' })
+  @ApiOperation({
+    summary: 'Informa o enquadramento da empresa no Simples Nacional',
+  })
   async elegibilidade(@CurrentUser() user: CurrentUserType) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
@@ -70,10 +80,64 @@ export class ClienteSimplesNacionalController {
 export class AdminSimplesNacionalController {
   constructor(private readonly service: SimplesNacionalService) {}
 
+  @Get('tabelas')
+  @AdminOnly()
+  @ApiOperation({
+    summary: 'Consulta todas as versões normativas do Simples Nacional',
+  })
+  async listarTabelas() {
+    return { data: await this.service.listarTabelas() };
+  }
+
+  @Post('tabelas')
+  @AdminOnly()
+  @ApiOperation({
+    summary: 'Cadastra uma versão normativa do Simples Nacional',
+  })
+  async criarTabela(@Body() body: SalvarSimplesTabelaDto) {
+    return { data: await this.service.criarTabela(body) };
+  }
+
+  @Put('tabelas/:id')
+  @AdminOnly()
+  @ApiOperation({
+    summary: 'Edita uma versão normativa ainda não utilizada em apurações',
+  })
+  async editarTabela(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: SalvarSimplesTabelaDto,
+  ) {
+    return { data: await this.service.editarTabela(id, body) };
+  }
+
+  @Get('historico')
+  @ApiOperation({
+    summary: 'Consulta receitas e folhas dos 12 meses anteriores',
+  })
+  async listarHistorico(@Query() query: HistoricoSimplesQueryDto) {
+    return { data: await this.service.listarHistorico(query) };
+  }
+
+  @Put('historico')
+  @ApiOperation({
+    summary: 'Informa ou remove valores manuais mensais de receita e folha',
+  })
+  async salvarHistorico(
+    @Body() body: SalvarHistoricoSimplesDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return { data: await this.service.salvarHistorico(body, user.id) };
+  }
+
   @Get('apuracao')
   @ApiOperation({ summary: 'Obtém a apuração ou prévia do DAS de uma empresa' })
   async obterApuracao(@Query() query: AdminCompetenciaSimplesDto) {
-    return { data: await this.service.obterApuracao(query.clienteId, query.competencia) };
+    return {
+      data: await this.service.obterApuracao(
+        query.clienteId,
+        query.competencia,
+      ),
+    };
   }
 
   @Post('apurar')
