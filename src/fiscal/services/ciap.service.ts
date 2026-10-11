@@ -38,6 +38,11 @@ import {
   parseCompetenciaMensal,
 } from '../fiscal-date.util';
 import { FiscalClosingService } from './fiscal-closing.service';
+import {
+  montarDiagnosticoSaneamentoCiap,
+  type DiagnosticoSaneamentoCiap,
+  type FichaCiapSaneamentoFatos,
+} from './ciap-saneamento';
 
 // Handle de transação do drizzle, derivado do callback de `db.transaction`.
 // Usado pelos helpers que operam dentro de uma transação (regravação do E111).
@@ -1219,6 +1224,90 @@ export class CiapService {
       // Resumo por status (visão geral da base).
       por_status: this.contarPorStatus(fichas),
     };
+  }
+
+  /**
+   * DIAGNÓSTICO READ-ONLY DO SANEAMENTO ASSISTIDO DO CIAP (Fase 5, tarefa 5.4 —
+   * R5.4).
+   *
+   * O design (§Rollout §13) exige: "Não reconstruir competência CIAP por
+   * contador; saneamento assistido." Este método CARREGA os fatos de cada ficha
+   * (o CONTADOR `parcelasApropriadas`, a identidade e, da razão
+   * `ciap_apropriacoes`, as apropriações POR COMPETÊNCIA REAIS) e delega a
+   * classificação ao núcleo puro {@link montarDiagnosticoSaneamentoCiap}.
+   *
+   * É ESTRITAMENTE READ-ONLY: apenas `select`, nunca `insert`/`update`/`delete`.
+   * E, por construção do núcleo puro, NUNCA reconstrói as competências que
+   * faltariam para fechar o contador — quando o contador diverge da razão
+   * conhecida, a ficha é classificada como `AMBIGUO_SANEAMENTO_ASSISTIDO`
+   * (decisão humana), jamais fabricada. O serviço não lê o contador para
+   * inferir nada; ele é apenas MAIS UM fato apresentado ao resolvedor.
+   */
+  async diagnosticarSaneamento(input: {
+    clienteId: string;
+  }): Promise<DiagnosticoSaneamentoCiap> {
+    await this.assertCliente(input.clienteId);
+
+    const fichas = await this.database.db
+      .select()
+      .from(ciapAtivoPermanente)
+      .where(eq(ciapAtivoPermanente.clienteId, input.clienteId))
+      .orderBy(asc(ciapAtivoPermanente.codigoBem));
+
+    // Razão REAL por competência (apenas apropriações ATIVAS) de todos os bens
+    // do cliente, carregada em uma única consulta (sem N+1). São os registros
+    // efetivamente gravados — nunca competências inferidas de um contador.
+    const apropriacoes = await this.database.db
+      .select({
+        bemId: ciapApropriacoes.bemId,
+        competencia: ciapApropriacoes.competencia,
+        numeroParcela: ciapApropriacoes.numeroParcela,
+      })
+      .from(ciapApropriacoes)
+      .where(
+        and(
+          eq(ciapApropriacoes.clienteId, input.clienteId),
+          eq(ciapApropriacoes.ativa, true),
+        ),
+      )
+      .orderBy(
+        asc(ciapApropriacoes.bemId),
+        asc(ciapApropriacoes.numeroParcela),
+      );
+
+    const apropriacoesPorBem = new Map<
+      string,
+      Array<{ competencia: string; numeroParcela: number }>
+    >();
+    for (const ap of apropriacoes) {
+      const lista = apropriacoesPorBem.get(ap.bemId) ?? [];
+      lista.push({
+        // `competencia` é um `date` (primeiro dia do mês) → normaliza p/ 'YYYY-MM'.
+        competencia: ap.competencia.slice(0, 7),
+        numeroParcela: ap.numeroParcela,
+      });
+      apropriacoesPorBem.set(ap.bemId, lista);
+    }
+
+    const fatosFichas: FichaCiapSaneamentoFatos[] = fichas.map((ficha) => ({
+      bemId: ficha.id,
+      codigoBem: ficha.codigoBem,
+      identificacaoBem: ficha.identificacaoBem,
+      status: ficha.status,
+      origemIdentidade: ficha.origemIdentidade,
+      saneamentoPendente: ficha.saneamentoPendente,
+      quantidadeParcelas: ficha.quantidadeParcelas,
+      // CONTADOR acumulado — apenas apresentado ao núcleo puro, nunca usado
+      // para reconstruir competências (R5.4).
+      contadorParcelasApropriadas: ficha.parcelasApropriadas,
+      apropriacoesConhecidas: apropriacoesPorBem.get(ficha.id) ?? [],
+    }));
+
+    return montarDiagnosticoSaneamentoCiap({
+      clienteId: input.clienteId,
+      geradoEm: new Date().toISOString(),
+      fichas: fatosFichas,
+    });
   }
 
   /**

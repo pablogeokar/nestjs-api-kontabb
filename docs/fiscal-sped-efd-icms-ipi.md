@@ -273,6 +273,15 @@ Nenhuma das camadas substitui o PVA oficial. Antes da primeira entrega de cada
 combinação UF/perfil/regime, importe um arquivo de homologação no PVA 6.1.1 e
 registre o recibo/resultado da validação operacional.
 
+A entrega da obrigação — snapshot do arquivo/hash/PVA, homologação, transmissão,
+protocolo/recibo e retificação sem sobrescrever o histórico — é tratada na
+camada operacional (`fiscal_entregas`). O leiaute da entrega segue a **vigência**
+da competência (2026 = Guia 3.2.2; 2027 = 3.2.3 — N03/N04), sem reutilização
+silenciosa, e a versão do PVA usada na homologação é sempre a **confirmada** pelo
+operador (N05). Observação: a **geração** do TXT desta versão ainda produz apenas
+competências de 2026 (`COD_VER 020`); a seleção de leiaute por vigência vive na
+entrega/retificação. Ver `fiscal-entrega-conciliacao-operacao.md`.
+
 ## Limitações impeditivas explícitas
 
 O sistema bloqueia a geração, em vez de produzir arquivo incompleto, quando:

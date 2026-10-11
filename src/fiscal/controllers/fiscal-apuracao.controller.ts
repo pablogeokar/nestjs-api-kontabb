@@ -31,6 +31,9 @@ import {
 import { PisCofinsService } from '../services/pis-cofins.service';
 import { FiscalItensService } from '../services/fiscal-itens.service';
 import { FiscalClosingService } from '../services/fiscal-closing.service';
+import { OnboardingMatrizService } from '../services/onboarding-matriz.service';
+import { RolloutInventarioService } from '../services/rollout-inventario.service';
+import { RolloutMetricasService } from '../services/rollout-metricas.service';
 import { parsePaginationParams } from '../../common/pagination';
 import { parseCompetenciaMensal } from '../fiscal-date.util';
 import {
@@ -70,7 +73,10 @@ export class ClienteFiscalApuracaoController {
     private readonly pisCofinsService: PisCofinsService,
     private readonly fiscalItensService: FiscalItensService,
     private readonly closingService: FiscalClosingService,
-  ) { }
+    private readonly onboardingMatrizService: OnboardingMatrizService,
+    private readonly rolloutInventarioService: RolloutInventarioService,
+    private readonly rolloutMetricasService: RolloutMetricasService,
+  ) {}
 
   private async clienteId(userId: string): Promise<string> {
     const cliente = await this.clientesService.getClientForUser(userId);
@@ -86,6 +92,13 @@ export class ClienteFiscalApuracaoController {
         error instanceof Error ? error.message : 'Competência inválida.',
       );
     }
+  }
+
+  // Valida a competência 'YYYY-MM' no HTTP (BadRequest) e a devolve inalterada —
+  // o serviço a reparseia internamente, mas a validação aqui dá erro 400 limpo.
+  private competenciaMensal(competencia: string): string {
+    this.competenciaRange(competencia);
+    return competencia;
   }
 
   // ── ICMS (apuração mensal) ────────────────────────────────────────────────
@@ -125,10 +138,9 @@ export class ClienteFiscalApuracaoController {
   ) {
     const clienteId = await this.clienteId(user.id);
     const { offset, limit } = parsePaginationParams({ page, pageSize });
-    const resultado = await this.closingService.projetarApuracao(
-      fechamentoId,
-      { pagination: { offset, limit } },
-    );
+    const resultado = await this.closingService.projetarApuracao(fechamentoId, {
+      pagination: { offset, limit },
+    });
     if (resultado.clienteId !== clienteId) {
       throw new NotFoundException('Fechamento não encontrado.');
     }
@@ -262,6 +274,61 @@ export class ClienteFiscalApuracaoController {
       obrigacao,
     });
   }
+
+  // ── Onboarding: matriz de cobertura por estabelecimento (R4.1) ─────────────
+  // Projeção READ-ONLY montada a partir de dados fiscais já existentes: modelos
+  // usados, perfil, setor, regime especial, Blocos B/K/1, 1601, combustíveis/
+  // monofásicos, inventário por motivo e controles ST. Escopada à própria
+  // empresa. Não decide impedimento (4.2) nem status "pronto para entrega" (4.3).
+  @Get('onboarding/matriz')
+  @ApiOperation({
+    summary:
+      'Matriz de onboarding do estabelecimento (modelos/perfil/setor/Blocos/ST, R4.1)',
+  })
+  async matrizOnboarding(
+    @Query('competencia') competencia: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const data = await this.onboardingMatrizService.montar({
+      clienteId: await this.clienteId(user.id),
+      competencia: this.competenciaMensal(competencia),
+    });
+    return { data };
+  }
+
+  // ── Rollout: inventário read-only antes de ativar correções (R5.2) ─────────
+  // Projeção ESTRITAMENTE READ-ONLY do design (§Rollout §13): versões entregues,
+  // competências abertas e operações afetadas (CIAP, CT-e de saída, créditos
+  // vedados, PIS misto). Escopada à própria empresa. Não ativa correção nem
+  // decide "homologado" (5.2); apenas inventaria o estado atual.
+  @Get('rollout/inventario')
+  @ApiOperation({
+    summary:
+      'Inventário read-only de rollout (versões entregues/competências abertas/operações, R5.2)',
+  })
+  async inventarioRollout(@CurrentUser() user: CurrentUserType) {
+    const data = await this.rolloutInventarioService.inventariar({
+      clienteId: await this.clienteId(user.id),
+    });
+    return { data };
+  }
+
+  // ── Rollout: métricas de §13.3 read-only (R5.5) ────────────────────────────
+  // Painel ESTRITAMENTE READ-ONLY do design (§Rollout §13.3): diferença por
+  // tributo, créditos com/sem fundamento, pendências, repetições bloqueadas,
+  // rejeições PVA, guias sem vínculo, mudanças pós-fechamento e consultas por
+  // documento. Escopado à própria empresa. Apenas instrumenta o estado atual.
+  @Get('rollout/metricas')
+  @ApiOperation({
+    summary:
+      'Métricas de rollout §13.3 (diferença/créditos/pendências/repetições/PVA/vínculo/pós-fechamento/consultas, R5.5)',
+  })
+  async metricasRollout(@CurrentUser() user: CurrentUserType) {
+    const data = await this.rolloutMetricasService.medir({
+      clienteId: await this.clienteId(user.id),
+    });
+    return { data };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -280,7 +347,66 @@ export class AdminFiscalApuracaoController {
     private readonly guiasService: FiscalGuiasService,
     private readonly entregasService: FiscalEntregasService,
     private readonly pisCofinsService: PisCofinsService,
-  ) { }
+    private readonly onboardingMatrizService: OnboardingMatrizService,
+    private readonly rolloutInventarioService: RolloutInventarioService,
+    private readonly rolloutMetricasService: RolloutMetricasService,
+  ) {}
+
+  // ── Rollout: inventário read-only antes de ativar correções (R5.2) ─────────
+  // Mesma projeção read-only do controller do cliente, escopada por `clienteId`
+  // (query) para a operação staff do rollout. Não ativa correção nem decide
+  // "homologado" (5.2): apenas inventaria versões entregues, competências
+  // abertas e operações afetadas antes de ativar.
+  @Get('rollout/inventario')
+  @ApiOperation({
+    summary:
+      'Inventário read-only de rollout de um estabelecimento (admin, por clienteId, R5.2)',
+  })
+  async inventarioRollout(
+    @Query('clienteId', ParseUUIDPipe) clienteId: string,
+  ) {
+    const data = await this.rolloutInventarioService.inventariar({ clienteId });
+    return { data };
+  }
+
+  // ── Rollout: métricas de §13.3 read-only (R5.5) ────────────────────────────
+  // Mesmo painel read-only do controller do cliente, escopado por `clienteId`
+  // (query) para a operação staff do rollout. Apenas instrumenta o §13.3 do
+  // estabelecimento; não ativa correção, não retifica, não reconstrói nada.
+  @Get('rollout/metricas')
+  @ApiOperation({
+    summary:
+      'Métricas de rollout §13.3 de um estabelecimento (admin, por clienteId, R5.5)',
+  })
+  async metricasRollout(@Query('clienteId', ParseUUIDPipe) clienteId: string) {
+    const data = await this.rolloutMetricasService.medir({ clienteId });
+    return { data };
+  }
+
+  // ── Onboarding: matriz de cobertura por estabelecimento (R4.1) ─────────────
+  // Mesma projeção read-only do controller do cliente, mas escopada por
+  // `clienteId` (query) para a operação staff. Não decide impedimento (4.2) nem
+  // status "pronto para entrega" (4.3).
+  @Get('onboarding/matriz')
+  @ApiOperation({
+    summary:
+      'Matriz de onboarding de um estabelecimento (admin, por clienteId, R4.1)',
+  })
+  async matrizOnboarding(
+    @Query('clienteId', ParseUUIDPipe) clienteId: string,
+    @Query('competencia') competencia: string,
+  ) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia ?? '')) {
+      throw new BadRequestException(
+        'Competência inválida. Utilize o formato AAAA-MM (ex.: 2026-09).',
+      );
+    }
+    const data = await this.onboardingMatrizService.montar({
+      clienteId,
+      competencia,
+    });
+    return { data };
+  }
 
   // ── CIAP ────────────────────────────────────────────────────────────────
   @Post('ciap/importar')
@@ -421,7 +547,8 @@ export class AdminFiscalApuracaoController {
   // preservando o histórico relevante.
   @Delete('guias/:id')
   @ApiOperation({
-    summary: 'Cancela logicamente uma guia (preserva histórico, sem delete físico)',
+    summary:
+      'Cancela logicamente uma guia (preserva histórico, sem delete físico)',
   })
   async cancelarGuia(
     @Param('id', ParseUUIDPipe) id: string,

@@ -21,7 +21,12 @@ período).
   - `apropriarCompetencia`: efetiva a apropriação (incrementa parcelas, reduz
     saldo, conclui na 48ª) e **gera automaticamente um ajuste `E111` de crédito**
     (`sped_ajustes_apuracao`, código `UF02CIAP`) que realimenta a apuração do
-    ICMS no Bloco E da EFD;
+    ICMS no Bloco E da EFD. A apropriação é **idempotente** pela razão versionada
+    `ciap_apropriacoes`: a existência de uma apropriação ativa para
+    (bem, competência) torna a reexecução um no-op (mesma versão, nunca segunda
+    parcela). O unique parcial `uidx_ciap_aprop_bem_competencia_ativa` reforça
+    isso no banco e o `pg_advisory_xact_lock` por cliente/competência faz retries
+    e chamadas concorrentes convergirem para a mesma competência;
   - `baixarBem`: baixa por venda/transferência.
 
 ## DIFAL de entrada
@@ -49,12 +54,18 @@ A receita é segregada por CST em tributada (`01/02`), monofásica/ST/alíquota 
 duplicidade. É a base para o Bloco M da EFD-Contribuições (geração do arquivo em
 si é trabalho futuro).
 
-## Guias de recolhimento
+## Guias de recolhimento e conciliação
 
 `fiscal_apuracoes_guias` armazena as guias (DAE/GNRE/DARF/DAS) por competência e
-tributo. `FiscalGuiasService` oferece criar/listar/marcar pagamento/remover e um
-resumo consolidado por competência. As guias hoje são criadas manualmente via
-endpoint; a geração automática a partir das apurações é evolução planejada.
+tributo. A partir da Fase 5, a guia separa quatro conceitos — obrigação
+calculada (do fechamento), guia emitida, pagamento e conciliação — com trilha
+append-only em `fiscal_pagamentos_eventos`, cancelamento lógico (sem delete
+físico), sinalização de divergência contra o saldo do fechamento, "PAGO" só com
+evidência/declaração manual e vínculo à versão de apuração. O detalhamento está
+em `fiscal-entrega-conciliacao-operacao.md`.
+
+As guias ainda são criadas manualmente via endpoint; a emissão automática de
+DAE/GNRE a partir das apurações é evolução planejada.
 
 ## Endpoints
 
@@ -92,6 +103,7 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`, escrita):
 
 - A geração do arquivo da EFD-Contribuições (Bloco M) não está implementada; o
   serviço de PIS/COFINS produz o demonstrativo, não o TXT.
-- Guias são lançadas manualmente; não há emissão automática de DAE/GNRE.
+- As guias são conciliadas com trilha e vínculo à apuração (Fase 5), mas ainda
+  são lançadas manualmente; não há emissão automática de DAE/GNRE.
 - A tabela de alíquotas internas de ICMS por UF é uma referência modal e pode
   divergir de alíquotas específicas por NCM.
