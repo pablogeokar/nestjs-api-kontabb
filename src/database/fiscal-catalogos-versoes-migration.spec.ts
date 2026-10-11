@@ -29,7 +29,9 @@ describe('migração do catálogo de códigos de ajuste (fiscal_catalogos_versoe
   });
 
   it('garante uma única vigência por (tipo, uf, início) — novas vigências não sobrescrevem', () => {
-    expect(sql).toContain('CREATE UNIQUE INDEX "uidx_fiscal_catalogo_vigencia"');
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX "uidx_fiscal_catalogo_vigencia"',
+    );
     expect(sql).toMatch(/"tipo","uf","vigencia_inicio"/);
   });
 
@@ -61,9 +63,33 @@ describe('migração do catálogo de códigos de ajuste (fiscal_catalogos_versoe
 
   it('cobre as 27 unidades federativas no seed default', () => {
     for (const uf of [
-      'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-      'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
-      'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+      'AC',
+      'AL',
+      'AP',
+      'AM',
+      'BA',
+      'CE',
+      'DF',
+      'ES',
+      'GO',
+      'MA',
+      'MT',
+      'MS',
+      'MG',
+      'PA',
+      'PB',
+      'PR',
+      'PE',
+      'PI',
+      'RJ',
+      'RN',
+      'RS',
+      'RO',
+      'RR',
+      'SC',
+      'SP',
+      'SE',
+      'TO',
     ]) {
       expect(sql).toContain(`('${uf}')`);
     }

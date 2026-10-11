@@ -423,7 +423,7 @@ describe('fiscal-books-projection (livros como projeção do fechamento)', () =>
           {
             chave: 'A',
             cfop: '1102',
-            valorIcms: 18 as never,
+            valorIcms: 18,
           },
         ]),
       ).toThrow(/string decimal/i);

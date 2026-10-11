@@ -57,6 +57,7 @@ import {
 } from './controllers/simples-nacional.controller';
 import { SimplesCalculadorService } from './services/simples-calculador.service';
 import { SimplesNacionalService } from './services/simples-nacional.service';
+import { ImportacaoChavesFiscalService } from './services/importacao-chaves-fiscal.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -84,6 +85,7 @@ import { SimplesNacionalService } from './services/simples-nacional.service';
     DanfeService,
     FiscalCronService,
     ImportacaoXmlFiscalService,
+    ImportacaoChavesFiscalService,
     FiscalItensService,
     CfopService,
     FiscalRuleEngineService,

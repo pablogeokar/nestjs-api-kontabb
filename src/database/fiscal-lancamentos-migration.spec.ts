@@ -67,20 +67,18 @@ describe('migração fiscal_lancamentos (0016)', () => {
 
   it('fixa a competência no primeiro dia do mês (competência fiscal)', () => {
     expect(sql).toContain('chk_fiscal_lancamento_competencia_dia1');
-    expect(sql).toContain("date_part('day', \"fiscal_lancamentos\".\"competencia\") = 1");
-    // Índice de projeção por competência/versão (livros, painéis e SPED).
     expect(sql).toContain(
-      'CREATE INDEX "idx_fiscal_lancamento_competencia"',
+      'date_part(\'day\', "fiscal_lancamentos"."competencia") = 1',
     );
+    // Índice de projeção por competência/versão (livros, painéis e SPED).
+    expect(sql).toContain('CREATE INDEX "idx_fiscal_lancamento_competencia"');
     expect(sql).toContain('"cliente_id","competencia","fechamento_versao"');
   });
 
   it('vincula o lastro documental coerente para a ponte (R2.2)', () => {
     // Documento e item são opcionais; só origem DOCUMENTO os referencia e o
     // item exige o documento.
-    expect(sql).toContain(
-      'REFERENCES "public"."documentos_fiscais"("id")',
-    );
+    expect(sql).toContain('REFERENCES "public"."documentos_fiscais"("id")');
     expect(sql).toContain(
       'REFERENCES "public"."documentos_fiscais_itens"("id")',
     );

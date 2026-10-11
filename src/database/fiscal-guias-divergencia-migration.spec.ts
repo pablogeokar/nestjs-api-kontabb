@@ -10,7 +10,10 @@ import { resolve } from 'node:path';
 // sobre o SQL gerado, no mesmo padrão das demais specs de migração.
 describe('migração fiscal_apuracoes_guias — divergência da obrigação (0021)', () => {
   const sql = readFileSync(
-    resolve(process.cwd(), 'drizzle/0021_fase5_guias_divergencia_obrigacao.sql'),
+    resolve(
+      process.cwd(),
+      'drizzle/0021_fase5_guias_divergencia_obrigacao.sql',
+    ),
     'utf8',
   );
 

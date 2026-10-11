@@ -79,9 +79,7 @@ export const CONVENIO_ICMS_142_2018 = {
  *   aprovado no catálogo. Nada de ST pode ser verificado sem a fonte nacional.
  */
 export type StVerificacaoStatus =
-  | 'VERIFICADO'
-  | 'PENDENTE_ESTADUAL'
-  | 'PENDENTE_NACIONAL';
+  'VERIFICADO' | 'PENDENTE_ESTADUAL' | 'PENDENTE_NACIONAL';
 
 /**
  * Entrada da verificação de UM cenário de ST para uma UF/competência. As fontes

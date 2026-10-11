@@ -77,11 +77,7 @@ const ESCALA_VALOR = 2;
  * - `AJUSTE`: ajuste manual identificado (estorno, complemento), com fonte.
  */
 export type PisCofinsFonteReceita =
-  | 'XML_NFE'
-  | 'SEM_NFE'
-  | 'RETENCAO'
-  | 'SALDO_ANTERIOR'
-  | 'AJUSTE';
+  'XML_NFE' | 'SEM_NFE' | 'RETENCAO' | 'SALDO_ANTERIOR' | 'AJUSTE';
 
 /**
  * TIPO de lançamento quanto ao efeito no razão. Separa a RECEITA (base que gera
@@ -282,17 +278,15 @@ export function consolidarRazaoReceitas(
     const vinculacao = lanc.vinculacao ?? 'NAO_APLICAVEL';
     const chave: ChaveNatureza = `${natureza}|${vinculacao}`;
 
-    const atual =
-      agregadas.get(chave) ??
-      {
-        natureza,
-        vinculacao,
-        naturezaCredito: lanc.naturezaCredito ?? null,
-        baseScaled: 0n,
-        baseXmlScaled: 0n,
-        baseSemNfeScaled: 0n,
-        simulado: false,
-      };
+    const atual = agregadas.get(chave) ?? {
+      natureza,
+      vinculacao,
+      naturezaCredito: lanc.naturezaCredito ?? null,
+      baseScaled: 0n,
+      baseXmlScaled: 0n,
+      baseSemNfeScaled: 0n,
+      simulado: false,
+    };
 
     atual.baseScaled += valorScaled;
     if (lanc.fonte === 'XML_NFE') {

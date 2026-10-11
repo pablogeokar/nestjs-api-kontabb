@@ -57,7 +57,7 @@ const CST_PIS_SEM_DEBITO: readonly string[] = [
  */
 @Injectable()
 export class RolloutInventarioService {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(private readonly database: DatabaseService) {}
 
   /**
    * Monta o inventário de rollout do estabelecimento (`clienteId`). Lança 404
@@ -180,10 +180,7 @@ export class RolloutInventarioService {
         documentosFiscaisCteEscrituracao,
         and(
           eq(documentosFiscaisCteEscrituracao.clienteId, clienteId),
-          eq(
-            documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
-            'SAIDA',
-          ),
+          eq(documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada, 'SAIDA'),
         ),
       ),
       this.contar(
@@ -261,11 +258,7 @@ export class RolloutInventarioService {
    * Conta linhas de uma tabela que satisfazem uma condição, numa só consulta
    * (`count(*)`), sem carregar as linhas. Read-only por construção.
    */
-  private async contar(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    table: any,
-    where: SQL | undefined,
-  ): Promise<number> {
+  private async contar(table: any, where: SQL | undefined): Promise<number> {
     const rows = await this.database.db
       .select({ total: sql<number>`cast(count(*) as int)` })
       .from(table)

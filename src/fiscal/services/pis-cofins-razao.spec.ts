@@ -19,7 +19,9 @@ function receita(
 }
 
 // Entrada mínima do razão, com overrides pontuais por teste.
-function input(overrides: Partial<PisCofinsRazaoInput> = {}): PisCofinsRazaoInput {
+function input(
+  overrides: Partial<PisCofinsRazaoInput> = {},
+): PisCofinsRazaoInput {
   return {
     competencia: '2026-09',
     lancamentos: [],

@@ -72,7 +72,7 @@ export class RegrasFiscaisService {
     private readonly ruleEngine: FiscalRuleEngineService,
     private readonly cfopService: CfopService,
     private readonly closing: FiscalClosingService,
-  ) { }
+  ) {}
 
   /**
    * Simula a resolução de CFOP do motor de regras sem persistir nada.
@@ -95,9 +95,9 @@ export class RegrasFiscaisService {
   async listar(input: { clienteId: string; includeGlobal?: boolean }) {
     const escopo: SQL = input.includeGlobal
       ? or(
-        eq(regrasFiscais.clienteId, input.clienteId),
-        isNull(regrasFiscais.clienteId),
-      )!
+          eq(regrasFiscais.clienteId, input.clienteId),
+          isNull(regrasFiscais.clienteId),
+        )!
       : eq(regrasFiscais.clienteId, input.clienteId);
     const rows = await this.database.db
       .select()
@@ -226,8 +226,8 @@ export class RegrasFiscaisService {
             input.destinacao === 'AUTOMATICA' ? null : input.destinacao;
           const cfopXml = item.cfopXml ?? item.cfop;
 
-          const resolvido = await this.cfopService.resolverCfopEquivalenteDetalhado(
-            {
+          const resolvido =
+            await this.cfopService.resolverCfopEquivalenteDetalhado({
               clienteId: input.clienteId,
               cfopXml,
               tipoOperacaoEscriturada: item.tipoOperacaoEscriturada as
@@ -241,8 +241,7 @@ export class RegrasFiscaisService {
               emitenteUf: registro.emitenteUf,
               cstIcmsXml: item.cstIcms,
               csosnXml: item.csosnIcms,
-            },
-          );
+            });
 
           const rows = await tx
             .update(documentosFiscaisItens)
@@ -324,7 +323,7 @@ export class RegrasFiscaisService {
                   documento.situacao !== 'AUTORIZADA'
                     ? 'NAO_ESCRITURAVEL'
                     : documento.integridadeStatus === 'OK' &&
-                      Number(pendencias?.total ?? 0) === 0
+                        Number(pendencias?.total ?? 0) === 0
                       ? 'ESCRITURADO'
                       : 'PENDENTE_REVISAO',
                 atualizadoEm: sql`clock_timestamp()`,
@@ -502,7 +501,8 @@ export class RegrasFiscaisService {
               'ENTRADA' | 'SAIDA',
           });
           const outraRevisao =
-            registro.cte.revisaoNecessaria && !registro.cte.cfopRevisaoNecessaria;
+            registro.cte.revisaoNecessaria &&
+            !registro.cte.cfopRevisaoNecessaria;
           const atualizados = await tx
             .update(documentosFiscaisCteEscrituracao)
             .set({
@@ -511,7 +511,7 @@ export class RegrasFiscaisService {
               revisaoNecessaria: outraRevisao,
               valorIcmsCreditavel:
                 resolvido.efeitos.apropriaCreditoIcms &&
-                  registro.cte.tipoOperacaoEscriturada === 'ENTRADA'
+                registro.cte.tipoOperacaoEscriturada === 'ENTRADA'
                   ? registro.cte.valorIcmsCreditavel
                   : '0.00',
               atualizadoEm: sql`clock_timestamp()`,
@@ -522,7 +522,9 @@ export class RegrasFiscaisService {
           const escrituravel =
             registro.situacao === 'AUTORIZADA' && registro.cte.escrituravel;
           const apto =
-            escrituravel && registro.integridadeStatus === 'OK' && !outraRevisao;
+            escrituravel &&
+            registro.integridadeStatus === 'OK' &&
+            !outraRevisao;
           const status = !escrituravel
             ? ('NAO_ESCRITURAVEL' as const)
             : apto

@@ -174,7 +174,9 @@ export function avaliarHomologacao(
       : `Não homologado: ${faltantes.length} critério(s) objetivo(s) de R5.1 ` +
         `não satisfeito(s) (${faltantes
           .map((f) => CRITERIO_LABEL[f])
-          .join(', ')}). O cenário não pode ser liberado até atendê-los (R5.1).`,
+          .join(
+            ', ',
+          )}). O cenário não pode ser liberado até atendê-los (R5.1).`,
   };
 }
 

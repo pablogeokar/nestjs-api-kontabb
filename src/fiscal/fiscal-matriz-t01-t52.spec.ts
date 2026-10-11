@@ -73,7 +73,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T02',
-    cenario: 'Retry manual e DF-e concorrentes: um documento lógico; evidências intactas.',
+    cenario:
+      'Retry manual e DF-e concorrentes: um documento lógico; evidências intactas.',
     habilitado: true,
     cobrePor: [
       'services/fiscal-item-reconciliation.integration.spec.ts',
@@ -82,7 +83,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T03',
-    cenario: 'Resumo antes/depois do XML completo: sem regressão; enriquecimento controlado.',
+    cenario:
+      'Resumo antes/depois do XML completo: sem regressão; enriquecimento controlado.',
     habilitado: true,
     cobrePor: [
       'services/dfe-document.parser.spec.ts',
@@ -91,7 +93,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T04',
-    cenario: 'Cancelamento antes/depois da captura: estado convergente, original preservado.',
+    cenario:
+      'Cancelamento antes/depois da captura: estado convergente, original preservado.',
     habilitado: true,
     cobrePor: [
       'services/fiscal-item-reconciliation.integration.spec.ts',
@@ -100,25 +103,29 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T05',
-    cenario: 'Dois meses distintos no cockpit: consulta/resultado da competência selecionada.',
+    cenario:
+      'Dois meses distintos no cockpit: consulta/resultado da competência selecionada.',
     habilitado: true,
     cobrePor: ['services/fiscal-period-selection.service.spec.ts'],
   },
   {
     id: 'T06',
-    cenario: 'Envelope { data } real: sem propriedades ausentes mascaradas por zero.',
+    cenario:
+      'Envelope { data } real: sem propriedades ausentes mascaradas por zero.',
     habilitado: true,
     cobrePor: ['controllers/fiscal-apuracao.controller.spec.ts'],
   },
   {
     id: 'T07',
-    cenario: 'Troca rápida de competência: resposta antiga não substitui a mais recente.',
+    cenario:
+      'Troca rápida de competência: resposta antiga não substitui a mais recente.',
     habilitado: true,
     cobrePor: ['services/fiscal-period-selection.service.spec.ts'],
   },
   {
     id: 'T08',
-    cenario: '1556/2556, CST 00 com destaque: crédito vedado coerente em livro e SPED.',
+    cenario:
+      '1556/2556, CST 00 com destaque: crédito vedado coerente em livro e SPED.',
     habilitado: true,
     cobrePor: [
       'services/decisao-credito.ponte-livros-builder.spec.ts',
@@ -127,7 +134,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T09',
-    cenario: '1551/2551 e ativo ST: sem crédito integral indevido; CIAP conforme decisão.',
+    cenario:
+      '1551/2551 e ativo ST: sem crédito integral indevido; CIAP conforme decisão.',
     habilitado: true,
     cobrePor: [
       'services/decisao-credito.spec.ts',
@@ -136,7 +144,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T10',
-    cenario: 'Regra proíbe crédito em compra comum: motor, livro e E110 respeitam a regra.',
+    cenario:
+      'Regra proíbe crédito em compra comum: motor, livro e E110 respeitam a regra.',
     habilitado: true,
     cobrePor: [
       'services/fiscal-rule-engine.service.spec.ts',
@@ -145,7 +154,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T11',
-    cenario: 'Regra altera CST, XML preservado: original e escrituração separados.',
+    cenario:
+      'Regra altera CST, XML preservado: original e escrituração separados.',
     habilitado: true,
     cobrePor: [
       'services/decisao-credito.matriz-acao.spec.ts',
@@ -172,7 +182,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T14',
-    cenario: 'CT-e anulação/substituição fora de ordem: sem duplicidade; revisão quando falta vínculo.',
+    cenario:
+      'CT-e anulação/substituição fora de ordem: sem duplicidade; revisão quando falta vínculo.',
     habilitado: true,
     cobrePor: [
       'services/cte-escrituracao.parser.spec.ts',
@@ -217,7 +228,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T19',
-    cenario: 'IPI 01 com valor positivo: inconsistência ou hipótese explícita; sem crédito cego.',
+    cenario:
+      'IPI 01 com valor positivo: inconsistência ou hipótese explícita; sem crédito cego.',
     habilitado: true,
     cobrePor: [
       'sped/efd-icms-ipi.builder.spec.ts',
@@ -226,7 +238,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T20',
-    cenario: 'IPI entrada sob CST do fornecedor: reclassificação fundamentada ou pendência.',
+    cenario:
+      'IPI entrada sob CST do fornecedor: reclassificação fundamentada ou pendência.',
     habilitado: true,
     cobrePor: [
       'sped/efd-icms-ipi.builder.spec.ts',
@@ -249,10 +262,7 @@ const MATRIZ_T01_T52: Cenario[] = [
     id: 'T23',
     cenario: 'Bem adquirido no futuro: não entra em competência anterior.',
     habilitado: true,
-    cobrePor: [
-      'services/ciap.service.spec.ts',
-      'fiscal-date.util.spec.ts',
-    ],
+    cobrePor: ['services/ciap.service.spec.ts', 'fiscal-date.util.spec.ts'],
   },
   {
     id: 'T24',
@@ -262,25 +272,29 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T25',
-    cenario: 'Exportação e saídas equiparadas no CIAP: coeficiente conforme cenário legal aprovado.',
+    cenario:
+      'Exportação e saídas equiparadas no CIAP: coeficiente conforme cenário legal aprovado.',
     habilitado: true,
     cobrePor: ['services/ciap.service.spec.ts'],
   },
   {
     id: 'T26',
-    cenario: 'CIAP sem saídas: regra explícita; sem assumir 100% silenciosamente.',
+    cenario:
+      'CIAP sem saídas: regra explícita; sem assumir 100% silenciosamente.',
     habilitado: true,
     cobrePor: ['services/ciap.service.spec.ts'],
   },
   {
     id: 'T27',
-    cenario: 'Última parcela/baixa: histórico e cancelamento residual consistentes.',
+    cenario:
+      'Última parcela/baixa: histórico e cancelamento residual consistentes.',
     habilitado: true,
     cobrePor: ['services/ciap.service.spec.ts'],
   },
   {
     id: 'T28',
-    cenario: 'G110/G125 contra fixture normativa: contagens, posições, precisão e referências corretas.',
+    cenario:
+      'G110/G125 contra fixture normativa: contagens, posições, precisão e referências corretas.',
     habilitado: true,
     cobrePor: [
       'sped/efd-icms-ipi.bloco-g.fixtures-normativas.spec.ts',
@@ -307,7 +321,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T31',
-    cenario: 'DIFAL com alíquota ausente: pendência ou simulação; não débito definitivo.',
+    cenario:
+      'DIFAL com alíquota ausente: pendência ou simulação; não débito definitivo.',
     habilitado: true,
     cobrePor: [
       'services/difal-hipotese.spec.ts',
@@ -326,7 +341,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T33',
-    cenario: 'ST já retida / responsabilidade diversa: sem recolhimento duplicado.',
+    cenario:
+      'ST já retida / responsabilidade diversa: sem recolhimento duplicado.',
     habilitado: true,
     cobrePor: [
       'services/st-enquadramento.spec.ts',
@@ -336,7 +352,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T34',
-    cenario: 'PIS misto com/sem destaque: cálculo por item ou pendência; sem perda de base.',
+    cenario:
+      'PIS misto com/sem destaque: cálculo por item ou pendência; sem perda de base.',
     habilitado: true,
     cobrePor: [
       'services/pis-cofins-razao.spec.ts',
@@ -345,7 +362,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T35',
-    cenario: 'CST 03 / crédito presumido: regra específica; não omissão nem alíquota genérica.',
+    cenario:
+      'CST 03 / crédito presumido: regra específica; não omissão nem alíquota genérica.',
     habilitado: true,
     cobrePor: [
       'services/pis-cofins-cst.spec.ts',
@@ -354,7 +372,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T36',
-    cenario: 'Saldo credor PIS/COFINS: preservado e rastreado para período seguinte.',
+    cenario:
+      'Saldo credor PIS/COFINS: preservado e rastreado para período seguinte.',
     habilitado: true,
     cobrePor: ['services/pis-cofins-saldo.spec.ts'],
   },
@@ -375,7 +394,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T39',
-    cenario: 'Documento pendente com escriturado=true: não entra indevidamente em apuração definitiva.',
+    cenario:
+      'Documento pendente com escriturado=true: não entra indevidamente em apuração definitiva.',
     habilitado: true,
     cobrePor: [
       'services/fiscal-books-projection.spec.ts',
@@ -384,7 +404,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T40',
-    cenario: 'Livro com ajustes/saldo anterior: mesmos valores do fechamento/E110.',
+    cenario:
+      'Livro com ajustes/saldo anterior: mesmos valores do fechamento/E110.',
     habilitado: true,
     cobrePor: [
       'services/conciliacao-ponte.spec.ts',
@@ -403,13 +424,15 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T42',
-    cenario: 'Simples com obrigações distintas: matriz fiscal aprovada; consistência entre módulos.',
+    cenario:
+      'Simples com obrigações distintas: matriz fiscal aprovada; consistência entre módulos.',
     habilitado: true,
     cobrePor: ['services/politica-simples.spec.ts'],
   },
   {
     id: 'T43',
-    cenario: 'Guia duplicada por retry: não duplicada; múltiplas legítimas permitidas.',
+    cenario:
+      'Guia duplicada por retry: não duplicada; múltiplas legítimas permitidas.',
     habilitado: true,
     cobrePor: [
       'services/fiscal-guias.service.spec.ts',
@@ -418,7 +441,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T44',
-    cenario: 'Pagamento parcial/cancelado: histórico e saldo de obrigação preservados.',
+    cenario:
+      'Pagamento parcial/cancelado: histórico e saldo de obrigação preservados.',
     habilitado: true,
     cobrePor: [
       'services/fiscal-pagamentos-trilha.spec.ts',
@@ -445,13 +469,15 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T47',
-    cenario: 'Inventário próprio/terceiros/zerado: quantidades, valores e participantes reconciliados.',
+    cenario:
+      'Inventário próprio/terceiros/zerado: quantidades, valores e participantes reconciliados.',
     habilitado: true,
     cobrePor: ['sped/sped-inventario.service.spec.ts'],
   },
   {
     id: 'T48',
-    cenario: 'Obrigação K/B/modelo não suportado: impedimento explícito, não arquivo vazio enganoso.',
+    cenario:
+      'Obrigação K/B/modelo não suportado: impedimento explícito, não arquivo vazio enganoso.',
     habilitado: true,
     cobrePor: [
       'sped/st-bloqueio.spec.ts',
@@ -460,7 +486,8 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T49',
-    cenario: 'DTO inválido / objeto de outro cliente: rejeição controlada antes de persistir.',
+    cenario:
+      'DTO inválido / objeto de outro cliente: rejeição controlada antes de persistir.',
     habilitado: true,
     cobrePor: [
       'controllers/fiscal-apuracao.controller.spec.ts',
@@ -478,19 +505,24 @@ const MATRIZ_T01_T52: Cenario[] = [
   },
   {
     id: 'T51',
-    cenario: '2026 versus 2027: leiaute por vigência; não reutilização silenciosa.',
+    cenario:
+      '2026 versus 2027: leiaute por vigência; não reutilização silenciosa.',
     habilitado: true,
     cobrePor: ['services/fiscal-leiaute-vigencia.spec.ts'],
   },
   {
     id: 'T52',
-    cenario: 'Falha storage após snapshot: status de falha, compensação e retry rastreável.',
+    cenario:
+      'Falha storage após snapshot: status de falha, compensação e retry rastreável.',
     habilitado: true,
     cobrePor: ['services/fiscal-entregas-storage.service.spec.ts'],
   },
 ];
 
-function caminhoAbsoluto(cenario: CenarioHabilitado, representante: string): string {
+function caminhoAbsoluto(
+  cenario: CenarioHabilitado,
+  representante: string,
+): string {
   return cenario.base === 'web'
     ? join(WEB_ROOT, representante)
     : join(API_FISCAL, representante);

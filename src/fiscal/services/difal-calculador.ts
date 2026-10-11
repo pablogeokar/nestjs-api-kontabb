@@ -234,13 +234,17 @@ export function calcularDifalHipotese(
 
   const baseScaled = toScaledInteger(input.baseCalculo, ESCALA_VALOR);
   const internaScaled = toScaledInteger(regra.aliquotaInterna, ESCALA_ALIQUOTA);
-  const interScaled = toScaledInteger(aliquotaInterestadualStr, ESCALA_ALIQUOTA);
+  const interScaled = toScaledInteger(
+    aliquotaInterestadualStr,
+    ESCALA_ALIQUOTA,
+  );
   // Diferencial de alíquota em pontos (escala 4). `positive` evita diferencial
   // negativo quando a interestadual >= interna (não há DIFAL a recolher).
   const difScaled = positive(internaScaled - interScaled);
 
   // DIFAL = base(centavos) * dif(pontos * 1e4) / (100 * 1e4).
-  const difalScaled = (baseScaled * difScaled) / (100n * 10n ** BigInt(ESCALA_ALIQUOTA));
+  const difalScaled =
+    (baseScaled * difScaled) / (100n * 10n ** BigInt(ESCALA_ALIQUOTA));
 
   // FCP (quando a regra o institui) = base_fcp * aliquota_fcp / 100. Entra
   // separado do DIFAL. A BASE DO FCP vem da composição (tarefa 2.4) quando o
@@ -255,9 +259,11 @@ export function calcularDifalHipotese(
     fcpStr == null
       ? 0n
       : (baseFcpScaled * toScaledInteger(fcpStr, ESCALA_ALIQUOTA)) /
-      (100n * 10n ** BigInt(ESCALA_ALIQUOTA));
+        (100n * 10n ** BigInt(ESCALA_ALIQUOTA));
 
-  const status: DifalCalculoStatus = opcoes.aprovada ? 'CALCULADO' : 'SIMULACAO';
+  const status: DifalCalculoStatus = opcoes.aprovada
+    ? 'CALCULADO'
+    : 'SIMULACAO';
   const diferencialStr = fromScaledInteger(difScaled, ESCALA_ALIQUOTA);
   const valorDifalStr = fromScaledInteger(difalScaled, ESCALA_VALOR);
   const valorFcpStr = fromScaledInteger(fcpScaled, ESCALA_VALOR);

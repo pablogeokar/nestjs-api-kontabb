@@ -394,9 +394,9 @@ describe('montarMatrizOnboarding — impedimentos explícitos (4.2, R4.2/R4.3)',
     const inv = m.impedimentos.filter((i) => i.eixo === 'inventario');
     // Motivo 01 suportado não gera impedimento; 02 e 06 geram.
     expect(inv).toHaveLength(2);
-    expect(inv.every((i) => i.codigo === 'INVENTARIO_MOTIVO_NAO_SUPORTADO')).toBe(
-      true,
-    );
+    expect(
+      inv.every((i) => i.codigo === 'INVENTARIO_MOTIVO_NAO_SUPORTADO'),
+    ).toBe(true);
     expect(inv.some((i) => i.motivo.includes('motivo 02'))).toBe(true);
     expect(inv.some((i) => i.motivo.includes('motivo 06'))).toBe(true);
   });

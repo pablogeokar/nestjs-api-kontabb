@@ -18,7 +18,7 @@ export class UsuariosService {
     private readonly database: DatabaseService,
     private readonly authService: AuthService,
     private readonly logger: AppLogger,
-  ) { }
+  ) {}
 
   async listSystemUsers(input: {
     role: string;

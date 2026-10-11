@@ -156,7 +156,9 @@ function camposDaLinha(
 ): string[] {
   const alvo = records.filter((record) => record.reg === reg)[ocorrencia];
   if (!alvo) {
-    throw new Error(`Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`);
+    throw new Error(
+      `Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`,
+    );
   }
   return serializeSpedRecord(alvo).split('|').slice(2, -1);
 }
@@ -175,7 +177,7 @@ function trocarCampos(
   b: number,
 ): string[] {
   const out = [...campos];
-  const tmp = out[a]!;
+  const tmp = out[a];
   out[a] = out[b]!;
   out[b] = tmp;
   return out;
@@ -218,28 +220,32 @@ function mutacoes(): CasoMutacao[] {
     // G110 — índice de participação / apropriação / saldo.
     {
       reg: 'G110',
-      descricao: 'troca VL_TRIB_EXP <-> VL_TOTAL (índice de participação invertido)',
+      descricao:
+        'troca VL_TRIB_EXP <-> VL_TOTAL (índice de participação invertido)',
       kind: 'troca',
       a: g110('VL_TRIB_EXP'),
       b: g110('VL_TOTAL'),
     },
     {
       reg: 'G110',
-      descricao: 'troca SOM_PARC <-> SALDO_IN_ICMS (adjacentes, valores distintos)',
+      descricao:
+        'troca SOM_PARC <-> SALDO_IN_ICMS (adjacentes, valores distintos)',
       kind: 'troca',
       a: g110('SALDO_IN_ICMS'),
       b: g110('SOM_PARC'),
     },
     {
       reg: 'G110',
-      descricao: 'remove IND_PER_SAI (desloca ICMS_APROP/SOM_ICMS_OC e reduz a contagem)',
+      descricao:
+        'remove IND_PER_SAI (desloca ICMS_APROP/SOM_ICMS_OC e reduz a contagem)',
       kind: 'remocao',
       indice: g110('IND_PER_SAI'),
     },
     // G125 — ICMS-ST, NUM_PARC/VL_PARC_PASS.
     {
       reg: 'G125',
-      descricao: 'troca VL_IMOB_ICMS_OP <-> VL_IMOB_ICMS_ST (ICMS-ST fora de posição)',
+      descricao:
+        'troca VL_IMOB_ICMS_OP <-> VL_IMOB_ICMS_ST (ICMS-ST fora de posição)',
       kind: 'troca',
       a: g125('VL_IMOB_ICMS_OP'),
       b: g125('VL_IMOB_ICMS_ST'),
@@ -253,14 +259,16 @@ function mutacoes(): CasoMutacao[] {
     },
     {
       reg: 'G125',
-      descricao: 'remove VL_IMOB_ICMS_ST (volta ao bug antigo de omitir o ICMS-ST)',
+      descricao:
+        'remove VL_IMOB_ICMS_ST (volta ao bug antigo de omitir o ICMS-ST)',
       kind: 'remocao',
       indice: g125('VL_IMOB_ICMS_ST'),
     },
     // 0300 — cadastro do bem (referenciado pelo G125).
     {
       reg: '0300',
-      descricao: 'troca COD_CTA <-> NR_PARC (conta contábil vs. nº de parcelas)',
+      descricao:
+        'troca COD_CTA <-> NR_PARC (conta contábil vs. nº de parcelas)',
       kind: 'troca',
       a: r0300('COD_CTA'),
       b: r0300('NR_PARC'),
@@ -310,7 +318,7 @@ describe('Mutação de posição do Bloco G — a fixture normativa detecta a re
     it.each(mutacoes().filter((m) => m.kind === 'troca'))(
       '$reg: $descricao — campos $a e $b têm valores diferentes',
       (caso) => {
-        const campos = camposCorretos[caso.reg]!;
+        const campos = camposCorretos[caso.reg];
         expect(campos[caso.a!]).not.toBe(campos[caso.b!]);
       },
     );
@@ -318,8 +326,8 @@ describe('Mutação de posição do Bloco G — a fixture normativa detecta a re
 
   describe('cada mutação de posição quebra a igualdade contra a linha normativa', () => {
     it.each(mutacoes())('$reg: $descricao', (caso) => {
-      const campos = camposCorretos[caso.reg]!;
-      const esperada = linhasCorretas[caso.reg]!;
+      const campos = camposCorretos[caso.reg];
+      const esperada = linhasCorretas[caso.reg];
 
       const mutados =
         caso.kind === 'troca'
@@ -336,7 +344,7 @@ describe('Mutação de posição do Bloco G — a fixture normativa detecta a re
       // por uma asserção que só olhasse um prefixo. Garantimos que a CONTAGEM de
       // campos muda — qualquer validação de `fieldCountAfterReg` também pega.
       if (caso.kind === 'remocao') {
-        const oficial = BLOCO_G_LEIAUTES[caso.reg]!.fieldCountAfterReg;
+        const oficial = BLOCO_G_LEIAUTES[caso.reg].fieldCountAfterReg;
         expect(campos.length).toBe(oficial);
         expect(mutados.length).toBe(oficial - 1);
         expect(mutados.length).not.toBe(oficial);

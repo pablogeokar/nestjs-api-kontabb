@@ -127,7 +127,7 @@ describe('enquadrarSt (Fase 4 / tarefa 4.2 — R3.1/R3.4)', () => {
 
     it('regraAprovada ausente (default false) → PENDENCIA', () => {
       const { regraAprovada: _omit, ...rest } = input();
-      const r = enquadrarSt(rest as StEnquadramentoInput);
+      const r = enquadrarSt(rest);
       expect(r.status).toBe('PENDENCIA');
     });
   });

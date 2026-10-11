@@ -89,7 +89,9 @@ function camposDaLinha(
 ): string[] {
   const alvo = records.filter((record) => record.reg === reg)[ocorrencia];
   if (!alvo) {
-    throw new Error(`Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`);
+    throw new Error(
+      `Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`,
+    );
   }
   // |REG|c0|c1|...| ⇒ remove os vazios de borda e o próprio REG.
   return serializeSpedRecord(alvo).split('|').slice(2, -1);
@@ -109,7 +111,7 @@ function trocarCampos(
   b: number,
 ): string[] {
   const out = [...campos];
-  const tmp = out[a]!;
+  const tmp = out[a];
   out[a] = out[b]!;
   out[b] = tmp;
   return out;
@@ -217,7 +219,8 @@ const MUTACOES: readonly CasoMutacao[] = [
     b: 'VL_IPI',
   },
   {
-    descricao: 'remove VL_ICMS_ST (desloca VL_RED_BC/VL_IPI e reduz a contagem)',
+    descricao:
+      'remove VL_ICMS_ST (desloca VL_RED_BC/VL_IPI e reduz a contagem)',
     kind: 'remocao',
     campo: 'VL_ICMS_ST',
   },

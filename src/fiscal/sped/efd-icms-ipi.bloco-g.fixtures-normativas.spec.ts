@@ -30,11 +30,7 @@ import {
   type SpedCiapBuilderData,
   type SpedEfdBuilderInput,
 } from './efd-icms-ipi.builder';
-import {
-  BLOCO_G_LEIAUTES,
-  serializeSpedRecord,
-  type SpedRecord,
-} from './core';
+import { BLOCO_G_LEIAUTES, serializeSpedRecord, type SpedRecord } from './core';
 
 // Período de apuração usado no input conhecido. DT_INI / DT_FIN do G110 derivam
 // de `inicio` / `fim` (ddmmaaaa). Agosto/2026 (competência vigente nos testes).
@@ -266,7 +262,9 @@ function camposDaLinha(
 ): string[] {
   const alvo = records.filter((record) => record.reg === reg)[ocorrencia];
   if (!alvo) {
-    throw new Error(`Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`);
+    throw new Error(
+      `Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`,
+    );
   }
   // |REG|c0|c1|...| ⇒ remove os vazios de borda e o próprio REG.
   return serializeSpedRecord(alvo).split('|').slice(2, -1);
@@ -279,7 +277,7 @@ describe('Fixtures normativas do Bloco G — oráculo externo ao builder (R4.1, 
     '$reg: builder reproduz a linha normativa escrita à mão',
     (fixture) => {
       const serial = serializeSpedRecord(
-        records.filter((r) => r.reg === fixture.reg)[fixture.ocorrencia]!,
+        records.filter((r) => r.reg === fixture.reg)[fixture.ocorrencia],
       );
       expect(serial).toBe(fixture.linha);
     },

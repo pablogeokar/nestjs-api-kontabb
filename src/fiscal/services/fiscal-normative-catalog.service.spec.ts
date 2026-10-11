@@ -50,10 +50,7 @@ function renderWhere(captured: { where?: SQL }): {
 // teste exercite a semântica "a versão cuja vigência contém a competência",
 // não apenas a forma da query. A primeira chamada a `select` resolve o
 // catálogo; a segunda (quando houver) resolve as revisões de regra.
-function createDb(opts: {
-  catalogo: CatalogoRow[];
-  regras?: RegraRow[];
-}) {
+function createDb(opts: { catalogo: CatalogoRow[]; regras?: RegraRow[] }) {
   const captures: Array<{ where?: SQL; orderByDesc: boolean }> = [];
 
   // Aplica a MESMA regra do serviço: início <= competência e (fim nulo OU fim

@@ -97,7 +97,7 @@ export class FiscalRuleEngineService {
   constructor(
     private readonly database: DatabaseService,
     @Optional() private readonly classificacao?: ClassificacaoDestinacaoService,
-  ) { }
+  ) {}
 
   async evaluate(input: RuleEvaluationInput): Promise<RuleEvaluationResult> {
     const cfopXml = normalizeCfop(input.cfopXml);
@@ -147,7 +147,7 @@ export class FiscalRuleEngineService {
       if (
         !destino?.ativo ||
         tipoOperacaoFromCodigo(destino.codigo) !==
-        input.tipoOperacaoEscriturada ||
+          input.tipoOperacaoEscriturada ||
         abrangenciaFromCodigo(destino.codigo) !== abrangenciaFromCodigo(cfopXml)
       ) {
         return pendente(
@@ -186,7 +186,7 @@ export class FiscalRuleEngineService {
           !destino?.ativo ||
           tipoOperacaoFromCodigo(destino.codigo) !== 'ENTRADA' ||
           abrangenciaFromCodigo(destino.codigo) !==
-          abrangenciaFromCodigo(cfopXml)
+            abrangenciaFromCodigo(cfopXml)
         ) {
           return pendente(
             cfopXml,
@@ -211,9 +211,9 @@ export class FiscalRuleEngineService {
           if (
             !destino?.ativo ||
             tipoOperacaoFromCodigo(destino.codigo) !==
-            input.tipoOperacaoEscriturada ||
+              input.tipoOperacaoEscriturada ||
             abrangenciaFromCodigo(destino.codigo) !==
-            abrangenciaFromCodigo(cfopXml)
+              abrangenciaFromCodigo(cfopXml)
           ) {
             return {
               ...pendente(
@@ -367,7 +367,7 @@ export class FiscalRuleEngineService {
     if (
       regra.fornecedorCnpjCpf &&
       normalizeTaxId(regra.fornecedorCnpjCpf) !==
-      normalizeTaxId(input.emitenteCnpjCpf)
+        normalizeTaxId(input.emitenteCnpjCpf)
     ) {
       return false;
     }

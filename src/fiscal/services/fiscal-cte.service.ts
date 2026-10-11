@@ -177,7 +177,7 @@ export class FiscalCteService {
   constructor(
     private readonly database: DatabaseService,
     private readonly cfopService: CfopService,
-  ) { }
+  ) {}
 
   decidirEscrituracaoCte = decidirEscrituracaoCte;
 

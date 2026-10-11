@@ -1,0 +1,647 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, eq, inArray } from 'drizzle-orm';
+import { DatabaseService } from '../../database/database.service';
+import {
+  certificadosDigitais,
+  clientes,
+  documentosFiscais,
+  eventosAuditoria,
+} from '../../database/schema';
+import { AppLogger } from '../../common/logger.service';
+import type { RegimeTributario } from '../../clientes/clientes.types';
+import { DistribuicaoDfeService } from './distribuicao-dfe.service';
+import {
+  extractDfeDocZips,
+  extractDfeResponseMetadata,
+  parseDfeDocZip,
+  parseNfeResumoDocZip,
+} from './dfe-document.parser';
+import {
+  parseChavesFromBuffer,
+  parseChavesFromText,
+  type ParsedChavesExtractionResult,
+  type ParsedFiscalAccessKey,
+} from './listagem-chaves.parser';
+import { NfeWizardService } from './nfewizard.service';
+
+const MAX_KEYS = 500;
+const MIN_SEFAZ_INTERVAL_MS = 1_200;
+
+type DocumentoExistente = {
+  id: string;
+  chaveAcesso: string;
+  situacao: string;
+  manifestacaoStatus: string;
+};
+
+export type ImportacaoChaveStatus =
+  | 'IMPORTADO'
+  | 'JA_EXISTENTE'
+  | 'RESUMO_COM_CIENCIA'
+  | 'RESUMO_PENDENTE'
+  | 'NAO_LOCALIZADO'
+  | 'NAO_SUPORTADO'
+  | 'INVALIDA'
+  | 'FALHA'
+  | 'ABORTADO_CONSUMO_INDEVIDO';
+
+export interface ImportacaoChaveItem {
+  chave_acesso: string;
+  status: ImportacaoChaveStatus;
+  mensagem: string;
+  documento_id: string | null;
+  modelo: string | null;
+  competencia: string | null;
+  emitente: string | null;
+  valor_total: string | null;
+}
+
+@Injectable()
+export class ImportacaoChavesFiscalService {
+  private readonly queueByClient = new Map<string, Promise<void>>();
+  private readonly lastCallByClient = new Map<string, number>();
+
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly nfeWizard: NfeWizardService,
+    private readonly distribuicao: DistribuicaoDfeService,
+    private readonly logger: AppLogger,
+  ) {}
+
+  async analisar(input: {
+    clienteId: string;
+    chavesTexto?: string;
+    arquivo?: Express.Multer.File;
+  }) {
+    await this.getCliente(input.clienteId, false);
+    if (!input.arquivo && !input.chavesTexto?.trim()) {
+      throw new BadRequestException(
+        'Cole uma lista de chaves ou selecione um arquivo .txt, .csv ou .xlsx.',
+      );
+    }
+    if (input.arquivo && input.chavesTexto?.trim()) {
+      throw new BadRequestException(
+        'Envie apenas uma origem por vez: texto colado ou arquivo.',
+      );
+    }
+
+    let parsed: ParsedChavesExtractionResult;
+    try {
+      parsed = input.arquivo
+        ? await parseChavesFromBuffer(
+            input.arquivo.buffer,
+            input.arquivo.originalname,
+            input.arquivo.mimetype,
+          )
+        : parseChavesFromText(input.chavesTexto ?? '');
+    } catch (error: unknown) {
+      throw new BadRequestException(this.publicError(error));
+    }
+    if (parsed.totalRegistros === 0) {
+      throw new BadRequestException('Nenhuma chave fiscal foi encontrada.');
+    }
+    if (parsed.totalRegistros > MAX_KEYS) {
+      throw new BadRequestException(
+        `A lista possui ${parsed.totalRegistros} registros. O limite por lote é ${MAX_KEYS}.`,
+      );
+    }
+
+    const normalized = parsed.itens
+      .filter((item) => item.valida)
+      .map((item) => item.chaveAcesso);
+    const existing = await this.getDocumentosExistentes(
+      input.clienteId,
+      normalized,
+    );
+    const existingByKey = new Map(
+      existing.map((item) => [item.chaveAcesso, item]),
+    );
+    const itens = parsed.itens.map((item) =>
+      this.toPreviewItem(item, existingByKey.get(item.chaveAcesso)),
+    );
+
+    return {
+      resumo: {
+        total_registros: parsed.totalRegistros,
+        chaves_unicas: parsed.itens.length,
+        validas: parsed.validas,
+        aptas_para_busca: parsed.aptasParaBusca,
+        invalidas: parsed.invalidas,
+        duplicadas: parsed.duplicadas,
+        ja_existentes: itens.filter(
+          (item) => item.status_local === 'JA_IMPORTADA',
+        ).length,
+        resumos_pendentes: itens.filter(
+          (item) => item.status_local === 'RESUMIDA',
+        ).length,
+      },
+      itens,
+      avisos: parsed.avisos,
+    };
+  }
+
+  async executar(input: {
+    clienteId: string;
+    chaves: string[];
+    forcarReimportacao?: boolean;
+    manifestarAutomaticamente?: boolean;
+    actorUserId: string;
+    requestId: string;
+  }) {
+    const parsed = parseChavesFromText(input.chaves.join('\n'));
+    if (parsed.totalRegistros > MAX_KEYS) {
+      throw new BadRequestException(`O limite por lote é ${MAX_KEYS} chaves.`);
+    }
+    if (parsed.itens.length === 0) {
+      throw new BadRequestException(
+        'Nenhuma chave fiscal válida foi informada.',
+      );
+    }
+
+    const cliente = await this.getCliente(input.clienteId, true);
+    await this.assertCertificadoDisponivel(input.clienteId);
+    const existing = await this.getDocumentosExistentes(
+      input.clienteId,
+      parsed.itens.map((item) => item.chaveAcesso).filter(Boolean),
+    );
+    const existingByKey = new Map(
+      existing.map((item) => [item.chaveAcesso, item]),
+    );
+    const resultados: ImportacaoChaveItem[] = [];
+    let consumoIndevido = false;
+
+    for (const item of parsed.itens) {
+      if (consumoIndevido) {
+        resultados.push(
+          this.result(
+            item,
+            'ABORTADO_CONSUMO_INDEVIDO',
+            'Lote interrompido para respeitar o bloqueio temporário da SEFAZ.',
+          ),
+        );
+        continue;
+      }
+      if (!item.valida) {
+        resultados.push(
+          this.result(item, 'INVALIDA', item.motivo ?? 'Chave inválida.'),
+        );
+        continue;
+      }
+      if (!item.aptaParaBusca) {
+        resultados.push(
+          this.result(
+            item,
+            'NAO_SUPORTADO',
+            item.motivo ?? 'Modelo não suportado.',
+          ),
+        );
+        continue;
+      }
+
+      const local = existingByKey.get(item.chaveAcesso);
+      if (local && local.situacao !== 'RESUMIDA' && !input.forcarReimportacao) {
+        resultados.push(
+          this.result(
+            item,
+            'JA_EXISTENTE',
+            'O documento completo já está importado.',
+            local,
+          ),
+        );
+        continue;
+      }
+
+      try {
+        const resposta = await this.withSefazRateLimit(input.clienteId, () =>
+          this.nfeWizard.consultarPorChave({
+            clienteId: input.clienteId,
+            cnpj: cliente.cnpj,
+            uf: cliente.uf,
+            chaveAcesso: item.chaveAcesso,
+          }),
+        );
+        const metadata = extractDfeResponseMetadata(resposta);
+        if (
+          metadata.cStat === 656 ||
+          /consumo indevido/i.test(metadata.motivo)
+        ) {
+          consumoIndevido = true;
+          resultados.push(
+            this.result(
+              item,
+              'ABORTADO_CONSUMO_INDEVIDO',
+              'A SEFAZ bloqueou temporariamente novas consultas (cStat 656). Tente novamente mais tarde.',
+            ),
+          );
+          continue;
+        }
+        if (metadata.cStat === 137) {
+          resultados.push(
+            this.result(
+              item,
+              'NAO_LOCALIZADO',
+              'Documento não localizado pela SEFAZ.',
+            ),
+          );
+          continue;
+        }
+
+        const docZips = extractDfeDocZips(resposta);
+        const documento = docZips
+          .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
+          .find((candidate) => candidate?.chaveAcesso === item.chaveAcesso);
+        if (documento) {
+          await this.distribuicao.salvarDocumentoConsultado({
+            clienteId: input.clienteId,
+            cnpj: cliente.cnpj,
+            documento,
+            regimeTributario: cliente.regimeTributario,
+            apuraIcms: cliente.apuraIcms,
+          });
+          const saved = await this.getDocumento(
+            input.clienteId,
+            item.chaveAcesso,
+          );
+          resultados.push(
+            this.result(
+              item,
+              local ? 'JA_EXISTENTE' : 'IMPORTADO',
+              local
+                ? 'Documento conferido novamente e mantido.'
+                : 'XML completo importado.',
+              saved,
+              documento.emitenteRazaoSocial,
+              documento.valorTotal,
+            ),
+          );
+          continue;
+        }
+
+        const resumo = docZips
+          .map((docZip) => parseNfeResumoDocZip(docZip))
+          .find((candidate) => candidate?.chaveAcesso === item.chaveAcesso);
+        if (!resumo) {
+          resultados.push(
+            this.result(
+              item,
+              'NAO_LOCALIZADO',
+              metadata.motivo ||
+                'A SEFAZ não retornou XML ou resumo para a chave.',
+            ),
+          );
+          continue;
+        }
+
+        await this.distribuicao.salvarResumoConsultado({
+          clienteId: input.clienteId,
+          cnpj: cliente.cnpj,
+          resumo,
+        });
+        let saved = await this.getDocumento(input.clienteId, item.chaveAcesso);
+        if (
+          input.manifestarAutomaticamente &&
+          saved &&
+          saved.manifestacaoStatus === 'SEM_MANIFESTACAO'
+        ) {
+          const manifestacao = await this.withSefazRateLimit(
+            input.clienteId,
+            () =>
+              this.nfeWizard.enviarManifestacao({
+                clienteId: input.clienteId,
+                cnpj: cliente.cnpj,
+                uf: cliente.uf,
+                chaveAcesso: item.chaveAcesso,
+                tipoEvento: '210210',
+              }),
+          );
+          await this.distribuicao.registrarManifestacao({
+            documentoId: saved.id,
+            tipoEvento: 'MANIFESTACAO_CIENCIA',
+            codigoEvento: '210210',
+            protocolo: manifestacao.protocolo,
+            statusSefaz: manifestacao.status,
+            motivoSefaz: manifestacao.motivo,
+          });
+          await this.sleep(2_500);
+          try {
+            await this.withSefazRateLimit(input.clienteId, () =>
+              this.distribuicao.buscarXmlCompletoAposManifestacao({
+                documentoId: saved.id,
+                clienteId: input.clienteId,
+                cnpj: cliente.cnpj,
+                uf: cliente.uf,
+                chaveAcesso: item.chaveAcesso,
+              }),
+            );
+          } catch (error: unknown) {
+            if (/consumo indevido|\b656\b/i.test(this.rootCause(error))) {
+              throw error;
+            }
+            // A Ciência já foi autorizada. A propagação do XML completo é
+            // eventual e não deve converter a manifestação em falha.
+            this.logger.warn(
+              'fiscal_key_import_xml_pending_after_manifestation',
+              {
+                requestId: input.requestId,
+                userId: input.actorUserId,
+                entityId: saved.id,
+                operation: 'buscar_xml_apos_ciencia',
+              },
+            );
+          }
+          saved = await this.getDocumento(input.clienteId, item.chaveAcesso);
+        }
+        const xmlCompleto = Boolean(saved && saved.situacao !== 'RESUMIDA');
+        resultados.push(
+          this.result(
+            item,
+            xmlCompleto
+              ? 'IMPORTADO'
+              : input.manifestarAutomaticamente
+                ? 'RESUMO_COM_CIENCIA'
+                : 'RESUMO_PENDENTE',
+            xmlCompleto
+              ? 'Ciência registrada e XML completo importado.'
+              : input.manifestarAutomaticamente
+                ? 'Ciência da Operação registrada; o XML pode levar alguns minutos para ficar disponível.'
+                : 'Resumo salvo. Autorize a Ciência da Operação para solicitar o XML completo.',
+            saved,
+            resumo.emitenteRazaoSocial,
+            resumo.valorTotal,
+          ),
+        );
+      } catch (error: unknown) {
+        const message = this.rootCause(error);
+        if (/consumo indevido|\b656\b/i.test(message)) consumoIndevido = true;
+        this.logger.error('fiscal_key_import_item_failed', error, {
+          requestId: input.requestId,
+          userId: input.actorUserId,
+          entityId: input.clienteId,
+          operation: 'importar_dfe_por_chave',
+          result: consumoIndevido ? 'CONSUMO_INDEVIDO' : 'FAILED',
+        });
+        resultados.push(
+          this.result(
+            item,
+            consumoIndevido ? 'ABORTADO_CONSUMO_INDEVIDO' : 'FALHA',
+            consumoIndevido
+              ? 'A SEFAZ bloqueou temporariamente novas consultas (cStat 656).'
+              : 'Não foi possível consultar esta chave. Verifique o certificado e tente novamente.',
+          ),
+        );
+      }
+    }
+
+    const resumo = this.summarize(resultados);
+    await this.registrarAuditoria({ ...input, resumo });
+    this.logger.info('fiscal_key_import_completed', {
+      requestId: input.requestId,
+      userId: input.actorUserId,
+      entityId: input.clienteId,
+      operation: 'importar_dfe_por_chave',
+      result: resumo.falhas > 0 ? 'PARTIAL_OR_FAILED' : 'SUCCESS',
+      total: resumo.total,
+      importados: resumo.importados,
+      falhas: resumo.falhas,
+    });
+
+    return { resumo, itens: resultados };
+  }
+
+  private async getCliente(
+    clienteId: string,
+    validateOperationalData: boolean,
+  ) {
+    const rows = await this.database.db
+      .select({
+        id: clientes.id,
+        cnpj: clientes.cnpj,
+        uf: clientes.uf,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, clienteId))
+      .limit(1);
+    const cliente = rows[0];
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    if (
+      validateOperationalData &&
+      (!cliente.uf || !/^[A-Z]{2}$/.test(cliente.uf))
+    ) {
+      throw new BadRequestException(
+        'Informe uma UF válida no cadastro da empresa antes de consultar a SEFAZ.',
+      );
+    }
+    return {
+      ...cliente,
+      uf: cliente.uf ?? '',
+      regimeTributario: this.asRegimeTributario(cliente.regimeTributario),
+    };
+  }
+
+  private async assertCertificadoDisponivel(clienteId: string) {
+    const rows = await this.database.db
+      .select({
+        id: certificadosDigitais.id,
+        validadeFim: certificadosDigitais.validadeFim,
+      })
+      .from(certificadosDigitais)
+      .where(
+        and(
+          eq(certificadosDigitais.clienteId, clienteId),
+          inArray(certificadosDigitais.status, ['ATIVO', 'PRESTES_A_EXPIRAR']),
+        ),
+      )
+      .limit(1);
+    if (!rows[0] || rows[0].validadeFim <= new Date()) {
+      throw new BadRequestException(
+        'Cadastre um certificado digital A1 válido antes de consultar as chaves.',
+      );
+    }
+  }
+
+  private async getDocumentosExistentes(clienteId: string, chaves: string[]) {
+    if (chaves.length === 0) return [] as DocumentoExistente[];
+    return this.database.db
+      .select({
+        id: documentosFiscais.id,
+        chaveAcesso: documentosFiscais.chaveAcesso,
+        situacao: documentosFiscais.situacao,
+        manifestacaoStatus: documentosFiscais.manifestacaoStatus,
+      })
+      .from(documentosFiscais)
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          inArray(documentosFiscais.chaveAcesso, [...new Set(chaves)]),
+        ),
+      );
+  }
+
+  private async getDocumento(clienteId: string, chaveAcesso: string) {
+    const rows = await this.getDocumentosExistentes(clienteId, [chaveAcesso]);
+    return rows[0];
+  }
+
+  private toPreviewItem(
+    item: ParsedFiscalAccessKey,
+    existing?: DocumentoExistente,
+  ) {
+    const statusLocal = !item.valida
+      ? 'INVALIDA'
+      : !item.aptaParaBusca
+        ? 'NAO_SUPORTADA'
+        : existing?.situacao === 'RESUMIDA'
+          ? 'RESUMIDA'
+          : existing
+            ? 'JA_IMPORTADA'
+            : 'NOVA';
+    return {
+      entrada: item.entrada,
+      chave_acesso: item.chaveAcesso,
+      valida: item.valida,
+      apta_para_busca: item.aptaParaBusca,
+      motivo: item.motivo,
+      ocorrencias: item.ocorrencias,
+      modelo: item.metadata?.modelo ?? null,
+      uf: item.metadata?.uf ?? null,
+      competencia: item.metadata?.competencia ?? null,
+      cnpj_emitente: item.metadata?.cnpjEmitente ?? null,
+      numero_documento: item.metadata?.numeroDocumento ?? null,
+      serie: item.metadata?.serie ?? null,
+      status_local: statusLocal,
+      documento_id: existing?.id ?? null,
+    };
+  }
+
+  private result(
+    item: ParsedFiscalAccessKey,
+    status: ImportacaoChaveStatus,
+    mensagem: string,
+    documento?: DocumentoExistente,
+    emitente: string | null = null,
+    valorTotal: string | null = null,
+  ): ImportacaoChaveItem {
+    return {
+      chave_acesso: item.chaveAcesso,
+      status,
+      mensagem,
+      documento_id: documento?.id ?? null,
+      modelo: item.metadata?.modelo ?? null,
+      competencia: item.metadata?.competencia ?? null,
+      emitente,
+      valor_total: valorTotal,
+    };
+  }
+
+  private summarize(itens: ImportacaoChaveItem[]) {
+    const count = (...statuses: ImportacaoChaveStatus[]) =>
+      itens.filter((item) => statuses.includes(item.status)).length;
+    return {
+      total: itens.length,
+      importados: count('IMPORTADO'),
+      ja_existentes: count('JA_EXISTENTE'),
+      resumos: count('RESUMO_COM_CIENCIA', 'RESUMO_PENDENTE'),
+      nao_localizados: count('NAO_LOCALIZADO'),
+      nao_suportados: count('NAO_SUPORTADO'),
+      invalidas: count('INVALIDA'),
+      falhas: count('FALHA', 'ABORTADO_CONSUMO_INDEVIDO'),
+      consumo_indevido: count('ABORTADO_CONSUMO_INDEVIDO') > 0,
+    };
+  }
+
+  private async registrarAuditoria(input: {
+    clienteId: string;
+    actorUserId: string;
+    requestId: string;
+    manifestarAutomaticamente?: boolean;
+    forcarReimportacao?: boolean;
+    resumo: ReturnType<ImportacaoChavesFiscalService['summarize']>;
+  }) {
+    try {
+      await this.database.db.insert(eventosAuditoria).values({
+        atorUserId: input.actorUserId,
+        acao: 'DOCUMENTOS_FISCAIS_IMPORTADOS_POR_CHAVE',
+        entidadeTipo: 'CLIENTE',
+        entidadeId: input.clienteId,
+        dados: {
+          origem: 'LISTAGEM_CHAVES',
+          requestId: input.requestId,
+          manifestacaoAutomatica: Boolean(input.manifestarAutomaticamente),
+          reimportacaoForcada: Boolean(input.forcarReimportacao),
+          ...input.resumo,
+        },
+      });
+    } catch (error: unknown) {
+      this.logger.error('fiscal_key_import_audit_failed', error, {
+        requestId: input.requestId,
+        userId: input.actorUserId,
+        entityId: input.clienteId,
+        operation: 'auditar_importacao_dfe_por_chave',
+      });
+    }
+  }
+
+  private async withSefazRateLimit<T>(
+    clienteId: string,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.queueByClient.get(clienteId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => current);
+    this.queueByClient.set(clienteId, tail);
+    await previous;
+    try {
+      const elapsed = Date.now() - (this.lastCallByClient.get(clienteId) ?? 0);
+      if (elapsed < MIN_SEFAZ_INTERVAL_MS) {
+        await this.sleep(MIN_SEFAZ_INTERVAL_MS - elapsed);
+      }
+      this.lastCallByClient.set(clienteId, Date.now());
+      return await action();
+    } finally {
+      release();
+      if (this.queueByClient.get(clienteId) === tail) {
+        this.queueByClient.delete(clienteId);
+      }
+    }
+  }
+
+  private sleep(milliseconds: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+  }
+
+  private asRegimeTributario(value: string | null): RegimeTributario | null {
+    return value === 'SIMPLES_NACIONAL' ||
+      value === 'LUCRO_PRESUMIDO' ||
+      value === 'LUCRO_REAL'
+      ? value
+      : null;
+  }
+
+  private publicError(error: unknown) {
+    return error instanceof Error
+      ? error.message
+      : 'Não foi possível ler a lista.';
+  }
+
+  private rootCause(error: unknown): string {
+    let current: unknown = error;
+    const seen = new Set<unknown>();
+    let message = this.publicError(error);
+    while (current && typeof current === 'object' && !seen.has(current)) {
+      seen.add(current);
+      const candidate = current as { message?: unknown; cause?: unknown };
+      if (typeof candidate.message === 'string') message = candidate.message;
+      current = candidate.cause;
+    }
+    return message;
+  }
+}

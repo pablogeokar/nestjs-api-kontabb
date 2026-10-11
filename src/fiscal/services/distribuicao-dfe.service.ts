@@ -464,14 +464,8 @@ export class DistribuicaoDfeService {
         totalDocumentos: sql<number>`count(${documentosFiscais.id})`,
       })
       .from(clientes)
-      .leftJoin(
-        documentosFiscais,
-        eq(documentosFiscais.clienteId, clientes.id),
-      )
-      .leftJoin(
-        spedConfiguracoes,
-        eq(spedConfiguracoes.clienteId, clientes.id),
-      )
+      .leftJoin(documentosFiscais, eq(documentosFiscais.clienteId, clientes.id))
+      .leftJoin(spedConfiguracoes, eq(spedConfiguracoes.clienteId, clientes.id))
       .groupBy(
         clientes.id,
         clientes.razaoSocial,
@@ -838,6 +832,33 @@ export class DistribuicaoDfeService {
           .where(eq(documentosFiscais.id, input.documentoId));
       }
     });
+  }
+
+  /**
+   * Reaproveita o pipeline transacional da distribuição para documentos
+   * obtidos por consulta pontual de chave. Mantém uma única regra de
+   * armazenamento, reconciliação de itens e escrituração.
+   */
+  async salvarDocumentoConsultado(input: {
+    clienteId: string;
+    cnpj: string;
+    documento: ParsedDocumentoFiscal;
+    regimeTributario: RegimeTributario | null;
+    apuraIcms: boolean;
+  }): Promise<boolean> {
+    return this.salvarDocumento(input.clienteId, input.cnpj, input.documento, {
+      regimeTributario: input.regimeTributario,
+      apuraIcms: input.apuraIcms,
+    });
+  }
+
+  /** Persiste o resumo recebido antes da manifestação do destinatário. */
+  async salvarResumoConsultado(input: {
+    clienteId: string;
+    cnpj: string;
+    resumo: ParsedResumoNfe;
+  }): Promise<boolean> {
+    return this.salvarResumoNfe(input.clienteId, input.cnpj, input.resumo);
   }
 
   /**

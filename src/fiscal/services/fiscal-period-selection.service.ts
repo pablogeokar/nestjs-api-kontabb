@@ -1,5 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { and, eq, gte, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { documentosFiscais, eventosFiscais } from '../../database/schema';
 import {
   parseCompetenciaMensal,
@@ -55,10 +65,7 @@ export type FinalidadeSelecao =
 
 /** Tipo de data fiscal usada por uma finalidade. */
 export type TipoDataFiscal =
-  | 'DATA_EMISSAO'
-  | 'DATA_ENTRADA_SAIDA'
-  | 'DATA_ESCRITURACAO'
-  | 'DATA_EVENTO';
+  'DATA_EMISSAO' | 'DATA_ENTRADA_SAIDA' | 'DATA_ESCRITURACAO' | 'DATA_EVENTO';
 
 export interface FiscalPeriodSelectionInput {
   /** Cliente/estabelecimento cujos documentos serão selecionados. */
@@ -260,7 +267,7 @@ export class FiscalPeriodSelectionService {
         // caminho de predicado puro com EVENTO é um erro de uso.
         throw new BadRequestException(
           'Finalidade EVENTO não produz um predicado puro sobre documentos_fiscais: ' +
-          'use predicadoEvento()/predicadoDocumentosComEvento() (a data vive em eventos_fiscais).',
+            'use predicadoEvento()/predicadoDocumentosComEvento() (a data vive em eventos_fiscais).',
         );
     }
   }
@@ -367,7 +374,10 @@ export class FiscalPeriodSelectionService {
   reportExclusoes(
     documentos: readonly DocumentoElegibilidade[],
   ): RelatorioExclusao {
-    const buckets = new Map<MotivoExclusao, { quantidade: number; valor: bigint }>();
+    const buckets = new Map<
+      MotivoExclusao,
+      { quantidade: number; valor: bigint }
+    >();
     let total = 0;
     let totalValor = 0n;
     for (const doc of documentos) {

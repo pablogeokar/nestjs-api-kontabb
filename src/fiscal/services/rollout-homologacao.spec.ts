@@ -170,11 +170,7 @@ describe('montarPlanoRollout — amostra pequena → expansão por UF/perfil/reg
 
   it('amostra pega os primeiros N homologados em ordem estável', () => {
     const plano = montarPlanoRollout(
-      [
-        cenario({ id: 't03' }),
-        cenario({ id: 't01' }),
-        cenario({ id: 't02' }),
-      ],
+      [cenario({ id: 't03' }), cenario({ id: 't01' }), cenario({ id: 't02' })],
       2,
     );
     // Ordenados por id: t01, t02, t03 → amostra pequena de 2 = [t01, t02].
@@ -234,9 +230,7 @@ describe('montarPlanoRollout — amostra pequena → expansão por UF/perfil/reg
       plano.expansao.map((c) => `${c.uf}/${c.perfil}/${c.regime}`),
     ).toEqual(['MG/B/SIMPLES', 'SP/A/PRESUMIDO', 'SP/C/REAL']);
 
-    const sp = plano.expansao.find(
-      (c) => c.uf === 'SP' && c.perfil === 'A',
-    )!;
+    const sp = plano.expansao.find((c) => c.uf === 'SP' && c.perfil === 'A')!;
     // Cenários da coorte em ordem estável.
     expect(sp.cenarios).toEqual(['t01', 't03']);
     expect(plano.resumo.totalCoortes).toBe(3);

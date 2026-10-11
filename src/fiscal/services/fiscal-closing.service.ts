@@ -97,11 +97,7 @@ export const FISCAL_CLOSING_MOTOR_VERSAO = 'fase3-fechamento@1';
  * `chk_fiscal_fechamento_obrigacao` do schema).
  */
 export type ObrigacaoFechamento =
-  | 'EFD_ICMS_IPI'
-  | 'EFD_CONTRIBUICOES'
-  | 'GIA'
-  | 'DAS'
-  | 'DAPI';
+  'EFD_ICMS_IPI' | 'EFD_CONTRIBUICOES' | 'GIA' | 'DAS' | 'DAPI';
 
 const OBRIGACOES_VALIDAS: ReadonlySet<ObrigacaoFechamento> = new Set([
   'EFD_ICMS_IPI',
@@ -112,11 +108,7 @@ const OBRIGACOES_VALIDAS: ReadonlySet<ObrigacaoFechamento> = new Set([
 ]);
 
 /** Estados do ciclo de vida de um fechamento (contrato ResultadoApuracao). */
-export type EstadoFechamento =
-  | 'RASCUNHO'
-  | 'PENDENTE'
-  | 'REVISADO'
-  | 'FECHADO';
+export type EstadoFechamento = 'RASCUNHO' | 'PENDENTE' | 'REVISADO' | 'FECHADO';
 
 /**
  * Máquina de estados do fechamento: `RASCUNHO → PENDENTE → REVISADO → FECHADO`.
@@ -126,8 +118,10 @@ export type EstadoFechamento =
  * voltando o estado da anterior. O mapa é explícito para que uma transição
  * inválida seja um erro de domínio, não um efeito silencioso.
  */
-const TRANSICOES_VALIDAS: Record<EstadoFechamento, readonly EstadoFechamento[]> =
-{
+const TRANSICOES_VALIDAS: Record<
+  EstadoFechamento,
+  readonly EstadoFechamento[]
+> = {
   RASCUNHO: ['PENDENTE'],
   PENDENTE: ['REVISADO'],
   REVISADO: ['FECHADO'],
@@ -206,13 +200,13 @@ export interface FechamentoRegistro {
  * cegamente uma única data para todas as obrigações (R3.5).
  */
 const FINALIDADE_POR_OBRIGACAO: Record<ObrigacaoFechamento, FinalidadeSelecao> =
-{
-  EFD_ICMS_IPI: 'EMISSAO',
-  EFD_CONTRIBUICOES: 'EMISSAO',
-  GIA: 'EMISSAO',
-  DAS: 'EMISSAO',
-  DAPI: 'EMISSAO',
-};
+  {
+    EFD_ICMS_IPI: 'EMISSAO',
+    EFD_CONTRIBUICOES: 'EMISSAO',
+    GIA: 'EMISSAO',
+    DAS: 'EMISSAO',
+    DAPI: 'EMISSAO',
+  };
 
 /**
  * Fechamento versionado (F20 / plano §7).
@@ -235,7 +229,7 @@ export class FiscalClosingService {
   constructor(
     private readonly database: DatabaseService,
     private readonly periodSelection: FiscalPeriodSelectionService,
-  ) { }
+  ) {}
 
   /**
    * Finalidade de seleção de período apropriada a uma obrigação — exposto para
@@ -317,7 +311,10 @@ export class FiscalClosingService {
   }): Promise<FechamentoRegistro> {
     return this.database.db.transaction(
       async (tx) => {
-        const atual = await this.carregarParaAtualizacao(tx, input.fechamentoId);
+        const atual = await this.carregarParaAtualizacao(
+          tx,
+          input.fechamentoId,
+        );
         FiscalClosingService.assertTransicao(atual.estado, 'FECHADO');
         await this.lockEscopo(tx, {
           clienteId: atual.clienteId,
@@ -760,7 +757,7 @@ export class FiscalClosingService {
         if (original.estado !== 'FECHADO') {
           throw new ConflictException(
             'Só é possível retificar um fechamento FECHADO; use editar para ' +
-            'versões ainda não entregues.',
+              'versões ainda não entregues.',
           );
         }
         // A competência da linha original já está normalizada ('AAAA-MM-01');
@@ -891,9 +888,9 @@ export class FiscalClosingService {
         corrente: false,
         motorVersao: FISCAL_CLOSING_MOTOR_VERSAO,
         hashEntradas,
-        documentos: congeladas.documentos as Array<Record<string, unknown>>,
-        decisoes: congeladas.decisoes as Array<Record<string, unknown>>,
-        regras: congeladas.regras as Array<Record<string, unknown>>,
+        documentos: congeladas.documentos,
+        decisoes: congeladas.decisoes,
+        regras: congeladas.regras,
         parametros: congeladas.parametros,
         saldos: congeladas.saldos,
       })
@@ -1104,7 +1101,7 @@ function canonicalize(value: unknown): string {
     if (!Number.isFinite(n) || !Number.isInteger(n)) {
       throw new BadRequestException(
         'Valor numérico não-inteiro em entrada de fechamento: valores decimais ' +
-        'DEVEM ser strings (nunca Number) para o hash ser reproduzível.',
+          'DEVEM ser strings (nunca Number) para o hash ser reproduzível.',
       );
     }
     return String(n);

@@ -18,11 +18,11 @@ describe('ClientesService - configuração fiscal', () => {
     },
     input: {
       regimeTributario?:
-      'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
+        'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
       apuraIcms?: boolean;
       inscricaoEstadual?: string | null;
       tipoContribuinteIcms?:
-      'CONTRIBUINTE' | 'ISENTO' | 'NAO_CONTRIBUINTE' | null;
+        'CONTRIBUINTE' | 'ISENTO' | 'NAO_CONTRIBUINTE' | null;
     },
   ) =>
     (
@@ -54,7 +54,7 @@ describe('ClientesService - configuração fiscal', () => {
     existing: typeof pjSemRegime,
     input: {
       regimeTributario?:
-      'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
+        'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
       apuraIcms?: boolean;
       optanteSimplesNacional?: boolean | null;
       simplesNacionalFonte?: 'OPEN_CNPJ' | 'RECEITA_WS' | null;

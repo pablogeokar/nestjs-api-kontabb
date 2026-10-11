@@ -135,10 +135,7 @@ describe('comporBaseDifal (Fase 4 / tarefa 2.4 — R1.3, R1.5)', () => {
 
   describe('retenção / ST (R1.3, R1.4)', () => {
     it('zera a base de DIFAL próprio quando há ICMS-ST retido', () => {
-      const r = comporBaseDifal(
-        item({ valorIcmsStRetido: '50.00' }),
-        null,
-      );
+      const r = comporBaseDifal(item({ valorIcmsStRetido: '50.00' }), null);
       expect(r.retido).toBe(true);
       expect(r.baseCalculo).toBe('0.00');
     });
@@ -166,10 +163,7 @@ describe('comporBaseDifal (Fase 4 / tarefa 2.4 — R1.3, R1.5)', () => {
         aliquotaInterna: '18.0000',
         aliquotaFcp: '2.0000',
       };
-      const r = comporBaseDifal(
-        item({ valorIcmsStRetido: '123.45' }),
-        regra,
-      );
+      const r = comporBaseDifal(item({ valorIcmsStRetido: '123.45' }), regra);
       expect(r.retido).toBe(true);
       expect(r.baseCalculo).toBe('0.00');
       expect(r.baseFcp).toBe('0.00');

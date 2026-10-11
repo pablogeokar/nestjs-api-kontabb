@@ -167,9 +167,9 @@ describe('ponte de crédito livros ↔ builder (R7.1, R7.2)', () => {
         expect(decisao.decisao).toBe('VEDADO');
         expect(decisao.motivo).toBe('CFOP_VEDA_CREDITO');
         // Builder consome a MESMA decisão: crédito documental 0,00.
-        expect(creditoBuilderEntrada({ cfop, cstIcms: '00', valorIcms: '18.00' })).toBe(
-          '0.00',
-        );
+        expect(
+          creditoBuilderEntrada({ cfop, cstIcms: '00', valorIcms: '18.00' }),
+        ).toBe('0.00');
       },
     );
 
@@ -181,9 +181,13 @@ describe('ponte de crédito livros ↔ builder (R7.1, R7.2)', () => {
         valorIcms: '18.00',
       });
       expect(decisao.decisao).toBe('ADMITIDO');
-      expect(creditoBuilderEntrada({ cfop: '1102', cstIcms: '00', valorIcms: '18.00' })).toBe(
-        '18.00',
-      );
+      expect(
+        creditoBuilderEntrada({
+          cfop: '1102',
+          cstIcms: '00',
+          valorIcms: '18.00',
+        }),
+      ).toBe('18.00');
     });
 
     it('CSOSN 101 credita mesmo com CFOP que vedaria o regime normal (paridade builder×decisão)', () => {

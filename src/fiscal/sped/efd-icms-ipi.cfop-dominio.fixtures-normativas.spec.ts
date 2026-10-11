@@ -55,7 +55,9 @@ function camposDaLinha(
 ): string[] {
   const alvo = records.filter((record) => record.reg === reg)[ocorrencia];
   if (!alvo) {
-    throw new Error(`Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`);
+    throw new Error(
+      `Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`,
+    );
   }
   // |REG|c0|c1|...| ⇒ remove os vazios de borda e o próprio REG.
   return serializeSpedRecord(alvo).split('|').slice(2, -1);
@@ -74,7 +76,8 @@ function nfeComCfop(params: {
 }) {
   // Saída própria: a empresa é a emitente. Entrada: um terceiro emite para ela.
   const emitente = params.sentido === 'SAIDA' ? EMPRESA_CNPJ : '12345678000199';
-  const destinatario = params.sentido === 'SAIDA' ? '12345678000199' : EMPRESA_CNPJ;
+  const destinatario =
+    params.sentido === 'SAIDA' ? '12345678000199' : EMPRESA_CNPJ;
   return nfeFixture(
     {
       id: params.id,

@@ -217,11 +217,7 @@ export function derivarLinhaSegmentoF12(f: PisCofinsFixtureNormativa): {
   const pisDebito = f.itens.reduce(
     (s, i) =>
       s +
-      debitoPor(
-        i.valorPis,
-        i.baseCalculo,
-        i.aliquotaPisItem ?? f.aliquotaPis,
-      ),
+      debitoPor(i.valorPis, i.baseCalculo, i.aliquotaPisItem ?? f.aliquotaPis),
     0,
   );
   const cofinsDebito = f.itens.reduce(

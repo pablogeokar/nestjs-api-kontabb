@@ -525,9 +525,9 @@ describe('MATRIZ_FISCAL_SIMPLES — matriz aprovada pelo fiscal (R6.3)', () => {
   });
 
   it('cobre Lucro normal, Simples (dentro/excedido/impedido) e sem regime', () => {
-    expect(celulaMatrizFiscal('LUCRO_REAL', 'NAO_APLICAVEL')?.apuraIcmsProprio).toBe(
-      true,
-    );
+    expect(
+      celulaMatrizFiscal('LUCRO_REAL', 'NAO_APLICAVEL')?.apuraIcmsProprio,
+    ).toBe(true);
     expect(
       celulaMatrizFiscal('LUCRO_PRESUMIDO', 'NAO_APLICAVEL')?.apuraIcmsProprio,
     ).toBe(true);

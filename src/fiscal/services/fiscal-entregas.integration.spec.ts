@@ -327,7 +327,7 @@ function criarStore(seed: {
       }
       throw new Error(
         'DELETE em fiscal_entregas é proibido: a entrega é preservada na ' +
-        'trilha, nunca deletada fisicamente (R2.2).',
+          'trilha, nunca deletada fisicamente (R2.2).',
       );
     },
   };

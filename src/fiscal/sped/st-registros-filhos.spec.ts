@@ -68,9 +68,7 @@ describe('decidirC191 (Fase 4 / tarefa 4.4 — R3.3): só com ST/FCP efetivo', (
 });
 
 describe('decidirC195C197 (R3.3): só com ajuste tipado do documento', () => {
-  function entrada(
-    overrides: Partial<C195C197Entrada> = {},
-  ): C195C197Entrada {
+  function entrada(overrides: Partial<C195C197Entrada> = {}): C195C197Entrada {
     return {
       codigoObservacao: 'OBS001',
       textoObservacao: 'Ressarcimento de ST',
@@ -145,9 +143,7 @@ describe('decidirC195C197 (R3.3): só com ajuste tipado do documento', () => {
 });
 
 describe('decidirE112E113 (R3.3): só quando o E111 referencia doc/processo', () => {
-  function entrada(
-    overrides: Partial<E112E113Entrada> = {},
-  ): E112E113Entrada {
+  function entrada(overrides: Partial<E112E113Entrada> = {}): E112E113Entrada {
     return {
       informacoesAdicionais: {
         numeroProcesso: '12345/2026',

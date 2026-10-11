@@ -268,11 +268,7 @@ export interface OnboardingMatrizFatos {
  * cruzar com o bloqueio de geração correspondente.
  */
 export type EixoImpedimento =
-  | 'blocoB'
-  | 'blocoK'
-  | 'inventario'
-  | 'modelo'
-  | 'obrigacao1601';
+  'blocoB' | 'blocoK' | 'inventario' | 'modelo' | 'obrigacao1601';
 
 /**
  * IMPEDIMENTO EXPLÍCITO (tarefa 4.2 — R4.2/R4.3). Um documento/obrigação que é
@@ -477,12 +473,12 @@ function derivarProntidao(impedimentos: Impedimento[]): Prontidao {
     bloqueios,
     memoria: prontoParaEntrega
       ? 'Pronto para entrega: nenhuma obrigação não atendida. A ausência de ' +
-      'registros opcionais (combustíveis, ST, inventário não obrigatório, ' +
-      '1601 opcional) não impede a entrega nem é defeito (R4.5).'
+        'registros opcionais (combustíveis, ST, inventário não obrigatório, ' +
+        '1601 opcional) não impede a entrega nem é defeito (R4.5).'
       : `Não pronto para entrega: ${bloqueios.length} obrigação(ões) não ` +
-      `atendida(s) impede(m) a entrega (${bloqueios
-        .map((b) => b.codigo)
-        .join(', ')}). Resolva os impedimentos antes de entregar (R4.4).`,
+        `atendida(s) impede(m) a entrega (${bloqueios
+          .map((b) => b.codigo)
+          .join(', ')}). Resolva os impedimentos antes de entregar (R4.4).`,
   };
 }
 
@@ -606,10 +602,10 @@ function montarCombustiveis(
     obrigacao1601Aplicavel: presente,
     memoria: presente
       ? `Combustíveis/monofásicos detectados: ${sinaisTexto.join('; ')}. A ` +
-      'obrigação 1601 (apuração do ICMS monofásico de combustíveis na EFD ' +
-      'Contribuições) é APLICÁVEL. Suporte/impedimento é avaliado adiante (4.2).'
+        'obrigação 1601 (apuração do ICMS monofásico de combustíveis na EFD ' +
+        'Contribuições) é APLICÁVEL. Suporte/impedimento é avaliado adiante (4.2).'
       : 'Sem sinais de combustíveis/monofásicos na competência. Obrigação 1601 ' +
-      'não aplicável (ausência de registro opcional não é defeito — R4.5).',
+        'não aplicável (ausência de registro opcional não é defeito — R4.5).',
   };
 }
 
@@ -628,9 +624,9 @@ function montarControleSt(
     itensComStRetido: sinais.itensComStRetido,
     memoria: presente
       ? `Controles de ST presentes: ${sinais.itensComCest} item(ns) com CEST, ` +
-      `${sinais.itensComIcmsSt} com ICMS-ST destacado, ` +
-      `${sinais.itensComStRetido} com ST retido anteriormente. O enquadramento/` +
-      'cálculo de ST segue os portões de verificação e enquadramento (Fase 4).'
+        `${sinais.itensComIcmsSt} com ICMS-ST destacado, ` +
+        `${sinais.itensComStRetido} com ST retido anteriormente. O enquadramento/` +
+        'cálculo de ST segue os portões de verificação e enquadramento (Fase 4).'
       : 'Sem sinais de ST na competência (ausência não é defeito — R4.5).',
   };
 }
@@ -681,8 +677,8 @@ function montarBlocos(input: {
     suportado: false,
     memoria: blocoBAplicavel
       ? 'Bloco B (ISS) possivelmente aplicável (atividade de serviços detectada). ' +
-      'Geração do Bloco B NÃO suportada hoje — bloqueio conservador preservado ' +
-      '(R4.3); impedimento explícito avaliado adiante (4.2).'
+        'Geração do Bloco B NÃO suportada hoje — bloqueio conservador preservado ' +
+        '(R4.3); impedimento explícito avaliado adiante (4.2).'
       : 'Bloco B (ISS) não aplicável para o estabelecimento na competência.',
   };
 
@@ -697,11 +693,11 @@ function montarBlocos(input: {
     suportado: blocoKAplicavel && !input.blocoKComMovimento,
     memoria: !blocoKAplicavel
       ? 'Bloco K não aplicável (estabelecimento não industrial/equiparado e sem ' +
-      'movimento declarado).'
+        'movimento declarado).'
       : input.blocoKComMovimento
         ? 'Bloco K aplicável COM movimento declarado. Geração do Bloco K com ' +
-        'movimento NÃO suportada hoje — bloqueio conservador preservado (R4.3); ' +
-        'impedimento explícito avaliado adiante (4.2).'
+          'movimento NÃO suportada hoje — bloqueio conservador preservado (R4.3); ' +
+          'impedimento explícito avaliado adiante (4.2).'
         : 'Bloco K aplicável (industrial/equiparado) sem movimento declarado.',
   };
 
@@ -714,9 +710,9 @@ function montarBlocos(input: {
     suportado: !bloco1Aplicavel ? true : false,
     memoria: bloco1Aplicavel
       ? 'Bloco 1 aplicável (combustíveis/1601 e/ou controles de ST detectados). ' +
-      'Suporte por registro específico avaliado adiante (4.2).'
+        'Suporte por registro específico avaliado adiante (4.2).'
       : 'Bloco 1 sem registros específicos aplicáveis na competência (ausência ' +
-      'não é defeito — R4.5).',
+        'não é defeito — R4.5).',
   };
 
   return { blocoB, blocoK, bloco1 };

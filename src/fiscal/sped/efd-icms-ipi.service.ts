@@ -151,7 +151,7 @@ export class EfdIcmsIpiService {
     private readonly configService: ConfigService,
     private readonly ciapService: CiapService,
     private readonly periodSelection: FiscalPeriodSelectionService,
-  ) { }
+  ) {}
 
   /**
    * Feature flag `sped.blocoG.leiauteHomologado` (F07).
@@ -426,10 +426,10 @@ export class EfdIcmsIpiService {
           auditabilidade: {
             contador: contadorResolvido
               ? {
-                id: contadorResolvido.contador.id,
-                nome: contadorResolvido.contador.nome,
-                origem: contadorResolvido.origem,
-              }
+                  id: contadorResolvido.contador.id,
+                  nome: contadorResolvido.contador.nome,
+                  origem: contadorResolvido.origem,
+                }
               : null,
             apuracao: [],
           },
@@ -531,26 +531,26 @@ export class EfdIcmsIpiService {
     const documentIds = documents.map((document) => document.id);
     const [items, ctes] = documentIds.length
       ? await Promise.all([
-        db
-          .select()
-          .from(documentosFiscaisItens)
-          .where(
-            inArray(documentosFiscaisItens.documentoFiscalId, documentIds),
-          )
-          .orderBy(
-            asc(documentosFiscaisItens.documentoFiscalId),
-            asc(documentosFiscaisItens.numeroItem),
-          ),
-        db
-          .select()
-          .from(documentosFiscaisCteEscrituracao)
-          .where(
-            inArray(
-              documentosFiscaisCteEscrituracao.documentoFiscalId,
-              documentIds,
+          db
+            .select()
+            .from(documentosFiscaisItens)
+            .where(
+              inArray(documentosFiscaisItens.documentoFiscalId, documentIds),
+            )
+            .orderBy(
+              asc(documentosFiscaisItens.documentoFiscalId),
+              asc(documentosFiscaisItens.numeroItem),
             ),
-          ),
-      ])
+          db
+            .select()
+            .from(documentosFiscaisCteEscrituracao)
+            .where(
+              inArray(
+                documentosFiscaisCteEscrituracao.documentoFiscalId,
+                documentIds,
+              ),
+            ),
+        ])
       : [[], []];
 
     const itemsByDocument = new Map<string, typeof items>();
@@ -724,21 +724,21 @@ export class EfdIcmsIpiService {
       const preparedItems: SpedItemDocumentoBuilderData[] = canceled
         ? []
         : documentItems.map((item) =>
-          this.prepareItem(
-            item,
-            document,
-            participant,
-            company.cnpj,
-            company.tipoItemPadrao ?? '00',
-            unidades,
-            itensCatalogo,
-            document.modelo === '55' &&
-            normalizeIdentifier(document.emitenteCnpjCpf) !==
-            normalizeIdentifier(company.cnpj) &&
-            profile !== 'C',
-            inconsistencias,
-          ),
-        );
+            this.prepareItem(
+              item,
+              document,
+              participant,
+              company.cnpj,
+              company.tipoItemPadrao ?? '00',
+              unidades,
+              itensCatalogo,
+              document.modelo === '55' &&
+                normalizeIdentifier(document.emitenteCnpjCpf) !==
+                  normalizeIdentifier(company.cnpj) &&
+                profile !== 'C',
+              inconsistencias,
+            ),
+          );
       let informationCode: string | null = null;
       if (document.informacoesComplementares?.trim()) {
         const text = document.informacoesComplementares.trim();
@@ -771,15 +771,15 @@ export class EfdIcmsIpiService {
     );
     const inventario = inventarioDue
       ? await this.loadInventario(
-        db,
-        clienteId,
-        period.endDate,
-        participantes,
-        unidades,
-        itensCatalogo,
-        profile,
-        inconsistencias,
-      )
+          db,
+          clienteId,
+          period.endDate,
+          participantes,
+          unidades,
+          itensCatalogo,
+          profile,
+          inconsistencias,
+        )
       : null;
     if (inventarioDue && !inventario) {
       inconsistencias.push({
@@ -973,10 +973,10 @@ export class EfdIcmsIpiService {
       auditabilidade: {
         contador: contadorResolvido
           ? {
-            id: contadorResolvido.contador.id,
-            nome: contadorResolvido.contador.nome,
-            origem: contadorResolvido.origem,
-          }
+              id: contadorResolvido.contador.id,
+              nome: contadorResolvido.contador.nome,
+              origem: contadorResolvido.origem,
+            }
           : null,
         apuracao: buildApuracaoAuditTrail(saldos, ajustes, obrigacoes),
       },
@@ -2070,13 +2070,13 @@ export function validateAdjustmentAuditTrail(
     ajuste.descricao?.trim() || ajuste.numeroDocumento?.trim()
       ? []
       : [
-        {
-          codigo: 'AJUSTE_SEM_LASTRO_DOCUMENTAL',
-          severidade: 'ERRO' as const,
-          mensagem: `O ajuste ${ajuste.codigoAjuste} (${ajuste.registro}) precisa de descrição ou documento de suporte para manter a trilha de auditoria.`,
-          campo: `ajustes.${ajuste.id}`,
-        },
-      ],
+          {
+            codigo: 'AJUSTE_SEM_LASTRO_DOCUMENTAL',
+            severidade: 'ERRO' as const,
+            mensagem: `O ajuste ${ajuste.codigoAjuste} (${ajuste.registro}) precisa de descrição ou documento de suporte para manter a trilha de auditoria.`,
+            campo: `ajustes.${ajuste.id}`,
+          },
+        ],
   );
 }
 
@@ -2091,10 +2091,10 @@ export function isInventoryDueForPeriod(
 ) {
   const deliveryMonth =
     Number.isInteger(configuredMonth) &&
-      configuredMonth !== undefined &&
-      configuredMonth !== null &&
-      configuredMonth >= 1 &&
-      configuredMonth <= 12
+    configuredMonth !== undefined &&
+    configuredMonth !== null &&
+    configuredMonth >= 1 &&
+    configuredMonth <= 12
       ? configuredMonth
       : 2;
   return required && periodStart.getUTCMonth() + 1 === deliveryMonth;
@@ -2223,7 +2223,7 @@ function buildConversoesUnidade(
       fatorConversao: fromScaledInteger(fatorScaled, 6),
       codigoBarrasConversao:
         item.codigoEanTributavel &&
-          !/^SEM GTIN$/i.test(item.codigoEanTributavel)
+        !/^SEM GTIN$/i.test(item.codigoEanTributavel)
           ? item.codigoEanTributavel
           : null,
     },

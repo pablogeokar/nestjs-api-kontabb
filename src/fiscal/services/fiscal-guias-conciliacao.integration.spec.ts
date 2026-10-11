@@ -5,7 +5,10 @@ import {
   fiscalApuracoesGuias,
   fiscalPagamentosEventos,
 } from '../../database/schema';
-import { FiscalGuiasService, type CriarGuiaInput } from './fiscal-guias.service';
+import {
+  FiscalGuiasService,
+  type CriarGuiaInput,
+} from './fiscal-guias.service';
 
 /**
  * Testes de integração (nível de serviço) do grupo 1 da Fase 5 — guias
@@ -127,9 +130,7 @@ function criarStore(seed: { clienteId: string }) {
     // Casa quando todo parâmetro não-nulo da condição está entre os valores da
     // linha. Parâmetros nulos (ex.: chave ausente) nunca casam — espelha o
     // `IS NOT NULL` do índice parcial e o comportamento de `eq` com NULL.
-    return params.every(
-      (p) => p != null && valores.some((v) => v === p),
-    );
+    return params.every((p) => p != null && valores.some((v) => v === p));
   }
 
   function selectFrom(table: unknown) {
@@ -179,7 +180,8 @@ function criarStore(seed: { clienteId: string }) {
             if (
               key != null &&
               guias.some(
-                (g) => g.clienteId === vals.clienteId && g.idempotencyKey === key,
+                (g) =>
+                  g.clienteId === vals.clienteId && g.idempotencyKey === key,
               )
             ) {
               return Promise.reject({ code: '23505' });

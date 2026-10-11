@@ -664,7 +664,9 @@ export const BLOCO_G_EXPECTED_FIELD_COUNTS: Readonly<Record<string, number>> =
 export function blocoGFieldPosition(reg: string, fieldName: string): number {
   const layout = BLOCO_G_LEIAUTES[reg];
   if (!layout) {
-    throw new Error(`Leiaute do Bloco G desconhecido para o registro "${reg}".`);
+    throw new Error(
+      `Leiaute do Bloco G desconhecido para o registro "${reg}".`,
+    );
   }
   const field = layout.fields.find((f) => f.name === fieldName);
   if (!field) {

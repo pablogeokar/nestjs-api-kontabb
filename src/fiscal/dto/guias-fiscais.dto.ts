@@ -245,7 +245,8 @@ export class RegistrarEventoPagamentoDto {
   declaracaoManual?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Identificador externo do evento (autenticação bancária etc.).',
+    description:
+      'Identificador externo do evento (autenticação bancária etc.).',
   })
   @IsOptional()
   @IsString()
@@ -253,7 +254,8 @@ export class RegistrarEventoPagamentoDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'Obrigatório para ESTORNO: o pagamento revertido (mesma guia).',
+    description:
+      'Obrigatório para ESTORNO: o pagamento revertido (mesma guia).',
   })
   @IsOptional()
   @IsUUID('4')

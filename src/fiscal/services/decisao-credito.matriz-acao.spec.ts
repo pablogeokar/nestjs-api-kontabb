@@ -200,7 +200,11 @@ describe('R3.1 — regra crédito=false prevalece', () => {
     });
     expect(decisao.decisao).toBe('VEDADO');
     expect(
-      creditoBuilderEntrada({ cfop: '1556', cstIcms: '00', valorIcms: '18.00' }),
+      creditoBuilderEntrada({
+        cfop: '1556',
+        cstIcms: '00',
+        valorIcms: '18.00',
+      }),
     ).toBe('0.00');
   });
 
@@ -224,7 +228,11 @@ describe('R3.1 — regra crédito=false prevalece', () => {
     // ao builder, o E110 credita normalmente. A vedação por regra só existe na
     // função pura até a decisão persistida por item (Fase 3).
     expect(
-      creditoBuilderEntrada({ cfop: '1102', cstIcms: '00', valorIcms: '18.00' }),
+      creditoBuilderEntrada({
+        cfop: '1102',
+        cstIcms: '00',
+        valorIcms: '18.00',
+      }),
     ).toBe('18.00');
     // Já na fonte única, passar a regra=false vedaria (provado acima).
   });
@@ -373,18 +381,19 @@ describe('R7.2 — matriz por ação da UI (consistência decisão × livro × E
 
   // O builder do E110 consome a decisão via CFOP/CST/CSOSN (sem regra). Para os
   // casos que dependem SÓ desses insumos, o crédito do E110 casa com a matriz.
-  it.each(
-    MATRIZ.filter((caso) => caso.motivo !== 'REGRA_VEDA_CREDITO'),
-  )('$acao → crédito no E110 (builder) igual à decisão', ({ entrada, creditoE110 }) => {
-    const credito = creditoBuilderEntrada({
-      cfop: entrada.cfop ?? null,
-      cstIcms: entrada.cstIcms ?? null,
-      csosnIcms: entrada.csosnIcms ?? null,
-      valorIcms: entrada.valorIcms ?? null,
-      valorCreditoIcmsSn: entrada.valorCreditoIcmsSn ?? null,
-    });
-    expect(credito).toBe(creditoE110);
-  });
+  it.each(MATRIZ.filter((caso) => caso.motivo !== 'REGRA_VEDA_CREDITO'))(
+    '$acao → crédito no E110 (builder) igual à decisão',
+    ({ entrada, creditoE110 }) => {
+      const credito = creditoBuilderEntrada({
+        cfop: entrada.cfop ?? null,
+        cstIcms: entrada.cstIcms ?? null,
+        csosnIcms: entrada.csosnIcms ?? null,
+        valorIcms: entrada.valorIcms ?? null,
+        valorCreditoIcmsSn: entrada.valorCreditoIcmsSn ?? null,
+      });
+      expect(credito).toBe(creditoE110);
+    },
+  );
 
   it('o "credita no livro" da matriz corresponde a ADMITIDO com valor > 0', () => {
     for (const caso of MATRIZ) {

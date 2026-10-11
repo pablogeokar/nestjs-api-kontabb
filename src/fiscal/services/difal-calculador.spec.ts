@@ -26,9 +26,13 @@ describe('calcularDifalHipotese (Fase 4 / tarefa 2.2 — R1.1, R1.3)', () => {
         aliquotaInterna: '18.0000',
         aliquotaInterestadual: '12.0000',
       };
-      const r = calcularDifalHipotese(input({ baseCalculo: '1000.00' }), regra, {
-        aprovada: true,
-      });
+      const r = calcularDifalHipotese(
+        input({ baseCalculo: '1000.00' }),
+        regra,
+        {
+          aprovada: true,
+        },
+      );
       expect(r.status).toBe('CALCULADO');
       expect(r.diferencialAliquota).toBe('6.0000');
       expect(r.valorDifal).toBe('60.00');
@@ -40,9 +44,13 @@ describe('calcularDifalHipotese (Fase 4 / tarefa 2.2 — R1.1, R1.3)', () => {
         aliquotaInterna: '18.0000',
         aliquotaInterestadual: '7.0000',
       };
-      const r = calcularDifalHipotese(input({ baseCalculo: '1000.00' }), regra, {
-        aprovada: true,
-      });
+      const r = calcularDifalHipotese(
+        input({ baseCalculo: '1000.00' }),
+        regra,
+        {
+          aprovada: true,
+        },
+      );
       expect(r.valorDifal).toBe('110.00');
     });
 
@@ -51,9 +59,13 @@ describe('calcularDifalHipotese (Fase 4 / tarefa 2.2 — R1.1, R1.3)', () => {
         aliquotaInterna: '18.0000',
         aliquotaInterestadual: '4.0000',
       };
-      const r = calcularDifalHipotese(input({ baseCalculo: '1000.00' }), regra, {
-        aprovada: true,
-      });
+      const r = calcularDifalHipotese(
+        input({ baseCalculo: '1000.00' }),
+        regra,
+        {
+          aprovada: true,
+        },
+      );
       expect(r.valorDifal).toBe('140.00');
     });
   });

@@ -34,7 +34,8 @@ function catalogo(
     codigo: 'ST_SP_142',
     descricao: 'ST SP — Convênio 142/2018 + RICMS/SP',
     fonte: 'convenio_icms_142_2018+ricms_sp',
-    fonteUrl: 'https://www.confaz.fazenda.gov.br/legislacao/convenios/2018/CV142_18',
+    fonteUrl:
+      'https://www.confaz.fazenda.gov.br/legislacao/convenios/2018/CV142_18',
     hashConteudo: 'abc123',
     conteudo: {},
     vigenciaInicio: '2026-01-01',
@@ -107,10 +108,9 @@ function entrada(
 
 describe('conciliarCenarioSt (Fase 4 / tarefa 4.6 — R3.5)', () => {
   it('reconcilia quando ICMS-ST e FCP-ST batem com os C191', () => {
-    const r = conciliarCenarioSt(
-      { icmsStRetido: '72.00', fcpSt: '28.00' },
-      [c191('28.00', '72.00')],
-    );
+    const r = conciliarCenarioSt({ icmsStRetido: '72.00', fcpSt: '28.00' }, [
+      c191('28.00', '72.00'),
+    ]);
     expect(r.reconcilia).toBe(true);
     expect(r.icmsStCalculado).toBe('72.00');
     expect(r.fcpStCalculado).toBe('28.00');
@@ -120,53 +120,56 @@ describe('conciliarCenarioSt (Fase 4 / tarefa 4.6 — R3.5)', () => {
   });
 
   it('soma múltiplos C191 por componente', () => {
-    const r = conciliarCenarioSt(
-      { icmsStRetido: '100.00', fcpSt: '40.00' },
-      [c191('28.00', '72.00'), c191('12.00', '28.00')],
-    );
+    const r = conciliarCenarioSt({ icmsStRetido: '100.00', fcpSt: '40.00' }, [
+      c191('28.00', '72.00'),
+      c191('12.00', '28.00'),
+    ]);
     expect(r.icmsStRegistrado).toBe('100.00');
     expect(r.fcpStRegistrado).toBe('40.00');
     expect(r.reconcilia).toBe(true);
   });
 
   it('ignora registros que não são C191 na conciliação', () => {
-    const r = conciliarCenarioSt(
-      { icmsStRetido: '72.00', fcpSt: '28.00' },
-      [
-        c191('28.00', '72.00'),
-        createSpedRecord('C195', '0460', 'obs'),
-        createSpedRecord('C197', 'SP10000000', null, null, null, null, null, decimalField('10.00')),
-      ],
-    );
+    const r = conciliarCenarioSt({ icmsStRetido: '72.00', fcpSt: '28.00' }, [
+      c191('28.00', '72.00'),
+      createSpedRecord('C195', '0460', 'obs'),
+      createSpedRecord(
+        'C197',
+        'SP10000000',
+        null,
+        null,
+        null,
+        null,
+        null,
+        decimalField('10.00'),
+      ),
+    ]);
     expect(r.reconcilia).toBe(true);
     expect(r.icmsStRegistrado).toBe('72.00');
     expect(r.fcpStRegistrado).toBe('28.00');
   });
 
   it('NÃO reconcilia quando o ICMS-ST escriturado diverge do calculado', () => {
-    const r = conciliarCenarioSt(
-      { icmsStRetido: '72.00', fcpSt: '28.00' },
-      [c191('28.00', '70.00')],
-    );
+    const r = conciliarCenarioSt({ icmsStRetido: '72.00', fcpSt: '28.00' }, [
+      c191('28.00', '70.00'),
+    ]);
     expect(r.reconcilia).toBe(false);
     expect(r.divergencia).toBe('2.00');
   });
 
   it('reconcilia dentro da tolerância de um centavo por componente', () => {
-    const r = conciliarCenarioSt(
-      { icmsStRetido: '72.00', fcpSt: '28.00' },
-      [c191('28.01', '71.99')],
-    );
+    const r = conciliarCenarioSt({ icmsStRetido: '72.00', fcpSt: '28.00' }, [
+      c191('28.01', '71.99'),
+    ]);
     // |72.00-71.99| + |28.00-28.01| = 0.02, dentro da tolerância.
     expect(r.divergencia).toBe('0.02');
     expect(r.reconcilia).toBe(true);
   });
 
   it('divergência além da tolerância não reconcilia', () => {
-    const r = conciliarCenarioSt(
-      { icmsStRetido: '72.00', fcpSt: '28.00' },
-      [c191('28.02', '71.99')],
-    );
+    const r = conciliarCenarioSt({ icmsStRetido: '72.00', fcpSt: '28.00' }, [
+      c191('28.02', '71.99'),
+    ]);
     expect(r.divergencia).toBe('0.03');
     expect(r.reconcilia).toBe(false);
   });
@@ -174,10 +177,9 @@ describe('conciliarCenarioSt (Fase 4 / tarefa 4.6 — R3.5)', () => {
   it('concilia FCP e ICMS SEPARADAMENTE (não compensa um com o outro)', () => {
     // ICMS escriturado +5, FCP escriturado -5: a soma "bateria", mas por
     // componente há 5+5=10 de divergência.
-    const r = conciliarCenarioSt(
-      { icmsStRetido: '72.00', fcpSt: '28.00' },
-      [c191('23.00', '77.00')],
-    );
+    const r = conciliarCenarioSt({ icmsStRetido: '72.00', fcpSt: '28.00' }, [
+      c191('23.00', '77.00'),
+    ]);
     expect(r.divergencia).toBe('10.00');
     expect(r.reconcilia).toBe(false);
   });
@@ -220,7 +222,9 @@ describe('avaliarCenarioHabilitadoSt (Fase 4 / tarefa 4.6 — R3.5)', () => {
       expect(r.habilitado).toBe(false);
       expect(r.cenario).toBeNull();
       expect(r.inconsistencias.length).toBeGreaterThanOrEqual(1);
-      expect(r.inconsistencias.every((i) => i.severidade === 'ERRO')).toBe(true);
+      expect(r.inconsistencias.every((i) => i.severidade === 'ERRO')).toBe(
+        true,
+      );
     });
 
     it('enquadramento NAO_SUJEITO (4.2) → não habilita', () => {
@@ -271,7 +275,9 @@ describe('avaliarCenarioHabilitadoSt (Fase 4 / tarefa 4.6 — R3.5)', () => {
       expect(r.inconsistencias[0].codigo).toBe(
         ST_CENARIO_HABILITADO_CODIGOS.FONTE_NAO_REGISTRADA,
       );
-      expect(r.inconsistencias[0].mensagem).toMatch(/revisão fiscal registrada/);
+      expect(r.inconsistencias[0].mensagem).toMatch(
+        /revisão fiscal registrada/,
+      );
     });
   });
 

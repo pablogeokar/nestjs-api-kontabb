@@ -94,9 +94,9 @@ describe('ClienteFiscalApuracaoController — apurarIcms', () => {
     await expect(controller.apurarIcms('2026-13', user)).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    await expect(controller.apurarIcms('fevereiro', user)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      controller.apurarIcms('fevereiro', user),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(deps.fiscalItensService.getApuracaoIcms).not.toHaveBeenCalled();
   });
 });
@@ -112,10 +112,7 @@ describe('AdminFiscalApuracaoController — guarda de staff preservada (R6.4)', 
 
   it('mantém o @StaffOnly (roles ADMIN/COLABORADOR) no controller admin', () => {
     // @StaffOnly() aplica SetMetadata(ROLES_KEY, ['ADMIN', 'COLABORADOR']).
-    const roles = Reflect.getMetadata(
-      ROLES_KEY,
-      AdminFiscalApuracaoController,
-    );
+    const roles = Reflect.getMetadata(ROLES_KEY, AdminFiscalApuracaoController);
     expect(roles).toEqual(['ADMIN', 'COLABORADOR']);
   });
 });

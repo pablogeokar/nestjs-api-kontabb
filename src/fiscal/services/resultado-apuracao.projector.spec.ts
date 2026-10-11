@@ -109,7 +109,9 @@ describe('resultado-apuracao.projector', () => {
     it('produz uma linha de memória por total (ponte auditável R2.2)', () => {
       const r = projetarResultadoApuracao(registro(), snapshots());
       expect(r.memorias).toHaveLength(12);
-      expect(r.memorias.map((m) => m.codigo)).toContain('saldoCredorTransportar');
+      expect(r.memorias.map((m) => m.codigo)).toContain(
+        'saldoCredorTransportar',
+      );
     });
 
     it('projeta inconsistências do snapshot parametros quando presentes', () => {
@@ -140,7 +142,7 @@ describe('resultado-apuracao.projector', () => {
       expect(() =>
         projetarResultadoApuracao(
           registro(),
-          snapshots({ saldos: { debitos: 45.09 } as never }),
+          snapshots({ saldos: { debitos: 45.09 } }),
         ),
       ).toThrow(/deve ser string decimal/i);
     });
@@ -291,7 +293,10 @@ describe('resultado-apuracao.projector', () => {
       expect(item.chave).toBe('A');
       expect(item.numeroDocumento).toBe('1');
       expect(item.valorContabil).toBe('100.00');
-      expect(item.extras).toEqual({ origem: 'XML', observacao: 'extemporâneo' });
+      expect(item.extras).toEqual({
+        origem: 'XML',
+        observacao: 'extemporâneo',
+      });
     });
 
     it('aceita chaveAcesso/numero/valorTotal como aliases dos campos conhecidos', () => {

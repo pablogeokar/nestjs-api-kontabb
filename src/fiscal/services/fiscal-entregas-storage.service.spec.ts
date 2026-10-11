@@ -140,10 +140,7 @@ function criarStore(seed: { clienteId: string; entregas?: EntregaRow[] }) {
     };
   }
 
-  function resolveIncremento(
-    valor: unknown,
-    row: EntregaRow,
-  ): number {
+  function resolveIncremento(valor: unknown, row: EntregaRow): number {
     // O serviço usa `sql\`tentativas_storage + 1\`` (incremento atômico). No
     // store o valor chega como objeto SQL do drizzle — resolvemos a semântica
     // "atual + 1" lendo a linha corrente; qualquer número literal passa direto.
@@ -348,7 +345,9 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
       upload: jest.fn().mockRejectedValue(uploadErr),
     } as unknown as StorageService;
     const cleanup = {
-      processJobs: jest.fn().mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
+      processJobs: jest
+        .fn()
+        .mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
     } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
@@ -414,7 +413,9 @@ describe('FiscalEntregasService — falha de storage pós-snapshot (R2.3)', () =
   it('rejeita quando a key do upload diverge da arquivoKey do snapshot', async () => {
     const store = criarStore({ clienteId: 'c1' });
     const storage = { upload: jest.fn() } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,
@@ -461,7 +462,9 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
     const storage = {
       upload: jest.fn().mockResolvedValue(undefined),
     } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,
@@ -500,7 +503,9 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
       upload: jest.fn().mockRejectedValue(err),
     } as unknown as StorageService;
     const cleanup = {
-      processJobs: jest.fn().mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
+      processJobs: jest
+        .fn()
+        .mockResolvedValue({ processed: 1, completed: 1, failed: 0 }),
     } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
@@ -526,7 +531,9 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
       entregas: [entregaFalhaStorageRow({ statusValidacao: 'TRANSMITIDA' })],
     });
     const storage = { upload: jest.fn() } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,
@@ -546,7 +553,9 @@ describe('FiscalEntregasService — retry rastreável (R2.3)', () => {
       entregas: [entregaFalhaStorageRow({ clienteId: 'c2' })],
     });
     const storage = { upload: jest.fn() } as unknown as StorageService;
-    const cleanup = { processJobs: jest.fn() } as unknown as StorageCleanupService;
+    const cleanup = {
+      processJobs: jest.fn(),
+    } as unknown as StorageCleanupService;
     const service = new FiscalEntregasService(
       store as never,
       storage,

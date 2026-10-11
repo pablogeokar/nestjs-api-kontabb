@@ -199,9 +199,7 @@ describe('FiscalClosingService', () => {
             updateCalls.push(v);
             return {
               where: jest.fn().mockReturnValue({
-                returning: jest
-                  .fn()
-                  .mockResolvedValue([{ ...linha, ...v }]),
+                returning: jest.fn().mockResolvedValue([{ ...linha, ...v }]),
               }),
             };
           }),
@@ -897,7 +895,10 @@ describe('FiscalClosingService', () => {
         // abrir: proximaVersao (nenhuma anterior → 1) → insert.
         const aberto = makeTx([[]]);
         const svcAbrir = serviceComDb(aberto.db);
-        const rascunho = await svcAbrir.abrir({ ...ESCOPO, entradas: entradas() });
+        const rascunho = await svcAbrir.abrir({
+          ...ESCOPO,
+          entradas: entradas(),
+        });
         expect(aberto.inserts).toHaveLength(1);
         expect(aberto.inserts[0].hashEntradas).toBe(hashEsperado);
         expect(rascunho.hashEntradas).toBe(hashEsperado);
@@ -969,7 +970,11 @@ describe('FiscalClosingService', () => {
           decisoes: [],
           regras: [],
           parametros: {},
-          saldos: { debitos: '45.09', creditos: '18.00', saldoApurado: '27.09' },
+          saldos: {
+            debitos: '45.09',
+            creditos: '18.00',
+            saldoApurado: '27.09',
+          },
         };
         const svc = serviceComLinha(linhaFechada);
         const projecao1 = await svc.projetarApuracao('f1');
@@ -984,7 +989,11 @@ describe('FiscalClosingService', () => {
         // Mesmo que a identidade da versão difira (id/versão), o resultado
         // projetado de entradas idênticas é o mesmo — reprodutibilidade entre
         // execuções/versões, não só entre chamadas de uma mesma linha.
-        const saldos = { debitos: '45.09', creditos: '18.00', saldoApurado: '27.09' };
+        const saldos = {
+          debitos: '45.09',
+          creditos: '18.00',
+          saldoApurado: '27.09',
+        };
         const documentos = [
           { chave: 'A', valorContabil: '100.00', valorIcms: '18.00' },
           { chave: 'B', valorContabil: '250.50', valorIcms: '45.09' },
@@ -1054,14 +1063,20 @@ describe('FiscalClosingService', () => {
 
         const nova = await svc.editar({
           ...ESCOPO,
-          entradas: entradas({ documentos: [{ chave: 'A', valorTotal: '123.45' }] }),
+          entradas: entradas({
+            documentos: [{ chave: 'A', valorTotal: '123.45' }],
+          }),
         });
 
         expect(nova.versao).toBe(2);
         expect(nova.estado).toBe('RASCUNHO');
         expect(nova.corrente).toBe(false);
         expect(inserts).toHaveLength(1);
-        expect(inserts[0]).toMatchObject({ versao: 2, estado: 'RASCUNHO', corrente: false });
+        expect(inserts[0]).toMatchObject({
+          versao: 2,
+          estado: 'RASCUNHO',
+          corrente: false,
+        });
         // A invariante central do R1.4: a versão anterior não recebe NENHUMA
         // escrita durante a edição.
         expect(updates).toHaveLength(0);
@@ -1106,7 +1121,11 @@ describe('FiscalClosingService', () => {
         // A entrega fechada nunca é atualizada; só nasce a revisão.
         expect(updates).toHaveLength(0);
         expect(inserts).toHaveLength(1);
-        expect(inserts[0]).toMatchObject({ versao: 2, estado: 'RASCUNHO', corrente: false });
+        expect(inserts[0]).toMatchObject({
+          versao: 2,
+          estado: 'RASCUNHO',
+          corrente: false,
+        });
         // A revisão herda os snapshots da entrega fechada (ponto de partida),
         // sem alterá-la.
         expect(inserts[0].documentos).toEqual(correnteFechada.documentos);

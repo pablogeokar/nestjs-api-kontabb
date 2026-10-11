@@ -118,7 +118,9 @@ describe('DistribuicaoDfeService', () => {
     ]);
     const groupBy = jest.fn().mockReturnValue({ orderBy });
     const secondLeftJoin = jest.fn().mockReturnValue({ groupBy });
-    const firstLeftJoin = jest.fn().mockReturnValue({ leftJoin: secondLeftJoin });
+    const firstLeftJoin = jest
+      .fn()
+      .mockReturnValue({ leftJoin: secondLeftJoin });
     const from = jest.fn().mockReturnValue({ leftJoin: firstLeftJoin });
     const select = jest.fn().mockReturnValue({ from });
     const service = new DistribuicaoDfeService(

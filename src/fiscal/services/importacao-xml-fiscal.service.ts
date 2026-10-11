@@ -64,10 +64,10 @@ export interface FiscalXmlReviewItem {
 
 export interface FiscalXmlReviewIssue {
   codigo:
-  | 'CFOP_NAO_CADASTRADO'
-  | 'CFOP_DESTINO_NAO_CADASTRADO'
-  | 'INTEGRIDADE_XML_DIVERGENTE'
-  | 'CTE_PENDENTE_REVISAO';
+    | 'CFOP_NAO_CADASTRADO'
+    | 'CFOP_DESTINO_NAO_CADASTRADO'
+    | 'INTEGRIDADE_XML_DIVERGENTE'
+    | 'CTE_PENDENTE_REVISAO';
   mensagem: string;
   acao_recomendada: string;
   cliente_id: string;
@@ -114,7 +114,7 @@ export class ImportacaoXmlFiscalService {
     private readonly cfopService: CfopService,
     private readonly fiscalCteService: FiscalCteService,
     private readonly closing: FiscalClosingService,
-  ) { }
+  ) {}
 
   async importar(input: {
     files: Express.Multer.File[];
@@ -374,15 +374,15 @@ export class ImportacaoXmlFiscalService {
     const { target, documento } = input;
     const ctePreparada = documento.cteEscrituracao
       ? await this.fiscalCteService.prepararEscrituracao({
-        clienteId: target.id,
-        clienteCnpjCpf: target.cnpj,
-        regimeTributario:
-          (target.regimeTributario as RegimeTributario | null) ?? null,
-        apuraIcms: target.apuraIcms ?? false,
-        situacao: documento.situacao,
-        cte: documento.cteEscrituracao,
-        emitenteUf: documento.emitente.uf || null,
-      })
+          clienteId: target.id,
+          clienteCnpjCpf: target.cnpj,
+          regimeTributario:
+            (target.regimeTributario as RegimeTributario | null) ?? null,
+          apuraIcms: target.apuraIcms ?? false,
+          situacao: documento.situacao,
+          cte: documento.cteEscrituracao,
+          emitenteUf: documento.emitente.uf || null,
+        })
       : null;
     if (documento.tipoDocumento === 'CTE' && !ctePreparada) {
       throw new Error('Dados de escrituração do CT-e não foram extraídos.');
@@ -390,18 +390,18 @@ export class ImportacaoXmlFiscalService {
     const escrituracao =
       documento.tipoDocumento === 'CTE'
         ? {
-          tipoOperacaoEscriturada: 'ENTRADA' as const,
-          itens: [],
-          revisoes: [] as CfopItemRevisao[],
-        }
+            tipoOperacaoEscriturada: 'ENTRADA' as const,
+            itens: [],
+            revisoes: [] as CfopItemRevisao[],
+          }
         : await this.cfopService.prepararItensEscrituracao({
-          clienteId: target.id,
-          clienteCnpjCpf: target.cnpj,
-          emitenteCnpjCpf: documento.emitenteCnpjCpf,
-          emitenteUf: documento.emitente.uf || null,
-          tpNfXml: documento.tpNfXml,
-          itens: documento.itens,
-        });
+            clienteId: target.id,
+            clienteCnpjCpf: target.cnpj,
+            emitenteCnpjCpf: documento.emitenteCnpjCpf,
+            emitenteUf: documento.emitente.uf || null,
+            tpNfXml: documento.tpNfXml,
+            itens: documento.itens,
+          });
     const spedMetadata = buildDocumentoFiscalSpedMetadata(documento);
     const nfePendenteRevisao =
       documento.tipoDocumento !== 'CTE' &&
@@ -638,21 +638,21 @@ export class ImportacaoXmlFiscalService {
         },
         ...(input.cteEscrituracaoStatus
           ? [
-            {
-              atorUserId: input.actorUserId,
-              acao:
-                input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
-                  ? 'CTE_NAO_ESCRITURAVEL'
-                  : 'CTE_ESCRITURADO',
-              entidadeTipo: 'DOCUMENTO_FISCAL',
-              entidadeId: input.documentoId,
-              dados: {
-                origem: 'UPLOAD_MANUAL',
-                clienteId: input.clienteId,
-                escrituracaoStatus: input.cteEscrituracaoStatus,
+              {
+                atorUserId: input.actorUserId,
+                acao:
+                  input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
+                    ? 'CTE_NAO_ESCRITURAVEL'
+                    : 'CTE_ESCRITURADO',
+                entidadeTipo: 'DOCUMENTO_FISCAL',
+                entidadeId: input.documentoId,
+                dados: {
+                  origem: 'UPLOAD_MANUAL',
+                  clienteId: input.clienteId,
+                  escrituracaoStatus: input.cteEscrituracaoStatus,
+                },
               },
-            },
-          ]
+            ]
           : []),
       ]);
     } catch (error: unknown) {
@@ -775,14 +775,14 @@ export class ImportacaoXmlFiscalService {
         ...common,
         itens: values.cfopRevisaoNecessaria
           ? [
-            {
-              numero_item: 1,
-              descricao: 'Prestação de serviço de transporte',
-              cfop_xml: values.cfopXml,
-              cfop_aplicado: values.cfop,
-              cfop_sugerido: values.cfop,
-            },
-          ]
+              {
+                numero_item: 1,
+                descricao: 'Prestação de serviço de transporte',
+                cfop_xml: values.cfopXml,
+                cfop_aplicado: values.cfop,
+                cfop_sugerido: values.cfop,
+              },
+            ]
           : [],
       });
     }

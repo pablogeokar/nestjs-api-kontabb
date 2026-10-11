@@ -426,7 +426,7 @@ function lerDecimalOpcional(
     if (typeof valor !== 'string') {
       throw new Error(
         `Valor "${chave}" do documento congelado deve ser string decimal ` +
-        `(nunca Number) na projeção de livros; recebido: ${typeof valor}.`,
+          `(nunca Number) na projeção de livros; recebido: ${typeof valor}.`,
       );
     }
     return valor;
@@ -441,9 +441,7 @@ function lerDecimalOpcional(
  * sinal). O CFOP é obrigatório para compor a chave — sem ele, o registro não é
  * agregável e é descartado pelo chamador.
  */
-function paraItemC190(
-  fonte: Record<string, unknown>,
-): C190ItemInput | null {
+function paraItemC190(fonte: Record<string, unknown>): C190ItemInput | null {
   const cfop = lerTexto(fonte, 'cfop');
   if (cfop === null) return null;
   return {
@@ -476,9 +474,7 @@ function paraItemC190(
  * trata o próprio documento como um único item (o caso simples/flat). Registros
  * sem CFOP não são agregáveis e são omitidos — não se inventa chave.
  */
-function itensDoDocumento(
-  documento: Record<string, unknown>,
-): C190ItemInput[] {
+function itensDoDocumento(documento: Record<string, unknown>): C190ItemInput[] {
   const itens = documento.itens;
   if (Array.isArray(itens)) {
     return itens
@@ -565,7 +561,10 @@ function presencaVazia(): PresencaColunas {
 }
 
 /** Registra, no acumulador de presença, as colunas informadas por um item. */
-function registrarPresenca(destino: PresencaColunas, item: C190ItemInput): void {
+function registrarPresenca(
+  destino: PresencaColunas,
+  item: C190ItemInput,
+): void {
   for (const chave of COLUNAS_SUM_RAW) {
     if (item[chave] != null) destino[chave] = true;
   }
@@ -802,7 +801,11 @@ function montarLinhaResumo(g: AcumuladorResumo): LivroResumoLinha {
   const aplicavel = aplicabilidadeColunas(g.cst, g.presenca);
   const informadoPorColuna = presencaColunasResumo(g.presenca);
   const resolver = (coluna: ColunaResumo): ValorLivro =>
-    resolverColuna(aplicavel[coluna], informadoPorColuna[coluna], g.somas[coluna]);
+    resolverColuna(
+      aplicavel[coluna],
+      informadoPorColuna[coluna],
+      g.somas[coluna],
+    );
   const colunas = COLUNAS_RESUMO.reduce(
     (acc, coluna) => {
       acc[coluna] = resolver(coluna);
@@ -836,9 +839,7 @@ function memoriaParaLinha(
   memoria: ResultadoApuracaoMemoria,
 ): LivroApuracaoLinha {
   const valor: ValorLivro =
-    memoria.origem === 'PADRAO_ZERO'
-      ? NAO_INFORMADO
-      : informado(memoria.valor);
+    memoria.origem === 'PADRAO_ZERO' ? NAO_INFORMADO : informado(memoria.valor);
   return {
     codigo: memoria.codigo,
     descricao: memoria.descricao,

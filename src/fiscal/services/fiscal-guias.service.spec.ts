@@ -1,4 +1,7 @@
-import { FiscalGuiasService, type CriarGuiaInput } from './fiscal-guias.service';
+import {
+  FiscalGuiasService,
+  type CriarGuiaInput,
+} from './fiscal-guias.service';
 
 // DB falso para criarGuia. `criarGuia` faz um ou dois selects
 // select(...).from(...).where(...).limit(1):
@@ -221,7 +224,9 @@ describe('FiscalGuiasService — DIFAL só vira guia quando CALCULADO (tarefa 2.
     const db = createCriarGuiaDb({});
     const service = new FiscalGuiasService(db as never);
     // ICMS_PROPRIO não é DIFAL: cria mesmo sem difalStatus, caminho inalterado.
-    const guia = await service.criarGuia(baseInput({ tributo: 'ICMS_PROPRIO' }));
+    const guia = await service.criarGuia(
+      baseInput({ tributo: 'ICMS_PROPRIO' }),
+    );
     expect(guia.id).toBe('guia-1');
     expect(db.db.insert).toHaveBeenCalledTimes(1);
   });
@@ -441,7 +446,11 @@ describe('FiscalGuiasService — guia divergente da obrigação sinalizada (tare
     });
     const service = new FiscalGuiasService(db as never);
     const guia = await service.criarGuia(
-      baseInput({ origem: 'APURACAO', fechamentoId: 'f1', valorPrincipal: '100.00' }),
+      baseInput({
+        origem: 'APURACAO',
+        fechamentoId: 'f1',
+        valorPrincipal: '100.00',
+      }),
     );
     expect(guia.divergente_obrigacao).toBe(false);
     expect(guia.valor_obrigacao).toBe('100.00');
@@ -469,7 +478,11 @@ describe('FiscalGuiasService — guia divergente da obrigação sinalizada (tare
     });
     const service = new FiscalGuiasService(db as never);
     const guia = await service.criarGuia(
-      baseInput({ origem: 'APURACAO', fechamentoId: 'f1', valorPrincipal: '150.00' }),
+      baseInput({
+        origem: 'APURACAO',
+        fechamentoId: 'f1',
+        valorPrincipal: '150.00',
+      }),
     );
     expect(guia.divergente_obrigacao).toBe(true);
     expect(guia.valor_obrigacao).toBe('100.00');
@@ -785,7 +798,11 @@ describe('FiscalGuiasService — trilha de pagamentos (tarefa 1.4 / R1.3)', () =
     const db = createEventosDb({
       limitQueue: [[defaultGuiaRow({ valorTotal: '100.00' })]],
       orderByRows: [
-        defaultEventoRow({ tipo: 'PAGAMENTO_PARCIAL', valor: '70.00', sinal: 1 }),
+        defaultEventoRow({
+          tipo: 'PAGAMENTO_PARCIAL',
+          valor: '70.00',
+          sinal: 1,
+        }),
         defaultEventoRow({
           id: 'ev-2',
           tipo: 'ESTORNO',
@@ -837,7 +854,11 @@ describe('FiscalGuiasService — "PAGO" exige respaldo da trilha (tarefa 1.5 / R
     const db = createMutacaoEscopadaDb([defaultGuiaRow()], {
       loadRows: [defaultGuiaRow({ valorTotal: '100.00' })],
       orderByRows: [
-        defaultEventoRow({ tipo: 'PAGAMENTO_PARCIAL', valor: '40.00', sinal: 1 }),
+        defaultEventoRow({
+          tipo: 'PAGAMENTO_PARCIAL',
+          valor: '40.00',
+          sinal: 1,
+        }),
       ],
     });
     const service = new FiscalGuiasService(db as never);
@@ -875,9 +896,7 @@ describe('FiscalGuiasService — "PAGO" exige respaldo da trilha (tarefa 1.5 / R
 
   it('BLOQUEIA marcar PAGO em guia cancelada (R1.4 congela a obrigação)', async () => {
     const db = createMutacaoEscopadaDb([defaultGuiaRow()], {
-      loadRows: [
-        defaultGuiaRow({ valorTotal: '100.00', cancelada: true }),
-      ],
+      loadRows: [defaultGuiaRow({ valorTotal: '100.00', cancelada: true })],
       orderByRows: [
         defaultEventoRow({ tipo: 'PAGAMENTO', valor: '100.00', sinal: 1 }),
       ],
@@ -915,7 +934,10 @@ describe('FiscalGuiasService — registrar ≠ emitida no órgão (tarefa 1.5 / 
     // O default do flag é false: registrar a guia no sistema não a emite no
     // órgão arrecadador. A resposta expõe o fato explicitamente.
     const db = createCriarGuiaDb({
-      insertedRow: defaultGuiaRow({ emitidaOrgao: false, emitidaOrgaoEm: null }),
+      insertedRow: defaultGuiaRow({
+        emitidaOrgao: false,
+        emitidaOrgaoEm: null,
+      }),
     });
     const service = new FiscalGuiasService(db as never);
     const guia = await service.criarGuia(baseInput());
@@ -962,7 +984,10 @@ describe('FiscalGuiasService — registrar ≠ emitida no órgão (tarefa 1.5 / 
     const db = createMutacaoEscopadaDb([], { loadRows: [] });
     const service = new FiscalGuiasService(db as never);
     await expect(
-      service.marcarEmitidaNoOrgao({ clienteId: 'c1', guiaId: 'guia-de-outro' }),
+      service.marcarEmitidaNoOrgao({
+        clienteId: 'c1',
+        guiaId: 'guia-de-outro',
+      }),
     ).rejects.toThrow('Guia não encontrada.');
     expect(db.db.update).not.toHaveBeenCalled();
   });
@@ -1082,14 +1107,20 @@ describe('FiscalGuiasService — idempotency key (tarefa 1.6 / R1.6)', () => {
       insertedRow: defaultGuiaRow({ id: 'guia-A', idempotencyKey: 'req-A' }),
     });
     const service1 = new FiscalGuiasService(db1 as never);
-    const guiaA = await service1.criarGuia({ ...base, idempotencyKey: 'req-A' });
+    const guiaA = await service1.criarGuia({
+      ...base,
+      idempotencyKey: 'req-A',
+    });
 
     const db2 = createIdempotencyDb({
       limitQueue: [[{ id: 'c1' }], []],
       insertedRow: defaultGuiaRow({ id: 'guia-B', idempotencyKey: 'req-B' }),
     });
     const service2 = new FiscalGuiasService(db2 as never);
-    const guiaB = await service2.criarGuia({ ...base, idempotencyKey: 'req-B' });
+    const guiaB = await service2.criarGuia({
+      ...base,
+      idempotencyKey: 'req-B',
+    });
 
     // Mesmo tributo/período/UF, guias DISTINTAS: nenhuma deduplicação indevida.
     expect(guiaA.id).toBe('guia-A');

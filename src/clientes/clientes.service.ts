@@ -12,10 +12,7 @@ import { StorageService } from '../storage/storage.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import type { PaginationParams } from '../common/types';
 import { AuthService } from '../auth/auth.service';
-import {
-  CLIENT_PROVISIONAL_PASSWORD,
-  CrmService,
-} from '../crm/crm.service';
+import { CLIENT_PROVISIONAL_PASSWORD, CrmService } from '../crm/crm.service';
 import type {
   FonteConsultaCnpj,
   RegimeTributario,
@@ -66,7 +63,7 @@ export class ClientesService {
     private readonly storageCleanup: StorageCleanupService,
     private readonly authService: AuthService,
     private readonly crmService: CrmService,
-  ) { }
+  ) {}
 
   async listClients(input: { search: string; pagination: PaginationParams }) {
     const searchDocument = input.search
@@ -74,10 +71,10 @@ export class ClientesService {
       .toUpperCase();
     const where = input.search
       ? or(
-        ilike(clientes.razaoSocial, `%${input.search}%`),
-        ilike(clientes.cnpj, `%${searchDocument}%`),
-        ilike(clientes.cpf, `%${searchDocument}%`),
-      )
+          ilike(clientes.razaoSocial, `%${input.search}%`),
+          ilike(clientes.cnpj, `%${searchDocument}%`),
+          ilike(clientes.cpf, `%${searchDocument}%`),
+        )
       : undefined;
 
     const [countResult, rows] = await Promise.all([
@@ -152,9 +149,9 @@ export class ClientesService {
         address: this.mapAddress(client),
         primary_activity: client.cnaePrincipalCodigo
           ? {
-            code: client.cnaePrincipalCodigo,
-            description: client.cnaePrincipalDescricao ?? '',
-          }
+              code: client.cnaePrincipalCodigo,
+              description: client.cnaePrincipalDescricao ?? '',
+            }
           : null,
         secondary_activities: this.normalizeStoredCnaes(
           client.cnaesSecundarios,
@@ -181,10 +178,10 @@ export class ClientesService {
         contador_nome: client.contadorNome,
         certificado: client.certStatus
           ? {
-            status: client.certStatus as
-              'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
-            validade_fim: client.certValidadeFim!,
-          }
+              status: client.certStatus as
+                'ATIVO' | 'PRESTES_A_EXPIRAR' | 'EXPIRADO',
+              validade_fim: client.certValidadeFim!,
+            }
           : null,
       })),
     );
@@ -635,9 +632,9 @@ export class ClientesService {
       address: this.mapAddress(client),
       primary_activity: client.cnaePrincipalCodigo
         ? {
-          code: client.cnaePrincipalCodigo,
-          description: client.cnaePrincipalDescricao ?? '',
-        }
+            code: client.cnaePrincipalCodigo,
+            description: client.cnaePrincipalDescricao ?? '',
+          }
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
       regime_tributario: client.regimeTributario as RegimeTributario | null,
@@ -696,9 +693,9 @@ export class ClientesService {
     const fullRows = (
       fullCnpjs.length
         ? await this.database.db
-          .select({ cnpj: clientes.cnpj })
-          .from(clientes)
-          .where(inArray(clientes.cnpj, fullCnpjs))
+            .select({ cnpj: clientes.cnpj })
+            .from(clientes)
+            .where(inArray(clientes.cnpj, fullCnpjs))
         : []
     ) as Array<{ cnpj: string }>;
     const rootRows = await Promise.all(
@@ -742,8 +739,8 @@ export class ClientesService {
     const cnpjCpf =
       existing[0].tipoPessoa === 'PF' && existing[0].cpf
         ? // CPF saneado para dígitos antes de virar segmento de chave R2
-        // (transparente para o formato numérico já armazenado).
-        existing[0].cpf.replace(/\D/g, '')
+          // (transparente para o formato numérico já armazenado).
+          existing[0].cpf.replace(/\D/g, '')
         : existing[0].cnpj;
     const newKey = this.storage.logoObjectKey({
       cnpjCpf,

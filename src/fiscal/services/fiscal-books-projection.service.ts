@@ -37,7 +37,7 @@ import {
  */
 @Injectable()
 export class FiscalBooksProjectionService {
-  constructor(private readonly database: DatabaseService) { }
+  constructor(private readonly database: DatabaseService) {}
 
   /**
    * Projeta as TRÊS visões do livro (DETALHADO, RESUMO, APURAÇÃO) de uma versão

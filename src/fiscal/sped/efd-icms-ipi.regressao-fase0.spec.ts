@@ -356,10 +356,9 @@ describe('Regressão Fase 0 — cenários P0', () => {
   it('F04: débito do E110 soma NF-e de saída (18,00) e prestação de CT-e (12,00) sem duplicar', () => {
     const input = makeInput({
       nfe: [
-        makeNfe(
-          { tipoOperacaoEscriturada: 'SAIDA' },
-          [makeItem({ cfop: '5102', valorIcms: '18.00' })],
-        ),
+        makeNfe({ tipoOperacaoEscriturada: 'SAIDA' }, [
+          makeItem({ cfop: '5102', valorIcms: '18.00' }),
+        ]),
       ],
       cte: [
         makeCte(
@@ -389,10 +388,9 @@ describe('Regressão Fase 0 — cenários P0', () => {
   it('F04: CT-e de saída cancelado não soma ao débito do E110', () => {
     const input = makeInput({
       nfe: [
-        makeNfe(
-          { tipoOperacaoEscriturada: 'SAIDA' },
-          [makeItem({ cfop: '5102', valorIcms: '18.00' })],
-        ),
+        makeNfe({ tipoOperacaoEscriturada: 'SAIDA' }, [
+          makeItem({ cfop: '5102', valorIcms: '18.00' }),
+        ]),
       ],
       cte: [
         makeCte(

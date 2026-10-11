@@ -222,21 +222,27 @@ export function comporBaseDifal(
       `BC de ICMS destacada no item: ${fromScaledInteger(baseScaled, ESCALA_VALOR)}.`,
     );
   } else {
-    const produto = toScaledInteger(item.valorBrutoProduto ?? '0', ESCALA_VALOR);
+    const produto = toScaledInteger(
+      item.valorBrutoProduto ?? '0',
+      ESCALA_VALOR,
+    );
     const frete = toScaledInteger(item.valorFrete ?? '0', ESCALA_VALOR);
     const seguro = toScaledInteger(item.valorSeguro ?? '0', ESCALA_VALOR);
-    const outras = toScaledInteger(item.valorOutrasDespesas ?? '0', ESCALA_VALOR);
+    const outras = toScaledInteger(
+      item.valorOutrasDespesas ?? '0',
+      ESCALA_VALOR,
+    );
     const desconto = toScaledInteger(item.valorDesconto ?? '0', ESCALA_VALOR);
     baseScaled = positive(produto + frete + seguro + outras - desconto);
     registrar(
       'base_bruta',
       baseScaled,
       `Sem BC apurada: produto ${fromScaledInteger(produto, ESCALA_VALOR)} + ` +
-      `frete ${fromScaledInteger(frete, ESCALA_VALOR)} + seguro ` +
-      `${fromScaledInteger(seguro, ESCALA_VALOR)} + outras ` +
-      `${fromScaledInteger(outras, ESCALA_VALOR)} − desconto ` +
-      `${fromScaledInteger(desconto, ESCALA_VALOR)} = ` +
-      `${fromScaledInteger(baseScaled, ESCALA_VALOR)}.`,
+        `frete ${fromScaledInteger(frete, ESCALA_VALOR)} + seguro ` +
+        `${fromScaledInteger(seguro, ESCALA_VALOR)} + outras ` +
+        `${fromScaledInteger(outras, ESCALA_VALOR)} − desconto ` +
+        `${fromScaledInteger(desconto, ESCALA_VALOR)} = ` +
+        `${fromScaledInteger(baseScaled, ESCALA_VALOR)}.`,
     );
   }
 
@@ -254,9 +260,9 @@ export function comporBaseDifal(
     valor: aliquotaInterestadualEfetiva ?? '',
     detalhe: origemImportada
       ? `Origem ${origem} (importada): alíquota interestadual forçada a ` +
-      `${ALIQUOTA_INTERESTADUAL_IMPORTADA}% (Res. SF 13/2012).`
+        `${ALIQUOTA_INTERESTADUAL_IMPORTADA}% (Res. SF 13/2012).`
       : `Origem ${origem || '—'} (nacional): alíquota interestadual ` +
-      `${aliquotaInterItem ?? 'não destacada no item'}.`,
+        `${aliquotaInterItem ?? 'não destacada no item'}.`,
   });
 
   // Base BRUTA (antes de redução/benefício/por-dentro): guardada para que o
@@ -283,10 +289,10 @@ export function comporBaseDifal(
       'reducao_base',
       baseScaled,
       `Redução de base ${fromScaledInteger(reducaoTotal, ESCALA_ALIQUOTA)}% ` +
-      `(item ${fromScaledInteger(reducaoItem, ESCALA_ALIQUOTA)}% + regra ` +
-      `${fromScaledInteger(reducaoRegra, ESCALA_ALIQUOTA)}%) sobre ` +
-      `${fromScaledInteger(antes, ESCALA_VALOR)} = ` +
-      `${fromScaledInteger(baseScaled, ESCALA_VALOR)} (arredondado a 2 casas).`,
+        `(item ${fromScaledInteger(reducaoItem, ESCALA_ALIQUOTA)}% + regra ` +
+        `${fromScaledInteger(reducaoRegra, ESCALA_ALIQUOTA)}%) sobre ` +
+        `${fromScaledInteger(antes, ESCALA_VALOR)} = ` +
+        `${fromScaledInteger(baseScaled, ESCALA_VALOR)} (arredondado a 2 casas).`,
     );
   }
 
@@ -305,8 +311,8 @@ export function comporBaseDifal(
       'beneficio_fiscal',
       baseScaled,
       `Benefício fiscal ${fromScaledInteger(beneficio, ESCALA_ALIQUOTA)}% ` +
-      `sobre ${fromScaledInteger(antes, ESCALA_VALOR)} = ` +
-      `${fromScaledInteger(baseScaled, ESCALA_VALOR)} (arredondado a 2 casas).`,
+        `sobre ${fromScaledInteger(antes, ESCALA_VALOR)} = ` +
+        `${fromScaledInteger(baseScaled, ESCALA_VALOR)} (arredondado a 2 casas).`,
     );
   }
 
@@ -320,9 +326,9 @@ export function comporBaseDifal(
       'base_por_dentro',
       baseScaled,
       `Base por dentro (gross-up): ${fromScaledInteger(antes, ESCALA_VALOR)} / ` +
-      `(1 − ${aliquotaInterna}/100) = ` +
-      `${fromScaledInteger(baseScaled, ESCALA_VALOR)} (dividido em escala ` +
-      `${ESCALA_INTERNA} e arredondado a 2 casas).`,
+        `(1 − ${aliquotaInterna}/100) = ` +
+        `${fromScaledInteger(baseScaled, ESCALA_VALOR)} (dividido em escala ` +
+        `${ESCALA_INTERNA} e arredondado a 2 casas).`,
     );
   }
 
@@ -334,7 +340,7 @@ export function comporBaseDifal(
       'base_fcp',
       baseFcpScaled,
       `FCP instituído (alíquota ${regra?.aliquotaFcp}%): base de FCP = base ` +
-      `composta = ${fromScaledInteger(baseFcpScaled, ESCALA_VALOR)}.`,
+        `composta = ${fromScaledInteger(baseFcpScaled, ESCALA_VALOR)}.`,
     );
   }
 
@@ -347,8 +353,8 @@ export function comporBaseDifal(
       'retencao_st',
       baseScaled,
       `ICMS-ST retido/responsabilidade de terceiro: base de DIFAL próprio ` +
-      `zerada (de ${fromScaledInteger(antes, ESCALA_VALOR)} para 0.00) para ` +
-      `não recolher em duplicidade (R1.4).`,
+        `zerada (de ${fromScaledInteger(antes, ESCALA_VALOR)} para 0.00) para ` +
+        `não recolher em duplicidade (R1.4).`,
     );
   }
 

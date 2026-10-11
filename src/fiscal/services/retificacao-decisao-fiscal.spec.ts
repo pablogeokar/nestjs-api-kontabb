@@ -58,7 +58,10 @@ describe('obrigacaoTransmitida — mesma aferição do inventário de rollout', 
 
   it('basta UMA entrega transmitida entre várias', () => {
     expect(
-      obrigacaoTransmitida([entregaNaoTransmitida, entregaTransmitidaPorStatus]),
+      obrigacaoTransmitida([
+        entregaNaoTransmitida,
+        entregaTransmitidaPorStatus,
+      ]),
     ).toBe(true);
   });
 });

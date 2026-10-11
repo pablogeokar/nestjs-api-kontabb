@@ -35,11 +35,9 @@ function input(overrides: Partial<StCalculoInput> = {}): StCalculoInput {
 describe('calcularSt (Fase 4 / tarefa 4.3 — R3.2)', () => {
   describe('gate pelo enquadramento (4.2): só SUJEITO calcula guia', () => {
     it('BLOQUEADO → status BLOQUEADO, sem valores, nunca guia', () => {
-      const r = calcularSt(
-        input({ enquadramento: 'BLOQUEADO' }),
-        regra(),
-        { aprovada: true },
-      );
+      const r = calcularSt(input({ enquadramento: 'BLOQUEADO' }), regra(), {
+        aprovada: true,
+      });
       expect(r.status).toBe('BLOQUEADO');
       expect(r.pendente).toBe(true);
       expect(r.icmsStRetido).toBe('0.00');
@@ -50,22 +48,18 @@ describe('calcularSt (Fase 4 / tarefa 4.3 — R3.2)', () => {
     });
 
     it('NAO_SUJEITO → PENDENTE, sem valores', () => {
-      const r = calcularSt(
-        input({ enquadramento: 'NAO_SUJEITO' }),
-        regra(),
-        { aprovada: true },
-      );
+      const r = calcularSt(input({ enquadramento: 'NAO_SUJEITO' }), regra(), {
+        aprovada: true,
+      });
       expect(r.status).toBe('PENDENTE');
       expect(r.pendente).toBe(true);
       expect(r.baseSt).toBe('0.00');
     });
 
     it('PENDENCIA → PENDENTE, sem valores', () => {
-      const r = calcularSt(
-        input({ enquadramento: 'PENDENCIA' }),
-        regra(),
-        { aprovada: true },
-      );
+      const r = calcularSt(input({ enquadramento: 'PENDENCIA' }), regra(), {
+        aprovada: true,
+      });
       expect(r.status).toBe('PENDENTE');
       expect(r.icmsStTotal).toBe('0.00');
     });
@@ -120,21 +114,17 @@ describe('calcularSt (Fase 4 / tarefa 4.3 — R3.2)', () => {
     });
 
     it('alíquota própria ausente cai para a interna', () => {
-      const r = calcularSt(
-        input(),
-        regra({ aliquotaPropria: null }),
-        { aprovada: true },
-      );
+      const r = calcularSt(input(), regra({ aliquotaPropria: null }), {
+        aprovada: true,
+      });
       expect(r.aliquotaPropria).toBe('18.0000');
       expect(r.impostoProprio).toBe('180.00');
     });
 
     it('sem FCP na UF → fcpSt 0.00, demais componentes intactos', () => {
-      const r = calcularSt(
-        input(),
-        regra({ aliquotaFcp: null }),
-        { aprovada: true },
-      );
+      const r = calcularSt(input(), regra({ aliquotaFcp: null }), {
+        aprovada: true,
+      });
       expect(r.fcpSt).toBe('0.00');
       expect(r.aliquotaFcp).toBeNull();
       expect(r.icmsStRetido).toBe('72.00');
@@ -145,7 +135,11 @@ describe('calcularSt (Fase 4 / tarefa 4.3 — R3.2)', () => {
       // MVA 0 → base ST = base própria; interna < própria → total < próprio.
       const r = calcularSt(
         input(),
-        regra({ mva: '0.0000', aliquotaInterna: '12.0000', aliquotaPropria: '18.0000' }),
+        regra({
+          mva: '0.0000',
+          aliquotaInterna: '12.0000',
+          aliquotaPropria: '18.0000',
+        }),
         { aprovada: true },
       );
       // total = 1000 × 12% = 120; próprio = 1000 × 18% = 180 → retenção 0.00
@@ -195,7 +189,11 @@ describe('calcularSt (Fase 4 / tarefa 4.3 — R3.2)', () => {
         input({
           papel: 'SUBSTITUIDO',
           ajustes: [
-            { tipo: 'RESTITUICAO', valor: '10.00', fundamento: 'venda abaixo do presumido' },
+            {
+              tipo: 'RESTITUICAO',
+              valor: '10.00',
+              fundamento: 'venda abaixo do presumido',
+            },
             { tipo: 'RESSARCIMENTO', valor: '5.00' },
             { tipo: 'COMPLEMENTO', valor: '3.00' },
           ],

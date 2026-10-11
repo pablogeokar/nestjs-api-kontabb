@@ -2,11 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 
 export type SimplesAnexo =
-  | 'ANEXO_I'
-  | 'ANEXO_II'
-  | 'ANEXO_III'
-  | 'ANEXO_IV'
-  | 'ANEXO_V';
+  'ANEXO_I' | 'ANEXO_II' | 'ANEXO_III' | 'ANEXO_IV' | 'ANEXO_V';
 
 export type SimplesSegregacao =
   | 'TRIBUTACAO_INTEGRAL'
@@ -115,16 +111,23 @@ export class SimplesCalculadorService {
     if (!Number.isInteger(input.mesesAnteriores) || input.mesesAnteriores < 0) {
       throw new BadRequestException('Quantidade de meses anteriores inválida.');
     }
-    const receitas = input.receitasAnteriores.slice(-12).map((value) => this.money(value, 'receita'));
+    const receitas = input.receitasAnteriores
+      .slice(-12)
+      .map((value) => this.money(value, 'receita'));
     if (input.mesesAnteriores >= 12) {
       return {
-        rbt12: fromScaledInteger(receitas.reduce((sum, value) => sum + value, 0n)),
+        rbt12: fromScaledInteger(
+          receitas.reduce((sum, value) => sum + value, 0n),
+        ),
         proporcional: false,
         origem: 'RECEITAS_DOCUMENTOS_12_MESES_ANTERIORES',
       };
     }
     if (input.mesesAnteriores === 0) {
-      const primeiroMes = this.money(input.receitaPrimeiroMes ?? '0', 'receita do primeiro mês');
+      const primeiroMes = this.money(
+        input.receitaPrimeiroMes ?? '0',
+        'receita do primeiro mês',
+      );
       return {
         rbt12: fromScaledInteger(primeiroMes * 12n),
         proporcional: true,
@@ -141,7 +144,10 @@ export class SimplesCalculadorService {
     };
   }
 
-  selecionarFaixa(rbt12: string, faixas: SimplesFaixaCalculo[]): SimplesFaixaCalculo {
+  selecionarFaixa(
+    rbt12: string,
+    faixas: SimplesFaixaCalculo[],
+  ): SimplesFaixaCalculo {
     const receita = this.money(rbt12, 'RBT12');
     const ordenadas = [...faixas].sort((a, b) => a.faixa - b.faixa);
     const faixa = ordenadas.find(
@@ -171,7 +177,8 @@ export class SimplesCalculadorService {
     );
     const removidos = new Set<keyof SimplesPartilha>();
     if (input.excedeuSublimite) removidos.add('icms');
-    if (input.segregacao === 'ICMS_ST' || input.segregacao === 'ICMS_ISENTO') removidos.add('icms');
+    if (input.segregacao === 'ICMS_ST' || input.segregacao === 'ICMS_ISENTO')
+      removidos.add('icms');
     if (input.segregacao === 'ISS_RETIDO') removidos.add('iss');
     if (input.segregacao === 'PIS_COFINS_MONOFASICO') {
       removidos.add('pis');
@@ -183,7 +190,10 @@ export class SimplesCalculadorService {
 
     const rates = Object.fromEntries(
       TRIBUTOS.map((tributo) => {
-        const percentual = this.rate(input.faixa.partilha[tributo], `partilha ${tributo}`);
+        const percentual = this.rate(
+          input.faixa.partilha[tributo],
+          `partilha ${tributo}`,
+        );
         const rate = removidos.has(tributo)
           ? 0n
           : this.divideRound(aliquotaEfetiva * percentual, RATE_FACTOR);
@@ -202,7 +212,10 @@ export class SimplesCalculadorService {
       aliquotaEfetiva * (RATE_FACTOR - percentualRemovido),
       RATE_FACTOR,
     );
-    const valorDevido = this.divideRound(receita * aliquotaAposDeducoes, RATE_FACTOR);
+    const valorDevido = this.divideRound(
+      receita * aliquotaAposDeducoes,
+      RATE_FACTOR,
+    );
     const partilhaCentavos = Object.fromEntries(
       TRIBUTOS.map((tributo) => [
         tributo,
@@ -215,23 +228,39 @@ export class SimplesCalculadorService {
     // O arredondamento individual da partilha pode diferir um ou dois centavos
     // do total. O residual vai para o primeiro tributo incluído, mantendo a
     // identidade contábil entre a memória e o DAS.
-    const somaPartilha = TRIBUTOS.reduce((sum, tributo) => sum + partilhaCentavos[tributo], 0n);
+    const somaPartilha = TRIBUTOS.reduce(
+      (sum, tributo) => sum + partilhaCentavos[tributo],
+      0n,
+    );
     const residual = valorDevido - somaPartilha;
-    const primeiroIncluido = TRIBUTOS.find((tributo) => !removidos.has(tributo));
+    const primeiroIncluido = TRIBUTOS.find(
+      (tributo) => !removidos.has(tributo),
+    );
     if (primeiroIncluido) partilhaCentavos[primeiroIncluido] += residual;
 
     return {
       anexo: input.anexo,
       faixaEnquadrada: input.faixa.faixa,
-      aliquotaNominal: fromScaledInteger(this.rate(input.faixa.aliquotaNominal, 'alíquota nominal'), RATE_SCALE),
-      parcelaDeduzir: fromScaledInteger(this.money(input.faixa.parcelaDeduzir, 'parcela a deduzir')),
+      aliquotaNominal: fromScaledInteger(
+        this.rate(input.faixa.aliquotaNominal, 'alíquota nominal'),
+        RATE_SCALE,
+      ),
+      parcelaDeduzir: fromScaledInteger(
+        this.money(input.faixa.parcelaDeduzir, 'parcela a deduzir'),
+      ),
       aliquotaEfetiva: fromScaledInteger(aliquotaEfetiva, RATE_SCALE),
       receitaBrutaAtividade: fromScaledInteger(receita),
       segregacao: input.segregacao,
-      aliquotaEfetivaAposDeducoes: fromScaledInteger(aliquotaAposDeducoes, RATE_SCALE),
+      aliquotaEfetivaAposDeducoes: fromScaledInteger(
+        aliquotaAposDeducoes,
+        RATE_SCALE,
+      ),
       valorDevido: fromScaledInteger(valorDevido),
       tributosPartilhados: Object.fromEntries(
-        TRIBUTOS.map((tributo) => [tributo, fromScaledInteger(partilhaCentavos[tributo])]),
+        TRIBUTOS.map((tributo) => [
+          tributo,
+          fromScaledInteger(partilhaCentavos[tributo]),
+        ]),
       ) as Record<keyof SimplesPartilha, string>,
       deducoes: [
         ...(removidos.has('icms') ? (['ICMS'] as const) : []),
@@ -249,7 +278,8 @@ export class SimplesCalculadorService {
     } catch {
       throw new BadRequestException(`${label} inválido.`);
     }
-    if (parsed < 0n) throw new BadRequestException(`${label} não pode ser negativo.`);
+    if (parsed < 0n)
+      throw new BadRequestException(`${label} não pode ser negativo.`);
     return parsed;
   }
 
@@ -260,12 +290,14 @@ export class SimplesCalculadorService {
     } catch {
       throw new BadRequestException(`${label} inválido.`);
     }
-    if (parsed < 0n) throw new BadRequestException(`${label} não pode ser negativo.`);
+    if (parsed < 0n)
+      throw new BadRequestException(`${label} não pode ser negativo.`);
     return parsed;
   }
 
   private divideRound(numerator: bigint, denominator: bigint): bigint {
-    if (denominator <= 0n) throw new BadRequestException('Divisor fiscal inválido.');
+    if (denominator <= 0n)
+      throw new BadRequestException('Divisor fiscal inválido.');
     return (numerator + denominator / 2n) / denominator;
   }
 }

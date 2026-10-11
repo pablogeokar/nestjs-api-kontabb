@@ -57,7 +57,11 @@
  * e alíquotas chegam como strings e assim permanecem no resultado.
  */
 
-import { fromScaledInteger, positive, toScaledInteger } from '../sped/sped-decimal';
+import {
+  fromScaledInteger,
+  positive,
+  toScaledInteger,
+} from '../sped/sped-decimal';
 import type { StEnquadramentoStatus } from './st-enquadramento';
 import { stEnquadramentoHabilitaCalculo } from './st-enquadramento';
 
@@ -80,7 +84,8 @@ const ESCALA_ALIQUOTA = 4;
  * - `BLOQUEADO`: o enquadramento está BLOQUEADO (fonte não verificada, 4.1). Sem
  *   valores de guia; bloqueio explicável (R3.4).
  */
-export type StCalculoStatus = 'CALCULADO' | 'SIMULACAO' | 'PENDENTE' | 'BLOQUEADO';
+export type StCalculoStatus =
+  'CALCULADO' | 'SIMULACAO' | 'PENDENTE' | 'BLOQUEADO';
 
 /**
  * PAPEL do contribuinte na operação de ST (R3.2 — "separar substituto/
@@ -312,11 +317,11 @@ export function calcularSt(
     return semCalculo(
       bloqueado ? 'BLOQUEADO' : 'PENDENTE',
       `ST ${uf} (${input.competencia}, papel ${input.papel}): enquadramento ` +
-      `${input.enquadramento} NÃO habilita cálculo (4.2). ` +
-      (bloqueado
-        ? 'Fonte do cenário não verificada (4.1): BLOQUEADO, nunca gera guia (R3.4).'
-        : 'Produto não sujeito à ST ou pendência de regra: nenhum valor é ' +
-        'tratado como guia (R3.2/R3.4).'),
+        `${input.enquadramento} NÃO habilita cálculo (4.2). ` +
+        (bloqueado
+          ? 'Fonte do cenário não verificada (4.1): BLOQUEADO, nunca gera guia (R3.4).'
+          : 'Produto não sujeito à ST ou pendência de regra: nenhum valor é ' +
+            'tratado como guia (R3.2/R3.4).'),
     );
   }
 
@@ -325,8 +330,8 @@ export function calcularSt(
     return semCalculo(
       'PENDENTE',
       `ST ${uf} (${input.competencia}, papel ${input.papel}): enquadramento ` +
-      'SUJEITO porém sem regra de ST (MVA/alíquotas) resolvida para o CEST na ' +
-      'competência. Resultado em pendência (R3.2): base de ST não formada.',
+        'SUJEITO porém sem regra de ST (MVA/alíquotas) resolvida para o CEST na ' +
+        'competência. Resultado em pendência (R3.2): base de ST não formada.',
     );
   }
 
@@ -336,8 +341,8 @@ export function calcularSt(
     return semCalculo(
       'PENDENTE',
       `ST ${uf} (${input.competencia}, papel ${input.papel}): regra de ST sem ` +
-      'MVA/IVA-ST apurável. A base de ST não pode ser formada sem a margem; ' +
-      'nenhum valor é presumido (R3.2). Pendência.',
+        'MVA/IVA-ST apurável. A base de ST não pode ser formada sem a margem; ' +
+        'nenhum valor é presumido (R3.2). Pendência.',
     );
   }
 
@@ -355,7 +360,10 @@ export function calcularSt(
   const cemAliquota = 100n * 10n ** BigInt(ESCALA_ALIQUOTA);
 
   // IMPOSTO PRÓPRIO = base_propria × aliq_propria / 100 (componente separado).
-  const impostoProprioScaled = aplicarAliquota(basePropriaScaled, propriaScaled);
+  const impostoProprioScaled = aplicarAliquota(
+    basePropriaScaled,
+    propriaScaled,
+  );
 
   // BASE DE ST = base_propria × (1 + MVA/100). Componente próprio da ST.
   const baseStScaled = aplicarAgregadoMva(basePropriaScaled, mvaScaled);
@@ -375,7 +383,10 @@ export function calcularSt(
       : aplicarAliquota(baseStScaled, toScaledInteger(fcpStr, ESCALA_ALIQUOTA));
 
   const status: StCalculoStatus = opcoes.aprovada ? 'CALCULADO' : 'SIMULACAO';
-  const impostoProprioStr = fromScaledInteger(impostoProprioScaled, ESCALA_VALOR);
+  const impostoProprioStr = fromScaledInteger(
+    impostoProprioScaled,
+    ESCALA_VALOR,
+  );
   const baseStStr = fromScaledInteger(baseStScaled, ESCALA_VALOR);
   const icmsStTotalStr = fromScaledInteger(icmsStTotalScaled, ESCALA_VALOR);
   const retencaoStr = fromScaledInteger(retencaoScaled, ESCALA_VALOR);
@@ -388,10 +399,8 @@ export function calcularSt(
   const ajusteMem =
     base.ajustes.length > 0
       ? ' Ajustes do substituído: ' +
-      base.ajustes
-        .map((a) => `${a.tipo} ${a.valor}`)
-        .join(', ') +
-      '.'
+        base.ajustes.map((a) => `${a.tipo} ${a.valor}`).join(', ') +
+        '.'
       : '';
 
   return {

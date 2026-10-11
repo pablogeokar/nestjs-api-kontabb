@@ -39,7 +39,7 @@ function versao(
 function fonteNacionalAprovada(): CatalogoVersaoResolvida {
   return versao({
     id: 'cat-nacional',
-    uf: 'BR' as string,
+    uf: 'BR',
     fonte: CONVENIO_ICMS_142_2018.fonte,
     fonteUrl: CONVENIO_ICMS_142_2018.fonteUrl,
     escopoAprovado: true,

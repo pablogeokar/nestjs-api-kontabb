@@ -50,13 +50,13 @@
  * CST 03/CST 67 por hipótese (3.4) nem o tratamento de regime ausente (3.5).
  */
 
-import type {
-  PisCofinsTributo,
-} from './pis-cofins-natureza';
-import type {
-  PisCofinsLancamentoReceita,
-} from './pis-cofins-razao';
-import { fromScaledInteger, positive, toScaledInteger } from '../sped/sped-decimal';
+import type { PisCofinsTributo } from './pis-cofins-natureza';
+import type { PisCofinsLancamentoReceita } from './pis-cofins-razao';
+import {
+  fromScaledInteger,
+  positive,
+  toScaledInteger,
+} from '../sped/sped-decimal';
 
 // Escala monetária (centavos), padrão das colunas `numeric(_,2)` do fiscal.
 const ESCALA_VALOR = 2;
@@ -167,7 +167,10 @@ export function apurarSaldoPisCofins(
   const creditoStr = fromScaledInteger(creditoScaled, ESCALA_VALOR);
   const saldoAnteriorStr = fromScaledInteger(saldoAnteriorScaled, ESCALA_VALOR);
   const creditoTotalStr = fromScaledInteger(creditoTotalScaled, ESCALA_VALOR);
-  const saldoARecolherStr = fromScaledInteger(saldoARecolherScaled, ESCALA_VALOR);
+  const saldoARecolherStr = fromScaledInteger(
+    saldoARecolherScaled,
+    ESCALA_VALOR,
+  );
   const saldoCredorStr = fromScaledInteger(saldoCredorScaled, ESCALA_VALOR);
   const temSaldoCredor = saldoCredorScaled > 0n;
 

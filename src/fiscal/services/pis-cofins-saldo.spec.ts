@@ -80,7 +80,11 @@ describe('apurarSaldoPisCofins (Fase 4 / tarefa 3.3 — R2.3)', () => {
   describe('saldo credor anterior abate o débito e, se sobra, segue transportado', () => {
     it('saldo anterior + crédito abatem o débito, reduzindo o a recolher', () => {
       const r = apurarSaldoPisCofins(
-        input({ debito: '200.00', credito: '50.00', saldoCredorAnterior: '30.00' }),
+        input({
+          debito: '200.00',
+          credito: '50.00',
+          saldoCredorAnterior: '30.00',
+        }),
       );
       // Crédito total disponível = 50 + 30 = 80; a recolher = 200 − 80 = 120.
       expect(r.creditoTotalDisponivel).toBe('80.00');
@@ -90,7 +94,11 @@ describe('apurarSaldoPisCofins (Fase 4 / tarefa 3.3 — R2.3)', () => {
 
     it('saldo anterior que supera o débito é transportado adiante (acúmulo)', () => {
       const r = apurarSaldoPisCofins(
-        input({ debito: '40.00', credito: '20.00', saldoCredorAnterior: '100.00' }),
+        input({
+          debito: '40.00',
+          credito: '20.00',
+          saldoCredorAnterior: '100.00',
+        }),
       );
       // Disponível = 20 + 100 = 120; a recolher = 0; transporta 120 − 40 = 80.
       expect(r.creditoTotalDisponivel).toBe('120.00');
@@ -111,7 +119,11 @@ describe('apurarSaldoPisCofins (Fase 4 / tarefa 3.3 — R2.3)', () => {
   describe('débito e crédito permanecem separados no envelope (R2.3)', () => {
     it('ecoa débito e crédito do período sem misturá-los no net', () => {
       const r = apurarSaldoPisCofins(
-        input({ debito: '300.00', credito: '120.00', saldoCredorAnterior: '0.00' }),
+        input({
+          debito: '300.00',
+          credito: '120.00',
+          saldoCredorAnterior: '0.00',
+        }),
       );
       expect(r.debito).toBe('300.00');
       expect(r.credito).toBe('120.00');
@@ -121,7 +133,11 @@ describe('apurarSaldoPisCofins (Fase 4 / tarefa 3.3 — R2.3)', () => {
 
     it('crédito do período é distinto do crédito total disponível (com saldo anterior)', () => {
       const r = apurarSaldoPisCofins(
-        input({ debito: '0.00', credito: '120.00', saldoCredorAnterior: '30.00' }),
+        input({
+          debito: '0.00',
+          credito: '120.00',
+          saldoCredorAnterior: '30.00',
+        }),
       );
       expect(r.credito).toBe('120.00');
       expect(r.creditoTotalDisponivel).toBe('150.00');

@@ -12,10 +12,7 @@ import {
 } from '../../database/schema';
 import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 import { parseCompetenciaMensal } from '../fiscal-date.util';
-import {
-  classificarDifalHipotese,
-  type DifalHipotese,
-} from './difal-hipotese';
+import { classificarDifalHipotese, type DifalHipotese } from './difal-hipotese';
 import {
   calcularDifalHipotese,
   type DifalRegra,
@@ -106,7 +103,7 @@ export class DifalEntradaService {
   constructor(
     private readonly database: DatabaseService,
     private readonly catalogo: FiscalNormativeCatalogService,
-  ) { }
+  ) {}
 
   /**
    * Apura o DIFAL de entrada da competência consumindo o CATÁLOGO normativo
@@ -122,9 +119,8 @@ export class DifalEntradaService {
    * fonte do valor.
    */
   async apurarCompetencia(input: { clienteId: string; competencia: string }) {
-    const { competencia, competenciaMensal, inicio, fim } = this.competenciaRange(
-      input.competencia,
-    );
+    const { competencia, competenciaMensal, inicio, fim } =
+      this.competenciaRange(input.competencia);
     const cliente = await this.getCliente(input.clienteId);
     const uf = (cliente.uf ?? '').trim().toUpperCase();
     const aliquotaInternaReferencia =
@@ -143,11 +139,11 @@ export class DifalEntradaService {
     // fixa. `null` quando não há regra vigente → os itens caem em PENDÊNCIA.
     const regraVersao = uf
       ? await this.catalogo.resolverRegraVigente({
-        tipo: 'DIFAL',
-        uf,
-        competencia: competenciaMensal,
-        chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
-      })
+          tipo: 'DIFAL',
+          uf,
+          competencia: competenciaMensal,
+          chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
+        })
       : null;
     const regra = this.regraDoConteudo(regraVersao?.conteudo);
     // Parâmetros de COMPOSIÇÃO DA BASE (tarefa 2.4) extraídos do mesmo `conteudo`
@@ -166,7 +162,9 @@ export class DifalEntradaService {
         // adquirente) para que o resultado mostre a operação interestadual
         // completa (tarefa 2.6 — R1.5). Normalizada em maiúsculas; null quando
         // o emitente não traz a UF.
-        emitenteUf: sql<string | null>`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
+        emitenteUf: sql<
+          string | null
+        >`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
         valorBcIcms: documentosFiscaisItens.valorBcIcms,
         valorBrutoProduto: documentosFiscaisItens.valorBrutoProduto,
         aliquotaIcms: documentosFiscaisItens.aliquotaIcms,
@@ -282,18 +280,18 @@ export class DifalEntradaService {
       // As demais hipóteses são separadas aqui e calculadas pelas tarefas 2.5+.
       const calc = calcularEntradaContribuinte
         ? calcularDifalHipotese(
-          {
-            hipotese: 'DIFAL_ENTRADA_CONTRIBUINTE',
-            ufDestino: uf,
-            competencia: competenciaMensal,
-            responsavel: 'ADQUIRENTE' as DifalResponsavel,
-            baseCalculo: baseStr,
-            aliquotaInterestadualItem: aliquotaInterItemStr,
-            baseComposta,
-          },
-          regra,
-          { aprovada: regraAprovada },
-        )
+            {
+              hipotese: 'DIFAL_ENTRADA_CONTRIBUINTE',
+              ufDestino: uf,
+              competencia: competenciaMensal,
+              responsavel: 'ADQUIRENTE',
+              baseCalculo: baseStr,
+              aliquotaInterestadualItem: aliquotaInterItemStr,
+              baseComposta,
+            },
+            regra,
+            { aprovada: regraAprovada },
+          )
         : null;
 
       if (calc) {
@@ -308,14 +306,16 @@ export class DifalEntradaService {
       // que impede o recolhimento em duplicidade e o deixa AUDITÁVEL.
       const sobRetencaoOuSt =
         classificacao.hipotese === 'ST' || baseComposta.retido;
-      const recolhimentoProprio: 'SIM' | 'NAO' = sobRetencaoOuSt ? 'NAO' : 'SIM';
+      const recolhimentoProprio: 'SIM' | 'NAO' = sobRetencaoOuSt
+        ? 'NAO'
+        : 'SIM';
       const motivoNaoRecolhimento = sobRetencaoOuSt
         ? classificacao.hipotese === 'ST'
           ? 'Operação sob substituição tributária (ICMS retido/responsabilidade ' +
-          'do substituto): não há DIFAL de entrada próprio a recolher — ' +
-          'recolher aqui duplicaria o imposto já retido (R1.4).'
+            'do substituto): não há DIFAL de entrada próprio a recolher — ' +
+            'recolher aqui duplicaria o imposto já retido (R1.4).'
           : 'ICMS-ST retido/responsabilidade de terceiro no item: base de DIFAL ' +
-          'próprio zerada; nenhum valor a recolher para evitar duplicidade (R1.4).'
+            'próprio zerada; nenhum valor a recolher para evitar duplicidade (R1.4).'
         : null;
       if (sobRetencaoOuSt) itensSemRecolhimentoProprio += 1;
 
@@ -344,7 +344,7 @@ export class DifalEntradaService {
       const recolheDifalProprio =
         calc?.status === 'CALCULADO' && recolhimentoProprio === 'SIM';
       if (recolheDifalProprio) {
-        totalDifal += toScaledInteger(calc!.valorDifal);
+        totalDifal += toScaledInteger(calc.valorDifal);
         totalBase += toScaledInteger(baseStr);
       }
 
@@ -435,15 +435,15 @@ export class DifalEntradaService {
       // Fonte do cálculo: catálogo versionado quando há regra; estado explícito.
       origem_regra: regraVersao
         ? {
-          catalogo_versao_id: regraVersao.catalogoVersaoId,
-          regra_versao_id: regraVersao.id,
-          chave: regraVersao.chave,
-          revisao: regraVersao.revisao,
-          fonte: regraVersao.fonte,
-          escopo_aprovado: regraVersao.escopoAprovado,
-          vigencia_inicio: regraVersao.vigenciaInicio,
-          vigencia_fim: regraVersao.vigenciaFim,
-        }
+            catalogo_versao_id: regraVersao.catalogoVersaoId,
+            regra_versao_id: regraVersao.id,
+            chave: regraVersao.chave,
+            revisao: regraVersao.revisao,
+            fonte: regraVersao.fonte,
+            escopo_aprovado: regraVersao.escopoAprovado,
+            vigencia_inicio: regraVersao.vigenciaInicio,
+            vigencia_fim: regraVersao.vigenciaFim,
+          }
         : null,
       // Referência legada apenas identificada (nunca fonte de verdade); null
       // quando a UF não consta da tabela de referência.
@@ -502,8 +502,7 @@ export class DifalEntradaService {
     conteudo: Record<string, unknown> | undefined,
   ): DifalBaseRegra | null {
     if (!conteudo) return null;
-    const basePorDentro =
-      conteudo.base_por_dentro ?? conteudo.basePorDentro;
+    const basePorDentro = conteudo.base_por_dentro ?? conteudo.basePorDentro;
     return {
       aliquotaInterna: this.comoDecimalString(
         conteudo.aliquota_interna ?? conteudo.aliquotaInterna,

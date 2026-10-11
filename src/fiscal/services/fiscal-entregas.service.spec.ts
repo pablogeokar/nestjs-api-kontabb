@@ -110,7 +110,10 @@ function criarStore(seed: {
   let deleteChamado = false;
 
   // Casa a linha contra cada par (coluna, valor) do WHERE, pela coluna EXATA.
-  function casa(row: Record<string, unknown>, pares: Array<[string, unknown]>): boolean {
+  function casa(
+    row: Record<string, unknown>,
+    pares: Array<[string, unknown]>,
+  ): boolean {
     return pares.every(([coluna, valor]) => row[coluna] === valor);
   }
 
@@ -287,7 +290,9 @@ describe('FiscalEntregasService — registrarEntrega (R2.1/R2.4)', () => {
     expect(entrega.entrega_original_id).toBeNull();
     expect(entrega.valor_diferenca).toBeNull();
     expect(entrega.arquivo_key).toBe('cliente/c1/efd/2026-08/original.txt');
-    expect(entrega.recibo_key).toBe('cliente/c1/efd/2026-08/recibo-original.pdf');
+    expect(entrega.recibo_key).toBe(
+      'cliente/c1/efd/2026-08/recibo-original.pdf',
+    );
     // Competência normalizada para o 1º dia do mês.
     expect(entrega.competencia).toBe('2026-08-01');
   });
@@ -381,7 +386,9 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
   it('a retificadora herda o fechamento da original e valida o hash (R2.4)', async () => {
     const store = criarStore({
       clienteId: 'c1',
-      entregas: [entregaOriginalRow({ fechamentoId: 'f1', hashArquivo: HASH_A })],
+      entregas: [
+        entregaOriginalRow({ fechamentoId: 'f1', hashArquivo: HASH_A }),
+      ],
       fechamentos: [{ id: 'f1', clienteId: 'c1', hashEntradas: HASH_B }],
     });
     const service = new FiscalEntregasService(store as never);
@@ -441,7 +448,9 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
     const service = new FiscalEntregasService(store as never);
 
     await expect(
-      service.retificarEntrega(baseRetificar({ entregaOriginalId: 'entrega-ret-1' })),
+      service.retificarEntrega(
+        baseRetificar({ entregaOriginalId: 'entrega-ret-1' }),
+      ),
     ).rejects.toThrow('já é uma retificação');
   });
 
@@ -542,7 +551,12 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
     // Original em 2027 → vigência 3.2.3; a retificadora herda a competência.
     const store = criarStore({
       clienteId: 'c1',
-      entregas: [entregaOriginalRow({ competencia: '2027-03-01', leiauteVersao: '3.2.3' })],
+      entregas: [
+        entregaOriginalRow({
+          competencia: '2027-03-01',
+          leiauteVersao: '3.2.3',
+        }),
+      ],
     });
     const service = new FiscalEntregasService(store as never);
 
@@ -555,7 +569,12 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
   it('a retificação REJEITA leiaute que não casa a vigência da original', async () => {
     const store = criarStore({
       clienteId: 'c1',
-      entregas: [entregaOriginalRow({ competencia: '2027-03-01', leiauteVersao: '3.2.3' })],
+      entregas: [
+        entregaOriginalRow({
+          competencia: '2027-03-01',
+          leiauteVersao: '3.2.3',
+        }),
+      ],
     });
     const service = new FiscalEntregasService(store as never);
 

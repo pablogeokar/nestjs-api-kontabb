@@ -33,11 +33,7 @@ import {
   type SpedCiapBuilderData,
   type SpedEfdBuilderInput,
 } from './efd-icms-ipi.builder';
-import {
-  BLOCO_G_LEIAUTES,
-  serializeSpedRecord,
-  type SpedRecord,
-} from './core';
+import { BLOCO_G_LEIAUTES, serializeSpedRecord, type SpedRecord } from './core';
 
 // Período de apuração do input conhecido. DT_INI/DT_FIN do G110 derivam de
 // `inicio`/`fim` (ddmmaaaa). O builder usa `inicio` também como DT_MOV do G125
@@ -128,7 +124,9 @@ function camposDaLinha(
 ): string[] {
   const alvo = records.filter((record) => record.reg === reg)[ocorrencia];
   if (!alvo) {
-    throw new Error(`Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`);
+    throw new Error(
+      `Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`,
+    );
   }
   // |REG|c0|c1|...| ⇒ remove os vazios de borda e o próprio REG.
   return serializeSpedRecord(alvo).split('|').slice(2, -1);
@@ -142,7 +140,9 @@ function linhaSerializada(
 ): string {
   const alvo = records.filter((record) => record.reg === reg)[ocorrencia];
   if (!alvo) {
-    throw new Error(`Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`);
+    throw new Error(
+      `Registro ${reg}[${ocorrencia}] ausente no arquivo gerado.`,
+    );
   }
   return serializeSpedRecord(alvo);
 }
@@ -261,8 +261,7 @@ describe('5.3 cenário saldo inicial (TIPO_MOV "SI") — oráculo externo (R4.3)
 //   02 NUM_ITEM = 1
 //   03 COD_ITEM = SKU-TORNO
 describe('5.3 cenário imobilização (TIPO_MOV "IM") com G130/G140 — oráculo externo (R4.3)', () => {
-  const CHAVE =
-    '35260811111111111111550010009988771000000017';
+  const CHAVE = '35260811111111111111550010009988771000000017';
   const ciap: SpedCiapBuilderData = {
     saldoInicial: '0.00',
     somaParcelas: '25.00',
@@ -437,9 +436,12 @@ describe('5.3 cenário baixa (TIPO_MOV "BA") — campos 05..10 não informados (
       const spec = layout.fields.find((f) => f.position === indice);
       return { indice, nome: spec?.name ?? `campo${indice}`, valor };
     });
-    it.each(comNome)('campo $indice ($nome) = "$valor"', ({ indice, nome, valor }) => {
-      expect({ nome, valor: campos[indice] }).toEqual({ nome, valor });
-    });
+    it.each(comNome)(
+      'campo $indice ($nome) = "$valor"',
+      ({ indice, nome, valor }) => {
+        expect({ nome, valor: campos[indice] }).toEqual({ nome, valor });
+      },
+    );
   });
 });
 
@@ -506,9 +508,12 @@ describe('5.3 cenário frete/DIFAL/ST — cada valor na posição oficial do G12
       const spec = layout.fields.find((f) => f.position === indice);
       return { indice, nome: spec?.name ?? `campo${indice}`, valor };
     });
-    it.each(comNome)('campo $indice ($nome) = "$valor"', ({ indice, nome, valor }) => {
-      expect({ nome, valor: campos[indice] }).toEqual({ nome, valor });
-    });
+    it.each(comNome)(
+      'campo $indice ($nome) = "$valor"',
+      ({ indice, nome, valor }) => {
+        expect({ nome, valor: campos[indice] }).toEqual({ nome, valor });
+      },
+    );
   });
 
   it('ST (06), frete (07) e DIFAL (08) ocupam posições distintas e corretas', () => {

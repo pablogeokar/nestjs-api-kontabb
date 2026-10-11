@@ -183,7 +183,7 @@ export class CiapService {
   constructor(
     private readonly database: DatabaseService,
     private readonly closing: FiscalClosingService,
-  ) { }
+  ) {}
 
   /**
    * Registra manualmente um bem do ativo permanente no CIAP.
@@ -223,8 +223,8 @@ export class CiapService {
     );
     const saldoInicial = fromScaledInteger(
       toScaledInteger(input.valorIcmsTotal) +
-      toScaledInteger(input.valorIcmsFrete ?? '0') +
-      toScaledInteger(input.valorIcmsDifal ?? '0'),
+        toScaledInteger(input.valorIcmsFrete ?? '0') +
+        toScaledInteger(input.valorIcmsDifal ?? '0'),
     );
 
     const rows = await this.database.db
@@ -773,7 +773,7 @@ export class CiapService {
       // o ajuste. A mensagem orienta o cadastro da pré-condição fiscal.
       throw new BadRequestException(
         `Não há código estadual de ajuste E111 do CIAP catalogado e vigente para a UF ${uf} na competência ${competencia}. ` +
-        'Cadastre o código oficial em fiscal_catalogos_versoes (tipo E111_CIAP) antes de gerar o ajuste.',
+          'Cadastre o código oficial em fiscal_catalogos_versoes (tipo E111_CIAP) antes de gerar o ajuste.',
       );
     }
     return codigo;

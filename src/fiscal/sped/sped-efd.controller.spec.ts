@@ -120,7 +120,9 @@ describe('SPED EFD cliente — resolução de escopo pela sessão (contrato)', (
       user,
     );
 
-    expect(deps.clientesService.getClientForUser).toHaveBeenCalledWith('user-1');
+    expect(deps.clientesService.getClientForUser).toHaveBeenCalledWith(
+      'user-1',
+    );
     const call = deps.configuracaoService.atualizar.mock.calls[0][0];
     expect(call.clienteId).toBe('cliente-1');
     expect(call.actorUserId).toBe('user-1');
@@ -132,7 +134,7 @@ describe('SPED EFD cliente — resolução de escopo pela sessão (contrato)', (
     });
 
     await expect(
-      controller.obterContextoApuracao({ competencia: '2026-08' } as never, user),
+      controller.obterContextoApuracao({ competencia: '2026-08' }, user),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(deps.apuracaoContextoService.obter).not.toHaveBeenCalled();
   });
@@ -161,9 +163,7 @@ describe('SPED EFD admin — escopo explícito por DTO (contrato)', () => {
   it('usa o clienteId do DTO (não da sessão) e mantém o envelope { data }', async () => {
     const { controller, deps } = createAdminController();
 
-    const resposta = await controller.obterConfiguracao(
-      'cliente-xyz' as never,
-    );
+    const resposta = await controller.obterConfiguracao('cliente-xyz');
 
     expect(deps.configuracaoService.obter).toHaveBeenCalledWith('cliente-xyz');
     expect(resposta).toEqual({ data: { obrigadoEfdIcmsIpi: true } });

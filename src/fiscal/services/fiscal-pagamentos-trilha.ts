@@ -71,8 +71,7 @@ export function projetarSaldoObrigacao(
 ): SaldoObrigacao {
   const total = toScaledInteger(valorTotal);
   const pago = eventos.reduce(
-    (acc, evento) =>
-      acc + BigInt(evento.sinal) * toScaledInteger(evento.valor),
+    (acc, evento) => acc + BigInt(evento.sinal) * toScaledInteger(evento.valor),
     0n,
   );
   const saldo = total - pago;

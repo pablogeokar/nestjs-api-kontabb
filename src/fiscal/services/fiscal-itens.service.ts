@@ -81,7 +81,7 @@ export class FiscalItensService {
   constructor(
     private readonly database: DatabaseService,
     private readonly fiscalCteService?: FiscalCteService,
-  ) { }
+  ) {}
 
   async listItens(input: ItemFilters & { pagination: PaginationParams }) {
     const where = this.buildWhere(input);
@@ -189,9 +189,9 @@ export class FiscalItensService {
     // (cliente desconhecido) o C190 segue documental completo (compõe).
     const icmsCompoeApuracao = fiscalConfig
       ? apuraIcmsProprioParaConsumidores(
-        fiscalConfig,
-        competenciaDeIntervalo(input),
-      )
+          fiscalConfig,
+          competenciaDeIntervalo(input),
+        )
       : true;
     // O C190 é um resumo DOCUMENTAL: sempre parcial em relação ao imposto final
     // apurado (R7.3). Preserva a observação do Simples quando aplicável,
@@ -338,13 +338,13 @@ export class FiscalItensService {
       input.tipoOperacao === 'SAIDA' || !this.fiscalCteService
         ? '0.00'
         : await this.fiscalCteService.getTotalCreditoIcms({
-          clienteId: input.clienteId,
-          documentoId: input.documentoId,
-          cfop: input.cfop,
-          cst: input.cst,
-          dataInicio: input.dataInicio,
-          dataFim: input.dataFim,
-        });
+            clienteId: input.clienteId,
+            documentoId: input.documentoId,
+            cfop: input.cfop,
+            cst: input.cst,
+            dataInicio: input.dataInicio,
+            dataFim: input.dataFim,
+          });
     return {
       total_creditos: addMoney(
         apuracaoMercadorias.total_creditos,
@@ -398,7 +398,10 @@ export class FiscalItensService {
    * É o único ponto do serviço que decide apuração de ICMS próprio.
    */
   private apuraIcmsProprio(
-    fiscalConfig: { regimeTributario: RegimeTributario | null; apuraIcms: boolean },
+    fiscalConfig: {
+      regimeTributario: RegimeTributario | null;
+      apuraIcms: boolean;
+    },
     input: ItemFilters,
   ): boolean {
     return apuraIcmsProprioParaConsumidores(
@@ -528,12 +531,12 @@ export class FiscalItensService {
         revisao_necessaria: item.cfopRevisaoNecessaria,
         cfop_sugerido:
           item.cfopRevisaoNecessaria &&
-            item.cfopXml &&
-            item.cfopOrigemResolucao !== 'PENDENTE_CLASSIFICACAO'
+          item.cfopXml &&
+          item.cfopOrigemResolucao !== 'PENDENTE_CLASSIFICACAO'
             ? convertDirection(
-              item.cfopXml,
-              item.tipoOperacaoEscriturada as 'ENTRADA' | 'SAIDA',
-            )
+                item.cfopXml,
+                item.tipoOperacaoEscriturada as 'ENTRADA' | 'SAIDA',
+              )
             : null,
         destinacao_mercadoria: item.destinacaoMercadoria,
         destinacao_efetiva:

@@ -275,10 +275,10 @@ describe('ImportacaoXmlFiscalService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-            values: jest.fn().mockReturnValue({
-              onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
-            }),
-          }
+              values: jest.fn().mockReturnValue({
+                onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
+              }),
+            }
           : { values: itemValues },
       ),
     };
