@@ -34,7 +34,7 @@ export class ColaboradorController {
     private readonly clientesService: ClientesService,
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   // ─── Auth endpoints ───
 
@@ -86,6 +86,7 @@ export class ColaboradorController {
       cnpj: session.cnpj,
       razaoSocial: session.razaoSocial,
       primeiroAcesso: session.primeiroAcesso,
+      tokenVersion: session.tokenVersion,
     });
 
     this.sessionService.setCookie(res, token);
@@ -111,7 +112,15 @@ export class ColaboradorController {
   @Post('auth/logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout do colaborador' })
-  logout(@Res({ passthrough: true }) res: Response) {
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const payload = this.sessionService.extractFromRequest(req);
+    if (payload) {
+      // Revoke all outstanding tokens for this employee.
+      await this.colaboradorService.logout(payload.funcionarioId);
+    }
     this.sessionService.clearCookie(res);
     return { success: true };
   }
@@ -119,9 +128,20 @@ export class ColaboradorController {
   @Get('auth/session')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Obter sessão do colaborador' })
-  getSession(@Req() req: Request) {
+  async getSession(@Req() req: Request) {
     const payload = this.sessionService.extractFromRequest(req);
     if (!payload) {
+      return { user: null };
+    }
+
+    const revocation = await this.colaboradorService.getRevocationState(
+      payload.funcionarioId,
+    );
+    if (
+      !revocation ||
+      !revocation.ativo ||
+      revocation.tokenVersion !== payload.tokenVersion
+    ) {
       return { user: null };
     }
 
@@ -146,6 +166,17 @@ export class ColaboradorController {
       throw new UnauthorizedException('Não autorizado.');
     }
 
+    const revocation = await this.colaboradorService.getRevocationState(
+      payload.funcionarioId,
+    );
+    if (
+      !revocation ||
+      !revocation.ativo ||
+      revocation.tokenVersion !== payload.tokenVersion
+    ) {
+      throw new UnauthorizedException('Não autorizado.');
+    }
+
     const logoUrl = await this.clientesService.getLogoUrl(payload.clienteId);
     return { logo_url: logoUrl };
   }
@@ -160,7 +191,7 @@ export class ColaboradorController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const payload = this.requireAuth(req);
+    const payload = await this.requireAuth(req);
 
     if (!body.senhaAtual || !body.novaSenha) {
       throw new BadRequestException(
@@ -198,10 +229,19 @@ export class ColaboradorController {
       throw new BadRequestException('Não foi possível alterar a senha.');
     }
 
-    // Issue a new token with primeiroAcesso = false
+    // changePassword bumped tokenVersion (revoking the old token). Reissue a
+    // new token with the updated version so the current user isn't self-revoked.
+    const revocation = await this.colaboradorService.getRevocationState(
+      payload.funcionarioId,
+    );
+    if (!revocation) {
+      throw new UnauthorizedException('Não autorizado.');
+    }
+
     const newToken = this.sessionService.createToken({
       ...payload,
       primeiroAcesso: false,
+      tokenVersion: revocation.tokenVersion,
     });
     this.sessionService.setCookie(res, newToken);
 
@@ -214,7 +254,7 @@ export class ColaboradorController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Perfil do colaborador' })
   async getPerfil(@Req() req: Request) {
-    const payload = this.requireAuth(req);
+    const payload = await this.requireAuth(req);
     this.requirePasswordChanged(payload);
 
     const perfil = await this.colaboradorService.getPerfil(
@@ -233,7 +273,7 @@ export class ColaboradorController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
-    const payload = this.requireAuth(req);
+    const payload = await this.requireAuth(req);
     this.requirePasswordChanged(payload);
 
     const pagination = parsePaginationParams({ page, pageSize });
@@ -260,7 +300,7 @@ export class ColaboradorController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Detalhes de um recibo de pagamento' })
   async getRecibo(@Req() req: Request, @Param('id') id: string) {
-    const payload = this.requireAuth(req);
+    const payload = await this.requireAuth(req);
     this.requirePasswordChanged(payload);
 
     const recibo = await this.colaboradorService.getReciboDetalhe(
@@ -279,7 +319,7 @@ export class ColaboradorController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Dados do recibo no formato para geração de PDF' })
   async getReciboPdf(@Req() req: Request, @Param('id') id: string) {
-    const payload = this.requireAuth(req);
+    const payload = await this.requireAuth(req);
     this.requirePasswordChanged(payload);
 
     const recibo = await this.colaboradorService.getReciboPdf(
@@ -296,11 +336,23 @@ export class ColaboradorController {
 
   // ─── Helpers ───
 
-  private requireAuth(req: Request): ColaboradorTokenPayload {
+  private async requireAuth(req: Request): Promise<ColaboradorTokenPayload> {
     const payload = this.sessionService.extractFromRequest(req);
     if (!payload) {
       throw new UnauthorizedException('Não autorizado.');
     }
+
+    const revocation = await this.colaboradorService.getRevocationState(
+      payload.funcionarioId,
+    );
+    if (
+      !revocation ||
+      !revocation.ativo ||
+      revocation.tokenVersion !== payload.tokenVersion
+    ) {
+      throw new UnauthorizedException('Não autorizado.');
+    }
+
     return payload;
   }
 

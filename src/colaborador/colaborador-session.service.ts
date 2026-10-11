@@ -16,6 +16,7 @@ export interface ColaboradorTokenPayload {
   cnpj: string;
   razaoSocial: string;
   primeiroAcesso: boolean;
+  tokenVersion: number;
   exp: number;
 }
 

@@ -21,6 +21,7 @@ export interface ColaboradorSession {
   cnpj: string;
   razaoSocial: string;
   primeiroAcesso: boolean;
+  tokenVersion: number;
 }
 
 @Injectable()
@@ -28,7 +29,7 @@ export class ColaboradorService {
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
-  ) {}
+  ) { }
 
   /**
    * Authenticate an employee by CNPJ + employee code + password.
@@ -50,6 +51,7 @@ export class ColaboradorService {
         ativo: funcionariosRh.ativo,
         senhaHash: funcionariosRh.senhaHash,
         primeiroAcesso: funcionariosRh.primeiroAcesso,
+        tokenVersion: funcionariosRh.tokenVersion,
         cnpj: clientes.cnpj,
         razaoSocial: clientes.razaoSocial,
       })
@@ -95,7 +97,45 @@ export class ColaboradorService {
       cnpj: employee.cnpj,
       razaoSocial: employee.razaoSocial,
       primeiroAcesso: employee.primeiroAcesso,
+      tokenVersion: employee.tokenVersion,
     };
+  }
+
+  /**
+   * Get the current revocation state for an employee: whether the account is
+   * active and the current token version. Returns null if not found.
+   */
+  async getRevocationState(
+    funcionarioId: string,
+  ): Promise<{ ativo: boolean; tokenVersion: number } | null> {
+    const [row] = await this.database.db
+      .select({
+        ativo: funcionariosRh.ativo,
+        tokenVersion: funcionariosRh.tokenVersion,
+      })
+      .from(funcionariosRh)
+      .where(eq(funcionariosRh.id, funcionarioId))
+      .limit(1);
+
+    if (!row) return null;
+    return { ativo: row.ativo, tokenVersion: row.tokenVersion };
+  }
+
+  /**
+   * Revoke all outstanding tokens for an employee by bumping token_version.
+   *
+   * NOTE: future desligamento/inativação routes must also increment
+   * token_version (and/or set ativo = false) so that any issued tokens are
+   * invalidated.
+   */
+  async logout(funcionarioId: string): Promise<void> {
+    await this.database.db
+      .update(funcionariosRh)
+      .set({
+        tokenVersion: sql`${funcionariosRh.tokenVersion} + 1`,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(funcionariosRh.id, funcionarioId));
   }
 
   /**
@@ -141,6 +181,7 @@ export class ColaboradorService {
       .set({
         senhaHash: newHash,
         primeiroAcesso: false,
+        tokenVersion: sql`${funcionariosRh.tokenVersion} + 1`,
         atualizadoEm: new Date(),
       })
       .where(eq(funcionariosRh.id, input.funcionarioId));

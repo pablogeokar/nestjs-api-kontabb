@@ -524,6 +524,7 @@ export const funcionariosRh = pgTable(
     ativo: boolean('ativo').notNull().default(true),
     senhaHash: text('senha_hash'),
     primeiroAcesso: boolean('primeiro_acesso').notNull().default(true),
+    tokenVersion: integer('token_version').notNull().default(0),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
