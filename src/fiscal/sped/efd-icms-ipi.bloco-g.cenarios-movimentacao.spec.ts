@@ -338,30 +338,36 @@ describe('5.3 cenário imobilização (TIPO_MOV "IM") com G130/G140 — oráculo
 
   // Comparação campo a campo do G125/G130/G140, para que a falha aponte o campo
   // divergente e valide também a posição oficial de cada campo.
-  const porRegistro = [
+  const porRegistro: ReadonlyArray<{
+    reg: string;
+    campos: readonly string[];
+  }> = [
     { reg: 'G130', campos: G130_IM },
     { reg: 'G140', campos: G140_IM },
     { reg: 'G125', campos: G125_IM },
-  ] as const;
+  ];
 
-  describe.each(porRegistro)('$reg campo a campo', (fixture) => {
-    const campos = camposDaLinha(records, fixture.reg, 0);
-    const layout = BLOCO_G_LEIAUTES[fixture.reg];
-    const comNome = fixture.campos.map((valor, indice) => {
-      const spec = layout.fields.find((f) => f.position === indice);
-      return { indice, nome: spec?.name ?? `campo${indice}`, valor };
-    });
-    it.each(comNome)(
-      'campo $indice ($nome) = "$valor"',
-      ({ indice, nome, valor }) => {
-        expect({ reg: fixture.reg, nome, valor: campos[indice] }).toEqual({
-          reg: fixture.reg,
-          nome,
-          valor,
-        });
-      },
-    );
-  });
+  describe.each(porRegistro)(
+    '$reg campo a campo',
+    (fixture: { reg: string; campos: readonly string[] }) => {
+      const campos = camposDaLinha(records, fixture.reg, 0);
+      const layout = BLOCO_G_LEIAUTES[fixture.reg];
+      const comNome = fixture.campos.map((valor: string, indice: number) => {
+        const spec = layout.fields.find((f) => f.position === indice);
+        return { indice, nome: spec?.name ?? `campo${indice}`, valor };
+      });
+      it.each(comNome)(
+        'campo $indice ($nome) = "$valor"',
+        ({ indice, nome, valor }) => {
+          expect({ reg: fixture.reg, nome, valor: campos[indice] }).toEqual({
+            reg: fixture.reg,
+            nome,
+            valor,
+          });
+        },
+      );
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

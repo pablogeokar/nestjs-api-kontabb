@@ -606,8 +606,8 @@ describe('FiscalClosingService', () => {
       const inserts: Array<Record<string, unknown>> = [];
       const updates: Array<Record<string, unknown>> = [];
       const next = () => Promise.resolve(selectQueue.shift() ?? []);
-      const chain = () => {
-        const api: any = {
+      const chain = (): QueryChain => {
+        const api: QueryChain = {
           from: () => api,
           where: () => api,
           orderBy: () => api,
@@ -615,7 +615,7 @@ describe('FiscalClosingService', () => {
         };
         return api;
       };
-      const tx: any = {
+      const tx: TxMock = {
         execute: jest.fn().mockResolvedValue(undefined),
         select: () => chain(),
         update: () => ({
@@ -773,8 +773,8 @@ describe('FiscalClosingService', () => {
 
     it('diferencaRetificacao lança 404 quando a retificadora não existe', async () => {
       const db = {
-        select: () => {
-          const api: any = {
+        select: (): QueryChain => {
+          const api: QueryChain = {
             from: () => api,
             where: () => api,
             limit: () => Promise.resolve([]),

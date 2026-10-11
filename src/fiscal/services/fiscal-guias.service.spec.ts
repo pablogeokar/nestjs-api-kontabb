@@ -1204,8 +1204,19 @@ describe('FiscalGuiasService — idempotency key (tarefa 1.6 / R1.6)', () => {
       insertErro: { code: '23502', message: 'not-null violation' },
     });
     const service = new FiscalGuiasService(db as never);
-    await expect(
-      service.criarGuia(baseInput({ idempotencyKey: 'req-x' })),
-    ).rejects.toEqual({ code: '23502', message: 'not-null violation' });
+    const erro = await service
+      .criarGuia(baseInput({ idempotencyKey: 'req-x' }))
+      .then(
+        () => {
+          throw new Error('esperava rejeição');
+        },
+        (e: unknown) => e,
+      );
+    // O erro real do banco é propagado (não mascarado como retry): preserva
+    // tanto o `code` quanto a `message` que o chamador usa para diagnosticar.
+    expect(erro).toMatchObject({
+      code: '23502',
+      message: 'not-null violation',
+    });
   });
 });

@@ -319,7 +319,7 @@ describe('DistribuicaoDfeService', () => {
       }),
     );
     expect(onConflictDoUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ setWhere: expect.anything() }),
+      expect.objectContaining({ setWhere: expect.anything() as unknown }),
     );
   });
 

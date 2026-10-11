@@ -352,6 +352,30 @@ no new type errors introduced (covered by final `pnpm build`).
    fiscal-guias(.service/-conciliacao) still pass (confirms the Error-with-code
    change preserved `isUniqueViolation` detection).
 
+## Verification results (first iteration — completed)
+
+- `pnpm lint` → **exit 0, zero errors, zero warnings** (started at 145 problems /
+  141 errors + 4 warnings across 25 files; all resolved). No summary line
+  printed (`eslint ... --fix` emits nothing on success).
+- `pnpm build` (`nest build`) → **exit 0** (compiles; the new test-only helper
+  `src/fiscal/testing/drizzle-query-mock.ts` avoids the `jest` global so it
+  builds under `tsconfig.build.json`, which only excludes `**/*spec.ts`).
+- `pnpm test` (all touched suites) → **628 passed, 29 suites, 0 failed**.
+
+Deviations from the per-file plan, all behavior-preserving:
+- jest 30's `jest.Mock<...>` two-type-param form is gone; typed-mock attempts in
+  the two controller specs were replaced by casting the extracted
+  `.mock.calls[i]` to a concrete tuple (`as [Args]`) at the read site.
+- `fiscal-apuracao.controller.spec.ts` also had two `Reflect.getMetadata`
+  `no-unsafe-assignment` errors (part of the original 145) — cast the results to
+  `unknown[]` / `unknown`.
+- `fiscal-guias.service.spec.ts`: the "erro NÃO relacionado à unicidade é
+  propagado" assertion changed from `rejects.toEqual({ code, message })` to
+  capturing the rejection and `toMatchObject({ code, message })`, because the
+  `prefer-promise-reject-errors` fix now rejects an `Error` carrying those
+  fields. Still asserts the same behavior (real DB error propagated with its
+  `code`/`message`, not masked as a retry).
+
 ## Notes / assumptions
 
 - Report line numbers are stale (code reflowed by the earlier `--fix`); the

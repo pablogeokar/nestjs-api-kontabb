@@ -237,7 +237,7 @@ describe('resultado-apuracao.projector', () => {
         possuiSaldoDevedor: true,
         guiaAutomatica: false,
         exigeEmissaoDeliberada: true,
-        rotulo: expect.stringMatching(/não é guia/i),
+        rotulo: expect.stringMatching(/não é guia/i) as unknown,
       });
     });
   });

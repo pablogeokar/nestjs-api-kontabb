@@ -288,7 +288,7 @@ describe('runPreflightPva', () => {
     expect(issues).toContainEqual(
       expect.objectContaining({
         codigo: 'PVA_G125_PARCELA_INVALIDA',
-        mensagem: expect.stringContaining('1..36'),
+        mensagem: expect.stringContaining('1..36') as unknown,
       }),
     );
   });

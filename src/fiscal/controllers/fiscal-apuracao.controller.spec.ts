@@ -7,6 +7,12 @@ import {
   ClienteFiscalApuracaoController,
 } from './fiscal-apuracao.controller';
 
+type ApuracaoIcmsArgs = {
+  clienteId: string;
+  dataInicio: Date;
+  dataFim: Date;
+};
+
 type Deps = {
   clientesService: { getClientForUser: jest.Mock };
   fiscalItensService: { getApuracaoIcms: jest.Mock };
@@ -48,7 +54,9 @@ describe('ClienteFiscalApuracaoController — apurarIcms', () => {
 
     await controller.apurarIcms('2026-02', user);
 
-    const call = deps.fiscalItensService.getApuracaoIcms.mock.calls[0][0];
+    const [call] = deps.fiscalItensService.getApuracaoIcms.mock.calls[0] as [
+      ApuracaoIcmsArgs,
+    ];
     expect(call.clienteId).toBe('cliente-1');
     expect(call.dataInicio.toISOString()).toBe('2026-02-01T00:00:00.000Z');
     // Fevereiro de 2026 tem 28 dias.
@@ -80,8 +88,11 @@ describe('ClienteFiscalApuracaoController — apurarIcms', () => {
     await controller.apurarIcms('2026-01', user);
     await controller.apurarIcms('2026-02', user);
 
-    const [primeira] = deps.fiscalItensService.getApuracaoIcms.mock.calls[0];
-    const [segunda] = deps.fiscalItensService.getApuracaoIcms.mock.calls[1];
+    const chamadas = deps.fiscalItensService.getApuracaoIcms.mock.calls as [
+      ApuracaoIcmsArgs,
+    ][];
+    const [primeira] = chamadas[0];
+    const [segunda] = chamadas[1];
     expect(primeira.dataInicio.toISOString()).toBe('2026-01-01T00:00:00.000Z');
     expect(primeira.dataFim.toISOString()).toBe('2026-01-31T23:59:59.999Z');
     expect(segunda.dataInicio.toISOString()).toBe('2026-02-01T00:00:00.000Z');
@@ -106,13 +117,16 @@ describe('AdminFiscalApuracaoController — guarda de staff preservada (R6.4)', 
     const guards = Reflect.getMetadata(
       GUARDS_METADATA,
       AdminFiscalApuracaoController,
-    );
+    ) as unknown[];
     expect(guards).toContain(AuthGuard);
   });
 
   it('mantém o @StaffOnly (roles ADMIN/COLABORADOR) no controller admin', () => {
     // @StaffOnly() aplica SetMetadata(ROLES_KEY, ['ADMIN', 'COLABORADOR']).
-    const roles = Reflect.getMetadata(ROLES_KEY, AdminFiscalApuracaoController);
+    const roles = Reflect.getMetadata(
+      ROLES_KEY,
+      AdminFiscalApuracaoController,
+    ) as unknown;
     expect(roles).toEqual(['ADMIN', 'COLABORADOR']);
   });
 });
