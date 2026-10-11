@@ -1,3 +1,4 @@
+export * from './bloco-g-leiaute';
 export * from './sped-core.types';
 export * from './sped-file';
 export * from './sped-formatters';

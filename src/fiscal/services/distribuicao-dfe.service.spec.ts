@@ -12,6 +12,7 @@ import {
 import {
   parseManualFiscalXml,
   type ParsedDocumentoFiscal,
+  type ParsedResumoNfe,
 } from './dfe-document.parser';
 
 describe('DistribuicaoDfeService', () => {
@@ -230,6 +231,76 @@ describe('DistribuicaoDfeService', () => {
         tipoOperacaoEscriturada: 'ENTRADA',
       }),
     ]);
+  });
+
+  it('persiste resumo de NF-e como não escriturável e sem apagar documento completo', async () => {
+    const existingLimit = jest.fn().mockResolvedValue([]);
+    const select = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: existingLimit }),
+      }),
+    });
+    const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      insert: jest.fn().mockReturnValue({ values }),
+    };
+    const transaction = jest.fn(
+      (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    const storage = {
+      upload: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new DistribuicaoDfeService(
+      { db: { select, transaction } } as never,
+      storage as never,
+      {} as never,
+      createCfopServiceMock() as never,
+      {} as never,
+    );
+    const resumo: ParsedResumoNfe = {
+      chaveAcesso: '29240812345678000195550010000001231123456780',
+      nsu: 456,
+      modelo: '55',
+      serie: '1',
+      numeroDocumento: '123',
+      emitenteCnpjCpf: '12345678000195',
+      emitenteRazaoSocial: 'Empresa Teste',
+      dataEmissao: new Date('2024-08-15T13:45:00.000Z'),
+      dataEmissaoFiscal: '2024-08-15',
+      valorTotal: '150.75',
+      tpNfXml: '1',
+      xmlContent: '<resNFe />',
+    };
+
+    const result = await (
+      service as unknown as {
+        salvarResumoNfe(
+          clienteId: string,
+          cnpj: string,
+          resumo: ParsedResumoNfe,
+        ): Promise<boolean>;
+      }
+    ).salvarResumoNfe('cliente-1', '98765432000110', resumo);
+
+    expect(result).toBe(true);
+    expect(storage.upload).toHaveBeenCalledWith(
+      expect.stringContaining('/resumos/nfe/'),
+      expect.any(Buffer),
+      'application/xml',
+    );
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        situacao: 'RESUMIDA',
+        escriturado: false,
+        escrituracaoStatus: 'NAO_ESCRITURAVEL',
+      }),
+    );
+    expect(onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ setWhere: expect.anything() }),
+    );
   });
 
   it('cancelamento atualiza a situação para CANCELADA sem apagar o documento nem os itens (R1.5)', async () => {

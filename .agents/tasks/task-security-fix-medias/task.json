@@ -1,0 +1,12 @@
+{
+  "task_id": "task-security-fix-medias",
+  "task_description": "Implement the four MEDIUM security findings ([MÉDIA] 5, 6, 7, 9) from the 2026-10-11 security scan in the Kontabb NestJS API worktree security/fix-medias: collaborator declarative auth guard, CRON_SECRET required in production, condition login-body session token, and HTTP header hardening (helmet) + environment-gated Swagger. Explicitly EXCLUDES [MÉDIA] 8 (fixed initial password 123456 is an intentional product decision).",
+  "status": "completed",
+  "feature_order": [
+    "FEAT-001",
+    "FEAT-002",
+    "FEAT-003",
+    "FEAT-004"
+  ],
+  "blocked_reason": null
+}

@@ -18,11 +18,11 @@ describe('ClientesService - configuração fiscal', () => {
     },
     input: {
       regimeTributario?:
-        'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
+      'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
       apuraIcms?: boolean;
       inscricaoEstadual?: string | null;
       tipoContribuinteIcms?:
-        'CONTRIBUINTE' | 'ISENTO' | 'NAO_CONTRIBUINTE' | null;
+      'CONTRIBUINTE' | 'ISENTO' | 'NAO_CONTRIBUINTE' | null;
     },
   ) =>
     (
@@ -32,6 +32,7 @@ describe('ClientesService - configuração fiscal', () => {
           update: typeof input,
         ) => {
           apuraIcms: boolean;
+          apuraIcmsOrigem: string;
           inscricaoEstadual: string | null;
           writeInscricaoEstadual: boolean;
         };
@@ -53,7 +54,7 @@ describe('ClientesService - configuração fiscal', () => {
     existing: typeof pjSemRegime,
     input: {
       regimeTributario?:
-        'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
+      'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL' | null;
       apuraIcms?: boolean;
       optanteSimplesNacional?: boolean | null;
       simplesNacionalFonte?: 'OPEN_CNPJ' | 'RECEITA_WS' | null;
@@ -95,7 +96,7 @@ describe('ClientesService - configuração fiscal', () => {
     });
 
   it.each(['LUCRO_PRESUMIDO', 'LUCRO_REAL'] as const)(
-    'força apuração de ICMS para %s',
+    'força apuração de ICMS para %s com origem auditável (regra do regime)',
     (regimeTributario) => {
       const result = normalize(pjSemRegime, {
         regimeTributario,
@@ -103,11 +104,14 @@ describe('ClientesService - configuração fiscal', () => {
       });
 
       expect(result.apuraIcms).toBe(true);
+      // R6.2: a decisão não é silenciosa — a origem registra que veio da regra
+      // do regime (Lucro normal apura ICMS próprio), não de um valor informado.
+      expect(result.apuraIcmsOrigem).toBe('REGIME_LUCRO_NORMAL');
     },
   );
 
   it.each([false, true])(
-    'preserva apuraIcms=%s no Simples Nacional',
+    'preserva apuraIcms=%s informado no Simples Nacional com origem INFORMADO',
     (apuraIcms) => {
       const result = normalize(pjSemRegime, {
         regimeTributario: 'SIMPLES_NACIONAL',
@@ -115,8 +119,21 @@ describe('ClientesService - configuração fiscal', () => {
       });
 
       expect(result.apuraIcms).toBe(apuraIcms);
+      expect(result.apuraIcmsOrigem).toBe('INFORMADO');
     },
   );
+
+  it('aplica default DOCUMENTADO (não silencioso) para Simples sem valor informado', () => {
+    const result = normalize(
+      { ...pjSemRegime, regimeTributario: 'SIMPLES_NACIONAL' },
+      {},
+    );
+
+    // R6.2: na ausência de valor informado, o Simples recebe o default
+    // documentado de não apurar ICMS próprio, com origem auditável.
+    expect(result.apuraIcms).toBe(false);
+    expect(result.apuraIcmsOrigem).toBe('REGIME_SIMPLES_PADRAO');
+  });
 
   it('limpa a inscrição estadual ao selecionar não contribuinte', () => {
     const result = normalize(

@@ -18,6 +18,7 @@ import {
   FiscalCteService,
   type CteEscrituracaoPreparada,
 } from './fiscal-cte.service';
+import { FiscalClosingService } from './fiscal-closing.service';
 import { reconciliarItensDocumento } from './fiscal-item-reconciliation';
 import type { RegimeTributario } from '../../clientes/clientes.types';
 import {
@@ -63,10 +64,10 @@ export interface FiscalXmlReviewItem {
 
 export interface FiscalXmlReviewIssue {
   codigo:
-    | 'CFOP_NAO_CADASTRADO'
-    | 'CFOP_DESTINO_NAO_CADASTRADO'
-    | 'INTEGRIDADE_XML_DIVERGENTE'
-    | 'CTE_PENDENTE_REVISAO';
+  | 'CFOP_NAO_CADASTRADO'
+  | 'CFOP_DESTINO_NAO_CADASTRADO'
+  | 'INTEGRIDADE_XML_DIVERGENTE'
+  | 'CTE_PENDENTE_REVISAO';
   mensagem: string;
   acao_recomendada: string;
   cliente_id: string;
@@ -112,7 +113,8 @@ export class ImportacaoXmlFiscalService {
     private readonly logger: AppLogger,
     private readonly cfopService: CfopService,
     private readonly fiscalCteService: FiscalCteService,
-  ) {}
+    private readonly closing: FiscalClosingService,
+  ) { }
 
   async importar(input: {
     files: Express.Multer.File[];
@@ -372,15 +374,15 @@ export class ImportacaoXmlFiscalService {
     const { target, documento } = input;
     const ctePreparada = documento.cteEscrituracao
       ? await this.fiscalCteService.prepararEscrituracao({
-          clienteId: target.id,
-          clienteCnpjCpf: target.cnpj,
-          regimeTributario:
-            (target.regimeTributario as RegimeTributario | null) ?? null,
-          apuraIcms: target.apuraIcms ?? false,
-          situacao: documento.situacao,
-          cte: documento.cteEscrituracao,
-          emitenteUf: documento.emitente.uf || null,
-        })
+        clienteId: target.id,
+        clienteCnpjCpf: target.cnpj,
+        regimeTributario:
+          (target.regimeTributario as RegimeTributario | null) ?? null,
+        apuraIcms: target.apuraIcms ?? false,
+        situacao: documento.situacao,
+        cte: documento.cteEscrituracao,
+        emitenteUf: documento.emitente.uf || null,
+      })
       : null;
     if (documento.tipoDocumento === 'CTE' && !ctePreparada) {
       throw new Error('Dados de escrituração do CT-e não foram extraídos.');
@@ -388,18 +390,18 @@ export class ImportacaoXmlFiscalService {
     const escrituracao =
       documento.tipoDocumento === 'CTE'
         ? {
-            tipoOperacaoEscriturada: 'ENTRADA' as const,
-            itens: [],
-            revisoes: [] as CfopItemRevisao[],
-          }
+          tipoOperacaoEscriturada: 'ENTRADA' as const,
+          itens: [],
+          revisoes: [] as CfopItemRevisao[],
+        }
         : await this.cfopService.prepararItensEscrituracao({
-            clienteId: target.id,
-            clienteCnpjCpf: target.cnpj,
-            emitenteCnpjCpf: documento.emitenteCnpjCpf,
-            emitenteUf: documento.emitente.uf || null,
-            tpNfXml: documento.tpNfXml,
-            itens: documento.itens,
-          });
+          clienteId: target.id,
+          clienteCnpjCpf: target.cnpj,
+          emitenteCnpjCpf: documento.emitenteCnpjCpf,
+          emitenteUf: documento.emitente.uf || null,
+          tpNfXml: documento.tpNfXml,
+          itens: documento.itens,
+        });
     const spedMetadata = buildDocumentoFiscalSpedMetadata(documento);
     const nfePendenteRevisao =
       documento.tipoDocumento !== 'CTE' &&
@@ -484,69 +486,101 @@ export class ImportacaoXmlFiscalService {
       atualizadoEm: new Date(),
     };
 
+    // R1.6: a competência de fechamento afetada é o mês de EMISSÃO do
+    // documento (a importação muda o universo elegível daquela EFD ICMS/IPI).
+    const competenciaFechamento = `${documento.dataEmissao.getUTCFullYear()}-${String(
+      documento.dataEmissao.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
+    const escopoFechamento = {
+      clienteId: target.id,
+      obrigacao: 'EFD_ICMS_IPI' as const,
+      competencia: competenciaFechamento,
+    };
+
     try {
       let persisted: Array<{ id: string }> = [];
       let ctePersistedStatus: CteEscrituracaoPreparadaStatus | undefined;
-      await this.database.db.transaction(async (tx) => {
-        // F01/R1.6/R1.7: serializa reimportações concorrentes do mesmo
-        // documento (manual × DF-e) por cliente + chave, evitando corrida na
-        // reconciliação de itens. A chave do lock DEVE ser cliente +
-        // chaveAcesso (NÃO o NSU) para que os canais manual e DF-e convirjam
-        // para o mesmo documento lógico. Usa o mesmo formato de chave do
-        // caminho de distribuição (`fiscal-doc:${clienteId}:${chaveAcesso}`).
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${target.id}:${documento.chaveAcesso}`}, 0))`,
-        );
-        if (existing) {
-          persisted = await tx
-            .update(documentosFiscais)
-            .set(values)
-            .where(
-              and(
-                eq(documentosFiscais.id, existing.id),
-                eq(documentosFiscais.situacao, 'RESUMIDA'),
-              ),
-            )
-            .returning({ id: documentosFiscais.id });
-        }
-
-        if (persisted.length === 0) {
-          persisted = await tx
-            .insert(documentosFiscais)
-            .values(values)
-            .onConflictDoNothing({
-              target: [
-                documentosFiscais.clienteId,
-                documentosFiscais.chaveAcesso,
-              ],
-            })
-            .returning({ id: documentosFiscais.id });
-        }
-
-        if (persisted.length > 0) {
-          const documentoFiscalId = persisted[0].id;
-          // F01: reconciliação idempotente por numeroItem+codigoProduto —
-          // preserva os ids dos itens e as decisões humanas (cfop manual,
-          // destinação confirmada) na reimportação. Não deleta em massa,
-          // portanto não aciona o cascade sobre o aprendizado de classificação
-          // nem quebra o vínculo com o CIAP.
-          await reconciliarItensDocumento(tx, {
-            documentoFiscalId,
-            clienteId: target.id,
-            itens: escrituracao.itens,
+      await this.database.db.transaction(
+        async (tx) => {
+          // F01/R1.6/R1.7: serializa reimportações concorrentes do mesmo
+          // documento (manual × DF-e) por cliente + chave, evitando corrida na
+          // reconciliação de itens. A chave do lock DEVE ser cliente +
+          // chaveAcesso (NÃO o NSU) para que os canais manual e DF-e convirjam
+          // para o mesmo documento lógico. Usa o mesmo formato de chave do
+          // caminho de distribuição (`fiscal-doc:${clienteId}:${chaveAcesso}`).
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${target.id}:${documento.chaveAcesso}`}, 0))`,
+          );
+          // R1.6: ALÉM do lock por documento, a importação participa do lock de
+          // ESCOPO DO FECHAMENTO (cliente/obrigação/competência) — o mesmo da
+          // geração/fechamento EFD — para serializar contra apuração, baixa de
+          // bem e a própria geração do SPED daquela competência.
+          await this.closing.withEscopoLock(tx, escopoFechamento, async () => {
+            // R1.3/R1.4: documento importado numa competência já FECHADA não
+            // altera a entrega congelada; abre (ou reutiliza) uma versão de
+            // revisão RASCUNHO carregando os snapshots da corrente fechada
+            // adiante (tarefa 3.5). A persistência do documento prossegue; a
+            // entrega fechada permanece imutável até a revisão ser aprovada.
+            await this.closing.sinalizarRevisaoPosFechamento(
+              tx,
+              escopoFechamento,
+            );
           });
-          if (ctePreparada) {
-            const ctePersistida =
-              await this.fiscalCteService.persistirEscrituracao(tx, {
-                documentoFiscalId,
-                clienteId: target.id,
-                chaveAcesso: documento.chaveAcesso,
-                preparada: ctePreparada,
-              });
-            ctePersistedStatus = ctePersistida.status;
+          if (existing) {
+            persisted = await tx
+              .update(documentosFiscais)
+              .set(values)
+              .where(
+                and(
+                  eq(documentosFiscais.id, existing.id),
+                  eq(documentosFiscais.situacao, 'RESUMIDA'),
+                ),
+              )
+              .returning({ id: documentosFiscais.id });
           }
-        }
-      });
+
+          if (persisted.length === 0) {
+            persisted = await tx
+              .insert(documentosFiscais)
+              .values(values)
+              .onConflictDoNothing({
+                target: [
+                  documentosFiscais.clienteId,
+                  documentosFiscais.chaveAcesso,
+                ],
+              })
+              .returning({ id: documentosFiscais.id });
+          }
+
+          if (persisted.length > 0) {
+            const documentoFiscalId = persisted[0].id;
+            // F01: reconciliação idempotente por numeroItem+codigoProduto —
+            // preserva os ids dos itens e as decisões humanas (cfop manual,
+            // destinação confirmada) na reimportação. Não deleta em massa,
+            // portanto não aciona o cascade sobre o aprendizado de classificação
+            // nem quebra o vínculo com o CIAP.
+            await reconciliarItensDocumento(tx, {
+              documentoFiscalId,
+              clienteId: target.id,
+              itens: escrituracao.itens,
+            });
+            if (ctePreparada) {
+              const ctePersistida =
+                await this.fiscalCteService.persistirEscrituracao(tx, {
+                  documentoFiscalId,
+                  clienteId: target.id,
+                  chaveAcesso: documento.chaveAcesso,
+                  preparada: ctePreparada,
+                });
+              ctePersistedStatus = ctePersistida.status;
+            }
+          }
+        },
+        // R1.6: mesma política de isolamento da geração/fechamento EFD, para
+        // que a leitura das entradas e a decisão de revisão sejam estáveis
+        // dentro da transação da importação.
+        { isolationLevel: 'repeatable read' },
+      );
 
       if (persisted.length === 0) {
         await this.deleteUploadedXml(xmlKey, input);
@@ -604,21 +638,21 @@ export class ImportacaoXmlFiscalService {
         },
         ...(input.cteEscrituracaoStatus
           ? [
-              {
-                atorUserId: input.actorUserId,
-                acao:
-                  input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
-                    ? 'CTE_NAO_ESCRITURAVEL'
-                    : 'CTE_ESCRITURADO',
-                entidadeTipo: 'DOCUMENTO_FISCAL',
-                entidadeId: input.documentoId,
-                dados: {
-                  origem: 'UPLOAD_MANUAL',
-                  clienteId: input.clienteId,
-                  escrituracaoStatus: input.cteEscrituracaoStatus,
-                },
+            {
+              atorUserId: input.actorUserId,
+              acao:
+                input.cteEscrituracaoStatus === 'NAO_ESCRITURAVEL'
+                  ? 'CTE_NAO_ESCRITURAVEL'
+                  : 'CTE_ESCRITURADO',
+              entidadeTipo: 'DOCUMENTO_FISCAL',
+              entidadeId: input.documentoId,
+              dados: {
+                origem: 'UPLOAD_MANUAL',
+                clienteId: input.clienteId,
+                escrituracaoStatus: input.cteEscrituracaoStatus,
               },
-            ]
+            },
+          ]
           : []),
       ]);
     } catch (error: unknown) {
@@ -741,14 +775,14 @@ export class ImportacaoXmlFiscalService {
         ...common,
         itens: values.cfopRevisaoNecessaria
           ? [
-              {
-                numero_item: 1,
-                descricao: 'Prestação de serviço de transporte',
-                cfop_xml: values.cfopXml,
-                cfop_aplicado: values.cfop,
-                cfop_sugerido: values.cfop,
-              },
-            ]
+            {
+              numero_item: 1,
+              descricao: 'Prestação de serviço de transporte',
+              cfop_xml: values.cfopXml,
+              cfop_aplicado: values.cfop,
+              cfop_sugerido: values.cfop,
+            },
+          ]
           : [],
       });
     }

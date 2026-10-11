@@ -11,10 +11,11 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import type { PaginationParams } from '../../common/types';
+import { type RegimeTributario } from '../../clientes/clientes.types';
 import {
-  simplesNacionalSemApuracaoIcms,
-  type RegimeTributario,
-} from '../../clientes/clientes.types';
+  apuraIcmsProprioParaConsumidores,
+  type Competencia,
+} from './politica-simples';
 import { DatabaseService } from '../../database/database.service';
 import {
   documentosFiscais,
@@ -83,6 +84,9 @@ export function decidirEscrituracaoCte(input: {
   tpServ: string;
   cstIcms: string | null;
   csosnIcms: string | null;
+  // Competência de referência ('YYYY-MM') para a política única de Simples.
+  // Opcional: na ausência, a política usa o regime + `apuraIcms` informado.
+  competencia?: Competencia | null;
 }): DecisaoEscrituracaoCte {
   const cliente = normalizeTaxId(input.clienteCnpjCpf);
   const tomador = normalizeTaxId(input.tomadorCnpjCpf);
@@ -110,10 +114,15 @@ export function decidirEscrituracaoCte(input: {
   }
 
   const servicoExigeRevisao = TP_SERV_REVISAO.has(input.tpServ);
-  const simplesSemApuracao = simplesNacionalSemApuracaoIcms({
-    regimeTributario: input.regimeTributario,
-    apuraIcms: input.apuraIcms,
-  });
+  // Política única (R6.3): a decisão de apurar ICMS próprio sai da MESMA matriz
+  // fiscal que os livros/builder consultam. "Simples sem apuração" é, aqui,
+  // simplesmente a negação de `apura` resolvido pela política — sem ramo próprio.
+  const apuraIcmsProprio = apuraIcmsProprioParaConsumidores(
+    { regimeTributario: input.regimeTributario, apuraIcms: input.apuraIcms },
+    input.competencia ?? null,
+  );
+  const simplesSemApuracao =
+    input.regimeTributario === 'SIMPLES_NACIONAL' && !apuraIcmsProprio;
   const documentoRegular = input.situacao === 'AUTORIZADA';
   const anulacao = input.tpCte === '2';
 
@@ -168,7 +177,7 @@ export class FiscalCteService {
   constructor(
     private readonly database: DatabaseService,
     private readonly cfopService: CfopService,
-  ) {}
+  ) { }
 
   decidirEscrituracaoCte = decidirEscrituracaoCte;
 
@@ -180,6 +189,9 @@ export class FiscalCteService {
     situacao: SituacaoDocumentoCte;
     cte: CteEscrituracaoParseData;
     emitenteUf?: string | null;
+    // Competência de referência ('YYYY-MM') do CT-e para a política única de
+    // Simples. Opcional: na ausência, a política usa regime + `apuraIcms`.
+    competencia?: Competencia | null;
   }): Promise<CteEscrituracaoPreparada> {
     const decisao = decidirEscrituracaoCte({
       clienteCnpjCpf: input.clienteCnpjCpf,
@@ -192,6 +204,7 @@ export class FiscalCteService {
       tpServ: input.cte.tpServ,
       cstIcms: input.cte.cstIcms,
       csosnIcms: input.cte.csosnIcms,
+      competencia: input.competencia ?? null,
     });
     const cfop = await this.cfopService.resolverCfopEquivalenteDetalhado({
       clienteId: input.clienteId,

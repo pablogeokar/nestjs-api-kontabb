@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Rate limiting global por IP ([ALTA] 2). @nestjs/throttler v6.5.0 está instalado mas nunca registrado. Registrar ThrottlerModule.forRoot + ThrottlerGuard como APP_GUARD global, complementar ao RateLimitService por identidade (que deve ser preservado). Independente das FEAT-002/003.",
+  "status": "completed",
+  "steps": [
+    "Em src/app.module.ts: importar { ThrottlerModule, ThrottlerGuard, seconds } de '@nestjs/throttler' e { APP_GUARD } de '@nestjs/core'. Adicionar ThrottlerModule.forRoot([{ name: 'default', ttl: seconds(60), limit: 100 }]) ao array imports do @Module (sem reordenar os módulos existentes).",
+    "No mesmo @Module, criar o campo providers (hoje inexistente) com { provide: APP_GUARD, useClass: ThrottlerGuard }.",
+    "Adicionar comentário curto no app.module.ts registrando que o tracker padrão usa req.ip e que, atrás de proxy sem `trust proxy` configurado, o IP pode ser o do proxy — ajuste de infra fora do escopo desta tarefa.",
+    "Confirmar (sem editar) em src/main.ts que o ValidationPipe global tem whitelist:true e forbidNonWhitelisted:true. NÃO configurar app.set('trust proxy').",
+    "OPCIONAL e só se trivial/sem risco: aplicar @Throttle({ default: { ttl: seconds(60), limit: 20 } }) nos controllers fiscais pesados (fiscal/relatorios/*, fiscal/apuracao/*). Se não for trivial, PULAR — o baseline global já cobre."
+  ],
+  "acceptance_criteria": [
+    "app.module.ts registra ThrottlerModule.forRoot com um throttler nomeado 'default' (ttl 60s via seconds(60), limit 100) e um APP_GUARD ThrottlerGuard.",
+    "O RateLimitService por identidade (login/forgot/reset/change-password/colaborador etc.) permanece intacto.",
+    "pnpm build conclui com sucesso.",
+    "pnpm exec tsc --noEmit mantém exatamente os 22 erros pré-existentes (nenhum novo)."
+  ],
+  "verification": [
+    "A partir do worktree: pnpm exec tsc --noEmit — contagem de erros = 22, mesma lista de specs fiscais (fiscal-apuracao.controller.spec.ts + fiscal-entregas.service.spec.ts).",
+    "pnpm build — sucesso.",
+    "Inspeção: @nestjs/throttler importado e APP_GUARD presente em app.module.ts."
+  ],
+  "blocked_reason": null,
+  "findings": "Implementado em src/app.module.ts: imports de { ThrottlerModule, ThrottlerGuard, seconds } de '@nestjs/throttler' e { APP_GUARD } de '@nestjs/core'. ThrottlerModule.forRoot([{ name: 'default', ttl: seconds(60), limit: 100 }]) adicionado como 2o item do array imports (logo apos ConfigModule.forRoot), sem reordenar modulos existentes. Campo providers criado com { provide: APP_GUARD, useClass: ThrottlerGuard }. Comentario adicionado no imports registrando que o tracker padrao usa req.ip e que atras de proxy sem `trust proxy` o IP pode ser o do proxy (infra, fora de escopo). src/main.ts NAO foi editado: ValidationPipe global ja possui whitelist:true e forbidNonWhitelisted:true; `trust proxy` NAO configurado. Step opcional (@Throttle nos controllers fiscais) PULADO — baseline global de 100req/60s cobre; aplicar @Throttle nao era trivial e o enunciado permite pular. RateLimitService por identidade intacto (nenhum arquivo de auth/colaborador tocado). Verification: `pnpm exec tsc --noEmit` manteve exatamente os 22 erros TS2554 pre-existentes (1 em fiscal-apuracao.controller.spec.ts + 21 em fiscal-entregas.service.spec.ts), nenhum novo; `pnpm build` com sucesso. Para proximos passos (FEAT-002/003): o campo providers do @Module agora existe — novos providers globais devem ser adicionados a esse array."
+}

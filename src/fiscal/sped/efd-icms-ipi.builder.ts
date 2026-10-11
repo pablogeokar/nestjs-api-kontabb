@@ -18,6 +18,11 @@ import {
   type SpedRecord,
 } from './core';
 import {
+  aggregateC190Analitico,
+  normalizeC190Cst,
+  type C190Analitico,
+} from './fiscal-c190-aggregator';
+import {
   fromScaledInteger,
   maximum,
   positive,
@@ -196,48 +201,135 @@ export interface SpedEfdBuilderInput {
 }
 
 export interface SpedCiapBemBuilderData {
-  // Movimentação do bem no período (G125): SN saldo inicial, IM imobilização,
-  // BA baixa, AT alienação/transferência, etc. Padrão 'SI' quando em curso.
+  // Dados de um bem/componente para o registro G125, conforme o leiaute oficial
+  // (bloco-g-leiaute.ts, G125_LAYOUT) — 9 campos após REG (R3.2):
+  //   02 COD_IND_BEM, 03 DT_MOV, 04 TIPO_MOV, 05 VL_IMOB_ICMS_OP,
+  //   06 VL_IMOB_ICMS_ST, 07 VL_IMOB_ICMS_FRT, 08 VL_IMOB_ICMS_DIF,
+  //   09 NUM_PARC, 10 VL_PARC_PASS.
+  //
+  // COD_IND_BEM (campo 02): referencia um registro 0300 válido (R3.3). O builder
+  // emite exatamente um 0300 com este COD_IND_BEM para cada bem, garantindo a
+  // integridade referencial G125 -> 0300.
   codigoIndividualizacao: string;
+  // Descrição do bem (usada no cadastro 0300 campo 04 DESCR_ITEM, não no G125).
   identificacaoBem: string;
+  // --- Campos do cadastro 0300/0305 (Bloco 0) referenciados por este G125 ---
+  // IDENT_MERC (0300 campo 03): '1' = bem; '2' = componente. Quando '1' o 0305
+  // (utilização do bem) é emitido; quando '2' o 0305 é omitido e COD_PRNC do
+  // 0300 deve apontar o bem principal (REGISTRO_0300_LAYOUT, R3.3).
+  identificacaoMercadoria: '1' | '2';
+  // COD_PRNC (0300 campo 05): código do bem principal quando este item é um
+  // componente (IDENT_MERC = '2'). Null/omitido quando é um bem (IDENT_MERC='1').
+  codigoBemPrincipal: string | null;
+  // COD_CTA (0300 campo 06): conta analítica do 0500 em que o bem é
+  // contabilizado.
+  codigoContaContabil: string;
+  // NR_PARC (0300 campo 07): número TOTAL de parcelas a apropriar segundo a UF
+  // (ex.: 48). Base do VL_PARC_PASS do G125. Diferente de numeroParcela (G125
+  // campo 09), que é a parcela corrente.
+  numeroTotalParcelas: number;
+  // --- 0305 (utilização do bem), emitido apenas quando IDENT_MERC = '1' ---
+  // COD_CCUS (0305 campo 02): centro de custo (0600) onde o bem está localizado.
+  centroCusto: string;
+  // FUNC (0305 campo 03): descrição sucinta da função do bem no estabelecimento.
+  funcaoBem: string;
+  // VIDA_UTIL (0305 campo 04): vida útil estimada do bem, em meses.
+  vidaUtilMeses: number;
+  // TIPO_MOV (campo 04): SI saldo inicial, IM imobilização, IA, CI, MC, BA, AT,
+  // PE, OT. Para TIPO_MOV "SI" a DT_MOV do G125 = DT_INI do G110; para os demais
+  // tipos a DT_MOV é a data do fato (ainda tratada como DT_INI até o leiaute por
+  // tipo ser completado — ver tarefa 4.x).
   tipoMovimentacao: string;
+  // VL_IMOB_ICMS_OP (campo 05): ICMS da operação própria na entrada.
   valorIcmsOperacao: string;
+  // VL_IMOB_ICMS_ST (campo 06): ICMS por substituição tributária na entrada.
+  // Modelado na posição oficial (R3.2); antes era omitido pelo builder.
+  valorIcmsSt: string;
+  // VL_IMOB_ICMS_FRT (campo 07): ICMS sobre o frete do CT-e na entrada.
   valorIcmsFrete: string;
+  // VL_IMOB_ICMS_DIF (campo 08): ICMS — Diferencial de Alíquota na entrada.
   valorIcmsDifal: string;
+  // NUM_PARC (campo 09): número da parcela de ICMS escriturada na competência.
   numeroParcela: number;
-  valorParcelaIcms: string;
-  valorParcelaFrete: string;
-  valorParcelaDifal: string;
+  // VL_PARC_PASS (campo 10): valor da parcela de ICMS passível de apropriação
+  // ANTES da aplicação do índice de participação (IND_PER_SAI do G110).
+  valorParcelaPassivel: string;
+  // --- G130/G140 (R3.4): documento(s) fiscal(is) de origem do crédito ---
+  // Os registros G130 (identificação do documento fiscal) e G140 (identificação
+  // do item) detalham a origem documental da movimentação do G125. São exigidos
+  // quando a movimentação tem origem em um documento fiscal (imobilização a
+  // partir de uma NF-e/CT-e de aquisição — ver TIPOS_MOV_EXIGEM_ORIGEM). Para o
+  // saldo inicial reconstruído (TIPO_MOV "SI") não há documento de origem único
+  // e os G130/G140 não se aplicam.
+  //
+  // Quando a movimentação exige G130/G140 mas este campo está ausente/vazio, o
+  // builder BLOQUEIA a geração (R3.4, postura conservadora da fase) em vez de
+  // emitir um Bloco G incompleto/inválido com dados de origem fabricados. Quando
+  // presente, o builder emite os G130/G140 aninhados sob este G125.
+  documentosOrigem?: SpedCiapDocumentoOrigemBuilderData[];
 }
 
+export interface SpedCiapDocumentoOrigemBuilderData {
+  // G130 — identificação do documento fiscal de origem (G130_LAYOUT):
+  //   02 IND_EMIT, 03 COD_PART, 04 COD_MOD, 05 SERIE, 06 NUM_DOC, 07 CHV_NFE_CTE.
+  // IND_EMIT: '0' emissão própria, '1' emissão por terceiros.
+  indicadorEmitente: '0' | '1';
+  // COD_PART (0150): obrigatório quando IND_EMIT = '1'; null/omitido se '0'.
+  codigoParticipante: string | null;
+  // COD_MOD: código do modelo do documento fiscal de origem (ex.: '55').
+  codigoModelo: string;
+  // SERIE: série do documento de origem (opcional).
+  serie: string | null;
+  // NUM_DOC: número do documento fiscal de origem.
+  numeroDocumento: number;
+  // CHV_NFE_CTE: chave de 44 posições quando documento eletrônico (opcional).
+  chaveEletronica: string | null;
+  // G140 — itens do documento de origem (G140_LAYOUT): 02 NUM_ITEM, 03 COD_ITEM.
+  // Pelo menos um item é exigido quando o G130 é emitido.
+  itens: SpedCiapItemOrigemBuilderData[];
+}
+
+export interface SpedCiapItemOrigemBuilderData {
+  // NUM_ITEM: número sequencial do item no documento de origem.
+  numeroItem: string;
+  // COD_ITEM (0200): código do item do bem/componente no documento de origem.
+  codigoItem: string;
+}
+
+// R3.4: tipos de movimentação (TIPO_MOV do G125) cuja origem é um documento
+// fiscal e que, portanto, EXIGEM os registros filhos G130/G140. O saldo inicial
+// ("SI") é reconstrução de abertura, sem documento único de origem, e não exige
+// G130/G140. Os tipos de saída (BA/AT/PE/OT) não informam créditos de entrada.
+const TIPOS_MOV_EXIGEM_ORIGEM: ReadonlySet<string> = new Set([
+  'IM', // imobilização a partir de documento de aquisição
+  'IA', // imobilização em andamento
+  'CI', // conclusão de imobilização em andamento
+  'MC', // imobilização oriunda do ativo circulante / mudança de destinação
+]);
+
 export interface SpedCiapBuilderData {
-  // Saldos do ICMS do ativo (G110): saldo inicial, aquisições, alienações,
-  // saldo final e crédito apropriado no período.
+  // Saldos do ICMS do ativo (G110), conforme leiaute oficial (ver
+  // bloco-g-leiaute.ts, G110_LAYOUT). O índice de participação (IND_PER_SAI) e
+  // o ICMS apropriado (ICMS_APROP) são DERIVADOS no builder a partir dos campos
+  // abaixo — não são informados aqui — para que a posição e o cálculo oficiais
+  // (campo 06 ÷ campo 07; campo 05 × campo 08) sejam a única fonte da verdade.
+  // SALDO_IN_ICMS (campo 04).
   saldoInicial: string;
+  // SOM_PARC (campo 05): somatório das parcelas passíveis (VL_PARC_PASS do G125).
   somaParcelas: string;
-  valorTotalCredito: string;
-  indicadorPeriodo: string; // '0' padrão
+  // VL_TRIB_EXP (campo 06): saídas tributadas + exportação.
   saidasTributadas: string;
+  // VL_TOTAL (campo 07): total das saídas no período.
   saidasTotais: string;
+  // SOM_ICMS_OC (campo 10): outros créditos de ICMS do ativo a apropriar
+  // (somatório de VL_PARC_APROP dos G126). Zero quando não há G126.
+  somaIcmsOutrosCreditos: string;
   bens: SpedCiapBemBuilderData[];
 }
 
 export interface SpedEfdBuilderResult {
   records: SpedRecord[];
   apuracao: SpedApuracaoPreview;
-}
-
-interface AnaliticoC190 {
-  cst: string;
-  cfop: string;
-  aliquota: string;
-  valorOperacao: bigint;
-  valorBcIcms: bigint;
-  valorIcms: bigint;
-  valorBcIcmsSt: bigint;
-  valorIcmsSt: bigint;
-  valorReducaoBc: bigint;
-  valorIpi: bigint;
 }
 
 export function buildEfdIcmsIpiRecords(
@@ -315,9 +407,23 @@ export function buildEfdIcmsIpiRecords(
       });
     }
   }
-  // Só serializa o Bloco G quando o leiaute está homologado; caso contrário a
-  // inconsistência impeditiva acima interrompe a entrega.
-  if (!exigeBlocoG || input.blocoGLeiauteHomologado) {
+  // R3.4: G130/G140 (documento/item de origem do crédito) são exigidos quando a
+  // movimentação do G125 tem origem em documento fiscal (TIPOS_MOV_EXIGEM_ORIGEM).
+  // Se exigidos mas sem os dados do documento de origem, a geração é bloqueada
+  // (postura conservadora da fase) em vez de emitir um Bloco G inválido.
+  const blocoGSerializavel = !exigeBlocoG || input.blocoGLeiauteHomologado;
+  if (blocoGSerializavel && input.ciap) {
+    validarOrigemG130G140(input);
+  }
+  // Só serializa o Bloco G quando o leiaute está homologado e sem bloqueio de
+  // origem (G130/G140); caso contrário a inconsistência impeditiva interrompe
+  // a entrega.
+  const bloqueioOrigem = input.inconsistencias.some(
+    (item) =>
+      item.codigo === 'BLOCO_G_ORIGEM_G130_G140_AUSENTE' &&
+      item.severidade === 'ERRO',
+  );
+  if (blocoGSerializavel && !bloqueioOrigem) {
     records.push(...buildBlocoG(input));
   }
   records.push(...buildBlocoH(input));
@@ -492,12 +598,75 @@ function buildBloco0(input: SpedEfdBuilderInput): SpedRecord[] {
     }
   }
 
+  // Registros 0300/0305: cadastro de bens/componentes do Ativo Imobilizado
+  // (R3.3). O COD_IND_BEM do G125 referencia o COD_IND_BEM de um 0300; para
+  // garantir a integridade referencial, cada bem do CIAP emite exatamente um
+  // 0300 aqui, na posição oficial do Bloco 0 (após 0200/0220 e antes de 0450),
+  // nos MESMOS casos em que o Bloco G é serializado (leiaute homologado). Caso
+  // o Bloco G esteja bloqueado, o 0300 também não é emitido — o arquivo não é
+  // entregue de qualquer forma (inconsistência impeditiva).
+  records.push(...buildCadastroAtivo0300(input));
+
   for (const informacao of [...input.informacoesComplementares].sort((a, b) =>
     a.codigo.localeCompare(b.codigo, 'pt-BR'),
   )) {
     records.push(createSpedRecord('0450', informacao.codigo, informacao.texto));
   }
 
+  return records;
+}
+
+/**
+ * Monta os registros 0300 (cadastro do bem/componente) e 0305 (utilização do
+ * bem) do Bloco 0 a partir do CIAP (R3.3). Garante que cada COD_IND_BEM
+ * referenciado por um G125 tenha um 0300 correspondente: itera sobre os MESMOS
+ * `input.ciap.bens` que alimentam o G125 e deduplica por COD_IND_BEM (dois
+ * G125 do mesmo bem — ex.: SI e IM — compartilham um único 0300).
+ *
+ * O 0305 só é emitido quando IDENT_MERC = '1' (bem), conforme o leiaute oficial
+ * vigente desde 01/11/2013 (REGISTRO_0305_LAYOUT); para componentes
+ * (IDENT_MERC = '2') o 0305 é omitido e o COD_PRNC do 0300 referencia o bem
+ * principal.
+ */
+function buildCadastroAtivo0300(input: SpedEfdBuilderInput): SpedRecord[] {
+  const ciap = input.ciap;
+  if (!ciap || ciap.bens.length === 0) return [];
+  // Mesma condição que governa a serialização do Bloco G: 0300/0305 só saem
+  // quando o leiaute está homologado (ou quando não há exigência de Bloco G).
+  const exigeBlocoG = ciap.bens.length > 0;
+  if (exigeBlocoG && !input.blocoGLeiauteHomologado) return [];
+
+  const records: SpedRecord[] = [];
+  const emitidos = new Set<string>();
+  for (const bem of [...ciap.bens].sort((a, b) =>
+    a.codigoIndividualizacao.localeCompare(b.codigoIndividualizacao, 'pt-BR'),
+  )) {
+    if (emitidos.has(bem.codigoIndividualizacao)) continue;
+    emitidos.add(bem.codigoIndividualizacao);
+    const ehBem = bem.identificacaoMercadoria === '1';
+    records.push(
+      createSpedRecord(
+        '0300',
+        bem.codigoIndividualizacao, // 02 COD_IND_BEM
+        bem.identificacaoMercadoria, // 03 IDENT_MERC (1=bem, 2=componente)
+        bem.identificacaoBem, // 04 DESCR_ITEM
+        ehBem ? null : bem.codigoBemPrincipal, // 05 COD_PRNC (só componente)
+        bem.codigoContaContabil, // 06 COD_CTA (conta do 0500)
+        integerField(bem.numeroTotalParcelas), // 07 NR_PARC (total de parcelas)
+      ),
+    );
+    // 0305 — informação sobre a utilização do bem. Só quando IDENT_MERC = '1'.
+    if (ehBem) {
+      records.push(
+        createSpedRecord(
+          '0305',
+          bem.centroCusto, // 02 COD_CCUS
+          bem.funcaoBem, // 03 FUNC
+          integerField(bem.vidaUtilMeses), // 04 VIDA_UTIL (meses)
+        ),
+      );
+    }
+  }
   return records;
 }
 
@@ -1291,11 +1460,73 @@ function buildIpi(
   };
 }
 
+/**
+ * R3.4 — valida a disponibilidade dos dados de origem (G130/G140) para cada
+ * G125 cuja movimentação os exige. Para movimentos com origem em documento
+ * fiscal (TIPOS_MOV_EXIGEM_ORIGEM) é obrigatório identificar o documento (G130)
+ * e seus itens (G140). Quando esses dados estão ausentes/incompletos, empurra
+ * um erro impeditivo específico (BLOCO_G_ORIGEM_G130_G140_AUSENTE) e a geração
+ * é bloqueada — nunca se emite um Bloco G com documento de origem fabricado.
+ */
+function validarOrigemG130G140(input: SpedEfdBuilderInput): void {
+  const ciap = input.ciap;
+  if (!ciap || ciap.bens.length === 0) return;
+  for (const bem of ciap.bens) {
+    if (!TIPOS_MOV_EXIGEM_ORIGEM.has(bem.tipoMovimentacao)) continue;
+    const documentos = bem.documentosOrigem ?? [];
+    const origemCompleta =
+      documentos.length > 0 &&
+      documentos.every(
+        (doc) =>
+          doc.codigoModelo.trim().length > 0 &&
+          Number.isFinite(doc.numeroDocumento) &&
+          // IND_EMIT = '1' exige COD_PART; '0' dispensa.
+          (doc.indicadorEmitente !== '1' ||
+            Boolean(doc.codigoParticipante && doc.codigoParticipante.trim())) &&
+          doc.itens.length > 0 &&
+          doc.itens.every(
+            (item) =>
+              item.numeroItem.trim().length > 0 &&
+              item.codigoItem.trim().length > 0,
+          ),
+      );
+    if (!origemCompleta) {
+      input.inconsistencias.push({
+        codigo: 'BLOCO_G_ORIGEM_G130_G140_AUSENTE',
+        severidade: 'ERRO',
+        mensagem:
+          `Geração bloqueada: o bem CIAP ${bem.codigoIndividualizacao} tem ` +
+          `movimentação ${bem.tipoMovimentacao}, que exige os registros de ` +
+          'origem G130 (documento fiscal) e G140 (item), mas os dados do ' +
+          'documento de origem não estão disponíveis. Complete a origem ' +
+          'documental do crédito ou não gere o Bloco G com dados incompletos.',
+        campo: bem.codigoIndividualizacao,
+      });
+    }
+  }
+}
+
 function buildBlocoG(input: SpedEfdBuilderInput): SpedRecord[] {
   const ciap = input.ciap;
   if (!ciap || ciap.bens.length === 0) return [];
   const records: SpedRecord[] = [];
-  // G110: identificação do período e saldos do ICMS do ativo permanente.
+  // G110: leiaute oficial (bloco-g-leiaute.ts, G110_LAYOUT) — 9 campos após REG:
+  // DT_INI, DT_FIN, SALDO_IN_ICMS, SOM_PARC, VL_TRIB_EXP, VL_TOTAL, IND_PER_SAI,
+  // ICMS_APROP, SOM_ICMS_OC (R3.1).
+  //
+  // IND_PER_SAI (campo 08, 8 casas) = VL_TRIB_EXP ÷ VL_TOTAL, calculado em
+  // aritmética de inteiro escalado para não usar `Number`. Quando VL_TOTAL é
+  // zero (sem saídas), o índice é zero — o tratamento fundamentado do caso
+  // "sem saídas" é responsabilidade do coeficiente a montante (R2.4).
+  const vlTribExp = toScaledInteger(ciap.saidasTributadas);
+  const vlTotal = toScaledInteger(ciap.saidasTotais);
+  const indPerSaiScaled =
+    vlTotal === 0n ? 0n : (vlTribExp * 10n ** 8n) / vlTotal;
+  const indPerSai = fromScaledInteger(indPerSaiScaled, 8);
+  // ICMS_APROP (campo 09, 2 casas) = SOM_PARC × IND_PER_SAI.
+  const somParc = toScaledInteger(ciap.somaParcelas);
+  const icmsApropScaled = (somParc * indPerSaiScaled) / 10n ** 8n;
+  const icmsAprop = fromScaledInteger(icmsApropScaled);
   records.push(
     createSpedRecord(
       'G110',
@@ -1303,29 +1534,65 @@ function buildBlocoG(input: SpedEfdBuilderInput): SpedRecord[] {
       dateField(input.fim),
       decimalField(ciap.saldoInicial),
       decimalField(ciap.somaParcelas),
-      ciap.indicadorPeriodo,
       decimalField(ciap.saidasTributadas),
       decimalField(ciap.saidasTotais),
-      decimalField(ciap.valorTotalCredito),
+      decimalField(indPerSai),
+      decimalField(icmsAprop),
+      decimalField(ciap.somaIcmsOutrosCreditos),
     ),
   );
-  // G125: movimentação/apropriação por bem no período.
+  // G125: movimentação/apropriação por bem no período. Leiaute oficial
+  // (bloco-g-leiaute.ts, G125_LAYOUT) — 9 campos após REG (R3.2):
+  //   02 COD_IND_BEM, 03 DT_MOV, 04 TIPO_MOV, 05 VL_IMOB_ICMS_OP,
+  //   06 VL_IMOB_ICMS_ST, 07 VL_IMOB_ICMS_FRT, 08 VL_IMOB_ICMS_DIF,
+  //   09 NUM_PARC, 10 VL_PARC_PASS.
+  // Para TIPO_MOV "SI" a DT_MOV = DT_INI do G110 (input.inicio); os demais tipos
+  // usam a data do fato — hoje ainda refletida por input.inicio até o leiaute
+  // por tipo de movimentação ser completado.
   for (const bem of ciap.bens) {
     records.push(
       createSpedRecord(
         'G125',
-        bem.codigoIndividualizacao,
-        dateField(input.inicio),
-        bem.tipoMovimentacao,
-        decimalField(bem.valorIcmsOperacao),
-        decimalField(bem.valorIcmsFrete),
-        decimalField(bem.valorIcmsDifal),
-        integerField(bem.numeroParcela),
-        decimalField(bem.valorParcelaIcms),
-        decimalField(bem.valorParcelaFrete),
-        decimalField(bem.valorParcelaDifal),
+        bem.codigoIndividualizacao, // 02 COD_IND_BEM
+        dateField(input.inicio), // 03 DT_MOV (SI => DT_INI)
+        bem.tipoMovimentacao, // 04 TIPO_MOV
+        decimalField(bem.valorIcmsOperacao), // 05 VL_IMOB_ICMS_OP
+        decimalField(bem.valorIcmsSt), // 06 VL_IMOB_ICMS_ST
+        decimalField(bem.valorIcmsFrete), // 07 VL_IMOB_ICMS_FRT
+        decimalField(bem.valorIcmsDifal), // 08 VL_IMOB_ICMS_DIF
+        integerField(bem.numeroParcela), // 09 NUM_PARC
+        decimalField(bem.valorParcelaPassivel), // 10 VL_PARC_PASS
       ),
     );
+    // G130/G140 (R3.4): documento(s) de origem do crédito, aninhados sob o G125.
+    // Emitidos quando os dados de origem estão disponíveis; a ausência quando
+    // exigidos já foi bloqueada por validarOrigemG130G140 a montante, de modo
+    // que aqui só emitimos origem válida — nunca documento fabricado.
+    for (const documento of bem.documentosOrigem ?? []) {
+      records.push(
+        createSpedRecord(
+          'G130',
+          documento.indicadorEmitente, // 02 IND_EMIT
+          // COD_PART (03): só quando emissão por terceiros (IND_EMIT = '1').
+          documento.indicadorEmitente === '1'
+            ? documento.codigoParticipante
+            : null,
+          documento.codigoModelo, // 04 COD_MOD
+          documento.serie, // 05 SERIE
+          integerField(documento.numeroDocumento), // 06 NUM_DOC
+          documento.chaveEletronica, // 07 CHV_NFE_CTE
+        ),
+      );
+      for (const item of documento.itens) {
+        records.push(
+          createSpedRecord(
+            'G140',
+            item.numeroItem, // 02 NUM_ITEM
+            item.codigoItem, // 03 COD_ITEM
+          ),
+        );
+      }
+    }
   }
   return records;
 }
@@ -1388,52 +1655,17 @@ function buildBloco1(indicadores: Record<string, 'S' | 'N'>): SpedRecord[] {
   ];
 }
 
-function aggregateC190(items: SpedItemDocumentoBuilderData[]): AnaliticoC190[] {
-  const groups = new Map<string, AnaliticoC190>();
-  for (const item of items) {
-    const row = item.row;
-    const cst = normalizeCstIcms(row);
-    const aliquota = row.aliquotaIcms ?? '0';
-    const key = `${cst}|${row.cfop}|${aliquota}`;
-    const group = groups.get(key) ?? {
-      cst,
-      cfop: row.cfop,
-      aliquota,
-      valorOperacao: 0n,
-      valorBcIcms: 0n,
-      valorIcms: 0n,
-      valorBcIcmsSt: 0n,
-      valorIcmsSt: 0n,
-      valorReducaoBc: 0n,
-      valorIpi: 0n,
-    };
-    const valorItemLiquido =
-      toScaledInteger(row.valorBrutoProduto) -
-      toScaledInteger(row.valorDesconto) +
-      toScaledInteger(row.valorFrete) +
-      toScaledInteger(row.valorSeguro) +
-      toScaledInteger(row.valorOutrasDespesas);
-    group.valorOperacao += itemOperationValue(row);
-    group.valorBcIcms += toScaledInteger(row.valorBcIcms);
-    group.valorIcms += toScaledInteger(row.valorIcms);
-    group.valorBcIcmsSt += toScaledInteger(row.valorBcIcmsSt);
-    group.valorIcmsSt += toScaledInteger(row.valorIcmsSt);
-    if (toScaledInteger(row.percentualReducaoBcIcms, 4) > 0n) {
-      group.valorReducaoBc += positive(
-        valorItemLiquido - toScaledInteger(row.valorBcIcms),
-      );
-    }
-    group.valorIpi += toScaledInteger(row.valorIpi);
-    groups.set(key, group);
-  }
-  return [...groups.values()].sort((a, b) =>
-    `${a.cst}|${a.cfop}|${a.aliquota}`.localeCompare(
-      `${b.cst}|${b.cfop}|${b.aliquota}`,
-      'pt-BR',
-    ),
-  );
+// F16 (R5.4): a decomposição analítica do C190 do TXT vem do agregador comum
+// `aggregateC190Analitico`, a MESMA fonte que a UI (`getC190`) projeta — não há
+// mais um cálculo independente aqui. R5.1 (redução só com percentual efetivo),
+// R5.2 (origem prefixada uma vez) e R5.3 (alíquota normalizada antes da chave,
+// escopo por documento) vivem no agregador.
+function aggregateC190(items: SpedItemDocumentoBuilderData[]): C190Analitico[] {
+  return aggregateC190Analitico(items.map((item) => item.row));
 }
 
+// Valor da operação de um item (líquido + ST + FCP ST + IPI). Usado pelo valor
+// contábil do livro de IPI; o C190 usa o mesmo cálculo via agregador comum.
 function itemOperationValue(row: ItemRow): bigint {
   return (
     toScaledInteger(row.valorBrutoProduto) -
@@ -1617,24 +1849,12 @@ function sumItems(
   );
 }
 
-// F10 (R4.4): o CST de ICMS do C170/C190 é a origem (1 dígito) seguida do CST
-// (2 dígitos). A origem deve ser prefixada exatamente UMA vez. Se o valor já
-// vem composto (3 dígitos, ex.: '000' = origem 0 + CST 00), não pode ser
-// prefixado de novo (viraria '0000'); se vem como CST puro (2 dígitos, ex.:
-// '00'), prefixa a origem uma vez (→ '000'). O guarda usa o CST sem espaços
-// para não depender de comprimento cru e evita compor comprimentos inesperados.
+// F10/F16 (R4.4/R5.2): o CST de ICMS do C170 e do C190 vem da MESMA
+// normalização (`normalizeC190Cst`, no agregador comum) — a origem é prefixada
+// exatamente uma vez, sem dupla concatenação ('00' → '000', '000' permanece
+// '000'). Centralizar aqui garante que C170 e C190 nunca divirjam no CST.
 function normalizeCstIcms(row: ItemRow): string {
-  const cstIcms = row.cstIcms?.trim();
-  if (cstIcms) {
-    // Já composto (origem + CST): mantém como está para não duplicar a origem.
-    if (cstIcms.length === 3) return cstIcms;
-    // CST puro: prefixa a origem exatamente uma vez.
-    if (cstIcms.length === 2)
-      return `${(row.origemMercadoria ?? '0').trim()}${cstIcms}`;
-    // Comprimento inesperado: não tenta compor para não inventar código.
-    return cstIcms;
-  }
-  return row.csosnIcms ?? '';
+  return normalizeC190Cst(row);
 }
 
 // F10: sem fallback inventado. O chamador (buildBlocoD) já garante que há

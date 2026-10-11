@@ -77,7 +77,7 @@ export class ClienteFiscalController {
     private readonly logger: AppLogger,
     private readonly fiscalItensService: FiscalItensService,
     private readonly fiscalCteService: FiscalCteService,
-  ) { }
+  ) {}
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
 
@@ -670,6 +670,14 @@ export class ClienteFiscalController {
         'A manifestação do destinatário está disponível somente para NF-e modelo 55.',
       );
     }
+    if (
+      documento.manifestacaoStatus === 'CIENCIA' &&
+      body.tipoEvento === '210210'
+    ) {
+      throw new BadRequestException(
+        'A Ciência já foi registrada. Selecione uma manifestação conclusiva.',
+      );
+    }
     if (!cliente.uf || !/^[A-Z]{2}$/.test(cliente.uf)) {
       throw new BadRequestException(
         'Informe uma UF válida no cadastro da empresa antes de manifestar a NF-e.',
@@ -714,13 +722,35 @@ export class ClienteFiscalController {
       motivoSefaz: resultado.motivo,
     });
 
+    let xmlStatus: 'OBTIDO' | 'PENDENTE' | 'NAO_APLICAVEL' = 'NAO_APLICAVEL';
+    if (body.tipoEvento === '210210' || body.tipoEvento === '210200') {
+      try {
+        xmlStatus =
+          await this.distribuicaoService.buscarXmlCompletoAposManifestacao({
+            documentoId: id,
+            clienteId: cliente.id,
+            cnpj: cliente.cnpj,
+            uf: cliente.uf,
+            chaveAcesso: documento.chaveAcesso,
+          });
+      } catch {
+        // O evento ja foi autorizado. Falha ou atraso na distribuicao do XML
+        // nao pode transformar uma manifestacao bem-sucedida em erro.
+        xmlStatus = 'PENDENTE';
+      }
+    }
+
     return {
       success: true,
-      message: 'Manifestação enviada com sucesso à SEFAZ.',
+      message:
+        xmlStatus === 'PENDENTE'
+          ? 'Manifestação enviada. A SEFAZ ainda está preparando o XML completo; o sistema tentará obtê-lo na próxima sincronização.'
+          : 'Manifestação enviada com sucesso à SEFAZ.',
       data: {
         protocolo: resultado.protocolo,
         status_sefaz: resultado.status,
         motivo: resultado.motivo,
+        xml_status: xmlStatus,
       },
     };
   }

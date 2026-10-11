@@ -1,0 +1,23 @@
+{
+  "id": "FEAT-001",
+  "type": "fix",
+  "description": "[MÉDIA] 6 — Make CRON_SECRET required in production. Today CRON_SECRET is @IsOptional(), so prod can ship without it and crons silently return CRON_NOT_CONFIGURED (availability risk). Independent of the other features. Follow the existing function-level conditional pattern in env.validation.ts (the BETTER_AUTH_SECRET/JWT_SECRET guard inside validate()), NOT a per-field conditional decorator.",
+  "status": "completed",
+  "steps": [
+    "In src/config/env.validation.ts keep `@IsString() @IsOptional() CRON_SECRET?: string` (dev may stay optional).",
+    "Inside the existing `validate(config)` function (same place as the BETTER_AUTH_SECRET vs JWT_SECRET mismatch guard), add a NODE_ENV-conditional check: when `config.NODE_ENV === 'production'`, require CRON_SECRET to be a string of length >= 32; otherwise throw `new Error('CRON_SECRET é obrigatório em produção e deve ter no mínimo 32 caracteres.')`. Read NODE_ENV from the raw config before plainToInstance, mirroring how the existing guard reads config.BETTER_AUTH_SECRET.",
+    "Optional: in src/cron/cron.controller.ts, where `secret` is falsy and the handler returns CRON_NOT_CONFIGURED (runStorageCleanup and runFiscalSync), add `this.logger.warn('cron_not_configured', { ... })` before returning. Do NOT alter the timing-safe `hasValidAuthorization` comparison."
+  ],
+  "acceptance_criteria": [
+    "validate({ NODE_ENV: 'production', ...all other required vars..., CRON_SECRET: undefined }) throws; the same with a 10-char CRON_SECRET also throws; with a 32+ char CRON_SECRET it passes.",
+    "validate({ NODE_ENV: 'development', ...required... }) without CRON_SECRET still passes (dev optional preserved).",
+    "The cron timing-safe comparison is unchanged."
+  ],
+  "verification": [
+    "pnpm exec tsc --noEmit — no new errors outside the two known baseline fiscal spec files.",
+    "pnpm test src/config  (and src/cron if a spec exists) — passes, or add a small spec asserting the prod-required behavior.",
+    "pnpm build — succeeds."
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented in src/config/env.validation.ts: inside validate(config), BEFORE plainToInstance (next to the BETTER_AUTH_SECRET/JWT_SECRET guard), added a NODE_ENV==='production' check reading raw config.CRON_SECRET — throws 'CRON_SECRET é obrigatório em produção e deve ter no mínimo 32 caracteres.' when it is not a string or its length < 32. The @IsString() @IsOptional() CRON_SECRET field is unchanged (dev/test stay optional). Optional warn added in src/cron/cron.controller.ts: this.logger.warn('cron_not_configured', { operation }) before the CRON_NOT_CONFIGURED return in BOTH runStorageCleanup ('storage_cleanup') and runFiscalSync ('fiscal_sync'); the timing-safe hasValidAuthorization comparison was left untouched. Tests: added a 'CRON_SECRET production requirement' describe block (4 cases: prod+missing throws, prod+short throws, prod+32char passes, non-prod stays optional) to src/config/env.validation.spec.ts. Verification: `pnpm exec tsc --noEmit` shows only the 23 known baseline errors in src/fiscal/controllers/fiscal-apuracao.controller.spec.ts (1) + src/fiscal/services/fiscal-entregas.service.spec.ts (22), no new errors; `pnpm build` succeeds; `pnpm test src/config src/cron` = 26/26 pass (no cron spec exists). No helmet changes here, so pnpm audit step not applicable to this feature."
+}

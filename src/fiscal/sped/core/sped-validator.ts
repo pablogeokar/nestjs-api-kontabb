@@ -7,6 +7,7 @@ import {
   type SpedValidationResult,
 } from './sped-core.types';
 import { getSpedBlockForRecord, SPED_BLOCK_SHELLS } from './sped-file';
+import { BLOCO_G_EXPECTED_FIELD_COUNTS } from './bloco-g-leiaute';
 
 interface ParsedLine {
   readonly line: number;
@@ -27,6 +28,11 @@ const EXPECTED_FIELD_COUNTS: Readonly<Record<string, number>> = {
   '0190': 2,
   '0200': 12,
   '0220': 3,
+  // 0300/0305 (R3.3/R3.5): cadastro do bem/componente do Ativo Imobilizado e a
+  // utilização do bem, referenciados pelo COD_IND_BEM do G125. Fonte única:
+  // BLOCO_G_EXPECTED_FIELD_COUNTS em bloco-g-leiaute.ts (0300 = 6, 0305 = 3).
+  '0300': BLOCO_G_EXPECTED_FIELD_COUNTS['0300'],
+  '0305': BLOCO_G_EXPECTED_FIELD_COUNTS['0305'],
   '0450': 2,
   '0990': 1,
   B001: 1,
@@ -62,8 +68,18 @@ const EXPECTED_FIELD_COUNTS: Readonly<Record<string, number>> = {
   E530: 6,
   E990: 1,
   G001: 1,
-  G110: 8,
-  G125: 10,
+  // G110 (R3.1/R3.5) e G125 (R3.2/R3.5): contagem oficial de campos após REG.
+  // G110 inclui SOM_ICMS_OC e posiciona o índice de participação (IND_PER_SAI);
+  // G125 modela VL_IMOB_ICMS_ST e posiciona NUM_PARC/VL_PARC_PASS (9 campos
+  // após REG, não 10). Fonte única: BLOCO_G_EXPECTED_FIELD_COUNTS em
+  // bloco-g-leiaute.ts.
+  G110: BLOCO_G_EXPECTED_FIELD_COUNTS.G110,
+  G125: BLOCO_G_EXPECTED_FIELD_COUNTS.G125,
+  // G130 (R3.4/R3.5): identificação do documento fiscal de origem (6 campos após
+  // REG); G140 (R3.4/R3.5): identificação do item do documento (2 campos após
+  // REG). Fonte única: BLOCO_G_EXPECTED_FIELD_COUNTS em bloco-g-leiaute.ts.
+  G130: BLOCO_G_EXPECTED_FIELD_COUNTS.G130,
+  G140: BLOCO_G_EXPECTED_FIELD_COUNTS.G140,
   G990: 1,
   H001: 1,
   H005: 3,

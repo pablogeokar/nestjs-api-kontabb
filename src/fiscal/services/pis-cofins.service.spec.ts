@@ -1,4 +1,7 @@
-import { PisCofinsService } from './pis-cofins.service';
+import {
+  PisCofinsService,
+  resolverRegimeApuracao,
+} from './pis-cofins.service';
 import {
   derivarLinhaSegmentoF12,
   PIS_COFINS_FIXTURE_ALIQUOTA_ITEM,
@@ -548,5 +551,134 @@ describe('PisCofinsService', () => {
     expect(result.pis.debito).toBe('5.20');
     expect(result.cofins.base_tributada).toBe('800.00');
     expect(result.cofins.debito).toBe('24.00');
+  });
+
+  // R2.5 (regime ausente → pendência, NÃO cumulativo presumido): quando o
+  // cliente não tem regime tributário definido (`regimeTributario` null), a
+  // apuração NÃO pode cair no cumulativo (0,65%/3%) como o booleano
+  // `regime === 'LUCRO_REAL'` fazia por exclusão. Ela sai como PENDÊNCIA, sem
+  // valor tratado como guia e com observação explicando o motivo. Nenhuma
+  // consulta de segmento é feita (não há regime para apurar).
+  it('R2.5: regime ausente vira pendência, não cumulativo presumido', async () => {
+    const service = new PisCofinsService(
+      createDb({ regimeTributario: null }, []) as never,
+    );
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+    // NÃO é 'CUMULATIVO' (o antigo fallback presumido) — é 'PENDENTE'.
+    expect(result.regime_apuracao).toBe('PENDENTE');
+    expect(result.regime).toBeNull();
+    // Sem valores apurados como guia; a observação explica a pendência (R2.5).
+    expect(result.observacao).toContain('ausente');
+    expect(result.pis.saldo_a_recolher).toBe('0.00');
+    expect(result.pis.debito).toBe('0.00');
+    expect(result.cofins.saldo_a_recolher).toBe('0.00');
+    expect(result.cofins.debito).toBe('0.00');
+  });
+
+  // R2.6 (tarefa 3.6 — rótulo "demonstrativo" mantido até cobertura completa):
+  // a apuração CALCULADA (presumido/real) é SEMPRE marcada como demonstrativo
+  // enquanto a cobertura não está completa — receitas sem NF-e, retenções e
+  // saldos anteriores ainda não incorporados e EFD-Contribuições fora desta
+  // entrega. O número nunca é anunciado como guia/apuração definitiva.
+  describe('R2.6: rótulo "demonstrativo" mantido até cobertura completa', () => {
+    it('apuração calculada (Lucro Presumido) sai como demonstrativo com motivo', async () => {
+      const saidas = [
+        {
+          pis_base_tributada: '10000.00',
+          pis_debito: '65.00',
+          pis_base_sem_debito: '0.00',
+          pis_base_credito: '0.00',
+          cofins_base_tributada: '10000.00',
+          cofins_debito: '300.00',
+          cofins_base_sem_debito: '0.00',
+          cofins_base_credito: '0.00',
+        },
+      ];
+      const service = new PisCofinsService(
+        createDb({ regimeTributario: 'LUCRO_PRESUMIDO' }, [saidas]) as never,
+      );
+      const result = await service.apurarCompetencia({
+        clienteId: 'c1',
+        competencia: '2026-09',
+      });
+      expect(result.demonstrativo).toBe(true);
+      expect(result.demonstrativo_motivo).toContain('provisório');
+      // Honestidade de escopo: EFD-Contribuições não é anunciada como pronta.
+      expect(result.demonstrativo_motivo).toContain('EFD-Contribuições');
+    });
+
+    it('itens pendentes escalam o motivo do demonstrativo (R2.2/R5.4)', async () => {
+      const saidas = [
+        {
+          pis_base_tributada: '0.00',
+          pis_debito: '0.00',
+          pis_base_sem_debito: '0.00',
+          pis_base_credito: '0.00',
+          pis_pendencias: '1',
+          cofins_base_tributada: '0.00',
+          cofins_debito: '0.00',
+          cofins_base_sem_debito: '0.00',
+          cofins_base_credito: '0.00',
+          cofins_pendencias: '1',
+        },
+      ];
+      const service = new PisCofinsService(
+        createDb({ regimeTributario: 'LUCRO_PRESUMIDO' }, [saidas]) as never,
+      );
+      const result = await service.apurarCompetencia({
+        clienteId: 'c1',
+        competencia: '2026-09',
+      });
+      expect(result.demonstrativo).toBe(true);
+      // 2 itens pendentes (1 PIS + 1 COFINS) citados no motivo escalado.
+      expect(result.demonstrativo_motivo).toContain('2 item');
+      expect(result.demonstrativo_motivo).toContain('pendência');
+    });
+
+    it('regime ausente (pendência) também é demonstrativo', async () => {
+      const service = new PisCofinsService(
+        createDb({ regimeTributario: null }, []) as never,
+      );
+      const result = await service.apurarCompetencia({
+        clienteId: 'c1',
+        competencia: '2026-09',
+      });
+      expect(result.regime_apuracao).toBe('PENDENTE');
+      expect(result.demonstrativo).toBe(true);
+      expect(result.demonstrativo_motivo).toContain('pendência');
+    });
+
+    it('Simples Nacional NÃO emite demonstrativo (recolhe via DAS)', async () => {
+      const service = new PisCofinsService(
+        createDb({ regimeTributario: 'SIMPLES_NACIONAL' }, []) as never,
+      );
+      const result = await service.apurarCompetencia({
+        clienteId: 'c1',
+        competencia: '2026-09',
+      });
+      expect(result.regime_apuracao).toBe('DAS');
+      expect(result.demonstrativo).toBe(false);
+      expect(result.demonstrativo_motivo).toBeNull();
+    });
+  });
+
+  // R2.7 (presumido/real não equiparam todas as receitas a um tratamento
+  // único): cada regime é mapeado EXPLICITAMENTE ao seu regime de apuração —
+  // Lucro Presumido → CUMULATIVO, Lucro Real → NÃO-CUMULATIVO — e não por um
+  // booleano "é real?" que colapsava tudo o mais em cumulativo.
+  describe('R2.7: regime de apuração resolvido explicitamente por regime', () => {
+    it('Lucro Presumido → CUMULATIVO', () => {
+      expect(resolverRegimeApuracao('LUCRO_PRESUMIDO')).toBe('CUMULATIVO');
+    });
+    it('Lucro Real → NAO_CUMULATIVO', () => {
+      expect(resolverRegimeApuracao('LUCRO_REAL')).toBe('NAO_CUMULATIVO');
+    });
+    it('regime ausente (null) → PENDENTE (R2.5), nunca CUMULATIVO', () => {
+      expect(resolverRegimeApuracao(null)).toBe('PENDENTE');
+      expect(resolverRegimeApuracao(null)).not.toBe('CUMULATIVO');
+    });
   });
 });

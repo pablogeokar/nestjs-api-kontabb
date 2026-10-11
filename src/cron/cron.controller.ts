@@ -21,7 +21,7 @@ export class CronController {
     private readonly fiscalCron: FiscalCronService,
     private readonly configService: ConfigService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   @Get('storage-cleanup')
   @HttpCode(HttpStatus.OK)
@@ -40,6 +40,7 @@ export class CronController {
   async runStorageCleanup(@Headers('authorization') authHeader: string) {
     const secret = this.configService.get<string>('CRON_SECRET');
     if (!secret) {
+      this.logger.warn('cron_not_configured', { operation: 'storage_cleanup' });
       return {
         code: 'CRON_NOT_CONFIGURED',
         message: 'Rotina não configurada.',
@@ -87,6 +88,7 @@ export class CronController {
   async runFiscalSync(@Headers('authorization') authHeader: string) {
     const secret = this.configService.get<string>('CRON_SECRET');
     if (!secret) {
+      this.logger.warn('cron_not_configured', { operation: 'fiscal_sync' });
       return {
         code: 'CRON_NOT_CONFIGURED',
         message: 'Rotina não configurada.',

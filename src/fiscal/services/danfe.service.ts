@@ -51,6 +51,7 @@ export class DanfeService {
         xmlKey: documentosFiscais.xmlKey,
         chaveAcesso: documentosFiscais.chaveAcesso,
         tipoDocumento: documentosFiscais.tipoDocumento,
+        situacao: documentosFiscais.situacao,
       })
       .from(documentosFiscais)
       .where(and(...conditions))
@@ -58,6 +59,11 @@ export class DanfeService {
 
     if (!doc[0]) {
       throw new NotFoundException('Documento fiscal não encontrado.');
+    }
+    if (doc[0].situacao === 'RESUMIDA') {
+      throw new NotFoundException(
+        'DANFE indisponível enquanto a SEFAZ não fornecer o XML completo.',
+      );
     }
 
     // Gerar o documento auxiliar correspondente a partir do XML autorizado,

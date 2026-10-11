@@ -5,3 +5,17 @@ allowBuilds:
   libxmljs2: true
   unrs-resolver: false
   xsd-schema-validator: false
+
+# Overrides de seguranca: forcam versoes corrigidas de dependencias transitivas
+# vulneraveis (ver .agents/tasks/security-fix-deps-2026-10-11.md).
+overrides:
+  'proxy-addr@<2.0.8': '^2.0.8'
+  'multer@<2.3.0': '^2.4.0'
+  'axios@<1.20.0': '^1.20.0'
+  '@xmldom/xmldom@<0.8.15': '^0.8.15'
+  'nodemailer@<10.0.9': '^10.0.9'
+  'js-yaml@<5.4.1': '^5.4.1'
+  'qs@>=6.14.2 <6.15.4': '^6.15.4'
+  'ip-address@<10.5.1': '^10.5.1'
+  'brace-expansion@>=2.0.0 <2.1.3': '^2.1.3'
+  'http-cache-semantics@<4.2.1': '^4.2.1'

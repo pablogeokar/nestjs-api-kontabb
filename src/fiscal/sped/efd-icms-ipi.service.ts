@@ -40,6 +40,12 @@ import {
   spedUnidades,
 } from '../../database/schema';
 import { resolverContadorDoCliente } from '../../cadastros/contadores/contador-resolver';
+import { CiapService } from '../services/ciap.service';
+import {
+  FiscalPeriodSelectionService,
+  type DocumentoElegibilidade,
+  type RelatorioExclusao,
+} from '../services/fiscal-period-selection.service';
 import { StorageService } from '../../storage/storage.service';
 import { buildSpedFile, validateSpedFile } from './core';
 import { runPreflightPva } from './sped-preflight-pva';
@@ -104,6 +110,17 @@ interface PreparedInternal extends SpedPreparedGeneration {
   itensCatalogo: CatalogItem[];
 }
 
+/**
+ * Universo excluído vazio (nenhum documento), usado nas prévias que não chegam
+ * a carregar documentos (empresa inexistente, configuração ausente). Mantém o
+ * contrato `documentos.universoExcluido` sempre presente (R3.4).
+ */
+const EMPTY_UNIVERSO_EXCLUIDO: RelatorioExclusao = {
+  quantidade: 0,
+  valor: '0.00',
+  porMotivo: [],
+};
+
 const EMPTY_APURACAO: SpedPreview['apuracao'] = {
   icmsProprio: {
     debitos: '0.00',
@@ -131,16 +148,27 @@ export class EfdIcmsIpiService {
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly ciapService: CiapService,
+    private readonly periodSelection: FiscalPeriodSelectionService,
+  ) { }
 
   /**
-   * Feature flag `sped.blocoG.leiauteHomologado` (F07 / Fase 0).
+   * Feature flag `sped.blocoG.leiauteHomologado` (F07).
    *
    * Fonte única de verdade lida da configuração
-   * (`SPED_BLOCO_G_LEIAUTE_HOMOLOGADO`). Enquanto o leiaute do Bloco G não
-   * estiver homologado (Fase 2), resolve para `false` — o que faz o builder
-   * bloquear a geração de arquivos que exijam Bloco G. As tarefas 5.2/5.3
-   * (bloqueio + motivo na UI) dependem deste mesmo valor.
+   * (`SPED_BLOCO_G_LEIAUTE_HOMOLOGADO`). Resolve para `true` apenas com o valor
+   * explícito "true"; qualquer outro valor (incluindo ausente) resolve `false`,
+   * o que faz o builder bloquear a geração de arquivos que exijam Bloco G
+   * (BLOCO_G_LEIAUTE_PENDENTE). As tarefas 5.2/5.3 (bloqueio + motivo na UI)
+   * dependem deste mesmo valor.
+   *
+   * Gate de liberação (Fase 2, tarefa 6.1): a chave só deve ser virada para
+   * "true" DEPOIS que ambas as pré-condições fiscais estiverem satisfeitas —
+   * fixtures normativas de G110/G125/0300 verdes (tarefa 5, concluída) E
+   * validação no PVA da Receita por UF/perfil (tarefa 6.2, pendente). A
+   * liberação é deliberadamente config-driven: um humano habilita após o aceite
+   * do PVA, sem alteração de código. O default `false` NÃO deve ser alterado
+   * enquanto o PVA não assinar.
    */
   get blocoGLeiauteHomologado(): boolean {
     return (
@@ -386,10 +414,10 @@ export class EfdIcmsIpiService {
           auditabilidade: {
             contador: contadorResolvido
               ? {
-                  id: contadorResolvido.contador.id,
-                  nome: contadorResolvido.contador.nome,
-                  origem: contadorResolvido.origem,
-                }
+                id: contadorResolvido.contador.id,
+                nome: contadorResolvido.contador.nome,
+                origem: contadorResolvido.origem,
+              }
               : null,
             apuracao: [],
           },
@@ -491,26 +519,26 @@ export class EfdIcmsIpiService {
     const documentIds = documents.map((document) => document.id);
     const [items, ctes] = documentIds.length
       ? await Promise.all([
-          db
-            .select()
-            .from(documentosFiscaisItens)
-            .where(
-              inArray(documentosFiscaisItens.documentoFiscalId, documentIds),
-            )
-            .orderBy(
-              asc(documentosFiscaisItens.documentoFiscalId),
-              asc(documentosFiscaisItens.numeroItem),
+        db
+          .select()
+          .from(documentosFiscaisItens)
+          .where(
+            inArray(documentosFiscaisItens.documentoFiscalId, documentIds),
+          )
+          .orderBy(
+            asc(documentosFiscaisItens.documentoFiscalId),
+            asc(documentosFiscaisItens.numeroItem),
+          ),
+        db
+          .select()
+          .from(documentosFiscaisCteEscrituracao)
+          .where(
+            inArray(
+              documentosFiscaisCteEscrituracao.documentoFiscalId,
+              documentIds,
             ),
-          db
-            .select()
-            .from(documentosFiscaisCteEscrituracao)
-            .where(
-              inArray(
-                documentosFiscaisCteEscrituracao.documentoFiscalId,
-                documentIds,
-              ),
-            ),
-        ])
+          ),
+      ])
       : [[], []];
 
     const itemsByDocument = new Map<string, typeof items>();
@@ -684,21 +712,21 @@ export class EfdIcmsIpiService {
       const preparedItems: SpedItemDocumentoBuilderData[] = canceled
         ? []
         : documentItems.map((item) =>
-            this.prepareItem(
-              item,
-              document,
-              participant,
-              company.cnpj,
-              company.tipoItemPadrao ?? '00',
-              unidades,
-              itensCatalogo,
-              document.modelo === '55' &&
-                normalizeIdentifier(document.emitenteCnpjCpf) !==
-                  normalizeIdentifier(company.cnpj) &&
-                profile !== 'C',
-              inconsistencias,
-            ),
-          );
+          this.prepareItem(
+            item,
+            document,
+            participant,
+            company.cnpj,
+            company.tipoItemPadrao ?? '00',
+            unidades,
+            itensCatalogo,
+            document.modelo === '55' &&
+            normalizeIdentifier(document.emitenteCnpjCpf) !==
+            normalizeIdentifier(company.cnpj) &&
+            profile !== 'C',
+            inconsistencias,
+          ),
+        );
       let informationCode: string | null = null;
       if (document.informacoesComplementares?.trim()) {
         const text = document.informacoesComplementares.trim();
@@ -731,15 +759,15 @@ export class EfdIcmsIpiService {
     );
     const inventario = inventarioDue
       ? await this.loadInventario(
-          db,
-          clienteId,
-          period.endDate,
-          participantes,
-          unidades,
-          itensCatalogo,
-          profile,
-          inconsistencias,
-        )
+        db,
+        clienteId,
+        period.endDate,
+        participantes,
+        unidades,
+        itensCatalogo,
+        profile,
+        inconsistencias,
+      )
       : null;
     if (inventarioDue && !inventario) {
       inconsistencias.push({
@@ -829,7 +857,15 @@ export class EfdIcmsIpiService {
       inventario,
       indicadores1010: company.indicadores1010 ?? {},
       inconsistencias,
-      ciap: await this.loadCiap(db, clienteId, nfe),
+      ciap: await this.loadCiap(
+        db,
+        clienteId,
+        {
+          inicio: period.start,
+          fim: period.end,
+        },
+        inconsistencias,
+      ),
       // F07 (Fase 0): fonte única de verdade da flag
       // `sped.blocoG.leiauteHomologado`. Enquanto false, o builder bloqueia a
       // geração de arquivos que exijam Bloco G (BLOCO_G_LEIAUTE_PENDENTE).
@@ -892,6 +928,16 @@ export class EfdIcmsIpiService {
     }
 
     const included = nfe.length + cteDocuments.length;
+    // R3.3/R3.4: universo excluído da apuração DEFINITIVA pela política ÚNICA de
+    // elegibilidade. `documents` já está recortado pelo período (mesma data
+    // fiscal da finalidade EMISSAO), então classificamos cada documento desse
+    // recorte e reportamos quantidade e valor dos que NÃO são elegíveis — sem
+    // reimplementar o critério aqui: ele vem de `FiscalPeriodSelectionService`,
+    // a mesma fonte que o `where` definitivo (`definitiva: true`) usaria. Assim a
+    // exclusão e sua justificativa partem da MESMA política.
+    const universoExcluido = this.periodSelection.reportExclusoes(
+      documents.map(toDocumentoElegibilidade),
+    );
     const preview: SpedPreview = {
       podeGerar: !inconsistencias.some((item) => item.severidade === 'ERRO'),
       competencia,
@@ -909,15 +955,16 @@ export class EfdIcmsIpiService {
         nfe: nfe.filter((document) => document.row.modelo === '55').length,
         nfce: nfe.filter((document) => document.row.modelo === '65').length,
         cte: cteDocuments.length,
+        universoExcluido,
       },
       apuracao: builtRecords.apuracao,
       auditabilidade: {
         contador: contadorResolvido
           ? {
-              id: contadorResolvido.contador.id,
-              nome: contadorResolvido.contador.nome,
-              origem: contadorResolvido.origem,
-            }
+            id: contadorResolvido.contador.id,
+            nome: contadorResolvido.contador.nome,
+            origem: contadorResolvido.origem,
+          }
           : null,
         apuracao: buildApuracaoAuditTrail(saldos, ajustes, obrigacoes),
       },
@@ -1087,13 +1134,26 @@ export class EfdIcmsIpiService {
 
   /**
    * Monta os dados do Bloco G (CIAP) para a competência: para cada bem ativo,
-   * a parcela 1/48 do ICMS ajustada pelo coeficiente de saídas tributadas
+   * a parcela 1/48 do ICMS ajustada pelo coeficiente de participação
    * (LC 87/96 art. 20 §5º). Retorna null quando não há bens ativos.
+   *
+   * COEFICIENTE UNIFICADO (Fase 2, tarefa 3.3 / R2.2, R2.3): o coeficiente de
+   * participação NÃO é mais recomputado aqui a partir das NF-e da competência.
+   * O builder deriva o MESMO coeficiente que o preview (`apurarCompetencia`) e a
+   * efetivação (`apropriarCompetencia`) delegando a
+   * {@link CiapService.calcularCoeficiente} com o MESMO cenário (cliente +
+   * janela da competência). Antes, este método tinha sua própria lógica
+   * (`valorIcms > 0` ⇒ tributada e, sem saídas, `1.0000` silencioso), o que
+   * podia DIVERGIR da apropriação: exportações/saídas equiparadas eram
+   * excluídas do numerador (R2.3) e o caso "sem saídas" presumia 100% (R2.4).
+   * Com a função única, preview, apropriação e Bloco G gerado não podem mais
+   * divergir — há uma única fonte da verdade para o coeficiente.
    */
   private async loadCiap(
     db: DatabaseExecutor,
     clienteId: string,
-    nfe: SpedDocumentoNfeBuilderData[],
+    competencia: { inicio: Date; fim: Date },
+    inconsistencias: SpedInconsistencia[],
   ): Promise<SpedCiapBuilderData | null> {
     const bens = await db
       .select()
@@ -1106,29 +1166,28 @@ export class EfdIcmsIpiService {
       );
     if (bens.length === 0) return null;
 
-    // Coeficiente = saídas tributadas / saídas totais das NF-e da competência.
-    let saidasTotais = 0n;
-    let saidasTributadas = 0n;
-    for (const documento of nfe) {
-      if (documento.row.tipoOperacaoEscriturada !== 'SAIDA') continue;
-      for (const item of documento.itens) {
-        const valor =
-          toScaledInteger(item.row.valorBrutoProduto) -
-          toScaledInteger(item.row.valorDesconto);
-        saidasTotais += valor;
-        if (toScaledInteger(item.row.valorIcms) > 0n) {
-          saidasTributadas += valor;
-        }
-      }
-    }
-    const coefScaled =
-      saidasTotais > 0n
-        ? (saidasTributadas * 10n ** 4n) / saidasTotais
-        : 10n ** 4n;
+    // R2.2/R2.3: coeficiente de participação derivado da MESMA função usada por
+    // apurarCompetencia (preview) e apropriarCompetencia (efetivação). O cenário
+    // é o cliente + a janela da competência; o resultado traz numerador/
+    // denominador decompostos e a regra explícita do caso "sem saídas" (R2.4).
+    const coeficienteResultado = await this.ciapService.calcularCoeficiente({
+      clienteId,
+      inicio: competencia.inicio,
+      fim: competencia.fim,
+    });
+    // O índice de participação (IND_PER_SAI) e o ICMS apropriado (ICMS_APROP)
+    // do G110 são derivados no builder a partir de saidasTributadas/saidasTotais
+    // (VL_TRIB_EXP ÷ VL_TOTAL; SOM_PARC × IND_PER_SAI), que são os componentes do
+    // MESMO coeficiente calculado aqui — não há cálculo paralelo do crédito.
+    const saidasTributadas = toScaledInteger(
+      coeficienteResultado.componentes.saidas_tributadas,
+    );
+    const saidasTotais = toScaledInteger(
+      coeficienteResultado.componentes.total_saidas,
+    );
 
     let saldoInicial = 0n;
     let somaParcelas = 0n;
-    let totalCredito = 0n;
     const bensBuilder: SpedCiapBuilderData['bens'] = [];
     for (const bem of bens) {
       const baseScaled =
@@ -1136,31 +1195,79 @@ export class EfdIcmsIpiService {
         toScaledInteger(bem.valorIcmsFrete) +
         toScaledInteger(bem.valorIcmsDifal);
       const parcela = baseScaled / BigInt(bem.quantidadeParcelas);
-      const credito = (parcela * coefScaled) / 10n ** 4n;
       saldoInicial += toScaledInteger(bem.saldoCredorRestante);
       somaParcelas += parcela;
-      totalCredito += credito;
+      // R3.3 — cadastro do bem (0300/0305) referenciado pelo COD_IND_BEM do
+      // G125. O cadastro CIAP (ciap_ativo_permanente) ainda NÃO tem colunas
+      // para IDENT_MERC (bem/componente), conta contábil (COD_CTA), centro de
+      // custo (COD_CCUS), função (FUNC) nem vida útil (VIDA_UTIL). Em vez de
+      // inventar silenciosamente esses campos obrigatórios, usamos defaults
+      // documentados e emitimos UM aviso por bem apontando que o cadastro do
+      // 0300/0305 precisa ser completado antes da entrega definitiva.
+      const camposSemFonte = [
+        'IDENT_MERC',
+        'COD_CTA',
+        'COD_CCUS',
+        'FUNC',
+        'VIDA_UTIL',
+      ];
+      inconsistencias.push({
+        codigo: 'CIAP_CADASTRO_0300_INCOMPLETO',
+        severidade: 'AVISO',
+        mensagem:
+          `Bem CIAP ${bem.codigoBem}: o cadastro 0300/0305 usa valores padrão ` +
+          `para campos ainda não controlados (${camposSemFonte.join(', ')}). ` +
+          'Trate o bem como "bem" (IDENT_MERC=1), conta contábil não definida ' +
+          'e vida útil igual ao total de parcelas; confirme antes da entrega.',
+        campo: bem.codigoBem,
+      });
       bensBuilder.push({
         codigoIndividualizacao: bem.codigoBem,
         identificacaoBem: bem.identificacaoBem,
         tipoMovimentacao: 'SI',
         valorIcmsOperacao: bem.valorIcmsTotal,
+        // VL_IMOB_ICMS_ST (G125 campo 06): o ICMS-ST da entrada do bem ainda não
+        // é controlado no cadastro CIAP (ciap_ativo_permanente não tem coluna de
+        // ST). Zero por ora; a posição oficial do campo passa a ser emitida.
+        valorIcmsSt: '0.00',
         valorIcmsFrete: bem.valorIcmsFrete ?? '0.00',
         valorIcmsDifal: bem.valorIcmsDifal ?? '0.00',
         numeroParcela: bem.parcelasApropriadas + 1,
-        valorParcelaIcms: fromScaledInteger(parcela),
-        valorParcelaFrete: '0.00',
-        valorParcelaDifal: '0.00',
+        // VL_PARC_PASS (G125 campo 10): parcela passível ANTES do índice de
+        // participação — a base de ICMS (OP + FRT + DIF) dividida pelo total de
+        // parcelas.
+        valorParcelaPassivel: fromScaledInteger(parcela),
+        // --- Cadastro 0300/0305 (R3.3) com defaults documentados (ver aviso
+        // CIAP_CADASTRO_0300_INCOMPLETO acima) ---
+        // IDENT_MERC: default '1' (bem). O cadastro CIAP ainda não distingue
+        // bem/componente; sem fonte, assume-se bem (emite 0305).
+        identificacaoMercadoria: '1',
+        // COD_PRNC: null — só aplicável a componente (IDENT_MERC='2').
+        codigoBemPrincipal: null,
+        // COD_CTA: conta analítica do 0500. Sem fonte no cadastro CIAP; usa o
+        // próprio código do bem como placeholder determinístico (NÃO é um valor
+        // fabricado "para passar no check" — é sinalizado pelo aviso).
+        codigoContaContabil: bem.codigoBem,
+        // NR_PARC: total de parcelas da UF — este SIM tem fonte no cadastro.
+        numeroTotalParcelas: bem.quantidadeParcelas,
+        // COD_CCUS: centro de custo (0600). Sem fonte; placeholder sinalizado.
+        centroCusto: bem.codigoBem,
+        // FUNC: função do bem. Sem fonte; usa a descrição do próprio bem.
+        funcaoBem: bem.identificacaoBem,
+        // VIDA_UTIL (meses): sem fonte; default = total de parcelas (meses de
+        // apropriação do CIAP), um proxy razoável e sinalizado.
+        vidaUtilMeses: bem.quantidadeParcelas,
       });
     }
 
     return {
       saldoInicial: fromScaledInteger(saldoInicial),
       somaParcelas: fromScaledInteger(somaParcelas),
-      valorTotalCredito: fromScaledInteger(totalCredito),
-      indicadorPeriodo: '0',
       saidasTributadas: fromScaledInteger(saidasTributadas),
       saidasTotais: fromScaledInteger(saidasTotais),
+      // SOM_ICMS_OC (G110 campo 10): outros créditos de ICMS a apropriar vêm dos
+      // registros G126, ainda não emitidos pelo builder. Zero por ora.
+      somaIcmsOutrosCreditos: '0.00',
       bens: bensBuilder,
     };
   }
@@ -1831,6 +1938,7 @@ export class EfdIcmsIpiService {
           nfe: 0,
           nfce: 0,
           cte: 0,
+          universoExcluido: EMPTY_UNIVERSO_EXCLUIDO,
         },
         apuracao: EMPTY_APURACAO,
         auditabilidade: { contador: null, apuracao: [] },
@@ -1950,13 +2058,13 @@ export function validateAdjustmentAuditTrail(
     ajuste.descricao?.trim() || ajuste.numeroDocumento?.trim()
       ? []
       : [
-          {
-            codigo: 'AJUSTE_SEM_LASTRO_DOCUMENTAL',
-            severidade: 'ERRO' as const,
-            mensagem: `O ajuste ${ajuste.codigoAjuste} (${ajuste.registro}) precisa de descrição ou documento de suporte para manter a trilha de auditoria.`,
-            campo: `ajustes.${ajuste.id}`,
-          },
-        ],
+        {
+          codigo: 'AJUSTE_SEM_LASTRO_DOCUMENTAL',
+          severidade: 'ERRO' as const,
+          mensagem: `O ajuste ${ajuste.codigoAjuste} (${ajuste.registro}) precisa de descrição ou documento de suporte para manter a trilha de auditoria.`,
+          campo: `ajustes.${ajuste.id}`,
+        },
+      ],
   );
 }
 
@@ -1971,10 +2079,10 @@ export function isInventoryDueForPeriod(
 ) {
   const deliveryMonth =
     Number.isInteger(configuredMonth) &&
-    configuredMonth !== undefined &&
-    configuredMonth !== null &&
-    configuredMonth >= 1 &&
-    configuredMonth <= 12
+      configuredMonth !== undefined &&
+      configuredMonth !== null &&
+      configuredMonth >= 1 &&
+      configuredMonth <= 12
       ? configuredMonth
       : 2;
   return required && periodStart.getUTCMonth() + 1 === deliveryMonth;
@@ -1982,6 +2090,23 @@ export function isInventoryDueForPeriod(
 
 function normalizeIdentifier(value: string): string {
   return value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+/**
+ * Projeta um documento fiscal persistido para a visão mínima que a política de
+ * elegibilidade consome (`DocumentoElegibilidade`). Mantém o acoplamento num só
+ * ponto: se as colunas de elegibilidade mudarem, só este mapeamento muda.
+ */
+export function toDocumentoElegibilidade(
+  document: typeof documentosFiscais.$inferSelect,
+): DocumentoElegibilidade {
+  return {
+    situacao: document.situacao,
+    escriturado: document.escriturado,
+    escrituracaoStatus: document.escrituracaoStatus,
+    integridadeStatus: document.integridadeStatus,
+    valorTotal: document.valorTotal,
+  };
 }
 
 function normalizeCountryCode(value?: string | null): string {
@@ -2086,7 +2211,7 @@ function buildConversoesUnidade(
       fatorConversao: fromScaledInteger(fatorScaled, 6),
       codigoBarrasConversao:
         item.codigoEanTributavel &&
-        !/^SEM GTIN$/i.test(item.codigoEanTributavel)
+          !/^SEM GTIN$/i.test(item.codigoEanTributavel)
           ? item.codigoEanTributavel
           : null,
     },

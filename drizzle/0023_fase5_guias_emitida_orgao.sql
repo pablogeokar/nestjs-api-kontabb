@@ -1,0 +1,3 @@
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "emitida_orgao" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "emitida_orgao_em" timestamp;--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD CONSTRAINT "chk_fiscal_guias_emissao_orgao" CHECK ("fiscal_apuracoes_guias"."emitida_orgao" = false OR "fiscal_apuracoes_guias"."emitida_orgao_em" IS NOT NULL);

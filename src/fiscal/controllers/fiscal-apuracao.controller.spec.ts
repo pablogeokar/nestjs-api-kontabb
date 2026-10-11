@@ -33,6 +33,7 @@ function createController(overrides?: Partial<Deps>) {
     {} as never, // ciapService
     {} as never, // difalService
     {} as never, // guiasService
+    {} as never, // entregasService
     {} as never, // pisCofinsService
     deps.fiscalItensService as never,
   );

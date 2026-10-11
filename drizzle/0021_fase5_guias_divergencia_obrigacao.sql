@@ -1,0 +1,3 @@
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "divergente_obrigacao" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "valor_obrigacao" numeric(15, 2);--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD CONSTRAINT "chk_fiscal_guias_divergencia_apuracao" CHECK ("fiscal_apuracoes_guias"."origem" = 'APURACAO' OR ("fiscal_apuracoes_guias"."divergente_obrigacao" = false AND "fiscal_apuracoes_guias"."valor_obrigacao" IS NULL));

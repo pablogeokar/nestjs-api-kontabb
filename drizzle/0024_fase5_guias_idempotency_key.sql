@@ -1,0 +1,2 @@
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "idempotency_key" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "uidx_fiscal_guias_cliente_idempotency" ON "fiscal_apuracoes_guias" USING btree ("cliente_id","idempotency_key") WHERE "fiscal_apuracoes_guias"."idempotency_key" IS NOT NULL;

@@ -45,6 +45,12 @@ No rollout, aplique a migration versionada com o fluxo Drizzle do ambiente e
 execute `pnpm db:seed:cfops` antes do reprocessamento. O seed é idempotente e
 inclui os CFOP de transporte e suas equivalências globais.
 
+O **CT-e de saída** escriturado (cliente emitente/prestador) é uma das operações
+sensíveis do inventário read-only de rollout (§13.1): antes de ativar correções,
+o inventário lista versões entregues, competências abertas e operações afetadas —
+incluindo CIAP, CT-e de saída, créditos de ICMS vedados e PIS/COFINS misto. Ver
+`fiscal-entrega-conciliacao-operacao.md`.
+
 ## Relatórios e endpoints
 
 Cliente autenticado:

@@ -1,0 +1,7 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    "Ruído de reformatação em guias.service.ts (não bloqueante): o diff mistura a única linha de comportamento (normalização de CPF no ramo PF) com reindentação de literais de objeto e `{}`→`{ }` em handlers de catch vazios. Cosmético, sem impacto comportamental; opcionalmente isolar em commit à parte no futuro."
+  ],
+  "reviewDoc": "/Users/pablo/dev/kontabb/api/.worktrees/sec-fix-baixas/.agents/tasks/security-fix-baixas-review.md"
+}

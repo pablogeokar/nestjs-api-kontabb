@@ -24,8 +24,16 @@ import { EscrituracaoFiscalService } from './services/escrituracao-fiscal.servic
 import { CiapService } from './services/ciap.service';
 import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
+import { FiscalEntregasService } from './services/fiscal-entregas.service';
+import { FiscalPeriodSelectionService } from './services/fiscal-period-selection.service';
+import { FiscalClosingService } from './services/fiscal-closing.service';
+import { FiscalBooksProjectionService } from './services/fiscal-books-projection.service';
+import { OnboardingMatrizService } from './services/onboarding-matriz.service';
+import { RolloutInventarioService } from './services/rollout-inventario.service';
+import { RolloutMetricasService } from './services/rollout-metricas.service';
 import { PisCofinsService } from './services/pis-cofins.service';
 import { RegrasFiscaisService } from './services/regras-fiscais.service';
+import { FiscalNormativeCatalogService } from './services/fiscal-normative-catalog.service';
 import {
   AdminFiscalApuracaoController,
   ClienteFiscalApuracaoController,
@@ -80,8 +88,16 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
+    FiscalEntregasService,
+    FiscalPeriodSelectionService,
+    FiscalClosingService,
+    FiscalBooksProjectionService,
+    OnboardingMatrizService,
+    RolloutInventarioService,
+    RolloutMetricasService,
     PisCofinsService,
     RegrasFiscaisService,
+    FiscalNormativeCatalogService,
   ],
   exports: [
     CertificadoService,
@@ -92,7 +108,15 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
+    FiscalEntregasService,
+    FiscalPeriodSelectionService,
+    FiscalClosingService,
+    FiscalBooksProjectionService,
+    OnboardingMatrizService,
+    RolloutInventarioService,
+    RolloutMetricasService,
     PisCofinsService,
+    FiscalNormativeCatalogService,
   ],
 })
 export class FiscalModule {}

@@ -1,0 +1,15 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "id": "FEAT-003-bearer-heuristic",
+      "severity": "info",
+      "confidence": "possible",
+      "title": "Bearer-intent heuristic treats any Authorization header as opt-in",
+      "detail": "In src/auth/auth.controller.ts#login, wantsResponseToken returns true for any present Authorization header (req.headers['authorization'] !== undefined), not a valid non-empty Bearer value. A browser that ever attaches a stale/empty Authorization header would receive the raw session token in the JSON body, partially reopening [MÉDIA] 7. The known web client (web/lib/auth-client.ts) sends no Authorization header on login and reads only data.user, so this does not reopen the finding in practice. Non-blocking. Optional hardening: require a non-empty Bearer value before echoing session.token.",
+      "file": "src/auth/auth.controller.ts"
+    }
+  ],
+  "reviewDoc": ".agents/tasks/task-security-fix-medias/2026-02-14-000000-review.md",
+  "summary": "All four MEDIUM findings correctly implemented. FEAT-001: CRON_SECRET required (>=32 chars) in production via env.validation.ts validate(); DTO stays optional for non-prod; cron controller timingSafeEqual check preserved. FEAT-002: helmet header hardening (frameguard deny, nosniff, prod-only HSTS; CSP and CORP intentionally off for CORS allowlist + inline DANFE PDF) and Swagger wrapped in non-production gate in main.ts. FEAT-003: login body session.token conditioned to Bearer-intent callers; httpOnly signed cookie preserved unchanged. FEAT-004: collaborator portal migrated to class-level ColaboradorAuthGuard (protected-by-default) + per-handler ColaboradorRequirePasswordChangedGuard; login/logout/session public; logo and trocar-senha authenticated but not password-gated; FEAT-003 tokenVersion revocation check preserved verbatim; revocation spec rewritten to test the guard directly (6 cases). Verification: npx tsc --noEmit = 22 errors all pre-existing fiscal-spec (base refatoracao also 22; zero new, none in changed files); pnpm build passes; pnpm test = 2 failures, both known meta-presence specs, 2044 pass including the 2 new specs (32 tests). Invariants intact: [MÉDIA] 8 untouched (setup.controller.ts and fixed password 123456 unchanged by deliberate design), app.module ThrottlerModule/APP_GUARD and prior usuarios/auth DTO + collaborator revocation fixes not undone. One non-blocking info finding on the permissive Authorization-header heuristic."
+}
