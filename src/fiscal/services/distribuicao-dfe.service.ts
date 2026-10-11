@@ -31,6 +31,7 @@ import {
   eventosFiscais,
   certificadosDigitais,
   clientes,
+  spedConfiguracoes,
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
 import { CfopService } from './cfop.service';
@@ -456,12 +457,20 @@ export class DistribuicaoDfeService {
         inscricaoEstadual: clientes.inscricaoEstadual,
         municipio: clientes.municipio,
         uf: clientes.uf,
+        regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
+        optanteSimplesNacional: clientes.optanteSimplesNacional,
+        obrigadoEfdIcmsIpi: sql<boolean>`coalesce(${spedConfiguracoes.obrigadoEfdIcmsIpi}, false)`,
         totalDocumentos: sql<number>`count(${documentosFiscais.id})`,
       })
       .from(clientes)
-      .innerJoin(
+      .leftJoin(
         documentosFiscais,
         eq(documentosFiscais.clienteId, clientes.id),
+      )
+      .leftJoin(
+        spedConfiguracoes,
+        eq(spedConfiguracoes.clienteId, clientes.id),
       )
       .groupBy(
         clientes.id,
@@ -470,6 +479,10 @@ export class DistribuicaoDfeService {
         clientes.inscricaoEstadual,
         clientes.municipio,
         clientes.uf,
+        clientes.regimeTributario,
+        clientes.apuraIcms,
+        clientes.optanteSimplesNacional,
+        spedConfiguracoes.obrigadoEfdIcmsIpi,
       )
       .orderBy(asc(clientes.razaoSocial));
 
@@ -480,6 +493,10 @@ export class DistribuicaoDfeService {
       inscricao_estadual: row.inscricaoEstadual,
       municipio: row.municipio,
       uf: row.uf,
+      regime_tributario: row.regimeTributario,
+      apura_icms: row.apuraIcms,
+      optante_simples_nacional: row.optanteSimplesNacional,
+      obrigado_efd_icms_ipi: row.obrigadoEfdIcmsIpi,
       total_documentos: Number(row.totalDocumentos),
     }));
   }

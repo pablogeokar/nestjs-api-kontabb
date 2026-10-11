@@ -326,9 +326,9 @@ export class AdminFiscalController {
 
   @Get('documentos/clientes')
   @ApiOperation({
-    summary: 'Listar clientes com documentos fiscais',
+    summary: 'Listar clientes disponíveis no módulo fiscal',
     description:
-      'Retorna as empresas que possuem documentos fiscais e o total de documentos de cada uma.',
+      'Retorna todas as empresas, inclusive sem documentos, com enquadramento e total de documentos.',
   })
   @ApiResponse({
     status: 200,

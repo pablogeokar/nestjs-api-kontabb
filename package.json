@@ -26,6 +26,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
     "db:seed:cfops": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/cfops.seed.ts",
+    "db:seed:simples": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/simples-nacional.seed.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

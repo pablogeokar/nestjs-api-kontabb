@@ -96,6 +96,10 @@ describe('DistribuicaoDfeService', () => {
         inscricaoEstadual: '123456789',
         municipio: 'Salvador',
         uf: 'BA',
+        regimeTributario: 'SIMPLES_NACIONAL',
+        apuraIcms: false,
+        optanteSimplesNacional: true,
+        obrigadoEfdIcmsIpi: false,
         totalDocumentos: '105',
       },
       {
@@ -105,12 +109,17 @@ describe('DistribuicaoDfeService', () => {
         inscricaoEstadual: null,
         municipio: null,
         uf: null,
+        regimeTributario: 'LUCRO_REAL',
+        apuraIcms: true,
+        optanteSimplesNacional: false,
+        obrigadoEfdIcmsIpi: true,
         totalDocumentos: '8',
       },
     ]);
     const groupBy = jest.fn().mockReturnValue({ orderBy });
-    const innerJoin = jest.fn().mockReturnValue({ groupBy });
-    const from = jest.fn().mockReturnValue({ innerJoin });
+    const secondLeftJoin = jest.fn().mockReturnValue({ groupBy });
+    const firstLeftJoin = jest.fn().mockReturnValue({ leftJoin: secondLeftJoin });
+    const from = jest.fn().mockReturnValue({ leftJoin: firstLeftJoin });
     const select = jest.fn().mockReturnValue({ from });
     const service = new DistribuicaoDfeService(
       { db: { select } } as never,
@@ -130,6 +139,10 @@ describe('DistribuicaoDfeService', () => {
         inscricao_estadual: '123456789',
         municipio: 'Salvador',
         uf: 'BA',
+        regime_tributario: 'SIMPLES_NACIONAL',
+        apura_icms: false,
+        optante_simples_nacional: true,
+        obrigado_efd_icms_ipi: false,
         total_documentos: 105,
       },
       {
@@ -139,11 +152,16 @@ describe('DistribuicaoDfeService', () => {
         inscricao_estadual: null,
         municipio: null,
         uf: null,
+        regime_tributario: 'LUCRO_REAL',
+        apura_icms: true,
+        optante_simples_nacional: false,
+        obrigado_efd_icms_ipi: true,
         total_documentos: 8,
       },
     ]);
     expect(select).toHaveBeenCalledTimes(1);
-    expect(innerJoin).toHaveBeenCalledTimes(1);
+    expect(firstLeftJoin).toHaveBeenCalledTimes(1);
+    expect(secondLeftJoin).toHaveBeenCalledTimes(1);
     expect(groupBy).toHaveBeenCalledTimes(1);
     expect(orderBy).toHaveBeenCalledTimes(1);
   });

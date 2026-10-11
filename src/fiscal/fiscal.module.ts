@@ -51,6 +51,12 @@ import { EfdIcmsIpiService } from './sped/efd-icms-ipi.service';
 import { SpedConfiguracaoService } from './sped/sped-configuracao.service';
 import { SpedApuracaoContextoService } from './sped/sped-apuracao-contexto.service';
 import { SpedInventarioService } from './sped/sped-inventario.service';
+import {
+  AdminSimplesNacionalController,
+  ClienteSimplesNacionalController,
+} from './controllers/simples-nacional.controller';
+import { SimplesCalculadorService } from './services/simples-calculador.service';
+import { SimplesNacionalService } from './services/simples-nacional.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -66,6 +72,8 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     ClienteFiscalApuracaoController,
     ClienteRegrasFiscaisController,
     AdminRegrasFiscaisController,
+    AdminSimplesNacionalController,
+    ClienteSimplesNacionalController,
   ],
   providers: [
     ClassificacaoDestinacaoService,
@@ -98,6 +106,8 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     PisCofinsService,
     RegrasFiscaisService,
     FiscalNormativeCatalogService,
+    SimplesCalculadorService,
+    SimplesNacionalService,
   ],
   exports: [
     CertificadoService,
@@ -117,6 +127,7 @@ import { SpedInventarioService } from './sped/sped-inventario.service';
     RolloutMetricasService,
     PisCofinsService,
     FiscalNormativeCatalogService,
+    SimplesNacionalService,
   ],
 })
 export class FiscalModule {}

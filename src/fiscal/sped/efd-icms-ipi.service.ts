@@ -74,6 +74,7 @@ import type {
   SpedPreparedGeneration,
   SpedPreview,
 } from './sped-efd.types';
+import { isSpedElegivel } from './sped-elegibilidade';
 
 type DatabaseExecutor =
   | DatabaseService['db']
@@ -349,6 +350,7 @@ export class EfdIcmsIpiService {
         municipio: clientes.municipio,
         uf: clientes.uf,
         regimeTributario: clientes.regimeTributario,
+        apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
         contadorId: clientes.contadorId,
         configuracaoId: spedConfiguracoes.id,
@@ -375,6 +377,16 @@ export class EfdIcmsIpiService {
       .limit(1);
     const companyRow = companyRows[0];
     if (!companyRow) throw new NotFoundException('Empresa não encontrada.');
+    if (
+      companyRow.regimeTributario === 'SIMPLES_NACIONAL' &&
+      !isSpedElegivel(companyRow)
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'ESTABELECIMENTO_DISPENSADO_SPED',
+        message:
+          'Empresa optante pelo Simples Nacional dispensada da escrituração EFD ICMS/IPI conforme LC 123/2006.',
+      });
+    }
     const contadorResolvido = await resolverContadorDoCliente(
       db,
       companyRow.contadorId,
