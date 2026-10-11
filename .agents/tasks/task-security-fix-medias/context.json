@@ -1,0 +1,32 @@
+{
+  "project_type": "NestJS 11 (TypeScript) REST API + Drizzle ORM + PostgreSQL, consumed by a Next.js front at /Users/pablo/dev/kontabb/web",
+  "language": "TypeScript",
+  "build_system": "nest build via pnpm; postinstall runs scripts/patch-cte-schema.js (patches @nfewizard/shared) — expect patch log noise on install",
+  "test_framework": "Jest (ts-jest). Config in package.json: rootDir=src, testRegex=.*\\.spec\\.ts$. NOT vitest.",
+  "build_command": "pnpm build",
+  "test_command": "pnpm test   (scope a dir with e.g. `pnpm test src/colaborador`)",
+  "verification_instructions": "1) `pnpm exec tsc --noEmit` — BASELINE is 23 pre-existing errors, ALL in src/fiscal/controllers/fiscal-apuracao.controller.spec.ts (1) and src/fiscal/services/fiscal-entregas.service.spec.ts (22), all TS2554. Your changes must add NO new errors outside those two files. 2) `pnpm build` must succeed. 3) `pnpm test` — 2 meta-presence tests fail at baseline; add no NEW failures. 4) If helmet is installed, run `pnpm audit --prod` and record output (no new critical/high introduced by helmet).",
+  "snapshot_or_generated_files": "none relevant to this task",
+  "environment_constraints": "Worktree ABSOLUTE path: /Users/pablo/dev/kontabb/api/.worktrees/sec-fix-medias (branch security/fix-medias). ALWAYS use absolute paths — relative paths resolve into the parent workspace /Users/pablo/dev/kontabb. Git ops: `git -C /Users/pablo/dev/kontabb/api/.worktrees/sec-fix-medias`. pnpm at /opt/homebrew/bin/pnpm. Commit locally; NEVER push.",
+  "contribution_requirements": "Follow existing conventions: class-based CanActivate guards + SetMetadata decorators + Reflector (see src/auth/auth.guard.ts, roles.decorator.ts, require-password-changed.guard.ts, current-user.decorator.ts). env.validation.ts uses function-level conditional checks inside validate(), not per-field conditional decorators. Preserve timing-safe comparisons and httpOnly cookie behavior.",
+  "key_patterns": "AuthGuard reads roles via Reflector.getAllAndOverride(KEY,[getHandler(),getClass()]) and attaches request.user; @ColaboradorPublic should mirror @Roles via SetMetadata; RequirePasswordChangedGuard runs AFTER the auth guard and reads the attached payload. Collaborator revocation (FEAT-003, already in base) lives in ColaboradorService.getRevocationState/logout and the controller's async requireAuth checks null/!ativo/tokenVersion-mismatch — PRESERVE this.",
+  "do_not_touch": "finding [MÉDIA] 8 is OUT OF SCOPE: do NOT modify src/health/setup.controller.ts, do NOT change the fixed initial password '123456' (intentional first-login-forced-change flow), do NOT touch its hardcoded PII. Do NOT undo prior fixes: global ThrottlerModule/APP_GUARD in app.module.ts, class-validator DTOs in usuarios/auth, collaborator tokenVersion revocation.",
+  "relevant_files": [
+    "src/colaborador/colaborador.controller.ts (modify — migrate manual auth to guards)",
+    "src/colaborador/colaborador.module.ts (modify — register new guards)",
+    "src/colaborador/colaborador-session.service.ts (study — extractFromRequest, ColaboradorTokenPayload)",
+    "src/colaborador/colaborador.service.ts (study — getRevocationState/logout)",
+    "src/colaborador/colaborador-revocation.spec.ts (MUST rewrite to test the guard)",
+    "src/auth/auth.guard.ts (pattern to follow)",
+    "src/auth/roles.decorator.ts (SetMetadata pattern)",
+    "src/auth/require-password-changed.guard.ts (pattern to follow)",
+    "src/auth/current-user.decorator.ts (param decorator pattern)",
+    "src/auth/auth.controller.ts (modify — login body token)",
+    "src/auth/session-token.service.ts (study — Bearer vs cookie extraction)",
+    "src/config/env.validation.ts (modify — CRON_SECRET prod-required)",
+    "src/cron/cron.controller.ts (optional — warn on CRON_NOT_CONFIGURED)",
+    "src/main.ts (modify — helmet + Swagger env gate)",
+    "package.json (modify — add helmet)"
+  ],
+  "directory_structure": "src/auth: session auth guards/decorators/services (the canonical guard pattern). src/colaborador: standalone collaborator portal with its own HMAC session service and manual auth. src/config/env.validation.ts: class-validator env schema + validate() with cross-field checks. src/cron: cron endpoints guarded by CRON_SECRET bearer. src/main.ts: bootstrap (CORS, cookie-parser, ValidationPipe, Swagger). Web front at /Users/pablo/dev/kontabb/web/lib/auth-client.ts consumes POST /api/auth/login via httpOnly cookie only."
+}
