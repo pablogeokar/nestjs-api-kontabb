@@ -23,6 +23,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { UsuariosService } from './usuarios.service';
+import {
+  ChangePasswordDto,
+  CreateUsuarioDto,
+  UpdateUsuarioDto,
+} from './usuarios.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { AdminOnly } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -42,7 +47,7 @@ export class UsuariosController {
   constructor(
     private readonly usuariosService: UsuariosService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   @Get()
   @ApiOperation({
@@ -101,35 +106,14 @@ export class UsuariosController {
     description:
       'Cria um novo usuário (ADMIN ou COLABORADOR) com e-mail e senha.',
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['name', 'email', 'password'],
-      properties: {
-        name: { type: 'string', description: 'Nome completo' },
-        email: {
-          type: 'string',
-          format: 'email',
-          description: 'E-mail do usuário',
-        },
-        password: { type: 'string', description: 'Senha' },
-        role: {
-          type: 'string',
-          enum: ['ADMIN', 'COLABORADOR'],
-          default: 'COLABORADOR',
-          description: 'Role do usuário',
-        },
-      },
-    },
-  })
+  @ApiBody({ type: CreateUsuarioDto })
   @ApiResponse({ status: 201, description: 'Usuário criado com sucesso.' })
   @ApiResponse({
     status: 400,
     description: 'E-mail já cadastrado ou dados inválidos.',
   })
   async create(
-    @Body()
-    body: { name: string; email: string; password: string; role?: string },
+    @Body() body: CreateUsuarioDto,
     @CurrentUser() currentUser: CurrentUserType,
   ) {
     const requestId = this.logger.generateRequestId();
@@ -151,6 +135,8 @@ export class UsuariosController {
     if (!result.ok) {
       if (result.code === 'DUPLICATE')
         throw new BadRequestException('Email já cadastrado.');
+      if (result.code === 'INVALID_ROLE')
+        throw new BadRequestException('Role inválida.');
       throw new BadRequestException('Erro ao criar usuário.');
     }
 
@@ -164,15 +150,7 @@ export class UsuariosController {
       'Atualiza nome e/ou role de um usuário. Não é possível alterar o próprio perfil por esta rota.',
   })
   @ApiParam({ name: 'id', type: String, description: 'ID do usuário' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        role: { type: 'string', enum: ['ADMIN', 'COLABORADOR'] },
-      },
-    },
-  })
+  @ApiBody({ type: UpdateUsuarioDto })
   @ApiResponse({ status: 200, description: 'Usuário atualizado.' })
   @ApiResponse({
     status: 400,
@@ -181,7 +159,7 @@ export class UsuariosController {
   @ApiResponse({ status: 404, description: 'Usuário não encontrado.' })
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; role?: string },
+    @Body() body: UpdateUsuarioDto,
     @CurrentUser() currentUser: CurrentUserType,
   ) {
     if (id === currentUser.id) {
@@ -234,18 +212,12 @@ export class UsuariosController {
     description: 'Redefine a senha de um usuário do sistema.',
   })
   @ApiParam({ name: 'id', type: String, description: 'ID do usuário' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['password'],
-      properties: { password: { type: 'string', description: 'Nova senha' } },
-    },
-  })
+  @ApiBody({ type: ChangePasswordDto })
   @ApiResponse({ status: 200, description: 'Senha atualizada com sucesso.' })
   @ApiResponse({ status: 404, description: 'Usuário não encontrado.' })
   async changePassword(
     @Param('id') id: string,
-    @Body() body: { password: string },
+    @Body() body: ChangePasswordDto,
     @CurrentUser() currentUser: CurrentUserType,
   ) {
     const updated = await this.usuariosService.changePassword({

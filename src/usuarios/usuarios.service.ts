@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import { user } from '../database/schema';
@@ -6,6 +6,11 @@ import { AuthService } from '../auth/auth.service';
 import { AppLogger } from '../common/logger.service';
 import { resultRows } from '../common/db-result';
 import type { PaginationParams } from '../common/types';
+import { ROLES_SISTEMA } from './usuarios.dto';
+
+function isRoleSistema(role: string): boolean {
+  return (ROLES_SISTEMA as readonly string[]).includes(role);
+}
 
 @Injectable()
 export class UsuariosService {
@@ -13,7 +18,7 @@ export class UsuariosService {
     private readonly database: DatabaseService,
     private readonly authService: AuthService,
     private readonly logger: AppLogger,
-  ) {}
+  ) { }
 
   async listSystemUsers(input: {
     role: string;
@@ -75,6 +80,10 @@ export class UsuariosService {
     password: string;
     role: string;
   }) {
+    if (!isRoleSistema(input.role)) {
+      return { ok: false as const, code: 'INVALID_ROLE' };
+    }
+
     const hashedPassword = await this.authService.hashPassword(input.password);
     const userId = crypto.randomUUID();
 
@@ -119,6 +128,10 @@ export class UsuariosService {
     name?: string;
     role?: string;
   }) {
+    if (input.role !== undefined && !isRoleSistema(input.role)) {
+      throw new BadRequestException('Role inválida.');
+    }
+
     const result = await this.database.db.execute(sql`
       WITH updated_user AS (
         UPDATE "user" SET

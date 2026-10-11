@@ -22,6 +22,7 @@ import {
 import { createHmac, randomBytes } from 'crypto';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { ChangePasswordDto, LoginDto } from './auth.dto';
 import { AuthGuard } from './auth.guard';
 import { SessionTokenService } from './session-token.service';
 import { CurrentUser } from './current-user.decorator';
@@ -59,25 +60,12 @@ export class AuthController {
     description:
       'Autentica o usuário com e-mail e senha. Retorna dados da sessão e define cookie de sessão.',
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['email', 'password'],
-      properties: {
-        email: {
-          type: 'string',
-          description:
-            'E-mail do usuário (ou identificador@kontabb.local para clientes)',
-        },
-        password: { type: 'string', description: 'Senha' },
-      },
-    },
-  })
+  @ApiBody({ type: LoginDto })
   @ApiResponse({ status: 200, description: 'Login realizado com sucesso.' })
   @ApiResponse({ status: 401, description: 'Credenciais inválidas.' })
   @ApiResponse({ status: 429, description: 'Rate limit excedido.' })
   async login(
-    @Body() body: { email: string; password: string },
+    @Body() body: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -220,19 +208,7 @@ export class AuthController {
     description:
       'Altera a senha do usuário autenticado. Requer senha atual para confirmação.',
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['currentPassword', 'newPassword'],
-      properties: {
-        currentPassword: { type: 'string', description: 'Senha atual' },
-        newPassword: {
-          type: 'string',
-          description: 'Nova senha (mín 6 caracteres)',
-        },
-      },
-    },
-  })
+  @ApiBody({ type: ChangePasswordDto })
   @ApiResponse({ status: 200, description: 'Senha alterada com sucesso.' })
   @ApiResponse({
     status: 400,
@@ -241,7 +217,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Não autorizado.' })
   @ApiResponse({ status: 429, description: 'Rate limit excedido.' })
   async changePassword(
-    @Body() body: { currentPassword: string; newPassword: string },
+    @Body() body: ChangePasswordDto,
     @CurrentUser() currentUser: CurrentUserType,
   ) {
     if (!body.currentPassword || !body.newPassword) {
