@@ -57,6 +57,7 @@ import {
 } from './controllers/simples-nacional.controller';
 import { SimplesCalculadorService } from './services/simples-calculador.service';
 import { SimplesNacionalService } from './services/simples-nacional.service';
+import { SimplesNacionalRelatorioService } from './services/simples-nacional-relatorio.service';
 import { ImportacaoChavesFiscalService } from './services/importacao-chaves-fiscal.service';
 import { FiscalIssLivroService } from './services/fiscal-iss-livro.service';
 
@@ -111,6 +112,7 @@ import { FiscalIssLivroService } from './services/fiscal-iss-livro.service';
     FiscalNormativeCatalogService,
     SimplesCalculadorService,
     SimplesNacionalService,
+    SimplesNacionalRelatorioService,
     FiscalIssLivroService,
   ],
   exports: [
