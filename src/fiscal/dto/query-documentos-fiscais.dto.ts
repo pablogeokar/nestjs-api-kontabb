@@ -29,10 +29,10 @@ export class QueryDocumentosFiscaisDto {
 
   @ApiPropertyOptional({
     description: 'Filtrar por tipo de documento',
-    enum: ['NFE', 'CTE', 'NFCE'],
+    enum: ['NFE', 'CTE', 'NFCE', 'NFSE'],
   })
   @IsOptional()
-  @IsIn(['NFE', 'CTE', 'NFCE'])
+  @IsIn(['NFE', 'CTE', 'NFCE', 'NFSE'])
   tipoDocumento?: string;
 
   @ApiPropertyOptional({

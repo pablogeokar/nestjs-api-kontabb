@@ -47,6 +47,44 @@ interface ImportTarget {
   apuraIcms?: boolean;
 }
 
+export function prepararNfseEscrituracao(
+  target: Pick<ImportTarget, 'cnpj'>,
+  documento: ParsedDocumentoFiscal,
+) {
+  const targetTaxId = normalizeTaxId(target.cnpj);
+  const prestadorTaxId = normalizeTaxId(documento.emitenteCnpjCpf);
+  const tipoOperacaoEscriturada =
+    targetTaxId === prestadorTaxId ? ('SAIDA' as const) : ('ENTRADA' as const);
+  const prestadorUf = documento.emitente.uf.toUpperCase();
+  const tomadorUf = documento.destinatario?.uf.toUpperCase() ?? '';
+  const interestadual = Boolean(
+    prestadorUf && tomadorUf && prestadorUf !== tomadorUf,
+  );
+  const cfop =
+    tipoOperacaoEscriturada === 'SAIDA'
+      ? interestadual
+        ? '6933'
+        : '5933'
+      : interestadual
+        ? '2933'
+        : '1933';
+
+  return {
+    tipoOperacaoEscriturada,
+    revisoes: [] as CfopItemRevisao[],
+    itens: documento.itens.map((item) => ({
+      ...item,
+      cfopXml: cfop,
+      cfop,
+      tipoOperacaoEscriturada,
+      cfopRevisaoNecessaria: false,
+      cfopOrigemResolucao: 'NFSE_ABRASF',
+      cfopMotivoResolucao:
+        'CFOP contábil de serviço sujeito exclusivamente ao ISSQN.',
+    })),
+  };
+}
+
 interface TargetResult {
   cliente_id: string;
   razao_social: string;
@@ -394,14 +432,16 @@ export class ImportacaoXmlFiscalService {
             itens: [],
             revisoes: [] as CfopItemRevisao[],
           }
-        : await this.cfopService.prepararItensEscrituracao({
-            clienteId: target.id,
-            clienteCnpjCpf: target.cnpj,
-            emitenteCnpjCpf: documento.emitenteCnpjCpf,
-            emitenteUf: documento.emitente.uf || null,
-            tpNfXml: documento.tpNfXml,
-            itens: documento.itens,
-          });
+        : documento.tipoDocumento === 'NFSE'
+          ? prepararNfseEscrituracao(target, documento)
+          : await this.cfopService.prepararItensEscrituracao({
+              clienteId: target.id,
+              clienteCnpjCpf: target.cnpj,
+              emitenteCnpjCpf: documento.emitenteCnpjCpf,
+              emitenteUf: documento.emitente.uf || null,
+              tpNfXml: documento.tpNfXml,
+              itens: documento.itens,
+            });
     const spedMetadata = buildDocumentoFiscalSpedMetadata(documento);
     const nfePendenteRevisao =
       documento.tipoDocumento !== 'CTE' &&
@@ -471,6 +511,14 @@ export class ImportacaoXmlFiscalService {
       dataEmissao: documento.dataEmissao,
       valorTotal: documento.valorTotal,
       ...spedMetadata,
+      codigoVerificacao: documento.nfseDados?.codigoVerificacao ?? null,
+      competenciaDeclarada: documento.nfseDados?.competencia ?? null,
+      municipioIncidencia: documento.nfseDados?.municipioIncidencia ?? null,
+      regimeEspecialTributacao:
+        documento.nfseDados?.regimeEspecialTributacao ?? null,
+      optanteSimplesNacionalXml:
+        documento.nfseDados?.optanteSimplesNacional ?? null,
+      nfseDados: documento.nfseDados ? { ...documento.nfseDados } : null,
       situacao: documento.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: documento.tpNfXml,
@@ -515,17 +563,23 @@ export class ImportacaoXmlFiscalService {
           // ESCOPO DO FECHAMENTO (cliente/obrigação/competência) — o mesmo da
           // geração/fechamento EFD — para serializar contra apuração, baixa de
           // bem e a própria geração do SPED daquela competência.
-          await this.closing.withEscopoLock(tx, escopoFechamento, async () => {
-            // R1.3/R1.4: documento importado numa competência já FECHADA não
-            // altera a entrega congelada; abre (ou reutiliza) uma versão de
-            // revisão RASCUNHO carregando os snapshots da corrente fechada
-            // adiante (tarefa 3.5). A persistência do documento prossegue; a
-            // entrega fechada permanece imutável até a revisão ser aprovada.
-            await this.closing.sinalizarRevisaoPosFechamento(
+          if (documento.tipoDocumento !== 'NFSE') {
+            await this.closing.withEscopoLock(
               tx,
               escopoFechamento,
+              async () => {
+                // R1.3/R1.4: documento importado numa competência já FECHADA não
+                // altera a entrega congelada; abre (ou reutiliza) uma versão de
+                // revisão RASCUNHO carregando os snapshots da corrente fechada
+                // adiante (tarefa 3.5). A persistência do documento prossegue; a
+                // entrega fechada permanece imutável até a revisão ser aprovada.
+                await this.closing.sinalizarRevisaoPosFechamento(
+                  tx,
+                  escopoFechamento,
+                );
+              },
             );
-          });
+          }
           if (existing) {
             persisted = await tx
               .update(documentosFiscais)
@@ -830,3 +884,7 @@ export class ImportacaoXmlFiscalService {
 
 type CteEscrituracaoPreparadaStatus =
   'ESCRITURADO' | 'NAO_ESCRITURAVEL' | 'PENDENTE_REVISAO';
+
+function normalizeTaxId(value: string) {
+  return value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}

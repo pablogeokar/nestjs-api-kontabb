@@ -64,6 +64,8 @@ import { AnalisarListagemChavesDto } from '../dto/analisar-listagem-chaves.dto';
 import { ExecutarImportacaoChavesDto } from '../dto/executar-importacao-chaves.dto';
 import { ImportacaoChavesFiscalService } from '../services/importacao-chaves-fiscal.service';
 import { getRequestId, type RequestWithId } from '../../common/request-id';
+import { LivroIssQueryDto } from '../dto/livro-iss.dto';
+import { FiscalIssLivroService } from '../services/fiscal-iss-livro.service';
 
 @ApiTags('Fiscal (Cliente)')
 @ApiBearerAuth('session-token')
@@ -83,6 +85,7 @@ export class ClienteFiscalController {
     private readonly fiscalItensService: FiscalItensService,
     private readonly fiscalCteService: FiscalCteService,
     private readonly importacaoChavesService: ImportacaoChavesFiscalService,
+    private readonly fiscalIssLivroService: FiscalIssLivroService,
   ) {}
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
@@ -203,7 +206,7 @@ export class ClienteFiscalController {
   @ApiOperation({
     summary: 'Importar XMLs fiscais manualmente',
     description:
-      'Identifica e importa até 20 XMLs processados de NF-e, NFC-e e CT-e pertencentes à empresa logada. Eventos, resumos e modelos fora do escopo são ignorados.',
+      'Identifica e importa até 20 XMLs processados de NF-e, NFC-e, CT-e e NFS-e WebISS/ABRASF pertencentes à empresa logada. Eventos, resumos e modelos fora do escopo são ignorados.',
   })
   @ApiBody({
     schema: {
@@ -601,6 +604,47 @@ export class ClienteFiscalController {
       parcial: true,
       observacao: RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
     };
+  }
+
+  @Get('relatorios/livros-iss')
+  @ApiOperation({
+    summary: 'Livro de serviços prestados e tomados e apuração do ISS',
+  })
+  async getLivroIss(
+    @Query() query: LivroIssQueryDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    return {
+      data: await this.fiscalIssLivroService.obter({
+        clienteId: cliente.id,
+        competencia: query.competencia,
+        tipoOperacao: query.tipoOperacao,
+      }),
+    };
+  }
+
+  @Get('relatorios/livros-iss/pdf')
+  @ApiOperation({ summary: 'Exporta o Livro de ISS em PDF' })
+  async getLivroIssPdf(
+    @Query() query: LivroIssQueryDto,
+    @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const buffer = await this.fiscalIssLivroService.gerarPdf({
+      clienteId: cliente.id,
+      competencia: query.competencia,
+      tipoOperacao: query.tipoOperacao,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="livro-iss-${query.competencia}.pdf"`,
+    );
+    res.send(buffer);
   }
 
   @Get('relatorios/apuracao-icms')

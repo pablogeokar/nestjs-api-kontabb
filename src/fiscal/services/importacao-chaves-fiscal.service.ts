@@ -27,6 +27,7 @@ import {
   type ParsedFiscalAccessKey,
 } from './listagem-chaves.parser';
 import { NfeWizardService } from './nfewizard.service';
+import { CertificateAccessError } from './certificado.service';
 
 const MAX_KEYS = 500;
 const MIN_SEFAZ_INTERVAL_MS = 1_200;
@@ -47,7 +48,8 @@ export type ImportacaoChaveStatus =
   | 'NAO_SUPORTADO'
   | 'INVALIDA'
   | 'FALHA'
-  | 'ABORTADO_CONSUMO_INDEVIDO';
+  | 'ABORTADO_CONSUMO_INDEVIDO'
+  | 'ABORTADO_CERTIFICADO_INDISPONIVEL';
 
 export interface ImportacaoChaveItem {
   chave_acesso: string;
@@ -173,8 +175,19 @@ export class ImportacaoChavesFiscalService {
     );
     const resultados: ImportacaoChaveItem[] = [];
     let consumoIndevido = false;
+    let certificadoIndisponivel = false;
 
     for (const item of parsed.itens) {
+      if (certificadoIndisponivel) {
+        resultados.push(
+          this.result(
+            item,
+            'ABORTADO_CERTIFICADO_INDISPONIVEL',
+            'Lote interrompido: o certificado digital não pôde ser utilizado.',
+          ),
+        );
+        continue;
+      }
       if (consumoIndevido) {
         resultados.push(
           this.result(
@@ -375,6 +388,26 @@ export class ImportacaoChavesFiscalService {
           ),
         );
       } catch (error: unknown) {
+        const certError = this.findCertificateAccessError(error);
+        if (certError) {
+          certificadoIndisponivel = true;
+          const mensagem =
+            certError.code === 'CERTIFICATE_OBJECT_NOT_FOUND' ||
+            certError.code === 'CERTIFICATE_STORAGE_UNAVAILABLE'
+              ? 'O certificado está cadastrado, mas o arquivo não pôde ser lido do armazenamento. Verifique a configuração de storage ou contate o suporte.'
+              : 'O arquivo do certificado está corrompido ou a senha foi alterada. Reenvie o certificado digital A1.';
+          this.logger.error('fiscal_key_import_item_failed', error, {
+            requestId: input.requestId,
+            userId: input.actorUserId,
+            entityId: input.clienteId,
+            operation: 'importar_dfe_por_chave',
+            result: 'CERTIFICATE_UNAVAILABLE',
+          });
+          resultados.push(
+            this.result(item, 'ABORTADO_CERTIFICADO_INDISPONIVEL', mensagem),
+          );
+          continue;
+        }
         const message = this.rootCause(error);
         if (/consumo indevido|\b656\b/i.test(message)) consumoIndevido = true;
         this.logger.error('fiscal_key_import_item_failed', error, {
@@ -550,8 +583,13 @@ export class ImportacaoChavesFiscalService {
       nao_localizados: count('NAO_LOCALIZADO'),
       nao_suportados: count('NAO_SUPORTADO'),
       invalidas: count('INVALIDA'),
-      falhas: count('FALHA', 'ABORTADO_CONSUMO_INDEVIDO'),
+      falhas: count(
+        'FALHA',
+        'ABORTADO_CONSUMO_INDEVIDO',
+        'ABORTADO_CERTIFICADO_INDISPONIVEL',
+      ),
       consumo_indevido: count('ABORTADO_CONSUMO_INDEVIDO') > 0,
+      certificado_indisponivel: count('ABORTADO_CERTIFICADO_INDISPONIVEL') > 0,
     };
   }
 
@@ -643,5 +681,18 @@ export class ImportacaoChavesFiscalService {
       current = candidate.cause;
     }
     return message;
+  }
+
+  private findCertificateAccessError(
+    error: unknown,
+  ): CertificateAccessError | null {
+    let current: unknown = error;
+    const seen = new Set<unknown>();
+    while (current && typeof current === 'object' && !seen.has(current)) {
+      seen.add(current);
+      if (current instanceof CertificateAccessError) return current;
+      current = (current as { cause?: unknown }).cause;
+    }
+    return null;
   }
 }

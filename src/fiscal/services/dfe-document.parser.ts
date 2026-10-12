@@ -16,6 +16,7 @@ import {
   parseCteEscrituracaoXml,
   type CteEscrituracaoParseData,
 } from './dacte.parser';
+import { parseNfseWebissXml, type ParsedNfseDados } from './nfse-webiss.parser';
 
 export type TipoConsultaDfe = 'NFE' | 'CTE';
 
@@ -115,8 +116,8 @@ export interface ParsedDocumentoReferenciado {
 export interface ParsedDocumentoFiscal {
   chaveAcesso: string;
   nsu: number;
-  tipoDocumento: 'NFE' | 'CTE' | 'NFCE';
-  modelo: '55' | '57' | '65';
+  tipoDocumento: 'NFE' | 'CTE' | 'NFCE' | 'NFSE';
+  modelo: '55' | '57' | '65' | 'NFSE';
   serie: string;
   numeroDocumento: string;
   emitenteCnpjCpf: string;
@@ -143,6 +144,7 @@ export interface ParsedDocumentoFiscal {
   documentosReferenciados: ParsedDocumentoReferenciado[];
   integridade: RelatorioIntegridadeDocumentoFiscal;
   cteEscrituracao: CteEscrituracaoParseData | null;
+  nfseDados: ParsedNfseDados | null;
   xmlContent: string;
 }
 
@@ -339,6 +341,21 @@ export function parseManualFiscalXml(xml: string): ManualFiscalXmlParseResult {
     };
   }
 
+  if (
+    hasElement(normalized, 'CompNfse') ||
+    hasElement(normalized, 'Nfse') ||
+    hasElement(normalized, 'InfNfse')
+  ) {
+    const documento = parseNfseWebissXml(normalized);
+    return documento
+      ? { status: 'DOCUMENTO', documento }
+      : {
+          status: 'INVALIDO',
+          motivo:
+            'A NFS-e WebISS/ABRASF possui estrutura, participantes, valores ou identificador inválidos.',
+        };
+  }
+
   if (hasElement(normalized, 'nfeProc')) {
     const documento = parseFiscalXml(normalized, 0, 'NFE');
     return documento
@@ -373,7 +390,7 @@ export function parseManualFiscalXml(xml: string): ManualFiscalXmlParseResult {
   return {
     status: 'IGNORADO',
     motivo:
-      'XML descartado por não ser um documento processado de NF-e, NFC-e ou CT-e.',
+      'XML descartado por não ser um documento processado de NF-e, NFC-e, CT-e ou uma NFS-e WebISS/ABRASF.',
   };
 }
 
@@ -645,6 +662,7 @@ function parseFiscalXml(
         ? parseDocumentosReferenciados(infElement.content)
         : [],
     cteEscrituracao,
+    nfseDados: null,
     xmlContent: xml,
   };
   return {
