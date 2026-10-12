@@ -574,9 +574,13 @@ export class DistribuicaoDfeService {
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [countResult, rows] = await Promise.all([
+    const [summaryResult, rows] = await Promise.all([
       this.database.db
-        .select({ count: sql<number>`count(*)` })
+        .select({
+          count: sql<number>`count(*)`,
+          valorTotal: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}), 0)::text`,
+          valorTotalAutorizado: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}) filter (where ${documentosFiscais.situacao} = 'AUTORIZADA'), 0)::text`,
+        })
         .from(documentosFiscais)
         .where(where),
       this.database.db
@@ -677,7 +681,17 @@ export class DistribuicaoDfeService {
       criado_em: row.criadoEm.toISOString(),
     }));
 
-    return { total: Number(countResult[0]?.count ?? 0), data };
+    const total = Number(summaryResult[0]?.count ?? 0);
+    return {
+      total,
+      resumo: {
+        quantidade_documentos: total,
+        valor_total: summaryResult[0]?.valorTotal ?? '0.00',
+        valor_total_autorizado:
+          summaryResult[0]?.valorTotalAutorizado ?? '0.00',
+      },
+      data,
+    };
   }
 
   /**

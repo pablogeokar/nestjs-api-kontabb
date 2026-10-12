@@ -18,7 +18,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { GuiasService } from '../guias/guias.service';
+import {
+  GuiasService,
+  type ResultadoVinculoGuiaUpload,
+} from '../guias/guias.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StaffOnly } from '../auth/roles.decorator';
@@ -42,6 +45,7 @@ interface FileResult {
   type?: string;
   valor?: string;
   parcela?: string;
+  vinculoApuracao?: ResultadoVinculoGuiaUpload;
 }
 
 function vencimentoToIso(v: string): string {
@@ -415,15 +419,24 @@ export class UploadController {
       };
     }
 
+    const mensagem =
+      upload.vinculo.status === 'VINCULADO'
+        ? 'Guia processada e vinculada automaticamente à apuração do Simples Nacional.'
+        : upload.vinculo.status === 'DIVERGENTE' ||
+            upload.vinculo.status === 'PENDENTE_CONFIRMACAO'
+          ? 'Guia processada, mas o vínculo com a apuração requer conferência.'
+          : 'Guia processada com sucesso.';
+
     return {
       fileName: file.originalname,
       success: true,
-      message: 'Guia processada com sucesso.',
+      message: mensagem,
       cnpj: client.cnpj,
       period: finalPeriod,
       type: tipo,
       valor: dados?.valor ?? undefined,
       parcela: parcela ?? undefined,
+      vinculoApuracao: upload.vinculo,
     };
   }
 }

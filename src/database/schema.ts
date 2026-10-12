@@ -2529,6 +2529,20 @@ export const fiscalApuracoesGuias = pgTable(
       .default('PENDENTE'),
     arquivoGuiaKey: text('arquivo_guia_key'),
 
+    // PDF oficial enviado pela Central de Upload. A FK torna a conciliação
+    // persistente e evita que a Central dependa de semelhança recalculada a
+    // cada leitura. Uma guia de upload só pode comprovar uma obrigação fiscal.
+    guiaUploadId: uuid('guia_upload_id').references(() => guias.id, {
+      onDelete: 'restrict',
+    }),
+    guiaUploadVinculadaEm: timestamp('guia_upload_vinculada_em', {
+      withTimezone: true,
+    }),
+    guiaUploadDiferenca: numeric('guia_upload_diferenca', {
+      precision: 15,
+      scale: 2,
+    }),
+
     // R1.1 (Fase 5, tarefa 1.2): separa os quatro conceitos — obrigação
     // calculada, guia emitida, pagamento e conciliação. Esta linha é a GUIA
     // EMITIDA; o PAGAMENTO vive em `fiscal_pagamentos_eventos` (nunca mais um
@@ -2613,6 +2627,9 @@ export const fiscalApuracoesGuias = pgTable(
     index('idx_fiscal_guias_status').on(table.statusPagamento),
     // Conciliação guia ↔ versão de apuração: projeção por fechamento (R1.7).
     index('idx_fiscal_guias_fechamento').on(table.fechamentoId),
+    uniqueIndex('uidx_fiscal_guias_guia_upload')
+      .on(table.guiaUploadId)
+      .where(sql`${table.guiaUploadId} IS NOT NULL`),
     check(
       'chk_fiscal_guias_tributo',
       sql`${table.tributo} IN ('ICMS_PROPRIO', 'ICMS_ST', 'DIFAL_ENTRADA', 'DIFAL_SAIDA', 'FCP', 'IPI', 'PIS', 'COFINS', 'DAS_SIMPLES')`,
@@ -2660,6 +2677,10 @@ export const fiscalApuracoesGuias = pgTable(
     check(
       'chk_fiscal_guias_emissao_orgao',
       sql`${table.emitidaOrgao} = false OR ${table.emitidaOrgaoEm} IS NOT NULL`,
+    ),
+    check(
+      'chk_fiscal_guias_upload_vinculo',
+      sql`(${table.guiaUploadId} IS NULL AND ${table.guiaUploadVinculadaEm} IS NULL AND ${table.guiaUploadDiferenca} IS NULL) OR (${table.guiaUploadId} IS NOT NULL AND ${table.guiaUploadVinculadaEm} IS NOT NULL AND ${table.guiaUploadDiferenca} IS NOT NULL)`,
     ),
     // R1.6 (tarefa 1.6): deduplicação por CHAVE DE IDEMPOTÊNCIA escopada por
     // cliente, como índice PARCIAL (só vale quando há chave). Dois efeitos:

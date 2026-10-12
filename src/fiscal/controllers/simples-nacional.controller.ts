@@ -8,8 +8,10 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
@@ -25,6 +27,7 @@ import {
   SalvarSimplesTabelaDto,
 } from '../dto/simples-nacional.dto';
 import { SimplesNacionalService } from '../services/simples-nacional.service';
+import { SimplesNacionalRelatorioService } from '../services/simples-nacional-relatorio.service';
 
 @ApiTags('Fiscal — Simples Nacional (Cliente)')
 @ApiBearerAuth('session-token')
@@ -33,6 +36,7 @@ import { SimplesNacionalService } from '../services/simples-nacional.service';
 export class ClienteSimplesNacionalController {
   constructor(
     private readonly service: SimplesNacionalService,
+    private readonly relatorioService: SimplesNacionalRelatorioService,
     private readonly clientesService: ClientesService,
   ) {}
 
@@ -53,6 +57,22 @@ export class ClienteSimplesNacionalController {
     return {
       data: await this.service.obterApuracao(cliente.id, query.competencia),
     };
+  }
+
+  @Get('apuracao/pdf')
+  @ApiOperation({ summary: 'Exporta a memória de cálculo do DAS em PDF' })
+  async gerarRelatorioApuracao(
+    @Query() query: CompetenciaSimplesDto,
+    @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const buffer = await this.relatorioService.gerarPdf({
+      clienteId: cliente.id,
+      competencia: query.competencia,
+    });
+    sendPdf(res, buffer, query.competencia);
   }
 
   @Get('elegibilidade')
@@ -78,7 +98,10 @@ export class ClienteSimplesNacionalController {
 @UseGuards(AuthGuard)
 @StaffOnly()
 export class AdminSimplesNacionalController {
-  constructor(private readonly service: SimplesNacionalService) {}
+  constructor(
+    private readonly service: SimplesNacionalService,
+    private readonly relatorioService: SimplesNacionalRelatorioService,
+  ) {}
 
   @Get('tabelas')
   @AdminOnly()
@@ -140,6 +163,19 @@ export class AdminSimplesNacionalController {
     };
   }
 
+  @Get('apuracao/pdf')
+  @ApiOperation({ summary: 'Exporta a memória de cálculo do DAS em PDF' })
+  async gerarRelatorioApuracao(
+    @Query() query: AdminCompetenciaSimplesDto,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.relatorioService.gerarPdf({
+      clienteId: query.clienteId,
+      competencia: query.competencia,
+    });
+    sendPdf(res, buffer, query.competencia);
+  }
+
   @Post('apurar')
   @ApiOperation({ summary: 'Calcula e grava uma versão de rascunho do DAS' })
   async apurar(@Body() body: AdminCompetenciaSimplesDto) {
@@ -156,4 +192,13 @@ export class AdminSimplesNacionalController {
       data: await this.service.fechar({ ...body, actorUserId: user.id }),
     };
   }
+}
+
+function sendPdf(res: Response, buffer: Buffer, competencia: string) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    `inline; filename="apuracao-simples-${competencia}.pdf"`,
+  );
+  res.send(buffer);
 }

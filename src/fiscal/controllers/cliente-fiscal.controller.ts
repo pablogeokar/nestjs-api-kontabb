@@ -374,7 +374,10 @@ export class ClienteFiscalController {
       revisaoNecessaria: parseOptionalBoolean(query.revisaoNecessaria),
       pagination,
     });
-    return buildPaginatedResponse(result.data, result.total, pagination);
+    return {
+      ...buildPaginatedResponse(result.data, result.total, pagination),
+      resumo: result.resumo,
+    };
   }
 
   @Get('itens')

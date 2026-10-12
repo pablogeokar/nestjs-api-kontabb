@@ -169,7 +169,13 @@ describe('DistribuicaoDfeService', () => {
   });
 
   it('exclui NFS-e da consulta paginada de saídas quando solicitado', async () => {
-    const countWhere = jest.fn().mockResolvedValue([{ count: 0 }]);
+    const countWhere = jest.fn().mockResolvedValue([
+      {
+        count: 3,
+        valorTotal: '450.00',
+        valorTotalAutorizado: '300.00',
+      },
+    ]);
     const offset = jest.fn().mockResolvedValue([]);
     const limit = jest.fn().mockReturnValue({ offset });
     const orderBy = jest.fn().mockReturnValue({ limit });
@@ -191,10 +197,16 @@ describe('DistribuicaoDfeService', () => {
       {} as never,
     );
 
-    await service.listDocumentosFiscais({
+    const result = await service.listDocumentosFiscais({
       tipoOperacao: 'SAIDA',
       excluirTipoDocumento: 'NFSE',
       pagination: { limit: 15, offset: 0 },
+    });
+
+    expect(result.resumo).toEqual({
+      quantidade_documentos: 3,
+      valor_total: '450.00',
+      valor_total_autorizado: '300.00',
     });
 
     const dialect = new PgDialect();

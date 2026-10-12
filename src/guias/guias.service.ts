@@ -13,7 +13,15 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes, guias, user, visualizacoesGuias } from '../database/schema';
+import {
+  clientes,
+  eventosAuditoria,
+  fiscalApuracoesGuias,
+  fiscalSimplesApuracoes,
+  guias,
+  user,
+  visualizacoesGuias,
+} from '../database/schema';
 import { StorageService } from '../storage/storage.service';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import { MailService } from '../mail/mail.service';
@@ -26,6 +34,123 @@ import {
   simplesNacionalSemApuracaoIcms,
   type RegimeTributario,
 } from '../clientes/clientes.types';
+import {
+  fromScaledInteger,
+  toScaledInteger,
+} from '../fiscal/sped/sped-decimal';
+
+export type StatusVinculoGuiaUpload =
+  | 'VINCULADO'
+  | 'PENDENTE_CONFIRMACAO'
+  | 'DIVERGENTE'
+  | 'SEM_CANDIDATO'
+  | 'JA_VINCULADA'
+  | 'NAO_APLICAVEL';
+
+export interface ResultadoVinculoGuiaUpload {
+  status: StatusVinculoGuiaUpload;
+  guiaFiscalId: string | null;
+  diferenca: string | null;
+  motivo: string;
+}
+
+export function avaliarVinculoGuiaSimples(input: {
+  tipo: string;
+  valorUpload: string | null;
+  vencimentoUpload: string | null;
+  candidata: {
+    id: string;
+    valorTotal: string;
+    dataVencimento: string;
+    tipoGuia: string;
+    tributo: string;
+    cancelada: boolean;
+    guiaUploadId: string | null;
+  } | null;
+}): ResultadoVinculoGuiaUpload {
+  if (input.tipo !== 'DAS') {
+    return {
+      status: 'NAO_APLICAVEL',
+      guiaFiscalId: null,
+      diferenca: null,
+      motivo:
+        'A conciliação automática desta etapa é exclusiva para o DAS mensal.',
+    };
+  }
+  const candidata = input.candidata;
+  if (
+    !candidata ||
+    candidata.cancelada ||
+    candidata.tipoGuia !== 'DAS' ||
+    candidata.tributo !== 'DAS_SIMPLES'
+  ) {
+    return {
+      status: 'SEM_CANDIDATO',
+      guiaFiscalId: null,
+      diferenca: null,
+      motivo:
+        'Não existe uma guia DAS ativa gerada pela apuração desta competência.',
+    };
+  }
+  if (candidata.guiaUploadId) {
+    return {
+      status: 'JA_VINCULADA',
+      guiaFiscalId: null,
+      diferenca: null,
+      motivo: 'A guia calculada já possui um PDF oficial vinculado.',
+    };
+  }
+  if (!input.valorUpload) {
+    return {
+      status: 'PENDENTE_CONFIRMACAO',
+      guiaFiscalId: null,
+      diferenca: null,
+      motivo: 'O PDF não informou um valor confiável para validar o vínculo.',
+    };
+  }
+
+  let upload: bigint;
+  let apurado: bigint;
+  try {
+    upload = toScaledInteger(input.valorUpload);
+    apurado = toScaledInteger(candidata.valorTotal);
+  } catch {
+    return {
+      status: 'PENDENTE_CONFIRMACAO',
+      guiaFiscalId: null,
+      diferenca: null,
+      motivo: 'Não foi possível comparar o valor do PDF com o valor apurado.',
+    };
+  }
+  const diferenca = upload - apurado;
+  const absoluta = diferenca < 0n ? -diferenca : diferenca;
+  if (absoluta > 2n) {
+    return {
+      status: 'DIVERGENTE',
+      guiaFiscalId: null,
+      diferenca: fromScaledInteger(diferenca),
+      motivo: 'O valor do PDF diverge do DAS calculado em mais de R$ 0,02.',
+    };
+  }
+  if (
+    input.vencimentoUpload &&
+    input.vencimentoUpload !== candidata.dataVencimento
+  ) {
+    return {
+      status: 'PENDENTE_CONFIRMACAO',
+      guiaFiscalId: null,
+      diferenca: fromScaledInteger(diferenca),
+      motivo:
+        'O vencimento do PDF difere da guia calculada; confirme antes de vincular.',
+    };
+  }
+  return {
+    status: 'VINCULADO',
+    guiaFiscalId: candidata.id,
+    diferenca: fromScaledInteger(diferenca),
+    motivo: 'CNPJ, competência, tipo e valor conferem com a apuração fechada.',
+  };
+}
 
 @Injectable()
 export class GuiasService {
@@ -382,6 +507,19 @@ export class GuiasService {
     guiaId: string;
     actorUserId: string;
   }) {
+    const [vinculoFiscal] = await this.database.db
+      .select({ id: fiscalApuracoesGuias.id })
+      .from(fiscalApuracoesGuias)
+      .where(eq(fiscalApuracoesGuias.guiaUploadId, input.guiaId))
+      .limit(1);
+    if (vinculoFiscal) {
+      return {
+        deleted: false,
+        cleanupPending: 0,
+        blockedByFiscalLink: true,
+      };
+    }
+
     const result = await this.database.db.execute(sql`
       WITH deleted_guia AS (
         DELETE FROM guias WHERE id = ${input.guiaId}::uuid
@@ -413,14 +551,83 @@ export class GuiasService {
     const row = resultRows<{ deleted: boolean; job_ids: string[] | null }>(
       result,
     )[0];
-    if (!row?.deleted) return { deleted: false, cleanupPending: 0 };
+    if (!row?.deleted) {
+      return {
+        deleted: false,
+        cleanupPending: 0,
+        blockedByFiscalLink: false,
+      };
+    }
 
     const cleanup = await this.storageCleanup.processJobs(row.job_ids ?? [], {
       requestId: input.requestId,
       userId: input.actorUserId,
       trigger: 'deletion',
     });
-    return { deleted: true, cleanupPending: cleanup.failed };
+    return {
+      deleted: true,
+      cleanupPending: cleanup.failed,
+      blockedByFiscalLink: false,
+    };
+  }
+
+  private async identificarVinculoApuracao(input: {
+    clientId: string;
+    tipo: string;
+    periodo: string;
+    valorNumerico: string | null;
+    vencimento: string | null;
+  }): Promise<ResultadoVinculoGuiaUpload> {
+    if (input.tipo !== 'DAS') {
+      return avaliarVinculoGuiaSimples({
+        tipo: input.tipo,
+        valorUpload: input.valorNumerico,
+        vencimentoUpload: input.vencimento,
+        candidata: null,
+      });
+    }
+
+    const match = /^(0[1-9]|1[0-2])\/(\d{4})$/.exec(input.periodo);
+    if (!match) {
+      return {
+        status: 'PENDENTE_CONFIRMACAO',
+        guiaFiscalId: null,
+        diferenca: null,
+        motivo: 'A competência do PDF não está no formato MM/AAAA.',
+      };
+    }
+    const competencia = `${match[2]}-${match[1]}-01`;
+    const [candidata] = await this.database.db
+      .select({
+        id: fiscalApuracoesGuias.id,
+        valorTotal: fiscalApuracoesGuias.valorTotal,
+        dataVencimento: fiscalApuracoesGuias.dataVencimento,
+        tipoGuia: fiscalApuracoesGuias.tipoGuia,
+        tributo: fiscalApuracoesGuias.tributo,
+        cancelada: fiscalApuracoesGuias.cancelada,
+        guiaUploadId: fiscalApuracoesGuias.guiaUploadId,
+      })
+      .from(fiscalSimplesApuracoes)
+      .innerJoin(
+        fiscalApuracoesGuias,
+        eq(fiscalSimplesApuracoes.guiaId, fiscalApuracoesGuias.id),
+      )
+      .where(
+        and(
+          eq(fiscalSimplesApuracoes.clienteId, input.clientId),
+          eq(fiscalSimplesApuracoes.competencia, competencia),
+          eq(fiscalSimplesApuracoes.corrente, true),
+          eq(fiscalSimplesApuracoes.status, 'FECHADO'),
+        ),
+      )
+      .limit(1);
+
+    return avaliarVinculoGuiaSimples({
+      tipo: input.tipo,
+      valorUpload: input.valorNumerico,
+      vencimentoUpload: input.vencimento,
+      candidata: candidata ?? null,
+    });
   }
 
   // ─── Upload guia ───
@@ -450,6 +657,14 @@ export class GuiasService {
       return { ok: false as const, code: 'ICMS_NOT_APPLICABLE' };
     }
 
+    const vinculo = await this.identificarVinculoApuracao({
+      clientId: input.client.id,
+      tipo: input.tipo,
+      periodo: input.periodo,
+      valorNumerico: input.valorNumerico,
+      vencimento: input.vencimento,
+    });
+
     const guiaId = crypto.randomUUID();
     const r2Key = this.storage.documentObjectKey({
       cnpj: input.client.cnpj,
@@ -475,31 +690,74 @@ export class GuiasService {
         : input.client.emails?.length
           ? 'PENDENTE'
           : 'SEM_EMAIL';
-      const insertResult = await this.database.db.execute(sql`
-        WITH inserted_guia AS (
-          INSERT INTO guias (id, cliente_id, tipo, periodo, vencimento, valor, arquivo_key, arquivo_nome, status, email_status, numero_parcelamento)
-          VALUES (${guiaId}::uuid, ${input.client.id}::uuid, ${input.tipo}, ${input.periodo}, ${input.vencimento}::date, ${input.valorNumerico}::numeric, ${r2Key}, ${fileName}, 'PENDENTE', ${emailStatus}, ${input.numeroParcelamento})
-          RETURNING id
-        ),
-        audit_event AS (
-          INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
-          SELECT ${input.actorUserId}, 'GUIA_ENVIADA', 'GUIA', id::text,
-            jsonb_build_object('clienteId', ${input.client.id}::text, 'tipo', ${input.tipo}::text, 'periodo', ${input.periodo}::text)
-          FROM inserted_guia
-          RETURNING id
-        )
-        SELECT EXISTS (SELECT 1 FROM inserted_guia) AS inserted
-      `);
-      if (!resultRows<{ inserted: boolean }>(insertResult)[0]?.inserted) {
-        throw new Error('GUIA_INSERT_FAILED');
-      }
+      const now = new Date();
+      await this.database.db.transaction(async (tx) => {
+        await tx.insert(guias).values({
+          id: guiaId,
+          clienteId: input.client.id,
+          tipo: input.tipo,
+          periodo: input.periodo,
+          vencimento: input.vencimento,
+          valor: input.valorNumerico,
+          arquivoKey: r2Key,
+          arquivoNome: fileName,
+          status: 'PENDENTE',
+          emailStatus,
+          numeroParcelamento: input.numeroParcelamento,
+        });
+
+        if (vinculo.status === 'VINCULADO' && vinculo.guiaFiscalId) {
+          const [guiaFiscal] = await tx
+            .update(fiscalApuracoesGuias)
+            .set({
+              guiaUploadId: guiaId,
+              guiaUploadVinculadaEm: now,
+              guiaUploadDiferenca: vinculo.diferenca,
+              arquivoGuiaKey: r2Key,
+              emitidaOrgao: true,
+              emitidaOrgaoEm: now,
+              atualizadoEm: now,
+            })
+            .where(
+              and(
+                eq(fiscalApuracoesGuias.id, vinculo.guiaFiscalId),
+                eq(fiscalApuracoesGuias.clienteId, input.client.id),
+                isNull(fiscalApuracoesGuias.guiaUploadId),
+              ),
+            )
+            .returning({ id: fiscalApuracoesGuias.id });
+          if (!guiaFiscal) throw new Error('GUIA_FISCAL_ALREADY_LINKED');
+        }
+
+        await tx.insert(eventosAuditoria).values({
+          atorUserId: input.actorUserId,
+          acao:
+            vinculo.status === 'VINCULADO'
+              ? 'GUIA_ENVIADA_E_VINCULADA'
+              : 'GUIA_ENVIADA',
+          entidadeTipo: 'GUIA',
+          entidadeId: guiaId,
+          dados: {
+            clienteId: input.client.id,
+            tipo: input.tipo,
+            periodo: input.periodo,
+            vinculoStatus: vinculo.status,
+            guiaFiscalId: vinculo.guiaFiscalId,
+            diferenca: vinculo.diferenca,
+            motivo: vinculo.motivo,
+          },
+        });
+      });
     } catch (error) {
       await this.storage.delete(r2Key).catch(() => {});
       this.logger.error('guia_upload_database_failed', error, {
         requestId: input.requestId,
         guiaId,
       });
-      const isUnique = this.isUniqueViolation(error);
+      const isUnique =
+        this.isUniqueViolation(error) ||
+        (error instanceof Error &&
+          error.message === 'GUIA_FISCAL_ALREADY_LINKED');
       return {
         ok: false as const,
         code: isUnique ? 'DUPLICATE' : 'DATABASE_FAILED',
@@ -533,7 +791,7 @@ export class GuiasService {
         .catch(() => {});
     }
 
-    return { ok: true as const, obligationId: guiaId, r2Key };
+    return { ok: true as const, obligationId: guiaId, r2Key, vinculo };
   }
 
   // ─── Find duplicate guia ───

@@ -478,6 +478,24 @@ export class AdminFiscalApuracaoController {
   }
 
   // ── Guias ───────────────────────────────────────────────────────────────
+  @Get('guias/central')
+  @ApiOperation({
+    summary: 'Central unificada de obrigações calculadas e PDFs enviados',
+  })
+  async centralGuias(
+    @Query('clienteId', ParseUUIDPipe) clienteId: string,
+    @Query('competencia') competencia: string,
+  ) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia ?? '')) {
+      throw new BadRequestException(
+        'Competência inválida. Utilize o formato AAAA-MM (ex.: 2026-09).',
+      );
+    }
+    return {
+      data: await this.guiasService.listarCentral({ clienteId, competencia }),
+    };
+  }
+
   @Post('guias')
   @ApiOperation({ summary: 'Cria uma guia de recolhimento' })
   async criarGuia(@Body() body: CriarGuiaDto) {

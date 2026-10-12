@@ -1,4 +1,106 @@
-import { GuiasService } from './guias.service';
+import { avaliarVinculoGuiaSimples, GuiasService } from './guias.service';
+
+const candidata = {
+  id: 'guia-fiscal-1',
+  valorTotal: '100.00',
+  dataVencimento: '2026-10-20',
+  tipoGuia: 'DAS',
+  tributo: 'DAS_SIMPLES',
+  cancelada: false,
+  guiaUploadId: null,
+};
+
+describe('avaliarVinculoGuiaSimples', () => {
+  it('vincula quando tipo, valor e vencimento conferem', () => {
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DAS',
+        valorUpload: '100.00',
+        vencimentoUpload: '2026-10-20',
+        candidata,
+      }),
+    ).toMatchObject({
+      status: 'VINCULADO',
+      guiaFiscalId: candidata.id,
+      diferenca: '0.00',
+    });
+  });
+
+  it('aceita diferença de até dois centavos e preserva a diferença', () => {
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DAS',
+        valorUpload: '100.02',
+        vencimentoUpload: '2026-10-20',
+        candidata,
+      }),
+    ).toMatchObject({ status: 'VINCULADO', diferenca: '0.02' });
+  });
+
+  it('não vincula valor divergente', () => {
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DAS',
+        valorUpload: '100.03',
+        vencimentoUpload: '2026-10-20',
+        candidata,
+      }),
+    ).toMatchObject({
+      status: 'DIVERGENTE',
+      guiaFiscalId: null,
+      diferenca: '0.03',
+    });
+  });
+
+  it('requer confirmação quando o valor não foi extraído', () => {
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DAS',
+        valorUpload: null,
+        vencimentoUpload: '2026-10-20',
+        candidata,
+      }).status,
+    ).toBe('PENDENTE_CONFIRMACAO');
+  });
+
+  it('requer confirmação quando o vencimento diverge', () => {
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DAS',
+        valorUpload: '100.00',
+        vencimentoUpload: '2026-10-21',
+        candidata,
+      }).status,
+    ).toBe('PENDENTE_CONFIRMACAO');
+  });
+
+  it('distingue ausência de candidato, vínculo prévio e guia não aplicável', () => {
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DAS',
+        valorUpload: '100.00',
+        vencimentoUpload: null,
+        candidata: null,
+      }).status,
+    ).toBe('SEM_CANDIDATO');
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DAS',
+        valorUpload: '100.00',
+        vencimentoUpload: null,
+        candidata: { ...candidata, guiaUploadId: 'upload-1' },
+      }).status,
+    ).toBe('JA_VINCULADA');
+    expect(
+      avaliarVinculoGuiaSimples({
+        tipo: 'DARF',
+        valorUpload: '100.00',
+        vencimentoUpload: null,
+        candidata: null,
+      }).status,
+    ).toBe('NAO_APLICAVEL');
+  });
+});
 
 describe('GuiasService - regime tributário', () => {
   it('bloqueia guia de ICMS para Simples Nacional sem apuração separada', async () => {
