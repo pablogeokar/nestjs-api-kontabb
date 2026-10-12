@@ -1,0 +1,6 @@
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "guia_upload_id" uuid;--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "guia_upload_vinculada_em" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD COLUMN "guia_upload_diferenca" numeric(15, 2);--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD CONSTRAINT "fiscal_apuracoes_guias_guia_upload_id_guias_id_fk" FOREIGN KEY ("guia_upload_id") REFERENCES "public"."guias"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "uidx_fiscal_guias_guia_upload" ON "fiscal_apuracoes_guias" USING btree ("guia_upload_id") WHERE "fiscal_apuracoes_guias"."guia_upload_id" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "fiscal_apuracoes_guias" ADD CONSTRAINT "chk_fiscal_guias_upload_vinculo" CHECK (("fiscal_apuracoes_guias"."guia_upload_id" IS NULL AND "fiscal_apuracoes_guias"."guia_upload_vinculada_em" IS NULL AND "fiscal_apuracoes_guias"."guia_upload_diferenca" IS NULL) OR ("fiscal_apuracoes_guias"."guia_upload_id" IS NOT NULL AND "fiscal_apuracoes_guias"."guia_upload_vinculada_em" IS NOT NULL AND "fiscal_apuracoes_guias"."guia_upload_diferenca" IS NOT NULL));

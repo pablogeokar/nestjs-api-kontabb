@@ -3,14 +3,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ne, sql, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   fiscalApuracoesGuias,
   fiscalFechamentos,
   fiscalPagamentosEventos,
+  fiscalSimplesApuracoes,
+  guias,
 } from '../../database/schema';
+import { deriveDocumentStatus } from '../../common/document-status';
 import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 import { parseCompetenciaMensal } from '../fiscal-date.util';
 import {
@@ -343,6 +346,174 @@ export class FiscalGuiasService {
         asc(fiscalApuracoesGuias.tributo),
       );
     return { data: rows.map((row) => this.toGuiaResponse(row)) };
+  }
+
+  /**
+   * Visão operacional única da obrigação calculada e do PDF enviado. Pares
+   * vinculados são uma única linha; uploads legados sem vínculo continuam
+   * visíveis para conferência, sem inferir uma conciliação a cada leitura.
+   */
+  async listarCentral(input: { clienteId: string; competencia: string }) {
+    await this.assertCliente(input.clienteId);
+    const { competencia } = this.competenciaRange(input.competencia);
+    const periodo = `${input.competencia.slice(5, 7)}/${input.competencia.slice(0, 4)}`;
+
+    const [guiasFiscais, uploads, apuracoes] = await Promise.all([
+      this.database.db
+        .select({
+          id: fiscalApuracoesGuias.id,
+          tributo: fiscalApuracoesGuias.tributo,
+          tipoGuia: fiscalApuracoesGuias.tipoGuia,
+          dataVencimento: fiscalApuracoesGuias.dataVencimento,
+          valorTotal: fiscalApuracoesGuias.valorTotal,
+          statusPagamento: fiscalApuracoesGuias.statusPagamento,
+          origem: fiscalApuracoesGuias.origem,
+          fechamentoId: fiscalApuracoesGuias.fechamentoId,
+          divergenteObrigacao: fiscalApuracoesGuias.divergenteObrigacao,
+          valorObrigacao: fiscalApuracoesGuias.valorObrigacao,
+          emitidaOrgao: fiscalApuracoesGuias.emitidaOrgao,
+          arquivoGuiaKey: fiscalApuracoesGuias.arquivoGuiaKey,
+          guiaUploadId: fiscalApuracoesGuias.guiaUploadId,
+          guiaUploadDiferenca: fiscalApuracoesGuias.guiaUploadDiferenca,
+          guiaUploadVinculadaEm: fiscalApuracoesGuias.guiaUploadVinculadaEm,
+          arquivoNome: guias.arquivoNome,
+          uploadStatus: guias.status,
+          criadoEm: fiscalApuracoesGuias.criadoEm,
+        })
+        .from(fiscalApuracoesGuias)
+        .leftJoin(guias, eq(fiscalApuracoesGuias.guiaUploadId, guias.id))
+        .where(
+          and(
+            eq(fiscalApuracoesGuias.clienteId, input.clienteId),
+            eq(fiscalApuracoesGuias.competencia, competencia),
+            eq(fiscalApuracoesGuias.cancelada, false),
+          ),
+        )
+        .orderBy(asc(fiscalApuracoesGuias.dataVencimento)),
+      this.database.db
+        .select({
+          id: guias.id,
+          tipo: guias.tipo,
+          periodo: guias.periodo,
+          vencimento: guias.vencimento,
+          valor: guias.valor,
+          status: guias.status,
+          arquivoNome: guias.arquivoNome,
+          criadoEm: guias.criadoEm,
+        })
+        .from(guias)
+        .where(
+          and(
+            eq(guias.clienteId, input.clienteId),
+            eq(guias.periodo, periodo),
+            ne(guias.tipo, 'FOLHA-PAGAMENTO'),
+          ),
+        )
+        .orderBy(desc(guias.criadoEm)),
+      this.database.db
+        .select({
+          status: fiscalSimplesApuracoes.status,
+          valorTotalDas: fiscalSimplesApuracoes.valorTotalDas,
+          guiaId: fiscalSimplesApuracoes.guiaId,
+          versao: fiscalSimplesApuracoes.versao,
+        })
+        .from(fiscalSimplesApuracoes)
+        .where(
+          and(
+            eq(fiscalSimplesApuracoes.clienteId, input.clienteId),
+            eq(fiscalSimplesApuracoes.competencia, competencia),
+          ),
+        )
+        .orderBy(desc(fiscalSimplesApuracoes.versao))
+        .limit(1),
+    ]);
+
+    const uploadsVinculados = new Set(
+      guiasFiscais.flatMap((guia) =>
+        guia.guiaUploadId ? [guia.guiaUploadId] : [],
+      ),
+    );
+    const linhasFiscais = guiasFiscais.map((guia) => ({
+      id: guia.id,
+      origem: 'APURACAO' as const,
+      tipo: guia.tipoGuia,
+      tributo: guia.tributo,
+      competencia: input.competencia,
+      vencimento: guia.dataVencimento,
+      valor: guia.valorTotal,
+      status: deriveDocumentStatus(
+        guia.uploadStatus === 'PAGO' ? 'PAGO' : guia.statusPagamento,
+        guia.dataVencimento,
+      ),
+      arquivo_nome: guia.arquivoNome,
+      tem_arquivo: Boolean(guia.arquivoGuiaKey),
+      download_id: guia.guiaUploadId,
+      vinculo_status: guia.guiaUploadId
+        ? ('CONCILIADA' as const)
+        : ('AGUARDANDO_UPLOAD' as const),
+      vinculo_diferenca: guia.guiaUploadDiferenca,
+      vinculado_em: guia.guiaUploadVinculadaEm?.toISOString() ?? null,
+      fechamento_id: guia.fechamentoId,
+      divergente_obrigacao: guia.divergenteObrigacao,
+      valor_obrigacao: guia.valorObrigacao,
+      emitida_orgao: guia.emitidaOrgao,
+      criado_em: guia.criadoEm.toISOString(),
+    }));
+    const linhasUploads = uploads
+      .filter((guia) => !uploadsVinculados.has(guia.id))
+      .map((guia) => ({
+        id: guia.id,
+        origem: 'UPLOAD' as const,
+        tipo: guia.tipo,
+        tributo: null,
+        competencia: input.competencia,
+        vencimento: guia.vencimento,
+        valor: guia.valor,
+        status: deriveDocumentStatus(guia.status, guia.vencimento),
+        arquivo_nome: guia.arquivoNome,
+        tem_arquivo: true,
+        download_id: guia.id,
+        vinculo_status:
+          guia.tipo === 'DAS'
+            ? ('SEM_VINCULO' as const)
+            : ('NAO_APLICAVEL' as const),
+        vinculo_diferenca: null,
+        vinculado_em: null,
+        fechamento_id: null,
+        divergente_obrigacao: false,
+        valor_obrigacao: null,
+        emitida_orgao: true,
+        criado_em: guia.criadoEm.toISOString(),
+      }));
+    const itens = [...linhasFiscais, ...linhasUploads];
+    const total = itens.reduce(
+      (soma, item) =>
+        item.valor == null ? soma : soma + toScaledInteger(item.valor),
+      0n,
+    );
+    const apuracao = apuracoes[0] ?? null;
+
+    return {
+      competencia: input.competencia,
+      status_apuracao: apuracao?.status ?? null,
+      valor_apurado: apuracao?.valorTotalDas ?? null,
+      lifecycle: {
+        a_gerar: apuracao && !apuracao.guiaId ? 1 : 0,
+        emitidas: itens.filter((item) => item.tem_arquivo).length,
+        pagas: itens.filter((item) => item.status === 'PAGO').length,
+        conciliadas: linhasFiscais.filter(
+          (item) => item.vinculo_status === 'CONCILIADA',
+        ).length,
+      },
+      resumo: {
+        quantidade: itens.length,
+        valor_total: fromScaledInteger(total),
+        pendentes_vinculo: itens.filter(
+          (item) => item.vinculo_status === 'SEM_VINCULO',
+        ).length,
+      },
+      guias: itens,
+    };
   }
 
   /**

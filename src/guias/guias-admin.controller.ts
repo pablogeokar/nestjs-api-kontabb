@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -128,6 +129,11 @@ export class GuiasAdminController {
       guiaId: id,
       actorUserId: currentUser.id,
     });
+    if (result.blockedByFiscalLink) {
+      throw new ConflictException(
+        'Esta guia comprova uma apuração fiscal e não pode ser excluída sem desfazer o vínculo.',
+      );
+    }
     if (!result.deleted) throw new NotFoundException('Guia não encontrada.');
     return {
       success: true,
