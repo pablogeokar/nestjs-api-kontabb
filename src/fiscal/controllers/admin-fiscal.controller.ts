@@ -419,6 +419,7 @@ export class AdminFiscalController {
     const result = await this.distribuicaoService.listDocumentosFiscais({
       clienteId: query.clienteId,
       tipoDocumento: query.tipoDocumento,
+      excluirTipoDocumento: query.excluirTipoDocumento,
       situacao: query.situacao,
       tipoOperacao: query.tipoOperacao,
       manifestacaoStatus: query.manifestacaoStatus,

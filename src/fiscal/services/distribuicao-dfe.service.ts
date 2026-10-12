@@ -12,6 +12,7 @@ import {
   lt,
   gte,
   lte,
+  ne,
   type SQL,
 } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
@@ -501,6 +502,7 @@ export class DistribuicaoDfeService {
   async listDocumentosFiscais(input: {
     clienteId?: string;
     tipoDocumento?: string;
+    excluirTipoDocumento?: string;
     situacao?: string;
     tipoOperacao?: string;
     manifestacaoStatus?: string;
@@ -517,6 +519,11 @@ export class DistribuicaoDfeService {
     }
     if (input.tipoDocumento) {
       conditions.push(eq(documentosFiscais.tipoDocumento, input.tipoDocumento));
+    }
+    if (input.excluirTipoDocumento) {
+      conditions.push(
+        ne(documentosFiscais.tipoDocumento, input.excluirTipoDocumento),
+      );
     }
     if (input.situacao) {
       conditions.push(eq(documentosFiscais.situacao, input.situacao));

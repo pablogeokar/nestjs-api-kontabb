@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { AppLogger } from '../../common/logger.service';
 import { DatabaseService } from '../../database/database.service';
 import {
@@ -468,7 +468,16 @@ export class ImportacaoXmlFiscalService {
       )
       .limit(1);
     const existing = existingRows[0];
-    if (existing && existing.situacao !== 'RESUMIDA') {
+    const cancelamentoSuperveniente = Boolean(
+      existing &&
+      documento.situacao === 'CANCELADA' &&
+      existing.situacao !== 'CANCELADA',
+    );
+    if (
+      existing &&
+      existing.situacao !== 'RESUMIDA' &&
+      !cancelamentoSuperveniente
+    ) {
       // Reimportação idempotente: não apaga identidades, decisões ou evidências.
       // Atualizações de escrituração passam pelo reprocessamento explícito.
       return { status: 'DUPLICADO', revisoes };
@@ -522,13 +531,17 @@ export class ImportacaoXmlFiscalService {
       situacao: documento.situacao,
       tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
       tpNfXml: documento.tpNfXml,
-      escriturado: documento.tipoDocumento !== 'CTE',
+      escriturado:
+        documento.tipoDocumento !== 'CTE' &&
+        documento.situacao === 'AUTORIZADA',
       escrituracaoStatus:
         documento.tipoDocumento === 'CTE'
           ? ('NAO_ESCRITURAVEL' as const)
-          : nfePendenteRevisao
-            ? ('PENDENTE_REVISAO' as const)
-            : ('ESCRITURADO' as const),
+          : documento.situacao !== 'AUTORIZADA'
+            ? ('NAO_ESCRITURAVEL' as const)
+            : nfePendenteRevisao
+              ? ('PENDENTE_REVISAO' as const)
+              : ('ESCRITURADO' as const),
       xmlKey,
       danfeKey: null,
       atualizadoEm: new Date(),
@@ -581,15 +594,20 @@ export class ImportacaoXmlFiscalService {
             );
           }
           if (existing) {
+            const updateCondition =
+              documento.situacao === 'CANCELADA'
+                ? and(
+                    eq(documentosFiscais.id, existing.id),
+                    ne(documentosFiscais.situacao, 'CANCELADA'),
+                  )
+                : and(
+                    eq(documentosFiscais.id, existing.id),
+                    eq(documentosFiscais.situacao, 'RESUMIDA'),
+                  );
             persisted = await tx
               .update(documentosFiscais)
               .set(values)
-              .where(
-                and(
-                  eq(documentosFiscais.id, existing.id),
-                  eq(documentosFiscais.situacao, 'RESUMIDA'),
-                ),
-              )
+              .where(updateCondition)
               .returning({ id: documentosFiscais.id });
           }
 
@@ -648,6 +666,7 @@ export class ImportacaoXmlFiscalService {
         chaveAcesso: documento.chaveAcesso,
         tipoDocumento: documento.tipoDocumento,
         clienteId: target.id,
+        situacao: documento.situacao,
         cteEscrituracaoStatus:
           ctePersistedStatus ?? ctePreparada?.escrituracaoStatus,
       });
@@ -674,6 +693,7 @@ export class ImportacaoXmlFiscalService {
     chaveAcesso: string;
     tipoDocumento: string;
     clienteId: string;
+    situacao: ParsedDocumentoFiscal['situacao'];
     cteEscrituracaoStatus?: CteEscrituracaoPreparadaStatus;
   }) {
     try {
@@ -690,6 +710,22 @@ export class ImportacaoXmlFiscalService {
             clienteId: input.clienteId,
           },
         },
+        ...(input.situacao === 'CANCELADA'
+          ? [
+              {
+                atorUserId: input.actorUserId,
+                acao: 'DOCUMENTO_FISCAL_CANCELADO',
+                entidadeTipo: 'DOCUMENTO_FISCAL',
+                entidadeId: input.documentoId,
+                dados: {
+                  origem: 'UPLOAD_MANUAL',
+                  tipoDocumento: input.tipoDocumento,
+                  chaveAcesso: input.chaveAcesso,
+                  clienteId: input.clienteId,
+                },
+              },
+            ]
+          : []),
         ...(input.cteEscrituracaoStatus
           ? [
               {

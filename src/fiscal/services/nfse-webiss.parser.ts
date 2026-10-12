@@ -36,6 +36,12 @@ export interface ParsedNfseDados {
   retencoesFederais: string;
   outrasInformacoes: string;
   discriminacao: string;
+  cancelada: boolean;
+  substituida: boolean;
+  dataHoraCancelamento: string;
+  codigoCancelamento: string;
+  motivoCancelamento: string;
+  nfseSubstituidora: string;
 }
 
 const parser = new XMLParser({
@@ -107,6 +113,7 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
   ) {
     return null;
   }
+  const cicloVida = parseNfseLifecycle(parsed, numeroDocumento);
 
   const valorServicos = money(valoresServico.ValorServicos);
   const valorDeducoes = money(valoresServico.ValorDeducoes, '0');
@@ -179,6 +186,7 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
     retencoesFederais,
     outrasInformacoes: text(infNfse.OutrasInformacoes),
     discriminacao: text(servico.Discriminacao),
+    ...cicloVida,
   };
   const integridade = conferirIntegridadeNfse(nfseDados);
   const item = buildServiceItem(nfseDados);
@@ -204,7 +212,7 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
     modalidadeFrete: null,
     valorTotal: valorServicos,
     tpNfXml: '1',
-    situacao: 'AUTORIZADA',
+    situacao: nfseDados.cancelada ? 'CANCELADA' : 'AUTORIZADA',
     participantesCnpjCpf: [prestador.cnpjCpf, tomador.cnpjCpf],
     itens: [item],
     quantidadeItensDeclarada: 1,
@@ -219,6 +227,41 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
     cteEscrituracao: null,
     nfseDados,
     xmlContent: xml,
+  };
+}
+
+function parseNfseLifecycle(parsed: unknown, numeroDocumento: string) {
+  const cancelamento = findRecordByKey(parsed, 'NfseCancelamento');
+  const confirmacao = asRecord(cancelamento?.Confirmacao);
+  const pedido = asRecord(confirmacao?.Pedido);
+  const infPedido = asRecord(pedido?.InfPedidoCancelamento);
+  const identificacao = asRecord(infPedido?.IdentificacaoNfse);
+  const numeroCancelado = text(identificacao?.Numero);
+  const cancelamentoConfirmado = Boolean(
+    confirmacao && (!numeroCancelado || numeroCancelado === numeroDocumento),
+  );
+
+  const substituicao = findRecordByKey(parsed, 'NfseSubstituicao');
+  const substituicaoNfse = asRecord(substituicao?.SubstituicaoNfse);
+  const numeroSubstituidora = digits(substituicaoNfse?.NfseSubstituidora);
+  const nfseSubstituidora = /^\d{1,30}$/.test(numeroSubstituidora)
+    ? numeroSubstituidora
+    : '';
+  const substituida = Boolean(nfseSubstituidora);
+
+  return {
+    cancelada: cancelamentoConfirmado || substituida,
+    substituida,
+    dataHoraCancelamento: cancelamentoConfirmado
+      ? text(confirmacao?.DataHora)
+      : '',
+    codigoCancelamento: cancelamentoConfirmado
+      ? text(infPedido?.CodigoCancelamento)
+      : '',
+    motivoCancelamento: cancelamentoConfirmado
+      ? text(infPedido?.MotivoCancelamento)
+      : '',
+    nfseSubstituidora,
   };
 }
 
