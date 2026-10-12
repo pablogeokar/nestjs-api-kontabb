@@ -854,6 +854,14 @@ export const documentosFiscais = pgTable(
     emitenteDados: jsonb('emitente_dados').$type<Record<string, unknown>>(),
     destinatarioDados:
       jsonb('destinatario_dados').$type<Record<string, unknown>>(),
+    codigoVerificacao: varchar('codigo_verificacao', { length: 32 }),
+    competenciaDeclarada: date('competencia_declarada'),
+    municipioIncidencia: varchar('municipio_incidencia', { length: 7 }),
+    regimeEspecialTributacao: varchar('regime_especial_tributacao', {
+      length: 10,
+    }),
+    optanteSimplesNacionalXml: boolean('optante_simples_nacional_xml'),
+    nfseDados: jsonb('nfse_dados').$type<Record<string, unknown>>(),
     // Documentos referenciados (grupo <NFref>) para o registro C113 da EFD.
     documentosReferenciados: jsonb('documentos_referenciados').$type<
       Array<{ tipo: string; chaveAcesso: string | null }>
@@ -890,21 +898,29 @@ export const documentosFiscais = pgTable(
       table.dataEmissaoFiscal,
       table.id,
     ),
+    index('idx_docs_fiscais_cliente_competencia_nfse').on(
+      table.clienteId,
+      table.competenciaDeclarada,
+      table.id,
+    ),
     index('idx_docs_fiscais_nsu').on(table.nsu),
     index('idx_docs_fiscais_destinatario').on(table.destinatarioCnpjCpf),
     index('idx_docs_fiscais_emitente').on(table.emitenteCnpjCpf),
-    check('chk_docs_fiscais_chave', sql`length(${table.chaveAcesso}) = 44`),
+    check(
+      'chk_docs_fiscais_chave',
+      sql`((${table.tipoDocumento} IN ('NFE', 'CTE', 'NFCE') AND length(${table.chaveAcesso}) = 44) OR (${table.tipoDocumento} = 'NFSE' AND length(${table.chaveAcesso}) BETWEEN 14 AND 50))`,
+    ),
     check(
       'chk_docs_fiscais_tipo',
-      sql`${table.tipoDocumento} IN ('NFE', 'CTE', 'NFCE')`,
+      sql`${table.tipoDocumento} IN ('NFE', 'CTE', 'NFCE', 'NFSE')`,
     ),
     check(
       'chk_docs_fiscais_modelo',
-      sql`${table.modelo} IN ('55', '57', '65')`,
+      sql`${table.modelo} IN ('55', '57', '65', 'NFSE')`,
     ),
     check(
       'chk_docs_fiscais_tipo_modelo',
-      sql`(${table.tipoDocumento} = 'NFE' AND ${table.modelo} = '55') OR (${table.tipoDocumento} = 'CTE' AND ${table.modelo} = '57') OR (${table.tipoDocumento} = 'NFCE' AND ${table.modelo} = '65')`,
+      sql`(${table.tipoDocumento} = 'NFE' AND ${table.modelo} = '55') OR (${table.tipoDocumento} = 'CTE' AND ${table.modelo} = '57') OR (${table.tipoDocumento} = 'NFCE' AND ${table.modelo} = '65') OR (${table.tipoDocumento} = 'NFSE' AND ${table.modelo} = 'NFSE')`,
     ),
     check(
       'chk_docs_fiscais_situacao',
@@ -954,6 +970,10 @@ export const documentosFiscais = pgTable(
     check(
       'chk_docs_fiscais_modalidade_frete',
       sql`${table.modalidadeFrete} IS NULL OR ${table.modalidadeFrete} ~ '^[0-9]$'`,
+    ),
+    check(
+      'chk_docs_fiscais_municipio_incidencia',
+      sql`${table.municipioIncidencia} IS NULL OR ${table.municipioIncidencia} ~ '^[0-9]{7}$'`,
     ),
     check('chk_docs_fiscais_xml_key', sql`btrim(${table.xmlKey}) <> ''`),
   ],
@@ -1223,6 +1243,17 @@ export const documentosFiscaisItens = pgTable(
       precision: 15,
       scale: 2,
     }),
+    valorBcIss: numeric('valor_bc_iss', { precision: 15, scale: 2 }),
+    aliquotaIss: numeric('aliquota_iss', { precision: 7, scale: 4 }),
+    valorIss: numeric('valor_iss', { precision: 15, scale: 2 }),
+    issRetido: boolean('iss_retido').notNull().default(false),
+    itemListaServico: varchar('item_lista_servico', { length: 10 }),
+    cnae: varchar('cnae', { length: 7 }),
+    codigoTributacaoMunicipio: varchar('codigo_tributacao_municipio', {
+      length: 20,
+    }),
+    exigibilidadeIss: varchar('exigibilidade_iss', { length: 1 }),
+    municipioIncidencia: varchar('municipio_incidencia', { length: 7 }),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
@@ -1250,6 +1281,8 @@ export const documentosFiscaisItens = pgTable(
     index('idx_item_cst_pis').on(table.cstPis),
     index('idx_item_cst_cofins').on(table.cstCofins),
     index('idx_item_ncm').on(table.ncm),
+    index('idx_item_servico_lc116').on(table.itemListaServico),
+    index('idx_item_cnae').on(table.cnae),
     check(
       'chk_item_destinacao_inferida',
       sql`${table.destinacaoInferida} IS NULL OR ${table.destinacaoInferida} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
@@ -1284,6 +1317,14 @@ export const documentosFiscaisItens = pgTable(
     check(
       'chk_item_destinacao',
       sql`${table.destinacaoMercadoria} IS NULL OR ${table.destinacaoMercadoria} IN ('REVENDA', 'INDUSTRIALIZACAO', 'USO_CONSUMO', 'ATIVO_IMOBILIZADO')`,
+    ),
+    check(
+      'chk_item_cnae',
+      sql`${table.cnae} IS NULL OR ${table.cnae} ~ '^[0-9]{7}$'`,
+    ),
+    check(
+      'chk_item_municipio_incidencia',
+      sql`${table.municipioIncidencia} IS NULL OR ${table.municipioIncidencia} ~ '^[0-9]{7}$'`,
     ),
   ],
 );

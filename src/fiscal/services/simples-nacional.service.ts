@@ -39,13 +39,14 @@ import type {
   SalvarSimplesTabelaDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@1';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@2';
 
 interface ReceitaAgrupada {
   anexo: SimplesAnexo;
   segregacao: SimplesSegregacao;
-  deducoes: Array<'ICMS' | 'PIS' | 'COFINS'>;
+  deducoes: Array<'ICMS' | 'ISS' | 'PIS' | 'COFINS'>;
   receita: bigint;
+  issOutroMunicipio: boolean;
 }
 
 @Injectable()
@@ -560,13 +561,18 @@ export class SimplesNacionalService {
         receita: 'DOCUMENTOS_FISCAIS_SAIDA_AUTORIZADOS',
         folha: folha.origem,
         sublimite: sublimite.origem,
-        classificacaoAnexo: 'CFOP_DOCUMENTO_FISCAL',
+        classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R',
       },
       memoria_calculo: {
         motorVersao: SIMPLES_MOTOR_VERSAO,
         receitaMesDocumentos,
         receitaClassificada,
         sublimiteEstadual: sublimite.valor,
+        receitaIssOutroMunicipio: fromScaledInteger(
+          receitasAtividade.grupos
+            .filter((item) => item.issOutroMunicipio)
+            .reduce((sum, item) => sum + item.receita, 0n),
+        ),
         pendencias,
       },
       itens: calculados.map(toItemResponse),
@@ -771,7 +777,7 @@ export class SimplesNacionalService {
   ) {
     const automaticas = await this.database.db
       .select({
-        mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
+        mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
         receita: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}), 0)::text`,
       })
       .from(documentosFiscais)
@@ -780,16 +786,16 @@ export class SimplesNacionalService {
           eq(documentosFiscais.clienteId, clienteId),
           eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
-          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= (${competencia}::date - interval '12 months')`,
-          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) < (${competencia}::date + interval '1 month')`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= (${competencia}::date - interval '12 months')`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) < (${competencia}::date + interval '1 month')`,
         ),
       )
       .groupBy(
-        sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
+        sql`date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
       )
       .orderBy(
         asc(
-          sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
+          sql`date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
         ),
       );
     const manuais = await this.database.db
@@ -827,7 +833,7 @@ export class SimplesNacionalService {
         .select({
           mes: sql<
             string | null
-          >`to_char(min(coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
+          >`to_char(min(coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
         })
         .from(documentosFiscais)
         .where(
@@ -867,7 +873,15 @@ export class SimplesNacionalService {
       .select({
         documentoId: documentosFiscais.id,
         documentoTotal: documentosFiscais.valorTotal,
+        tipoDocumento: documentosFiscais.tipoDocumento,
+        municipioPrestador: sql<
+          string | null
+        >`NULLIF(${documentosFiscais.emitenteDados} ->> 'codMun', '')`,
         cfop: documentosFiscaisItens.cfop,
+        itemListaServico: documentosFiscaisItens.itemListaServico,
+        cnae: documentosFiscaisItens.cnae,
+        issRetido: documentosFiscaisItens.issRetido,
+        municipioIncidencia: documentosFiscaisItens.municipioIncidencia,
         csosn: documentosFiscaisItens.csosnIcms,
         cstPis: documentosFiscaisItens.cstPis,
         cstCofins: documentosFiscaisItens.cstCofins,
@@ -888,8 +902,8 @@ export class SimplesNacionalService {
           eq(documentosFiscaisItens.clienteId, clienteId),
           eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
-          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio.toISOString().slice(0, 10)}::date`,
-          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= ${fim.toISOString().slice(0, 10)}::date`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio.toISOString().slice(0, 10)}::date`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= ${fim.toISOString().slice(0, 10)}::date`,
         ),
       );
     const grupos = new Map<string, ReceitaAgrupada>();
@@ -921,24 +935,37 @@ export class SimplesNacionalService {
               ? (totalDocumento * pesos[index] + pesoTotal / 2n) / pesoTotal
               : 0n;
         alocado += receita;
-        const anexo = anexoPorCfop(row.cfop);
+        const anexo =
+          row.tipoDocumento === 'NFSE'
+            ? anexoPorServico(row.itemListaServico, row.cnae)
+            : anexoPorCfop(row.cfop);
         const st = ['5405', '6405'].includes(row.cfop) || row.csosn === '500';
         const monofasico = row.cstPis === '04' || row.cstCofins === '04';
-        const segregacao: SimplesSegregacao = st
-          ? 'ICMS_ST'
-          : monofasico
-            ? 'PIS_COFINS_MONOFASICO'
-            : 'TRIBUTACAO_INTEGRAL';
+        const segregacao: SimplesSegregacao = row.issRetido
+          ? 'ISS_RETIDO'
+          : st
+            ? 'ICMS_ST'
+            : monofasico
+              ? 'PIS_COFINS_MONOFASICO'
+              : 'TRIBUTACAO_INTEGRAL';
         const deducoes = [
+          ...(row.issRetido ? (['ISS'] as const) : []),
           ...(st ? (['ICMS'] as const) : []),
           ...(monofasico ? (['PIS', 'COFINS'] as const) : []),
         ];
-        const key = `${anexo}:${deducoes.join('+') || 'INTEGRAL'}`;
+        const issOutroMunicipio = Boolean(
+          row.tipoDocumento === 'NFSE' &&
+          row.municipioIncidencia &&
+          row.municipioPrestador &&
+          row.municipioIncidencia !== row.municipioPrestador,
+        );
+        const key = `${anexo}:${segregacao}:${issOutroMunicipio ? 'OUTRO_MUNICIPIO' : 'LOCAL'}:${deducoes.join('+') || 'INTEGRAL'}`;
         const atual = grupos.get(key) ?? {
           anexo,
           segregacao,
           deducoes: [...deducoes],
           receita: 0n,
+          issOutroMunicipio,
         };
         atual.receita += receita;
         grupos.set(key, atual);
@@ -1000,7 +1027,7 @@ export class SimplesNacionalService {
   ) {
     return this.database.db
       .select({
-        mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
+        mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
         valor: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}), 0)::text`,
       })
       .from(documentosFiscais)
@@ -1009,12 +1036,12 @@ export class SimplesNacionalService {
           eq(documentosFiscais.clienteId, clienteId),
           eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
-          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}`,
-          sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= (${fim}::date + interval '1 month' - interval '1 day')`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= (${fim}::date + interval '1 month' - interval '1 day')`,
         ),
       )
       .groupBy(
-        sql`date_trunc('month', coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
+        sql`date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
       );
   }
 
@@ -1219,13 +1246,84 @@ function toItemResponse(item: SimplesItemCalculoResult) {
   };
 }
 
-function anexoPorCfop(cfop: string): SimplesAnexo {
+export function anexoPorCfop(cfop: string): SimplesAnexo {
   const operacao = cfop.slice(1);
   if (/^(101|103|105|109|111|116|118|122|124|125)$/.test(operacao))
     return 'ANEXO_II';
   if (/^(351|352|353|354|355|356|357|358|359|360)$/.test(operacao))
     return 'ANEXO_III';
   return 'ANEXO_I';
+}
+
+/**
+ * Classificação de serviços municipais para o Simples. O Anexo V é usado
+ * como marcador das atividades sujeitas ao Fator R e é resolvido para III/V
+ * depois que a folha e a RBT12 da competência estiverem disponíveis.
+ */
+export function anexoPorServico(
+  itemListaServico: string | null,
+  cnae: string | null,
+): SimplesAnexo {
+  const item = (itemListaServico ?? '').replace(/\D/g, '').padStart(4, '0');
+  const atividade = (cnae ?? '').replace(/\D/g, '');
+
+  const itensAnexoIv = new Set([
+    '0702',
+    '0704',
+    '0705',
+    '0710',
+    '1102',
+    '1714',
+  ]);
+  if (
+    itensAnexoIv.has(item) ||
+    /^(41|42|43|69117|8011|8012|8020|8111|8121|8122|8129)/.test(atividade)
+  ) {
+    return 'ANEXO_IV';
+  }
+
+  const itensFatorR = new Set([
+    '0101',
+    '0102',
+    '0103',
+    '0104',
+    '0105',
+    '0106',
+    '0107',
+    '0108',
+    '0401',
+    '0402',
+    '0403',
+    '0404',
+    '0405',
+    '0406',
+    '0407',
+    '0408',
+    '0409',
+    '0410',
+    '0411',
+    '0412',
+    '0413',
+    '0414',
+    '0415',
+    '0416',
+    '0417',
+    '0418',
+    '0419',
+    '0420',
+    '0501',
+    '0701',
+    '1701',
+    '1702',
+    '1703',
+  ]);
+  if (
+    itensFatorR.has(item) ||
+    /^(62|63|69|70|71|72|73|74|75|85|86|87|88)/.test(atividade)
+  ) {
+    return 'ANEXO_V';
+  }
+  return 'ANEXO_III';
 }
 
 export function vencimentoDas(competencia: string): string {

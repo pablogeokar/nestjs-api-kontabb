@@ -668,6 +668,17 @@ export class FiscalItensService {
           valor: item.valorCofinsSt,
         },
       },
+      iss: {
+        valor_bc: item.valorBcIss,
+        aliquota: item.aliquotaIss,
+        valor: item.valorIss,
+        retido: item.issRetido,
+        item_lista_servico: item.itemListaServico,
+        cnae: item.cnae,
+        codigo_tributacao_municipio: item.codigoTributacaoMunicipio,
+        exigibilidade: item.exigibilidadeIss,
+        municipio_incidencia: item.municipioIncidencia,
+      },
       totais: {
         valor_bc_ii: item.valorBcIi,
         valor_despesa_aduaneira: item.valorDespesaAduaneira,

@@ -1,4 +1,7 @@
-import { ImportacaoXmlFiscalService } from './importacao-xml-fiscal.service';
+import {
+  ImportacaoXmlFiscalService,
+  prepararNfseEscrituracao,
+} from './importacao-xml-fiscal.service';
 import { documentosFiscais } from '../../database/schema';
 import {
   parseManualFiscalXml,
@@ -6,6 +9,8 @@ import {
 } from './dfe-document.parser';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('ImportacaoXmlFiscalService', () => {
   const storage = {
@@ -171,6 +176,42 @@ describe('ImportacaoXmlFiscalService', () => {
     expect(result.ignorados).toBe(1);
     expect(result.resultados[0].status).toBe('IGNORADO');
     expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('escritura a NFS-e como saída para o prestador e entrada para o tomador', () => {
+    const parsed = parseManualFiscalXml(
+      readFileSync(
+        resolve(__dirname, '../../../../NFSe_2026000000196_2WRT-ZASA.xml'),
+        'utf8',
+      ),
+    );
+    if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');
+
+    const prestador = prepararNfseEscrituracao(
+      {
+        id: 'prestador',
+        cnpj: '03155128000112',
+        razaoSocial: 'Prestador',
+      },
+      parsed.documento,
+    );
+    const tomador = prepararNfseEscrituracao(
+      {
+        id: 'tomador',
+        cnpj: '88636933587',
+        razaoSocial: 'Tomador',
+      },
+      parsed.documento,
+    );
+
+    expect(prestador).toMatchObject({
+      tipoOperacaoEscriturada: 'SAIDA',
+      itens: [{ cfop: '5933', cfopXml: '5933' }],
+    });
+    expect(tomador).toMatchObject({
+      tipoOperacaoEscriturada: 'ENTRADA',
+      itens: [{ cfop: '1933', cfopXml: '1933' }],
+    });
   });
 
   it('preserva itens e decisões de documento duplicado sem escrita ou novo upload', async () => {

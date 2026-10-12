@@ -112,6 +112,16 @@ export interface ParsedNfeItem {
   valorImpostoImportacao: string | null;
   valorIof: string | null;
   valorTributosAproximados: string | null;
+  /** Campos municipais presentes somente em itens de NFS-e. */
+  valorBcIss?: string | null;
+  aliquotaIss?: string | null;
+  valorIss?: string | null;
+  issRetido?: boolean;
+  itemListaServico?: string | null;
+  cnae?: string | null;
+  codigoTributacaoMunicipio?: string | null;
+  exigibilidadeIss?: string | null;
+  municipioIncidencia?: string | null;
 }
 
 const ICMS_GROUPS = [

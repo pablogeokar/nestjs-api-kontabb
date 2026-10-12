@@ -66,6 +66,8 @@ import { getRequestId, type RequestWithId } from '../../common/request-id';
 import { AnalisarListagemChavesDto } from '../dto/analisar-listagem-chaves.dto';
 import { ExecutarImportacaoChavesDto } from '../dto/executar-importacao-chaves.dto';
 import { ImportacaoChavesFiscalService } from '../services/importacao-chaves-fiscal.service';
+import { AdminLivroIssQueryDto } from '../dto/livro-iss.dto';
+import { FiscalIssLivroService } from '../services/fiscal-iss-livro.service';
 
 @ApiTags('Fiscal (Admin)')
 @ApiBearerAuth('session-token')
@@ -86,6 +88,7 @@ export class AdminFiscalController {
     private readonly fiscalCteService: FiscalCteService,
     private readonly regrasFiscaisService: RegrasFiscaisService,
     private readonly importacaoChavesService: ImportacaoChavesFiscalService,
+    private readonly fiscalIssLivroService: FiscalIssLivroService,
   ) {}
 
   // ─── Certificados ─────────────────────────────────────────────────────────
@@ -264,7 +267,7 @@ export class AdminFiscalController {
   @ApiOperation({
     summary: 'Importar XMLs fiscais manualmente',
     description:
-      'Identifica NF-e, NFC-e e CT-e processados e associa cada XML aos clientes cadastrados encontrados entre seus participantes. XMLs sem utilidade para o sistema são ignorados.',
+      'Identifica NF-e, NFC-e, CT-e e NFS-e WebISS/ABRASF e associa cada XML aos clientes cadastrados encontrados entre seus participantes. XMLs sem utilidade para o sistema são ignorados.',
   })
   @ApiBody({
     schema: {
@@ -655,6 +658,39 @@ export class AdminFiscalController {
       parcial: true,
       observacao: RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
     };
+  }
+
+  @Get('relatorios/livros-iss')
+  @ApiOperation({
+    summary: 'Livro de serviços prestados e tomados e apuração do ISS',
+  })
+  async getLivroIss(@Query() query: AdminLivroIssQueryDto) {
+    return {
+      data: await this.fiscalIssLivroService.obter({
+        clienteId: query.clienteId,
+        competencia: query.competencia,
+        tipoOperacao: query.tipoOperacao,
+      }),
+    };
+  }
+
+  @Get('relatorios/livros-iss/pdf')
+  @ApiOperation({ summary: 'Exporta o Livro de ISS em PDF' })
+  async getLivroIssPdf(
+    @Query() query: AdminLivroIssQueryDto,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.fiscalIssLivroService.gerarPdf({
+      clienteId: query.clienteId,
+      competencia: query.competencia,
+      tipoOperacao: query.tipoOperacao,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="livro-iss-${query.competencia}.pdf"`,
+    );
+    res.send(buffer);
   }
 
   @Get('relatorios/apuracao-icms')

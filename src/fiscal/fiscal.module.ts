@@ -58,6 +58,7 @@ import {
 import { SimplesCalculadorService } from './services/simples-calculador.service';
 import { SimplesNacionalService } from './services/simples-nacional.service';
 import { ImportacaoChavesFiscalService } from './services/importacao-chaves-fiscal.service';
+import { FiscalIssLivroService } from './services/fiscal-iss-livro.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
@@ -110,6 +111,7 @@ import { ImportacaoChavesFiscalService } from './services/importacao-chaves-fisc
     FiscalNormativeCatalogService,
     SimplesCalculadorService,
     SimplesNacionalService,
+    FiscalIssLivroService,
   ],
   exports: [
     CertificadoService,
@@ -130,6 +132,7 @@ import { ImportacaoChavesFiscalService } from './services/importacao-chaves-fisc
     PisCofinsService,
     FiscalNormativeCatalogService,
     SimplesNacionalService,
+    FiscalIssLivroService,
   ],
 })
 export class FiscalModule {}
