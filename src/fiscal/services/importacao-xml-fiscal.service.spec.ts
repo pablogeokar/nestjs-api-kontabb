@@ -284,6 +284,120 @@ describe('ImportacaoXmlFiscalService', () => {
     expect(storage.upload).not.toHaveBeenCalled();
   });
 
+  it('atualiza uma NFS-e autorizada quando chega o XML de cancelamento', async () => {
+    const existingLimit = jest.fn().mockResolvedValue([
+      {
+        id: 'doc-nfse-1',
+        situacao: 'AUTORIZADA',
+        xmlKey: 'nfse-autorizada.xml',
+        danfeKey: null,
+      },
+    ]);
+    const select = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: existingLimit }),
+      }),
+    });
+    const returning = jest.fn().mockResolvedValue([{ id: 'doc-nfse-1' }]);
+    const updateValues = jest.fn((values: Record<string, unknown>) => {
+      void values;
+      return {
+        where: jest.fn().mockReturnValue({ returning }),
+      };
+    });
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({ set: updateValues }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockResolvedValue(undefined),
+      }),
+    };
+    const transaction = jest.fn(
+      (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+    const auditValues = jest.fn().mockResolvedValue(undefined);
+    const cancellationService = new ImportacaoXmlFiscalService(
+      {
+        db: {
+          select,
+          transaction,
+          insert: jest.fn().mockReturnValue({ values: auditValues }),
+        },
+      } as never,
+      storage as never,
+      logger as never,
+      createCfopServiceMock() as never,
+      {} as never,
+      createClosingMock() as never,
+    );
+    const parsed = parseManualFiscalXml(
+      readFileSync(
+        resolve(__dirname, '../../../../NFSe_2026000000196_2WRT-ZASA.xml'),
+        'utf8',
+      ),
+    );
+    if (parsed.status !== 'DOCUMENTO' || !parsed.documento.nfseDados) {
+      throw new Error('Fixture inválida');
+    }
+    const documento: ParsedDocumentoFiscal = {
+      ...parsed.documento,
+      situacao: 'CANCELADA',
+      nfseDados: {
+        ...parsed.documento.nfseDados,
+        cancelada: true,
+        substituida: true,
+        dataHoraCancelamento: '2026-09-20T10:30:00.000',
+        nfseSubstituidora: '2026000000199',
+      },
+    };
+
+    const result = await (
+      cancellationService as unknown as {
+        persistirDocumento(input: {
+          target: { id: string; cnpj: string; razaoSocial: string };
+          documento: ParsedDocumentoFiscal;
+          actorUserId: string;
+          requestId: string;
+        }): Promise<{
+          status: 'IMPORTADO' | 'DUPLICADO';
+          revisoes: unknown[];
+        }>;
+      }
+    ).persistirDocumento({
+      target: {
+        id: 'cliente-1',
+        cnpj: '03155128000112',
+        razaoSocial: 'Prestador',
+      },
+      documento,
+      actorUserId: 'user-1',
+      requestId: 'request-1',
+    });
+
+    expect(result.status).toBe('IMPORTADO');
+    expect(updateValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        situacao: 'CANCELADA',
+        escriturado: false,
+        escrituracaoStatus: 'NAO_ESCRITURAVEL',
+      }),
+    );
+    const persistedValues = updateValues.mock.calls[0]?.[0];
+    const nfseDados = persistedValues?.nfseDados as
+      Record<string, unknown> | undefined;
+    expect(nfseDados).toMatchObject({
+      cancelada: true,
+      nfseSubstituidora: '2026000000199',
+    });
+    expect(storage.upload).toHaveBeenCalledTimes(1);
+    expect(storage.delete).toHaveBeenCalledWith('nfse-autorizada.xml');
+  });
+
   it('adquire o advisory lock por cliente + chaveAcesso ao persistir documento novo (R1.6/R1.7)', async () => {
     // Documento inexistente → a transação de persistência/reconciliação roda.
     const existingLimit = jest.fn().mockResolvedValue([]);

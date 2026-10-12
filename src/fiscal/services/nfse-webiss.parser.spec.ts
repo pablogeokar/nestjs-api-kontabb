@@ -76,6 +76,43 @@ describe('parseNfseWebissXml', () => {
     }
   });
 
+  it('reconhece cancelamento por substituição e identifica a NFS-e substituidora', () => {
+    const xml = fixture('NFSe_2026000000196_2WRT-ZASA.xml').replace(
+      '</CompNfse>',
+      `<NfseCancelamento versao="2.02">
+        <Confirmacao>
+          <Pedido><InfPedidoCancelamento>
+            <IdentificacaoNfse><Numero>2026000000196</Numero></IdentificacaoNfse>
+            <CodigoCancelamento>2</CodigoCancelamento>
+            <MotivoCancelamento>Substituição da NFS-e</MotivoCancelamento>
+          </InfPedidoCancelamento></Pedido>
+          <DataHora>2026-09-20T10:30:00.000</DataHora>
+        </Confirmacao>
+      </NfseCancelamento>
+      <NfseSubstituicao versao="2.02">
+        <SubstituicaoNfse>
+          <NfseSubstituidora>2026000000199</NfseSubstituidora>
+        </SubstituicaoNfse>
+      </NfseSubstituicao>
+      </CompNfse>`,
+    );
+
+    const parsed = parseNfseWebissXml(xml);
+
+    expect(parsed).toMatchObject({
+      numeroDocumento: '2026000000196',
+      situacao: 'CANCELADA',
+      nfseDados: {
+        cancelada: true,
+        substituida: true,
+        dataHoraCancelamento: '2026-09-20T10:30:00.000',
+        codigoCancelamento: '2',
+        motivoCancelamento: 'Substituição da NFS-e',
+        nfseSubstituidora: '2026000000199',
+      },
+    });
+  });
+
   it('rejeita DTD antes de tentar interpretar o documento', () => {
     const result = parseManualFiscalXml(
       '<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><CompNfse/>',

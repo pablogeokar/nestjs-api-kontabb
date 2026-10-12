@@ -168,6 +168,47 @@ describe('DistribuicaoDfeService', () => {
     expect(orderBy).toHaveBeenCalledTimes(1);
   });
 
+  it('exclui NFS-e da consulta paginada de saídas quando solicitado', async () => {
+    const countWhere = jest.fn().mockResolvedValue([{ count: 0 }]);
+    const offset = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ offset });
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const rowsWhere = jest.fn().mockReturnValue({ orderBy });
+    let selectCall = 0;
+    const select = jest.fn().mockImplementation(() => {
+      selectCall += 1;
+      return {
+        from: jest.fn().mockReturnValue({
+          where: selectCall === 1 ? countWhere : rowsWhere,
+        }),
+      };
+    });
+    const service = new DistribuicaoDfeService(
+      { db: { select } } as never,
+      {} as never,
+      {} as never,
+      createCfopServiceMock() as never,
+      {} as never,
+    );
+
+    await service.listDocumentosFiscais({
+      tipoOperacao: 'SAIDA',
+      excluirTipoDocumento: 'NFSE',
+      pagination: { limit: 15, offset: 0 },
+    });
+
+    const dialect = new PgDialect();
+    for (const whereMock of [countWhere, rowsWhere]) {
+      const calls = whereMock.mock.calls as Array<[SQL | undefined]>;
+      const condition = calls[0]?.[0];
+      expect(condition).toBeDefined();
+      const query = dialect.sqlToQuery(condition!);
+      expect(query.sql).toContain('"tipo_documento" <>');
+      expect(query.sql).toContain('"tipo_operacao_escriturada" =');
+      expect(query.params).toEqual(expect.arrayContaining(['NFSE', 'SAIDA']));
+    }
+  });
+
   it('persiste cabeçalho e itens na mesma transação', async () => {
     const existingLimit = jest.fn().mockResolvedValue([]);
     const select = jest.fn().mockReturnValue({

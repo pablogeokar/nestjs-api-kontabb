@@ -36,6 +36,14 @@ export class QueryDocumentosFiscaisDto {
   tipoDocumento?: string;
 
   @ApiPropertyOptional({
+    description: 'Excluir um tipo de documento da listagem',
+    enum: ['NFE', 'CTE', 'NFCE', 'NFSE'],
+  })
+  @IsOptional()
+  @IsIn(['NFE', 'CTE', 'NFCE', 'NFSE'])
+  excluirTipoDocumento?: string;
+
+  @ApiPropertyOptional({
     description: 'Filtrar por situação do documento',
     enum: ['AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA'],
   })
