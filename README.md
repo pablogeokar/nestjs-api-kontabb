@@ -192,6 +192,18 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 pnpm db:check
 ```
 
+Para iniciar uma instalação sem restore de dados, defina
+`ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD` (mínimo de 6 caracteres) e,
+opcionalmente, `ADMIN_SEED_NAME` no ambiente. Então execute:
+
+```bash
+pnpm db:seed:admin
+```
+
+O comando é idempotente: não substitui a senha nem altera o papel de um usuário
+já existente. Em uma restauração do backup atual, não o execute, pois o backup
+já contém os administradores.
+
 ## Variáveis de Ambiente
 
 | Variável             | Descrição                                         |
