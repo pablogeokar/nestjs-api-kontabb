@@ -1,0 +1,2 @@
+ALTER TABLE "folhas_pagamento" DROP CONSTRAINT "chk_folhas_tipo";--> statement-breakpoint
+ALTER TABLE "folhas_pagamento" ADD CONSTRAINT "chk_folhas_tipo" CHECK ("folhas_pagamento"."tipo" IN ('FOLHA_MENSAL', 'FERIAS', 'ADIANTAMENTO_13'));

@@ -28,7 +28,11 @@ import { RateLimitService } from '../common/rate-limit.service';
 import { MailService } from '../mail/mail.service';
 import { hasValidFileSignature } from '../common/file-validation';
 import { extractPdfText } from '../common/pdf-extraction';
-import { extractDadosFolhaPagamento } from '../common/pdf-extraction-rh';
+import {
+  extractDadosAdiantamento13,
+  extractDadosFolhaPagamento,
+  isAdiantamento13,
+} from '../common/pdf-extraction-rh';
 import {
   extractDadosFerias,
   isReciboFerias,
@@ -43,7 +47,7 @@ interface RhFileResult {
   cnpj?: string;
   competencia?: string;
   totalFuncionarios?: number;
-  tipo?: 'FOLHA_MENSAL' | 'FERIAS';
+  tipo?: 'FOLHA_MENSAL' | 'FERIAS' | 'ADIANTAMENTO_13';
   funcionarioNome?: string;
 }
 
@@ -161,6 +165,10 @@ export class RhUploadController {
 
     if (isReciboFerias(text)) {
       return this.processFeriasFile(file, text, ctx);
+    }
+
+    if (isAdiantamento13(text)) {
+      return this.processAdiantamento13File(file, text, ctx);
     }
 
     return this.processFolhaFile(file, text, ctx);
@@ -287,6 +295,135 @@ export class RhUploadController {
       competencia: dados.competencia,
       totalFuncionarios: dados.totalFuncionarios,
       tipo: 'FOLHA_MENSAL',
+    };
+  }
+
+  private async processAdiantamento13File(
+    file: Express.Multer.File,
+    text: string,
+    ctx: { requestId: string; actorUserId: string },
+  ): Promise<RhFileResult> {
+    // Parse 13th-salary advance data (same structure as monthly payroll)
+    const dados = extractDadosAdiantamento13(text);
+    if (!dados) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message:
+          'O arquivo foi identificado como adiantamento do 13º salário, mas não foi possível extrair os dados necessários.',
+        tipo: 'ADIANTAMENTO_13',
+      };
+    }
+
+    // Find client by CNPJ
+    const cnpjDigits = dados.cnpj.replace(/\D/g, '');
+    const client = await this.clientesService.findClientForUpload(cnpjDigits);
+    if (!client) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: `Cliente com CNPJ ${dados.cnpj} não encontrado.`,
+        cnpj: dados.cnpj,
+        tipo: 'ADIANTAMENTO_13',
+      };
+    }
+
+    // Check duplicate
+    const existing = await this.rhService.checkDuplicateAdiantamento13(
+      client.id,
+      dados.competencia,
+    );
+    if (existing) {
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: `Adiantamento do 13º duplicado: já existe um registro para a competência ${dados.competencia} deste cliente.`,
+        cnpj: dados.cnpj,
+        competencia: dados.competencia,
+        tipo: 'ADIANTAMENTO_13',
+      };
+    }
+
+    // Upload to R2
+    const folhaUuid = crypto.randomUUID();
+    const [month, year] = dados.competencia.split('/');
+    const r2Key = `rh/${cnpjDigits}/${year}/${month}/adiantamento13-${folhaUuid}.pdf`;
+
+    try {
+      await this.storage.upload(
+        r2Key,
+        Buffer.from(file.buffer),
+        'application/pdf',
+      );
+    } catch (error) {
+      this.logger.error('rh_adiantamento13_upload_storage_failed', error, {
+        requestId: ctx.requestId,
+      });
+      return {
+        fileName: file.originalname,
+        success: false,
+        message: 'Falha ao armazenar o arquivo. Tente novamente.',
+        tipo: 'ADIANTAMENTO_13',
+      };
+    }
+
+    // Process
+    const result = await this.rhService.processarAdiantamento13({
+      dados,
+      clienteId: client.id,
+      r2Key,
+      fileName: sanitizeFileName(file.originalname),
+      actorUserId: ctx.actorUserId,
+      requestId: ctx.requestId,
+    });
+
+    if (!result.ok) {
+      // Cleanup R2 on failure
+      await this.storage.delete(r2Key).catch(() => {});
+      const message =
+        result.code === 'ADIANTAMENTO_13_DUPLICADO'
+          ? `Adiantamento do 13º duplicado: já existe um registro para a competência ${dados.competencia}.`
+          : 'Falha ao processar o adiantamento do 13º salário. Tente novamente.';
+      return {
+        fileName: file.originalname,
+        success: false,
+        message,
+        cnpj: dados.cnpj,
+        tipo: 'ADIANTAMENTO_13',
+      };
+    }
+
+    // Notify client via email (fire-and-forget).
+    // Suspended clients do not receive any e-mail notifications.
+    if (!client.suspenso && client.emails && client.emails.length > 0) {
+      this.mail
+        .sendAdiantamento13NotificationEmail({
+          to: client.emails,
+          clientName: client.razaoSocial,
+          competencia: dados.competencia,
+          totalFuncionarios: dados.totalFuncionarios,
+          totalLiquido: String(dados.totalLiquido),
+        })
+        .catch((err) => {
+          this.logger.error(
+            'rh_adiantamento13_email_notification_failed',
+            err,
+            {
+              requestId: ctx.requestId,
+              clienteId: client.id,
+            },
+          );
+        });
+    }
+
+    return {
+      fileName: file.originalname,
+      success: true,
+      message: 'Adiantamento do 13º salário processado com sucesso.',
+      cnpj: dados.cnpj,
+      competencia: dados.competencia,
+      totalFuncionarios: dados.totalFuncionarios,
+      tipo: 'ADIANTAMENTO_13',
     };
   }
 

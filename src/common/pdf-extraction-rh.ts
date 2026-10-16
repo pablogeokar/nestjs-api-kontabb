@@ -70,6 +70,10 @@ function formatCnpj(digits: string): string {
   return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
 }
 
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function classificarRubrica(codigo: string): 'PROVENTO' | 'DESCONTO' {
   const num = parseInt(codigo, 10);
   // Common discount ranges in Brazilian payroll systems:
@@ -86,8 +90,33 @@ function classificarRubrica(codigo: string): 'PROVENTO' | 'DESCONTO' {
 export function extractDadosFolhaPagamento(
   text: string,
 ): DadosFolhaPagamento | null {
-  // Step 1: Validate it's a payroll document
-  if (!text.includes('FOLHA DE PAGAMENTO')) {
+  return extractDadosFolhaComMarcador(text, 'FOLHA DE PAGAMENTO');
+}
+
+/**
+ * Detects whether the document is an advance of the 13th salary
+ * (Adiantamento do 13º Salário / Folha de Adiantamento de 13º).
+ */
+export function isAdiantamento13(text: string): boolean {
+  return text.includes('FOLHA DE ADIANTAMENTO DE 13º');
+}
+
+/**
+ * Parses an "Adiantamento do 13º Salário" document. Structurally identical to
+ * the monthly payroll document; only the title marker differs.
+ */
+export function extractDadosAdiantamento13(
+  text: string,
+): DadosFolhaPagamento | null {
+  return extractDadosFolhaComMarcador(text, 'FOLHA DE ADIANTAMENTO DE 13º');
+}
+
+function extractDadosFolhaComMarcador(
+  text: string,
+  marcador: string,
+): DadosFolhaPagamento | null {
+  // Step 1: Validate it's the expected document type
+  if (!text.includes(marcador)) {
     return null;
   }
 
@@ -123,8 +152,12 @@ export function extractDadosFolhaPagamento(
   // Step 5: Remove repeated page headers from multi-page PDFs
   // Page headers look like: "00013MERCADINHO...Empresa : End. : Ref.: (...) DD/MM/YYYY DD/MM/YYYYa Dpto : Página : NNNNN Código Nome Ref. Sal. Contratual Adicionais Descontos Líquido TODOS Recibo FOLHA DE PAGAMENTO XXXXXXXXXXXXXX CNPJ/CEI:"
   // Keep only the first occurrence, remove subsequent ones.
-  const pageHeaderPattern =
-    /\d{5}[A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\s.,]+?Empresa\s*:.*?FOLHA DE PAGAMENTO\s+(?:\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s*CNPJ\/CEI:\s*/g;
+  const pageHeaderPattern = new RegExp(
+    `\\d{5}[A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\\s.,]+?Empresa\\s*:.*?${escapeRegExp(
+      marcador,
+    )}\\s+(?:\\d{14}|\\d{2}\\.\\d{3}\\.\\d{3}\\/\\d{4}-\\d{2})\\s*CNPJ\\/CEI:\\s*`,
+    'g',
+  );
   let cleanedText = text;
   const headerMatches = [...text.matchAll(pageHeaderPattern)];
   if (headerMatches.length > 1) {

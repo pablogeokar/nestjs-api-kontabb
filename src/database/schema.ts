@@ -495,7 +495,10 @@ export const folhasPagamento = pgTable(
       'chk_folhas_periodo',
       sql`${table.periodoInicio} <= ${table.periodoFim}`,
     ),
-    check('chk_folhas_tipo', sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`),
+    check(
+      'chk_folhas_tipo',
+      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS', 'ADIANTAMENTO_13')`,
+    ),
     check(
       'chk_folhas_totais',
       sql`${table.totalBruto} >= 0 AND ${table.totalDescontos} >= 0 AND ${table.totalLiquido} >= 0 AND ${table.totalFuncionarios} >= 0 AND ${table.totalInss} >= 0 AND ${table.totalFgts} >= 0 AND ${table.totalIrrf} >= 0 AND ${table.totalSalarioFamilia} >= 0`,
