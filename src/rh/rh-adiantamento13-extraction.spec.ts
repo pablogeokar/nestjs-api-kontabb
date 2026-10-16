@@ -51,6 +51,37 @@ describe('extractDadosAdiantamento13 - RITA RAIMUNDA (4 funcionários)', () => {
     expect(aldenora!.salarioLiquido).toBeCloseTo(862.03, 2);
   });
 
+  it('extrai o cargo da ALDENORA sem absorver a 1a parcela do 13º', () => {
+    const result = extractDadosAdiantamento13(textoRita)!;
+    const aldenora = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'ALDENORA VITORIA DE CARVALHO',
+    )!;
+    // Bug reportado: o cargo vinha como "COSTUREIRO (A) 1a. Parcela Décim..."
+    expect(aldenora.cargo).toBe('COSTUREIRO (A)');
+  });
+
+  it('extrai o cargo do PABLO sem absorver o fragmento de benefício', () => {
+    const result = extractDadosAdiantamento13(textoRita)!;
+    const pablo = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'PABLO SILVA BARRETO',
+    )!;
+    // O fragmento "Benefício de ... (183:20)" não pode entrar no cargo
+    expect(pablo.cargo).toBe('AUXILIAR DE MARCENARIA');
+    expect(pablo.cargo).not.toMatch(/Benef[ií]cio/);
+    expect(pablo.cargo).not.toMatch(/Parcela/);
+  });
+
+  it('nenhum cargo contém fragmentos de rubrica, benefício ou férias', () => {
+    const result = extractDadosAdiantamento13(textoRita)!;
+    for (const f of result.funcionarios) {
+      expect(f.cargo).not.toBeNull();
+      expect(f.cargo!).not.toMatch(/Parcela/);
+      expect(f.cargo!).not.toMatch(/Décimo/);
+      expect(f.cargo!).not.toMatch(/Benef[ií]cio/);
+      expect(f.cargo!).not.toMatch(/F[eé]rias/);
+    }
+  });
+
   it('extrai as rubricas da ALDENORA com código/descrição/referência corretos', () => {
     const result = extractDadosAdiantamento13(textoRita)!;
     const aldenora = result.funcionarios.find(
@@ -157,6 +188,32 @@ describe('extractDadosAdiantamento13 - PADARIA (multi-página, 12 funcionários)
     // Guardas contra o bug reportado
     expect(antonio.rubricas.some((r) => r.codigo === '012')).toBe(false);
     expect(antonio.rubricas.some((r) => r.descricao === 'Salário')).toBe(false);
+  });
+
+  it('extrai o cargo FORNEIRO sem absorver o fragmento de férias nem a 1a parcela', () => {
+    const result = extractDadosAdiantamento13(textoPadaria)!;
+    const antonioCarlos = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'ANTONIO CARLOS BARBOSA NASCIMENTO',
+    )!;
+    // Bloco com "Férias de ... (220:00)" antes da 1a parcela
+    expect(antonioCarlos.cargo).toBe('FORNEIRO');
+
+    const antonioPereira = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'ANTONIO PEREIRA DA SILVA NETO',
+    )!;
+    // Bloco sem fragmento intermediário, 1a parcela logo após o cargo
+    expect(antonioPereira.cargo).toBe('FORNEIRO');
+  });
+
+  it('nenhum cargo contém fragmentos de rubrica, benefício ou férias', () => {
+    const result = extractDadosAdiantamento13(textoPadaria)!;
+    for (const f of result.funcionarios) {
+      expect(f.cargo).not.toBeNull();
+      expect(f.cargo!).not.toMatch(/Parcela/);
+      expect(f.cargo!).not.toMatch(/Décimo/);
+      expect(f.cargo!).not.toMatch(/Benef[ií]cio/);
+      expect(f.cargo!).not.toMatch(/F[eé]rias/);
+    }
   });
 
   it('extrai a rubrica "Quebra de Caixa" (013) da MANUELE', () => {

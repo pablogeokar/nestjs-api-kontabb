@@ -251,9 +251,16 @@ function parseEmployeeBlock(block: string): DadosFuncionarioFolha | null {
 
   // Extract cargo/função
   // Cargo can contain parentheses like REPOSITOR(A), INST.DE MUSCULAÇÃO, etc.
-  // After the cargo there may be vacation info ("Férias de ...") or "Salário Base"
+  // After the cargo there may be a vacation fragment ("Férias de ..."), a
+  // benefit fragment ("Benefício de ..."), the first monthly rubrica ("Salário
+  // Base"), the first 13º rubrica ("{N}a. Parcela ...") or a BRL value. The
+  // capture is lazy, so it stops at the EARLIEST of these boundaries. Including
+  // the "Benefício de" and "{N}a. Parcela" alternatives prevents a 13º folha
+  // from bleeding "1a. Parcela Décimo Terceiro Salário" (or a benefit fragment)
+  // into the cargo — the BRL-value fallback alone would only stop AFTER the
+  // whole rubrica description, over-capturing the cargo.
   const cargoMatch = block.match(
-    /Fun[cç][aã]o\s*:\s*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\w\s.()/-]+?)(?=\s+F[eé]rias\s+de\s|\s+Sal[aá]rio\s+Base|\s+\d{1,3}(?:\.\d{3})*,\d{2})/i,
+    /Fun[cç][aã]o\s*:\s*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\w\s.()/-]+?)(?=\s+F[eé]rias\s+de\s|\s+Benef[ií]cio\s+de\s|\s+\d+a\.\s*Parcela|\s+Sal[aá]rio\s+Base|\s+\d{1,3}(?:\.\d{3})*,\d{2})/i,
   );
   const cargo = cargoMatch ? cargoMatch[1].trim() : null;
 
