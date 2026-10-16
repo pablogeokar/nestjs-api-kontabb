@@ -51,6 +51,57 @@ describe('extractDadosAdiantamento13 - RITA RAIMUNDA (4 funcionários)', () => {
     expect(aldenora!.salarioLiquido).toBeCloseTo(862.03, 2);
   });
 
+  it('extrai as rubricas da ALDENORA com código/descrição/referência corretos', () => {
+    const result = extractDadosAdiantamento13(textoRita)!;
+    const aldenora = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'ALDENORA VITORIA DE CARVALHO',
+    )!;
+
+    expect(aldenora.rubricas).toHaveLength(2);
+
+    // A rubrica da 1a parcela do 13º NÃO pode ser extraída como "012 Salário"
+    const parcela13 = aldenora.rubricas.find((r) => r.codigo === '003');
+    expect(parcela13).toBeDefined();
+    expect(parcela13!.descricao).toBe('1a. Parcela Décimo Terceiro Salário');
+    expect(parcela13!.referencia).toBe('012,00');
+    expect(parcela13!.valor).toBeCloseTo(841.0, 2);
+    expect(parcela13!.tipo).toBe('PROVENTO');
+
+    const anuenio = aldenora.rubricas.find((r) => r.codigo === '023');
+    expect(anuenio).toBeDefined();
+    expect(anuenio!.descricao).toBe('Anuênio 2,5%');
+    expect(anuenio!.referencia).toBeNull();
+    expect(anuenio!.valor).toBeCloseTo(21.03, 2);
+    expect(anuenio!.tipo).toBe('PROVENTO');
+
+    // Guardas contra o bug reportado: nenhuma rubrica "012" nem descrição "Salário"
+    expect(aldenora.rubricas.some((r) => r.codigo === '012')).toBe(false);
+    expect(aldenora.rubricas.some((r) => r.descricao === 'Salário')).toBe(
+      false,
+    );
+  });
+
+  it('não interpreta o fragmento "Benefício de ... (183:20)" como rubrica (PABLO)', () => {
+    const result = extractDadosAdiantamento13(textoRita)!;
+    const pablo = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'PABLO SILVA BARRETO',
+    )!;
+
+    expect(pablo.rubricas).toHaveLength(1);
+    const parcela13 = pablo.rubricas[0];
+    expect(parcela13.codigo).toBe('003');
+    expect(parcela13.descricao).toBe('1a. Parcela Décimo Terceiro Salário');
+    expect(parcela13.referencia).toBe('008,00');
+    expect(parcela13.valor).toBeCloseTo(553.67, 2);
+    expect(parcela13.tipo).toBe('PROVENTO');
+
+    // O fragmento de benefício não pode virar rubrica
+    expect(pablo.rubricas.some((r) => r.descricao.includes('Benefício'))).toBe(
+      false,
+    );
+    expect(pablo.rubricas.some((r) => r.referencia === '183:20')).toBe(false);
+  });
+
   it('extrai os totais gerais da folha', () => {
     const result = extractDadosAdiantamento13(textoRita)!;
     expect(result.totalBruto).toBeCloseTo(3847.25, 2);
@@ -73,5 +124,69 @@ describe('extractDadosAdiantamento13 - PADARIA (multi-página, 12 funcionários)
     expect(result!.totalFuncionarios).toBe(12);
     expect(result!.totalLiquido).toBeCloseTo(10614.98, 2);
     expect(result!.totalFgts).toBeCloseTo(849.17, 2);
+  });
+
+  it('extrai as rubricas do ANTONIO CARLOS e ignora o fragmento de férias', () => {
+    const result = extractDadosAdiantamento13(textoPadaria)!;
+    const antonio = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'ANTONIO CARLOS BARBOSA NASCIMENTO',
+    )!;
+
+    expect(antonio.rubricas).toHaveLength(2);
+
+    const parcela13 = antonio.rubricas.find((r) => r.codigo === '003');
+    expect(parcela13).toBeDefined();
+    expect(parcela13!.descricao).toBe('1a. Parcela Décimo Terceiro Salário');
+    expect(parcela13!.referencia).toBe('012,00');
+    expect(parcela13!.valor).toBeCloseTo(1105.5, 2);
+    expect(parcela13!.tipo).toBe('PROVENTO');
+
+    const adicTempo = antonio.rubricas.find((r) => r.codigo === '033');
+    expect(adicTempo).toBeDefined();
+    expect(adicTempo!.descricao).toBe('Adic.Tempo de Serviço');
+    expect(adicTempo!.referencia).toBeNull();
+    expect(adicTempo!.valor).toBeCloseTo(22.11, 2);
+    expect(adicTempo!.tipo).toBe('PROVENTO');
+
+    // O fragmento "Férias de ... (220:00)" não pode virar rubrica
+    expect(antonio.rubricas.some((r) => r.descricao.includes('Férias'))).toBe(
+      false,
+    );
+    expect(antonio.rubricas.some((r) => r.referencia === '220:00')).toBe(false);
+
+    // Guardas contra o bug reportado
+    expect(antonio.rubricas.some((r) => r.codigo === '012')).toBe(false);
+    expect(antonio.rubricas.some((r) => r.descricao === 'Salário')).toBe(false);
+  });
+
+  it('extrai a rubrica "Quebra de Caixa" (013) da MANUELE', () => {
+    const result = extractDadosAdiantamento13(textoPadaria)!;
+    const manuele = result.funcionarios.find(
+      (f) => f.nomeCompleto === 'MANUELE DE OLIVEIRA MARQUES',
+    )!;
+
+    const parcela13 = manuele.rubricas.find((r) => r.codigo === '003');
+    expect(parcela13).toBeDefined();
+    expect(parcela13!.descricao).toBe('1a. Parcela Décimo Terceiro Salário');
+    expect(parcela13!.referencia).toBe('012,00');
+    expect(parcela13!.valor).toBeCloseTo(831.0, 2);
+
+    const quebraCaixa = manuele.rubricas.find((r) => r.codigo === '013');
+    expect(quebraCaixa).toBeDefined();
+    expect(quebraCaixa!.descricao).toBe('Quebra de Caixa');
+    expect(quebraCaixa!.referencia).toBeNull();
+    expect(quebraCaixa!.valor).toBeCloseTo(83.1, 2);
+  });
+
+  it('nenhuma rubrica do 13º é extraída como "012" ou descrição "Salário"', () => {
+    const result = extractDadosAdiantamento13(textoPadaria)!;
+    const todasRubricas = result.funcionarios.flatMap((f) => f.rubricas);
+    expect(todasRubricas.length).toBeGreaterThan(0);
+    expect(todasRubricas.some((r) => r.codigo === '012')).toBe(false);
+    expect(todasRubricas.some((r) => r.descricao === 'Salário')).toBe(false);
+    // Toda rubrica código 003 deve ter a descrição completa da 1a parcela
+    for (const r of todasRubricas.filter((x) => x.codigo === '003')) {
+      expect(r.descricao).toBe('1a. Parcela Décimo Terceiro Salário');
+    }
   });
 });

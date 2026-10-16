@@ -372,40 +372,63 @@ function extractRubricas(block: string): RubricaFolha[] {
   const sepIdx = block.indexOf('***************');
   const beforeSep = sepIdx !== -1 ? block.substring(0, sepIdx) : block;
 
-  // Find the rubricas section: starts after "Função : {CARGO}" or "Férias..." with "Salário Base" or first rubrica
+  // Find the rubricas section: it begins after "Função : {CARGO}" and after any
+  // optional vacation/benefit fragment ("Férias de ... (NNN:NN)" / "Benefício de
+  // ... (NNN:NN)"). The CARGO (e.g. "COSTUREIRO (A)", "MOTORISTA DE CAMINHAO
+  // LEVE", "Promotor de vendas") and the vacation fragment must be skipped so
+  // they are not absorbed into the first rubrica's description.
+  //
+  // The previous heuristic jumped to the first "Salário" token. That worked for
+  // monthly folhas (the first rubrica is literally "Salário Base") but for a 13º
+  // folha it landed in the MIDDLE of "1a. Parcela Décimo Terceiro Salário",
+  // truncating the description to just "Salário" (the reported "012 Salário"
+  // bug). Instead we anchor on the real first-rubrica markers — "Salário Base"
+  // for monthly folhas and "{N}a. Parcela ..." for 13º folhas — so the full
+  // description is always preserved, regardless of the cargo text or casing.
   const funcaoMatch = beforeSep.match(/Fun[cç][aã]o\s*:\s*/i);
   let rubricaSection = beforeSep;
   if (funcaoMatch && funcaoMatch.index !== undefined) {
     const afterFuncao = beforeSep.substring(
       funcaoMatch.index + funcaoMatch[0].length,
     );
-    // Skip the cargo text and optional vacation info - find the first "Salário" which starts the rubricas
-    const salarioIdx = afterFuncao.search(/Sal[aá]rio/i);
-    if (salarioIdx !== -1) {
-      rubricaSection = afterFuncao.substring(salarioIdx);
-    } else {
-      rubricaSection = afterFuncao;
-    }
+    // The vacation/benefit fragment always ends with "(NNN:NN)" and never starts
+    // with either marker below, so anchoring on the markers skips it cleanly.
+    const inicioMatch = afterFuncao.match(
+      /\d+a\.\s*Parcela|Sal[aá]rio\s+Base/i,
+    );
+    rubricaSection =
+      inicioMatch && inicioMatch.index !== undefined
+        ? afterFuncao.substring(inicioMatch.index)
+        : afterFuncao;
   }
 
   // The rubrica pattern in these PDFs is:
-  // {Descrição} {valor BRL}{referência opcional NNN:NN}{código 3 dígitos}
+  // {Descrição} {valor BRL}{referência opcional}{código 3 dígitos}
   //
-  // Examples:
+  // Monthly-folha examples (reference is hours-style "NNN:NN"):
   //   "Salário Base 1.966,00220:00001" → desc="Salário Base", val="1.966,00", ref="220:00", cod="001"
   //   "INSS Folha 218,36903" → desc="INSS Folha", val="218,36", cod="903"
   //   "Horas Extras 497,22026:00409" → desc="Horas Extras", val="497,22", ref="026:00", cod="409"
   //   "Empréstimo (Crédito Trabalhador) Parc. 11/12 64,32625" → desc="Empréstimo (Crédito Trabalhador) Parc. 11/12", val="64,32", cod="625"
   //   "Salário Base 295,00036:40001" → desc="Salário Base", val="295,00", ref="036:40", cod="001"
   //
+  // 13º-folha examples (reference is decimal/comma-style "NNN,NN", description may start with a digit):
+  //   "1a. Parcela Décimo Terceiro Salário 841,00012,00003" → desc="1a. Parcela Décimo Terceiro Salário", val="841,00", ref="012,00", cod="003"
+  //   "Anuênio 2,5% 21,03023" → desc="Anuênio 2,5%", val="21,03", cod="023"
+  //   "Adic.Tempo de Serviço 22,11033" → desc="Adic.Tempo de Serviço", val="22,11", cod="033"
+  //   "Quebra de Caixa 83,10013" → desc="Quebra de Caixa", val="83,10", cod="013"
+  //
   // Pattern breakdown:
-  //   Description: starts with a letter, can contain letters, digits, spaces, dots, %, (), /
-  //   Value: BRL format (digits with optional . thousands separator, comma decimal, 2 decimal digits)
-  //   Optional reference: 3 digits + : + 2 digits (hours:minutes format)
-  //   Code: exactly 3 digits at the end
-
+  //   Description: starts with a letter OR a digit (e.g. "1a. Parcela ..."), can
+  //     contain letters, digits, spaces, dots, %, (), /, commas, hyphens.
+  //   Value: BRL format (digits with optional "." thousands separator, "," decimal, 2 decimals)
+  //   Optional reference: either hours-style "NNN:NN" or decimal/comma-style "NNN,NN".
+  //     Both the value and the comma-style reference end in ",NN", so the value
+  //     group is written to stop at the first ",NN" (no greedy swallow of the
+  //     reference) and the trailing 3-digit código anchors the match.
+  //   Code: exactly 3 digits at the end.
   const rubricaRegex =
-    /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\d\s.%()/,-]*?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})(\d{3}:\d{2})?(\d{3})/g;
+    /([A-Za-z\u00C0-\u024F\d][A-Za-z\u00C0-\u024F\d\s.%()/,-]*?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})(\d{3}:\d{2}|\d{3},\d{2})?(\d{3})/g;
 
   let match: RegExpExecArray | null;
   while ((match = rubricaRegex.exec(rubricaSection)) !== null) {
