@@ -43,8 +43,9 @@ tabela `controle_nsu`. Uma segunda execução recebe `EM_ANDAMENTO` e não consu
 a SEFAZ novamente. O lock é liberado no `finally` e pode ser retomado após 15
 minutos se o processo tiver sido interrompido antes da liberação.
 
-A migration `0005_acompanhamento_sincronizacao_fiscal.sql` deve ser aplicada
-antes da versão da API que consulta esses campos.
+Em banco novo, a baseline deve ser aplicada antes da versão da API que consulta
+esses campos. Em banco existente, a alteração correspondente deve ter sido
+aplicada pelo fluxo incremental do ambiente.
 
 ## Erros e observabilidade
 

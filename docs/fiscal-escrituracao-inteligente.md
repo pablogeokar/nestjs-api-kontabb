@@ -30,7 +30,7 @@ Essas proteções não substituem validação no PVA e revisão fiscal por compe
 
 ## Rollout
 
-1. Aplicar a migração `0007_escrituracao_inteligente.sql` pelo runner Drizzle (`pnpm db:migrate`) em banco isolado e depois em ambiente representativo. Migração aditiva: tabela de evidências, campos nullable de inferência/auditoria e flag manual default false. Conferir tempo/locks na tabela de itens antes da produção; o ALTER TABLE exige lock.
+1. Em banco novo, aplicar a baseline pelo runner Drizzle (`pnpm db:migrate`) antes de publicar a API. Em banco já existente, aplicar somente uma migration incremental compatível com o histórico daquele ambiente. Conferir tempo/locks antes de qualquer alteração estrutural em produção.
 2. Implantar API e depois frontend. Não ativar API nova antes da migração.
 3. Conferir o catálogo CFOP existente; se necessário, executar o seed versionado `pnpm db:seed:cfops` no ambiente escolhido, avaliando previamente os valores customizados que o seed atualiza.
 4. **CFOPs editados antes desta migração não tinham marcador persistido.** Identificar decisões anteriores nos logs `fiscal_cfop_item_editado` e reconfirmá-las pela UI antes do reprocessamento. A destinação manual anterior já possuía campo próprio e é preservada. Não há backfill que finja distinguir equivalência automática de alteração humana.

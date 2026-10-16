@@ -4,8 +4,8 @@ O histórico foi consolidado em uma única migration
 `drizzle/0000_baseline_kontabb.sql`, gerada de `src/database/schema.ts`. Ela é
 uma baseline para banco vazio e não deve ser executada sobre o banco antigo.
 
-O arquivo `../backup-restore/backup-kontabb.sql` contém somente dados. O schema,
-constraints e índices sempre devem ser criados primeiro pelo Drizzle.
+O backup data-only contém somente dados. O schema, constraints e índices sempre
+devem ser criados primeiro pelo Drizzle.
 
 ## Pré-requisitos
 
@@ -34,7 +34,7 @@ cd ../backup-restore
 go run . -mode=restore -input=backup-kontabb.sql -env=../api/.env --dry-run
 ```
 
-5. Se o dry-run restaurar 14 tabelas/604 registros e validar todas as FKs,
+5. Se o dry-run restaurar 34 tabelas/5.657 registros e validar todas as FKs,
    execute o restore real:
 
 ```bash
@@ -42,7 +42,18 @@ go run . -mode=restore -input=backup-kontabb.sql -env=../api/.env
 go run . -validate -env=../api/.env
 ```
 
-6. Execute os diagnósticos de domínio:
+6. Como o restore limpa as tabelas antes de inserir os dados, execute agora os
+   catálogos que não fazem parte do backup:
+
+```bash
+cd ../api
+pnpm db:seed:required
+```
+
+O backup atual já contém os usuários ADMIN e os CFOPs; por isso não execute
+`db:seed:admin` nem `db:seed:cfops` como parte desse restore.
+
+7. Execute os diagnósticos de domínio:
 
 ```bash
 cd ../api
@@ -52,7 +63,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 Todas as consultas devem retornar zero linhas. Confirme também que
 `drizzle.__drizzle_migrations` contém exatamente uma migration.
 
-7. Faça smoke tests de login, listagem/download de guias, pagamento,
+8. Faça smoke tests de login, listagem/download de guias, pagamento,
    upload e recibos de folha. Somente depois atualize a `DATABASE_URL` do deploy.
 
 ## Rollback

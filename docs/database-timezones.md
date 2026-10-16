@@ -25,7 +25,7 @@ Se a amostragem revelar valores gravados como horário local, a tabela e o perí
 afetados deverão ser corrigidos explicitamente; não se deve aplicar uma conversão
 global baseada em suposição.
 
-## Rollback da migration 0012
+## Rollback do ajuste de status legado
 
 O rollback reabre o valor persistido `VENCIDO` e o recompõe pela mesma regra de
 data usada na aplicação:
