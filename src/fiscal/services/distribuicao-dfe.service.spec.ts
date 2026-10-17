@@ -45,6 +45,82 @@ describe('DistribuicaoDfeService', () => {
     ).toBe(false);
   });
 
+  it('converte datas agregadas do banco ao consultar o status fiscal', async () => {
+    const orderBy = jest.fn().mockResolvedValue([
+      {
+        clienteId: 'cliente-1',
+        razaoSocial: 'ALFA COMERCIO LTDA',
+        tipoDocumento: 'NFE',
+        ultimoNsu: 42,
+        maxNsu: 42,
+        statusSefaz: 138,
+        motivoSefaz: 'Documento localizado',
+        ultimaConsultaEm: new Date('2026-10-17T15:00:00.000Z'),
+        proximaConsultaEm: null,
+        sincronizacaoId: null,
+        sincronizacaoIniciadaEm: null,
+      },
+    ]);
+    const select = jest
+      .fn()
+      .mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ orderBy }),
+          }),
+        }),
+      })
+      .mockImplementationOnce(
+        (fields: {
+          proximaTentativa: SQL & {
+            decoder: { mapFromDriverValue(value: string): Date };
+          };
+          proximaCiencia: SQL & {
+            decoder: { mapFromDriverValue(value: string): Date };
+          };
+        }) => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              groupBy: jest.fn().mockResolvedValue([
+                {
+                  clienteId: 'cliente-1',
+                  semManifestacao: '1',
+                  aguardandoXml: '2',
+                  proximaTentativa:
+                    fields.proximaTentativa.decoder.mapFromDriverValue(
+                      '2026-10-18T03:00:00.000Z',
+                    ),
+                  proximaCiencia:
+                    fields.proximaCiencia.decoder.mapFromDriverValue(
+                      '2026-10-19T03:00:00.000Z',
+                    ),
+                },
+              ]),
+            }),
+          }),
+        }),
+      );
+    const service = new DistribuicaoDfeService(
+      { db: { select } } as never,
+      {} as never,
+      {} as never,
+      createCfopServiceMock() as never,
+      {} as never,
+    );
+
+    const result = await service.getStatusSincronizacao('cliente-1');
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        cliente_id: 'cliente-1',
+        nfe_resumos_sem_manifestacao: 1,
+        nfe_resumos_aguardando_xml: 2,
+        proxima_tentativa_xml_em: '2026-10-18T03:00:00.000Z',
+        proxima_tentativa_ciencia_em: '2026-10-19T03:00:00.000Z',
+      }),
+    ]);
+  });
+
   it('não inicia uma consulta duplicada quando o controle já está bloqueado', async () => {
     const limit = jest
       .fn()

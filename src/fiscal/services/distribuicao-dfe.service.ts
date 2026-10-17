@@ -842,8 +842,14 @@ export class DistribuicaoDfeService {
         clienteId: documentosFiscais.clienteId,
         semManifestacao: sql<number>`count(*) filter (where ${documentosFiscais.manifestacaoStatus} = 'SEM_MANIFESTACAO')`,
         aguardandoXml: sql<number>`count(*) filter (where ${documentosFiscais.manifestacaoStatus} in ('CIENCIA', 'CONFIRMADA'))`,
-        proximaTentativa: sql<Date | null>`min(${documentosFiscais.proximaTentativaXmlEm})`,
-        proximaCiencia: sql<Date | null>`min(${documentosFiscais.proximaTentativaCienciaEm})`,
+        proximaTentativa:
+          sql<Date | null>`min(${documentosFiscais.proximaTentativaXmlEm})`.mapWith(
+            documentosFiscais.proximaTentativaXmlEm,
+          ),
+        proximaCiencia:
+          sql<Date | null>`min(${documentosFiscais.proximaTentativaCienciaEm})`.mapWith(
+            documentosFiscais.proximaTentativaCienciaEm,
+          ),
       })
       .from(documentosFiscais)
       .where(
