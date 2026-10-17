@@ -295,10 +295,19 @@ describe('FiscalItensService', () => {
     const dialect = new PgDialect();
     const credito = dialect.sqlToQuery(selection.credito_icms).sql;
     const debito = dialect.sqlToQuery(selection.debito_icms).sql;
+    const contraparte = dialect.sqlToQuery(selection.contraparte_nome).sql;
     expect(credito).toContain('tipo_operacao_escriturada');
     expect(credito).toContain('cst_icms');
     expect(credito).toContain('csosn_icms');
     expect(debito).toContain('tipo_operacao_escriturada');
+    expect(selection).toHaveProperty('documento_fiscal_id');
+    expect(selection).toHaveProperty('data_emissao');
+    expect(selection).toHaveProperty('tipo_documento');
+    expect(selection).toHaveProperty('numero_documento');
+    expect(selection).toHaveProperty('contraparte_nome');
+    expect(selection).toHaveProperty('contraparte_uf');
+    expect(contraparte).toContain('emitente_razao_social');
+    expect(contraparte).toContain('destinatario_razao_social');
     expect(selection).toHaveProperty('cfop');
     expect(selection).toHaveProperty('valor_contabil');
     expect(selection).toHaveProperty('isentas_nao_tributadas');
@@ -349,6 +358,14 @@ describe('FiscalItensService', () => {
     const groupBy = jest.fn().mockReturnValue({
       orderBy: jest.fn().mockResolvedValue([
         {
+          documento_fiscal_id: 'doc-1',
+          data_emissao: new Date('2026-08-10T12:00:00.000Z'),
+          tipo_documento: 'NFE',
+          modelo: '55',
+          serie: '1',
+          numero_documento: '123',
+          contraparte_nome: 'FORNECEDOR TESTE',
+          contraparte_uf: 'BA',
           tipo_operacao: 'ENTRADA',
           cfop: '1102',
           icms_creditado_debitado: '18.00',
@@ -366,6 +383,7 @@ describe('FiscalItensService', () => {
     const rows = await service.getResumoLivros({ clienteId: 'cliente-1' });
 
     expect(rows[0]).toMatchObject({
+      data_emissao: '2026-08-10T12:00:00.000Z',
       icms_creditado_debitado: '0.00',
       credito_icms: '0.00',
       debito_icms: '0.00',

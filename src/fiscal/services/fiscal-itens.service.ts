@@ -255,9 +255,23 @@ export class FiscalItensService {
     const valorOperacao = sql`COALESCE(${documentosFiscaisItens.valorBrutoProduto}, 0) + COALESCE(${documentosFiscaisItens.valorFrete}, 0) + COALESCE(${documentosFiscaisItens.valorSeguro}, 0) + COALESCE(${documentosFiscaisItens.valorOutrasDespesas}, 0) - COALESCE(${documentosFiscaisItens.valorDesconto}, 0)`;
     const valorSemTributacao = sql`GREATEST(${valorOperacao} - COALESCE(${documentosFiscaisItens.valorBcIcms}, 0), 0)`;
     const isentaOuNaoTributada = sql`(RIGHT(COALESCE(${documentosFiscaisItens.cstIcms}, ''), 2) IN ('40', '41') OR ${documentosFiscaisItens.csosnIcms} IN ('103', '300', '400'))`;
+    const contraparteNome = sql<
+      string | null
+    >`CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' THEN ${documentosFiscais.emitenteRazaoSocial} ELSE ${documentosFiscais.destinatarioRazaoSocial} END`;
+    const contraparteUf = sql<
+      string | null
+    >`CASE WHEN ${documentosFiscaisItens.tipoOperacaoEscriturada} = 'ENTRADA' THEN NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '') ELSE NULLIF(UPPER(BTRIM(${documentosFiscais.destinatarioDados} ->> 'uf')), '') END`;
 
     const rows = await this.database.db
       .select({
+        documento_fiscal_id: documentosFiscais.id,
+        data_emissao: documentosFiscais.dataEmissao,
+        tipo_documento: documentosFiscais.tipoDocumento,
+        modelo: documentosFiscais.modelo,
+        serie: documentosFiscais.serie,
+        numero_documento: documentosFiscais.numeroDocumento,
+        contraparte_nome: contraparteNome,
+        contraparte_uf: contraparteUf,
         tipo_operacao: documentosFiscaisItens.tipoOperacaoEscriturada,
         cfop: documentosFiscaisItens.cfop,
         aliquota_icms: documentosFiscaisItens.aliquotaIcms,
@@ -280,26 +294,41 @@ export class FiscalItensService {
       )
       .where(where)
       .groupBy(
+        documentosFiscais.id,
+        documentosFiscais.dataEmissao,
+        documentosFiscais.tipoDocumento,
+        documentosFiscais.modelo,
+        documentosFiscais.serie,
+        documentosFiscais.numeroDocumento,
+        contraparteNome,
+        contraparteUf,
         documentosFiscaisItens.tipoOperacaoEscriturada,
         documentosFiscaisItens.cfop,
         documentosFiscaisItens.aliquotaIcms,
       )
       .orderBy(
         documentosFiscaisItens.tipoOperacaoEscriturada,
+        documentosFiscais.dataEmissao,
+        documentosFiscais.numeroDocumento,
         documentosFiscaisItens.cfop,
       );
 
     // Política única (R6.3): zera crédito/débito do livro quando a matriz
     // fiscal resolve que o cliente NÃO apura ICMS próprio na competência.
-    if (fiscalConfig && !this.apuraIcmsProprio(fiscalConfig, input)) {
-      return rows.map((row) => ({
-        ...row,
-        icms_creditado_debitado: '0.00',
-        credito_icms: '0.00',
-        debito_icms: '0.00',
-      }));
-    }
-    return rows;
+    const projectedRows =
+      fiscalConfig && !this.apuraIcmsProprio(fiscalConfig, input)
+        ? rows.map((row) => ({
+            ...row,
+            icms_creditado_debitado: '0.00',
+            credito_icms: '0.00',
+            debito_icms: '0.00',
+          }))
+        : rows;
+
+    return projectedRows.map((row) => ({
+      ...row,
+      data_emissao: row.data_emissao.toISOString(),
+    }));
   }
 
   async getApuracaoIcms(input: ItemFilters) {
