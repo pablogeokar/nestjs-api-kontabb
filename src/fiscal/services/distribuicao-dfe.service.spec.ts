@@ -4,6 +4,7 @@ import {
   isFiscalSyncLockActive,
 } from './distribuicao-dfe.service';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { gzipSync } from 'node:zlib';
 import type { SQL } from 'drizzle-orm';
 import {
   documentosFiscais,
@@ -85,6 +86,161 @@ describe('DistribuicaoDfeService', () => {
 
     expect(result.status).toBe('EM_ANDAMENTO');
     expect(nfeWizard.consultarDistribuicaoDFe).not.toHaveBeenCalled();
+  });
+
+  it('varre lotes sucessivos e só avança o NSU após salvar cada resumo', async () => {
+    const { service, nfeWizard, atualizacoes } = createSyncHarness([
+      dfeResponse(1, 2, 'resNFe_v1.01.xsd'),
+      dfeResponse(2, 2, 'resNFe_v1.01.xsd'),
+    ]);
+    const salvarResumo = jest
+      .spyOn(service as never, 'salvarResumoNfe')
+      .mockResolvedValue(true);
+    jest
+      .spyOn(service as never, 'manifestarResumosPendentes')
+      .mockResolvedValue(undefined);
+    jest
+      .spyOn(service as never, 'recuperarUmResumoManifestado')
+      .mockResolvedValue(false);
+
+    const resultado = await service.sincronizarCliente('client-1', 'NFE');
+
+    expect(resultado).toMatchObject({
+      status: 'OK',
+      ultimoNsu: 2,
+      maxNsu: 2,
+      documentosRecebidos: 2,
+      documentosProcessados: 2,
+    });
+    expect(salvarResumo).toHaveBeenCalledTimes(2);
+    expect(
+      (
+        nfeWizard.consultarDistribuicaoDFe.mock.calls as Array<
+          [{ ultimoNsu: number }]
+        >
+      ).map(([arg]) => arg.ultimoNsu),
+    ).toEqual([0, 1]);
+    expect(atualizacoes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ultimoNsu: 1 }),
+        expect.objectContaining({ ultimoNsu: 2 }),
+      ]),
+    );
+  });
+
+  it('preserva o NSU diante de um docZip fiscal desconhecido', async () => {
+    const { service, atualizacoes } = createSyncHarness([
+      dfeResponse(1, 1, 'procNFe_v9.99.xsd', '<invalido/>'),
+    ]);
+    jest
+      .spyOn(service as never, 'manifestarResumosPendentes')
+      .mockResolvedValue(undefined);
+
+    const resultado = await service.sincronizarCliente('client-1', 'NFE');
+
+    expect(resultado).toMatchObject({
+      status: 'ERRO',
+      ultimoNsu: 0,
+      documentosComFalha: 1,
+    });
+    expect(atualizacoes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ ultimoNsu: 0 })]),
+    );
+  });
+
+  it('respeita uma hora após cStat 137 sem iniciar consulta por chave', async () => {
+    const { service, nfeWizard, atualizacoes } = createSyncHarness([
+      { data: {}, xMotivo: 'Nenhum documento localizado' },
+    ]);
+    jest
+      .spyOn(service as never, 'manifestarResumosPendentes')
+      .mockResolvedValue(undefined);
+    const recuperar = jest
+      .spyOn(service as never, 'recuperarUmResumoManifestado')
+      .mockResolvedValue(false);
+
+    const resultado = await service.sincronizarCliente('client-1', 'NFE');
+
+    expect(resultado).toMatchObject({ status: 'OK', cStat: 137, ultimoNsu: 0 });
+    expect(nfeWizard.consultarDistribuicaoDFe).toHaveBeenCalledTimes(1);
+    expect(recuperar).not.toHaveBeenCalled();
+    const proxima = atualizacoes.find(
+      (value) => value.statusSefaz === 137,
+    )?.proximaConsultaEm;
+    expect(proxima).toBeInstanceOf(Date);
+    expect((proxima as Date).getTime()).toBeGreaterThan(
+      Date.now() + 59 * 60 * 1000,
+    );
+  });
+
+  it('envia Ciência para resumo pendente e registra o evento sem escriturar', async () => {
+    const limit = jest
+      .fn()
+      .mockResolvedValue([{ id: 'doc-1', chaveAcesso: buildAccessKey('55') }]);
+    const select = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({ limit }),
+        }),
+      }),
+    });
+    const atualizacoes: Array<Record<string, unknown>> = [];
+    const update = jest.fn().mockReturnValue({
+      set: jest.fn((value: Record<string, unknown>) => {
+        atualizacoes.push(value);
+        return {
+          where: jest.fn(() =>
+            Object.assign(Promise.resolve(), {
+              returning: jest.fn().mockResolvedValue([{ id: 'doc-1' }]),
+            }),
+          ),
+        };
+      }),
+    });
+    const nfeWizard = {
+      enviarManifestacao: jest.fn().mockResolvedValue({
+        status: 135,
+        motivo: 'Evento registrado',
+        protocolo: '123',
+      }),
+    };
+    const service = new DistribuicaoDfeService(
+      { db: { select, update } } as never,
+      {} as never,
+      nfeWizard as never,
+      createCfopServiceMock() as never,
+      {} as never,
+    );
+    const registrar = jest
+      .spyOn(service, 'registrarManifestacao')
+      .mockResolvedValue(undefined);
+
+    await (
+      service as unknown as {
+        manifestarResumosPendentes(
+          clienteId: string,
+          cnpj: string,
+          uf: string,
+        ): Promise<void>;
+      }
+    ).manifestarResumosPendentes('client-1', '98765432000110', 'BA');
+
+    expect(nfeWizard.enviarManifestacao).toHaveBeenCalledWith(
+      expect.objectContaining({ tipoEvento: '210210' }),
+    );
+    expect(registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentoId: 'doc-1',
+        codigoEvento: '210210',
+        statusSefaz: 135,
+      }),
+    );
+    expect(atualizacoes.some((value) => 'tentativasCiencia' in value)).toBe(
+      true,
+    );
+    expect(
+      atualizacoes.some((value) => value.proximaTentativaXmlEm instanceof Date),
+    ).toBe(true);
   });
 
   it('retorna o resumo completo de documentos separado por cliente', async () => {
@@ -537,6 +693,82 @@ function expectAdvisoryLockAcquired(
     );
   });
   expect(acquired).toBe(true);
+}
+
+function createSyncHarness(responses: unknown[]) {
+  const limit = jest
+    .fn()
+    .mockResolvedValueOnce([
+      {
+        id: 'client-1',
+        cnpj: '98765432000110',
+        uf: 'BA',
+        regimeTributario: null,
+        apuraIcms: false,
+      },
+    ])
+    .mockResolvedValueOnce([
+      {
+        id: 'control-1',
+        ultimoNsu: 0,
+        maxNsu: 0,
+        proximaConsultaEm: null,
+      },
+    ]);
+  const select = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({ limit }),
+    }),
+  });
+  const atualizacoes: Array<Record<string, unknown>> = [];
+  const update = jest.fn().mockReturnValue({
+    set: jest.fn((value: Record<string, unknown>) => {
+      atualizacoes.push(value);
+      return {
+        where: jest.fn(() =>
+          Object.assign(Promise.resolve(), {
+            returning: jest.fn().mockResolvedValue([{ id: 'control-1' }]),
+          }),
+        ),
+      };
+    }),
+  });
+  const nfeWizard = {
+    consultarDistribuicaoDFe: jest
+      .fn()
+      .mockImplementation(() => Promise.resolve(responses.shift())),
+  };
+  const service = new DistribuicaoDfeService(
+    { db: { select, update } } as never,
+    {} as never,
+    nfeWizard as never,
+    createCfopServiceMock() as never,
+    {} as never,
+  );
+  return { service, nfeWizard, atualizacoes };
+}
+
+function dfeResponse(
+  nsu: number,
+  maxNsu: number,
+  schema: string,
+  xml?: string,
+) {
+  const chave = buildAccessKey('55');
+  const conteudo =
+    xml ??
+    `<resNFe><chNFe>${chave}</chNFe><CNPJ>12345678000195</CNPJ><dhEmi>2024-08-15T10:45:00-03:00</dhEmi><vNF>10.00</vNF></resNFe>`;
+  const zipped = gzipSync(Buffer.from(conteudo)).toString('base64');
+  return {
+    data: {
+      retDistDFeInt: {
+        cStat: '138',
+        ultNSU: String(nsu),
+        maxNSU: String(maxNsu),
+        xml: `<retDistDFeInt><loteDistDFeInt><docZip NSU="${String(nsu).padStart(15, '0')}" schema="${schema}">${zipped}</docZip></loteDistDFeInt></retDistDFeInt>`,
+      },
+    },
+  };
 }
 
 function parseDocumentWithItem(): ParsedDocumentoFiscal {

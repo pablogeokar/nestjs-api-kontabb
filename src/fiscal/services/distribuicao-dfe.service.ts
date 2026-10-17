@@ -67,6 +67,13 @@ export function isFiscalSyncFailure(result: FiscalSyncResult) {
 }
 
 export const FISCAL_SYNC_LOCK_TTL_MS = 15 * 60 * 1000;
+const MAX_LOTES_POR_SINCRONIZACAO = 20;
+const INTERVALO_SEFAZ_MS = 60 * 60 * 1000;
+
+function isEventoNfe(schema: string) {
+  const fileName = schema.trim().split(/[\\/]/).pop() ?? '';
+  return /^(?:procEventoNFe|resEvento)_v[\d.]+\.xsd$/i.test(fileName);
+}
 
 export function isFiscalSyncLockActive(
   input: { sincronizacaoId: string | null; iniciadaEm: Date | null },
@@ -178,155 +185,240 @@ export class DistribuicaoDfeService {
     }
 
     try {
-      // 4. Consultar SEFAZ
-      let resposta: unknown;
-      try {
-        if (tipoDocumento === 'NFE') {
-          resposta = await this.nfeWizard.consultarDistribuicaoDFe({
-            clienteId,
-            cnpj,
-            uf: uf || 'SP',
-            ultimoNsu: control.ultimoNsu,
-          });
-        } else {
-          resposta = await this.nfeWizard.consultarDistribuicaoCTe({
-            clienteId,
-            cnpj,
-            uf: uf || 'SP',
-            ultimoNsu: control.ultimoNsu,
-          });
-        }
-      } catch (error: unknown) {
-        const errorMessage = this.getRootCauseMessage(error);
-        this.logger.error(
-          `Erro na consulta SEFAZ para ${cnpj}: ${errorMessage}`,
-        );
-
-        // Se for erro de validação de schema XSD, apenas pular (não bloquear)
-        const isSchemaError =
-          errorMessage.includes('Validação do XML') ||
-          errorMessage.includes('No matching global declaration') ||
-          errorMessage.includes('SchemaValidat');
-
-        if (isSchemaError) {
-          this.logger.warn(
-            `Validação de schema falhou para ${cnpj}/${tipoDocumento} — pulando. ` +
-              `Isso geralmente indica XSD desatualizado na lib.`,
-          );
-          await this.atualizarControleNsu(control.id, {
-            statusSefaz: 998,
-            motivoSefaz: `Schema validation error: ${errorMessage.substring(0, 200)}`,
-            proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
-          });
-          return {
-            status: 'SCHEMA_ERROR',
-            message: `Erro de validação de schema XSD para ${tipoDocumento}. Consulta será retentada posteriormente.`,
-            documentosProcessados: 0,
-          };
-        }
-
-        // Consumo Indevido (cStat 656) — SEFAZ pede para aguardar 1 hora
-        const isConsumoIndevido =
-          errorMessage.includes('Consumo Indevido') ||
-          errorMessage.includes('656');
-
-        if (isConsumoIndevido) {
-          this.logger.warn(
-            `Consumo Indevido para ${cnpj}/${tipoDocumento} — aguardando 1 hora.`,
-          );
-          await this.atualizarControleNsu(control.id, {
-            statusSefaz: 656,
-            motivoSefaz: 'Consumo Indevido - aguardar 1 hora',
-            proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
-          });
-          return {
-            status: 'CONSUMO_INDEVIDO',
-            message:
-              'SEFAZ rejeitou por Consumo Indevido. Próxima tentativa em 1 hora.',
-            documentosProcessados: 0,
-          };
-        }
-
-        // Agendar próxima consulta para daqui 30 minutos em caso de erro
-        await this.atualizarControleNsu(control.id, {
-          statusSefaz: 999,
-          motivoSefaz: errorMessage,
-          proximaConsultaEm: new Date(Date.now() + 30 * 60 * 1000),
-        });
-        throw error;
-      }
-
-      // 5. Processar resposta da SEFAZ
-      const metadata = extractDfeResponseMetadata(resposta);
-      const { cStat, ultimoNsu: ultNSU, maxNsu: maxNSU } = metadata;
-
-      this.logger.log(
-        `SEFAZ response for ${cnpj}/${tipoDocumento}: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}`,
-      );
-
-      // Atualizar controle de NSU
-      let proximaConsulta: Date | null = null;
-
-      // cStat 137 = sem docs, 656 = consumo indevido - aguardar
-      if (cStat === 137 || cStat === 656) {
-        proximaConsulta = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
-      }
-
-      // Se ultNSU alcançou maxNSU, não há mais documentos no momento
-      if (ultNSU >= maxNSU && maxNSU > 0) {
-        proximaConsulta = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 horas
-      }
-
-      // 6. Processar documentos retornados
-      const docZips = extractDfeDocZips(resposta);
+      let cursor = control.ultimoNsu;
+      let maxNsuConhecido = control.maxNsu;
       let documentosProcessados = 0;
       let documentosIgnorados = 0;
       let documentosComFalha = 0;
-      let ultimoNsuSeguro = control.ultimoNsu;
+      let documentosRecebidos = 0;
+      let ultimoStatus = 0;
 
-      for (const docZip of [...docZips].sort((a, b) => a.nsu - b.nsu)) {
-        try {
-          const parsed = parseDfeDocZip(docZip, tipoDocumento);
-          if (!parsed) {
-            const resumo =
-              tipoDocumento === 'NFE' ? parseNfeResumoDocZip(docZip) : null;
-            if (resumo) {
-              if (await this.salvarResumoNfe(clienteId, cnpj, resumo)) {
-                documentosProcessados += 1;
-              }
-              ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
-              continue;
-            }
-            documentosIgnorados++;
-            ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
-            this.logger.debug(
-              `docZip ignorado: consulta=${tipoDocumento}, NSU=${docZip.nsu}, schema=${docZip.schema || 'desconhecido'}`,
-            );
-            continue;
-          }
-
-          if (
-            await this.salvarDocumento(clienteId, cnpj, parsed, {
-              regimeTributario: regimeTributario as RegimeTributario | null,
-              apuraIcms,
-            })
-          ) {
-            documentosProcessados += 1;
-          }
-          ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
-        } catch (error: unknown) {
-          documentosComFalha += 1;
-          this.logger.error(
-            `Falha ao persistir docZip NSU ${docZip.nsu}: ${this.getRootCauseMessage(error)}`,
-          );
-          break;
-        }
+      if (tipoDocumento === 'NFE') {
+        await this.manifestarResumosPendentes(clienteId, cnpj, uf || 'SP');
       }
 
-      // A disponibilizacao do procNFe apos a manifestacao pode ser assincrona.
-      // Reconsulta no maximo um resumo por ciclo para convergir sem multiplicar
-      // chamadas ao Ambiente Nacional nem favorecer consumo indevido.
-      if (tipoDocumento === 'NFE' && documentosComFalha === 0) {
+      for (let lote = 0; lote < MAX_LOTES_POR_SINCRONIZACAO; lote += 1) {
+        // 4. Consultar SEFAZ
+        let resposta: unknown;
+        try {
+          if (tipoDocumento === 'NFE') {
+            resposta = await this.nfeWizard.consultarDistribuicaoDFe({
+              clienteId,
+              cnpj,
+              uf: uf || 'SP',
+              ultimoNsu: cursor,
+            });
+          } else {
+            resposta = await this.nfeWizard.consultarDistribuicaoCTe({
+              clienteId,
+              cnpj,
+              uf: uf || 'SP',
+              ultimoNsu: cursor,
+            });
+          }
+        } catch (error: unknown) {
+          const errorMessage = this.getRootCauseMessage(error);
+          this.logger.error(
+            `Erro na consulta SEFAZ para ${cnpj}: ${errorMessage}`,
+          );
+
+          // Se for erro de validação de schema XSD, apenas pular (não bloquear)
+          const isSchemaError =
+            errorMessage.includes('Validação do XML') ||
+            errorMessage.includes('No matching global declaration') ||
+            errorMessage.includes('SchemaValidat');
+
+          if (isSchemaError) {
+            this.logger.warn(
+              `Validação de schema falhou para ${cnpj}/${tipoDocumento} — pulando. ` +
+                `Isso geralmente indica XSD desatualizado na lib.`,
+            );
+            await this.atualizarControleNsu(control.id, {
+              statusSefaz: 998,
+              motivoSefaz: `Schema validation error: ${errorMessage.substring(0, 200)}`,
+              proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
+            });
+            return {
+              status: 'SCHEMA_ERROR',
+              message: `Erro de validação de schema XSD para ${tipoDocumento}. Consulta será retentada posteriormente.`,
+              documentosProcessados: 0,
+            };
+          }
+
+          // Consumo Indevido (cStat 656) — SEFAZ pede para aguardar 1 hora
+          const isConsumoIndevido =
+            errorMessage.includes('Consumo Indevido') ||
+            errorMessage.includes('656');
+
+          if (isConsumoIndevido) {
+            this.logger.warn(
+              `Consumo Indevido para ${cnpj}/${tipoDocumento} — aguardando 1 hora.`,
+            );
+            await this.atualizarControleNsu(control.id, {
+              statusSefaz: 656,
+              motivoSefaz: 'Consumo Indevido - aguardar 1 hora',
+              proximaConsultaEm: new Date(Date.now() + 60 * 60 * 1000),
+            });
+            return {
+              status: 'CONSUMO_INDEVIDO',
+              message:
+                'SEFAZ rejeitou por Consumo Indevido. Próxima tentativa em 1 hora.',
+              documentosProcessados: 0,
+            };
+          }
+
+          // Agendar próxima consulta para daqui 30 minutos em caso de erro
+          await this.atualizarControleNsu(control.id, {
+            statusSefaz: 999,
+            motivoSefaz: errorMessage,
+            proximaConsultaEm: new Date(Date.now() + 30 * 60 * 1000),
+          });
+          throw error;
+        }
+
+        // 5. Processar resposta da SEFAZ
+        const metadata = extractDfeResponseMetadata(resposta);
+        const { cStat, ultimoNsu: ultNSU, maxNsu: maxNSU } = metadata;
+
+        this.logger.log(
+          `SEFAZ response for ${cnpj}/${tipoDocumento}: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}`,
+        );
+        ultimoStatus = cStat;
+        maxNsuConhecido = Math.max(maxNsuConhecido, maxNSU);
+
+        if (cStat === 656 || cStat === 137) {
+          await this.atualizarControleNsu(control.id, {
+            statusSefaz: cStat,
+            motivoSefaz: metadata.motivo,
+            maxNsu: maxNsuConhecido,
+            proximaConsultaEm: new Date(Date.now() + INTERVALO_SEFAZ_MS),
+          });
+          return {
+            status: cStat === 656 ? 'CONSUMO_INDEVIDO' : 'OK',
+            cStat,
+            ultimoNsu: cursor,
+            maxNsu: maxNsuConhecido,
+            documentosRecebidos,
+            documentosProcessados,
+            documentosIgnorados,
+            documentosComFalha,
+          };
+        }
+
+        // Um lote sem documentos ou sem NSU válido não pode mover o cursor:
+        // isso esconderia documentos que a biblioteca não conseguiu converter.
+        if (cStat !== 138 || ultNSU <= cursor || maxNSU < ultNSU) {
+          await this.atualizarControleNsu(control.id, {
+            statusSefaz: 999,
+            motivoSefaz: `Retorno inconsistente da distribuição: cStat=${cStat}, ultNSU=${ultNSU}, maxNSU=${maxNSU}`,
+            proximaConsultaEm: new Date(Date.now() + 30 * 60 * 1000),
+          });
+          return {
+            status: 'ERRO',
+            message:
+              'Retorno inconsistente da SEFAZ. O último NSU seguro foi preservado.',
+            cStat,
+            ultimoNsu: cursor,
+            maxNsu: maxNsuConhecido,
+            documentosRecebidos,
+            documentosProcessados,
+            documentosIgnorados,
+            documentosComFalha: documentosComFalha + 1,
+          };
+        }
+
+        // 6. Processar documentos retornados
+        const docZips = extractDfeDocZips(resposta);
+        documentosRecebidos += docZips.length;
+        let ultimoNsuSeguro = cursor;
+
+        for (const docZip of [...docZips].sort((a, b) => a.nsu - b.nsu)) {
+          try {
+            if (docZip.nsu <= cursor || docZip.nsu > ultNSU) {
+              throw new Error(`NSU fora do lote: ${docZip.nsu}`);
+            }
+            const parsed = parseDfeDocZip(docZip, tipoDocumento);
+            if (!parsed) {
+              const resumo =
+                tipoDocumento === 'NFE' ? parseNfeResumoDocZip(docZip) : null;
+              if (resumo) {
+                if (await this.salvarResumoNfe(clienteId, cnpj, resumo)) {
+                  documentosProcessados += 1;
+                }
+                ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+                continue;
+              }
+              if (tipoDocumento === 'CTE' || isEventoNfe(docZip.schema)) {
+                documentosIgnorados++;
+                ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+                continue;
+              }
+              throw new Error(
+                `docZip não interpretado: NSU=${docZip.nsu}, schema=${docZip.schema || 'desconhecido'}`,
+              );
+            }
+
+            if (
+              await this.salvarDocumento(clienteId, cnpj, parsed, {
+                regimeTributario: regimeTributario as RegimeTributario | null,
+                apuraIcms,
+              })
+            ) {
+              documentosProcessados += 1;
+            }
+            ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+          } catch (error: unknown) {
+            documentosComFalha += 1;
+            this.logger.error(
+              `Falha ao persistir docZip NSU ${docZip.nsu}: ${this.getRootCauseMessage(error)}`,
+            );
+            break;
+          }
+        }
+
+        // O cursor só pode alcançar ultNSU se todos os docZip do lote foram
+        // interpretados. Se a biblioteca omitir um deles, o lote será refeito.
+        const houveFalha = documentosComFalha > 0 || ultimoNsuSeguro !== ultNSU;
+        if (ultimoNsuSeguro !== ultNSU && documentosComFalha === 0) {
+          documentosComFalha += 1;
+          this.logger.error(
+            `Lote incompleto para ${cnpj}/${tipoDocumento}: último docZip=${ultimoNsuSeguro}, ultNSU=${ultNSU}`,
+          );
+        }
+        cursor = ultimoNsuSeguro;
+        await this.atualizarControleNsu(control.id, {
+          ultimoNsu: cursor,
+          maxNsu: maxNsuConhecido,
+          statusSefaz: houveFalha ? 999 : cStat,
+          motivoSefaz: houveFalha
+            ? 'Lote incompleto ou documento fiscal não interpretado. Consulta será retomada do último NSU seguro.'
+            : metadata.motivo,
+          proximaConsultaEm:
+            houveFalha || cursor < maxNsuConhecido
+              ? null
+              : new Date(Date.now() + INTERVALO_SEFAZ_MS),
+        });
+        if (houveFalha) {
+          return {
+            status: 'ERRO',
+            message:
+              'Lote fiscal incompleto. A próxima consulta retomará do último NSU seguro.',
+            cStat,
+            ultimoNsu: cursor,
+            maxNsu: maxNsuConhecido,
+            documentosRecebidos,
+            documentosProcessados,
+            documentosIgnorados,
+            documentosComFalha,
+          };
+        }
+        if (cursor >= maxNsuConhecido) break;
+      }
+
+      // Resumos manifestados ainda podem demorar a receber um novo NSU com
+      // procNFe. A consulta pontual é limitada a uma chave elegível por ciclo.
+      if (tipoDocumento === 'NFE' && ultimoStatus === 138) {
+        await this.manifestarResumosPendentes(clienteId, cnpj, uf || 'SP');
         try {
           if (
             await this.recuperarUmResumoManifestado(
@@ -338,41 +430,21 @@ export class DistribuicaoDfeService {
                 apuraIcms,
               },
             )
-          ) {
+          )
             documentosProcessados += 1;
-          }
         } catch (error: unknown) {
           this.logger.warn(
-            `XML completo de resumo manifestado ainda indisponivel para ${cnpj}: ${this.getRootCauseMessage(error)}`,
+            `Recuperação de XML pendente para ${cnpj}: ${this.getRootCauseMessage(error)}`,
           );
         }
       }
 
-      // 7. Atualizar controle de NSU final
-      const houveFalha = documentosComFalha > 0;
-      await this.atualizarControleNsu(control.id, {
-        ultimoNsu: houveFalha
-          ? ultimoNsuSeguro
-          : ultNSU > control.ultimoNsu
-            ? ultNSU
-            : control.ultimoNsu,
-        maxNsu: maxNSU > control.maxNsu ? maxNSU : control.maxNsu,
-        statusSefaz: houveFalha ? 999 : cStat,
-        motivoSefaz: houveFalha
-          ? 'Falha ao persistir documento fiscal. A consulta será retomada do último NSU seguro.'
-          : metadata.motivo,
-        proximaConsultaEm: houveFalha ? null : proximaConsulta,
-      });
-
       return {
-        status: houveFalha ? 'ERRO' : 'OK',
-        message: houveFalha
-          ? 'Um documento fiscal não pôde ser persistido. A próxima consulta retomará do último NSU seguro.'
-          : undefined,
-        cStat,
-        ultimoNsu: houveFalha ? ultimoNsuSeguro : ultNSU,
-        maxNsu: maxNSU,
-        documentosRecebidos: docZips.length,
+        status: 'OK',
+        cStat: ultimoStatus,
+        ultimoNsu: cursor,
+        maxNsu: maxNsuConhecido,
+        documentosRecebidos,
         documentosProcessados,
         documentosIgnorados,
         documentosComFalha,
@@ -765,7 +837,28 @@ export class DistribuicaoDfeService {
       .where(where)
       .orderBy(desc(controleNsu.ultimaConsultaEm));
 
+    const resumos = await this.database.db
+      .select({
+        clienteId: documentosFiscais.clienteId,
+        semManifestacao: sql<number>`count(*) filter (where ${documentosFiscais.manifestacaoStatus} = 'SEM_MANIFESTACAO')`,
+        aguardandoXml: sql<number>`count(*) filter (where ${documentosFiscais.manifestacaoStatus} in ('CIENCIA', 'CONFIRMADA'))`,
+        proximaTentativa: sql<Date | null>`min(${documentosFiscais.proximaTentativaXmlEm})`,
+        proximaCiencia: sql<Date | null>`min(${documentosFiscais.proximaTentativaCienciaEm})`,
+      })
+      .from(documentosFiscais)
+      .where(
+        and(
+          eq(documentosFiscais.situacao, 'RESUMIDA'),
+          ...(clienteId ? [eq(documentosFiscais.clienteId, clienteId)] : []),
+        ),
+      )
+      .groupBy(documentosFiscais.clienteId);
+    const resumosPorCliente = new Map(
+      resumos.map((row) => [row.clienteId, row]),
+    );
+
     return rows.map((row) => {
+      const pendencias = resumosPorCliente.get(row.clienteId);
       const sincronizacaoEmAndamento = isFiscalSyncLockActive({
         sincronizacaoId: row.sincronizacaoId,
         iniciadaEm: row.sincronizacaoIniciadaEm,
@@ -787,6 +880,16 @@ export class DistribuicaoDfeService {
         sincronizacao_iniciada_em: sincronizacaoEmAndamento
           ? (row.sincronizacaoIniciadaEm?.toISOString() ?? null)
           : null,
+        ...(row.tipoDocumento === 'NFE' && {
+          nfe_resumos_sem_manifestacao: Number(
+            pendencias?.semManifestacao ?? 0,
+          ),
+          nfe_resumos_aguardando_xml: Number(pendencias?.aguardandoXml ?? 0),
+          proxima_tentativa_xml_em:
+            pendencias?.proximaTentativa?.toISOString() ?? null,
+          proxima_tentativa_ciencia_em:
+            pendencias?.proximaCiencia?.toISOString() ?? null,
+        }),
       };
     });
   }
@@ -906,6 +1009,21 @@ export class DistribuicaoDfeService {
     uf: string;
     chaveAcesso: string;
   }): Promise<'OBTIDO' | 'PENDENTE'> {
+    const agora = new Date();
+    await this.database.db
+      .update(documentosFiscais)
+      .set({
+        ultimaTentativaXmlEm: agora,
+        proximaTentativaXmlEm: new Date(agora.getTime() + INTERVALO_SEFAZ_MS),
+        tentativasXml: sql`${documentosFiscais.tentativasXml} + 1`,
+      })
+      .where(
+        and(
+          eq(documentosFiscais.id, input.documentoId),
+          eq(documentosFiscais.clienteId, input.clienteId),
+          eq(documentosFiscais.situacao, 'RESUMIDA'),
+        ),
+      );
     const resposta = await this.nfeWizard.consultarPorChave({
       clienteId: input.clienteId,
       cnpj: input.cnpj,
@@ -1109,6 +1227,98 @@ export class DistribuicaoDfeService {
     }
   }
 
+  private async manifestarResumosPendentes(
+    clienteId: string,
+    cnpj: string,
+    uf: string,
+  ): Promise<void> {
+    const pendentes = await this.database.db
+      .select({
+        id: documentosFiscais.id,
+        chaveAcesso: documentosFiscais.chaveAcesso,
+      })
+      .from(documentosFiscais)
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          eq(documentosFiscais.situacao, 'RESUMIDA'),
+          eq(documentosFiscais.manifestacaoStatus, 'SEM_MANIFESTACAO'),
+          or(
+            isNull(documentosFiscais.proximaTentativaCienciaEm),
+            lte(documentosFiscais.proximaTentativaCienciaEm, new Date()),
+          ),
+        ),
+      )
+      .orderBy(
+        asc(documentosFiscais.proximaTentativaCienciaEm),
+        asc(documentosFiscais.criadoEm),
+      )
+      .limit(10);
+
+    for (const pendente of pendentes) {
+      const agora = new Date();
+      const reservado = await this.database.db
+        .update(documentosFiscais)
+        .set({
+          ultimaTentativaCienciaEm: agora,
+          proximaTentativaCienciaEm: new Date(
+            agora.getTime() + INTERVALO_SEFAZ_MS,
+          ),
+          tentativasCiencia: sql`${documentosFiscais.tentativasCiencia} + 1`,
+        })
+        .where(
+          and(
+            eq(documentosFiscais.id, pendente.id),
+            eq(documentosFiscais.situacao, 'RESUMIDA'),
+            eq(documentosFiscais.manifestacaoStatus, 'SEM_MANIFESTACAO'),
+            or(
+              isNull(documentosFiscais.proximaTentativaCienciaEm),
+              lte(documentosFiscais.proximaTentativaCienciaEm, agora),
+            ),
+          ),
+        )
+        .returning({ id: documentosFiscais.id });
+      if (!reservado[0]) continue;
+
+      try {
+        const resultado = await this.nfeWizard.enviarManifestacao({
+          clienteId,
+          cnpj,
+          uf,
+          chaveAcesso: pendente.chaveAcesso,
+          tipoEvento: '210210',
+        });
+        await this.registrarManifestacao({
+          documentoId: pendente.id,
+          tipoEvento: 'MANIFESTACAO_CIENCIA',
+          codigoEvento: '210210',
+          protocolo: resultado.protocolo,
+          statusSefaz: resultado.status,
+          motivoSefaz: resultado.motivo,
+        });
+        await this.database.db
+          .update(documentosFiscais)
+          .set({
+            proximaTentativaXmlEm: new Date(Date.now() + INTERVALO_SEFAZ_MS),
+            proximaTentativaCienciaEm: null,
+          })
+          .where(eq(documentosFiscais.id, pendente.id));
+        this.logger.log(
+          `Ciência automática registrada para NF-e ${pendente.chaveAcesso}`,
+        );
+      } catch (error: unknown) {
+        const motivo = this.getRootCauseMessage(error);
+        this.logger.warn(
+          `Ciência automática pendente para ${pendente.chaveAcesso}: ${motivo}`,
+        );
+        if (/consumo indevido|\b656\b/i.test(motivo)) break;
+      }
+      if (pendentes.length > 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1_200));
+      }
+    }
+  }
+
   private async recuperarUmResumoManifestado(
     clienteId: string,
     cnpj: string,
@@ -1129,21 +1339,57 @@ export class DistribuicaoDfeService {
             'CIENCIA',
             'CONFIRMADA',
           ]),
+          or(
+            isNull(documentosFiscais.proximaTentativaXmlEm),
+            lte(documentosFiscais.proximaTentativaXmlEm, new Date()),
+          ),
         ),
       )
-      .orderBy(asc(documentosFiscais.atualizadoEm))
+      .orderBy(
+        asc(documentosFiscais.proximaTentativaXmlEm),
+        asc(documentosFiscais.criadoEm),
+      )
       .limit(1);
     if (!pendente[0]) return false;
+
+    const chaveAcesso = pendente[0].chaveAcesso;
+    const agora = new Date();
+    const reserva = await this.database.db
+      .update(documentosFiscais)
+      .set({
+        ultimaTentativaXmlEm: agora,
+        proximaTentativaXmlEm: new Date(agora.getTime() + INTERVALO_SEFAZ_MS),
+        tentativasXml: sql`${documentosFiscais.tentativasXml} + 1`,
+      })
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          eq(documentosFiscais.chaveAcesso, chaveAcesso),
+          eq(documentosFiscais.situacao, 'RESUMIDA'),
+          or(
+            isNull(documentosFiscais.proximaTentativaXmlEm),
+            lte(documentosFiscais.proximaTentativaXmlEm, agora),
+          ),
+        ),
+      )
+      .returning({ id: documentosFiscais.id });
+    if (!reserva[0]) return false;
 
     const resposta = await this.nfeWizard.consultarPorChave({
       clienteId,
       cnpj,
       uf,
-      chaveAcesso: pendente[0].chaveAcesso,
+      chaveAcesso,
     });
+    const metadata = extractDfeResponseMetadata(resposta);
+    if (metadata.cStat === 656) {
+      throw new Error(
+        'SEFAZ retornou consumo indevido (656) na recuperação do XML.',
+      );
+    }
     const completo = extractDfeDocZips(resposta)
       .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
-      .find((documento) => documento?.chaveAcesso === pendente[0].chaveAcesso);
+      .find((documento) => documento?.chaveAcesso === chaveAcesso);
     if (!completo) return false;
     await this.salvarDocumento(clienteId, cnpj, completo, fiscalConfig);
     return true;
@@ -1352,6 +1598,7 @@ export class DistribuicaoDfeService {
                   : nfeEscrituracaoStatus,
               xmlKey,
               danfeKey: null,
+              proximaTentativaXmlEm: null,
               atualizadoEm: new Date(),
             },
           })

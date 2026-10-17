@@ -885,6 +885,20 @@ export const documentosFiscais = pgTable(
       .default('NAO_ESCRITURAVEL'),
     xmlKey: text('xml_key').notNull(),
     danfeKey: text('danfe_key'),
+    ultimaTentativaXmlEm: timestamp('ultima_tentativa_xml_em', {
+      withTimezone: true,
+    }),
+    proximaTentativaXmlEm: timestamp('proxima_tentativa_xml_em', {
+      withTimezone: true,
+    }),
+    tentativasXml: integer('tentativas_xml').notNull().default(0),
+    ultimaTentativaCienciaEm: timestamp('ultima_tentativa_ciencia_em', {
+      withTimezone: true,
+    }),
+    proximaTentativaCienciaEm: timestamp('proxima_tentativa_ciencia_em', {
+      withTimezone: true,
+    }),
+    tentativasCiencia: integer('tentativas_ciencia').notNull().default(0),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },
