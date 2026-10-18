@@ -495,7 +495,10 @@ export const folhasPagamento = pgTable(
       'chk_folhas_periodo',
       sql`${table.periodoInicio} <= ${table.periodoFim}`,
     ),
-    check('chk_folhas_tipo', sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS')`),
+    check(
+      'chk_folhas_tipo',
+      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS', 'ADIANTAMENTO_13')`,
+    ),
     check(
       'chk_folhas_totais',
       sql`${table.totalBruto} >= 0 AND ${table.totalDescontos} >= 0 AND ${table.totalLiquido} >= 0 AND ${table.totalFuncionarios} >= 0 AND ${table.totalInss} >= 0 AND ${table.totalFgts} >= 0 AND ${table.totalIrrf} >= 0 AND ${table.totalSalarioFamilia} >= 0`,
@@ -882,6 +885,20 @@ export const documentosFiscais = pgTable(
       .default('NAO_ESCRITURAVEL'),
     xmlKey: text('xml_key').notNull(),
     danfeKey: text('danfe_key'),
+    ultimaTentativaXmlEm: timestamp('ultima_tentativa_xml_em', {
+      withTimezone: true,
+    }),
+    proximaTentativaXmlEm: timestamp('proxima_tentativa_xml_em', {
+      withTimezone: true,
+    }),
+    tentativasXml: integer('tentativas_xml').notNull().default(0),
+    ultimaTentativaCienciaEm: timestamp('ultima_tentativa_ciencia_em', {
+      withTimezone: true,
+    }),
+    proximaTentativaCienciaEm: timestamp('proxima_tentativa_ciencia_em', {
+      withTimezone: true,
+    }),
+    tentativasCiencia: integer('tentativas_ciencia').notNull().default(0),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },

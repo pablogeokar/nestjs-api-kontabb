@@ -112,10 +112,10 @@ fica em `clientes.contador_id`, portanto o mesmo profissional pode atender vári
 empresas. O CRUD `/api/admin/cadastros/contadores` é exclusivo de staff e impede
 a exclusão enquanto houver clientes vinculados.
 
-A migration `0001_contadores_catalogo_sped.sql` copia os registros legados de
-`sped_contabilistas`, deduplica por CPF/CNPJ + CRC e preenche o vínculo sem
-apagar a origem. O conteúdo do registro 0100 permanece idêntico; muda somente a
-fonte cadastral.
+No banco atual, `contadores` é a fonte global e `clientes.contador_id` guarda o
+vínculo. Ao restaurar uma base legada, valide a deduplicação por CPF/CNPJ + CRC
+e os vínculos antes de liberar a geração da EFD. O conteúdo do registro 0100
+permanece idêntico; muda somente a fonte cadastral.
 
 Na preparação da EFD, a resolução segue esta ordem:
 

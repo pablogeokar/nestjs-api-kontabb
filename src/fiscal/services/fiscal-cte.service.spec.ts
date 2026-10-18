@@ -205,6 +205,63 @@ describe('FiscalCteService', () => {
     expect(query.params).toEqual(expect.arrayContaining([true, 'AUTORIZADA']));
   });
 
+  it('mantém a identificação do CT-e e da contraparte no livro fiscal', async () => {
+    let selection: Record<string, SQL> = {};
+    const orderBy = jest.fn().mockResolvedValue([
+      {
+        bloco: 'D',
+        documento_fiscal_id: 'documento-1',
+        data_emissao: new Date('2026-08-10T12:00:00.000Z'),
+        tipo_documento: 'CTE',
+        modelo: '57',
+        serie: '1',
+        numero_documento: '456',
+        contraparte_nome: 'TRANSPORTADORA TESTE',
+        contraparte_uf: 'BA',
+        tipo_operacao: 'ENTRADA',
+        cfop: '1352',
+        aliquota_icms: '12.0000',
+        valor_servicos: '100.00',
+        base_icms: '100.00',
+        icms_destacado: '12.00',
+        credito_icms: '12.00',
+      },
+    ]);
+    const database = {
+      db: {
+        select: jest.fn().mockImplementation((fields: Record<string, SQL>) => {
+          selection = fields;
+          return {
+            from: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  groupBy: jest.fn().mockReturnValue({ orderBy }),
+                }),
+              }),
+            }),
+          };
+        }),
+      },
+    };
+    const service = new FiscalCteService(database as never, {} as never);
+
+    const rows = await service.getResumoLivros({ clienteId: 'cliente-1' });
+
+    expect(rows[0]).toMatchObject({
+      documento_fiscal_id: 'documento-1',
+      data_emissao: '2026-08-10T12:00:00.000Z',
+      tipo_documento: 'CTE',
+      numero_documento: '456',
+      contraparte_nome: 'TRANSPORTADORA TESTE',
+      contraparte_uf: 'BA',
+    });
+    const contraparte = new PgDialect().sqlToQuery(
+      selection.contraparte_nome,
+    ).sql;
+    expect(contraparte).toContain('emitente_razao_social');
+    expect(contraparte).toContain('destinatario_razao_social');
+  });
+
   it('reprocessa a mesma escrituração por upsert sem criar uma segunda linha', async () => {
     const service = createService();
     const preparada = await service.prepararEscrituracao({

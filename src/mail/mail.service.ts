@@ -169,6 +169,50 @@ export class MailService {
     return this.sendEmail(payload, 'folha_pagamento_notification');
   }
 
+  /**
+   * Send notification when a 13th-salary advance (adiantamento do 13º salário)
+   * is uploaded via the RH module. Multi-employee like the monthly payroll.
+   */
+  async sendAdiantamento13NotificationEmail(params: {
+    to: string | string[];
+    clientName: string;
+    competencia: string;
+    totalFuncionarios: number;
+    totalLiquido: string;
+  }): Promise<boolean> {
+    const { to, clientName, competencia, totalFuncionarios, totalLiquido } =
+      params;
+
+    if (!this.apiToken) {
+      this.logger.warn('mailtrap_not_configured', {
+        operation: 'adiantamento13_notification',
+        result: 'skipped',
+      });
+      return false;
+    }
+
+    const recipients = Array.isArray(to)
+      ? to.map((email) => ({ email }))
+      : [{ email: to }];
+
+    if (recipients.length === 0) return false;
+
+    const payload = {
+      from: { email: this.senderEmail, name: this.senderName },
+      to: recipients,
+      subject: `Adiantamento do 13º Salário disponível · Competência ${competencia}`,
+      text: `Olá, ${clientName}\n\nO adiantamento do 13º salário referente à competência ${competencia} está disponível na área de RH do portal.\n\nResumo:\n• Competência: ${competencia}\n• Total de funcionários: ${totalFuncionarios}\n• Total líquido: R$ ${this.formatCurrency(totalLiquido)}\n\nAcesse o portal para consultar: ${this.portalUrl}/cliente\n\nAviso: Nunca enviamos documentos em anexo por e-mail.\n\n—\nKontabb · Contabilidade Borges`,
+      html: this.buildAdiantamento13Html({
+        clientName,
+        competencia,
+        totalFuncionarios,
+        totalLiquido,
+      }),
+    };
+
+    return this.sendEmail(payload, 'adiantamento13_notification');
+  }
+
   async sendFeriasNotificationEmail(params: {
     to: string | string[];
     clientName: string;
@@ -530,6 +574,35 @@ export class MailService {
       <p style="color:#5F6B7A;line-height:1.6;">Sua folha de pagamento está disponível para consulta na área de RH do portal.</p>
       <table width="100%" style="background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;margin:20px 0;"><tr><td style="padding:24px;">
         <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Folha de Pagamento</span><br>
+        <span style="font-size:16px;font-weight:700;color:#0B1F3A;">Competência ${esc(competencia)}</span>
+        <table width="100%" style="margin-top:16px;"><tr>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Funcionários</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${totalFuncionarios}</span></td>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Total Líquido</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">R$ ${esc(this.formatCurrency(totalLiquido))}</span></td>
+        </tr></table>
+      </td></tr></table>
+      <p style="text-align:center;">
+        <a href="${esc(this.portalUrl)}/cliente" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar Portal</a>
+      </p>
+    `;
+
+    return this.layout.wrap(bodyContent);
+  }
+
+  private buildAdiantamento13Html(params: {
+    clientName: string;
+    competencia: string;
+    totalFuncionarios: number;
+    totalLiquido: string;
+  }): string {
+    const { clientName, competencia, totalFuncionarios, totalLiquido } = params;
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const bodyContent = `
+      <p style="font-size:20px;font-weight:700;color:#0B1F3A;">Olá, ${esc(clientName)}</p>
+      <p style="color:#5F6B7A;line-height:1.6;">O adiantamento do 13º salário está disponível para consulta na área de RH do portal.</p>
+      <table width="100%" style="background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;margin:20px 0;"><tr><td style="padding:24px;">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Adiantamento do 13º Salário</span><br>
         <span style="font-size:16px;font-weight:700;color:#0B1F3A;">Competência ${esc(competencia)}</span>
         <table width="100%" style="margin-top:16px;"><tr>
           <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Funcionários</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${totalFuncionarios}</span></td>

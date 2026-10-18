@@ -193,21 +193,16 @@ Resolvers puros, determinísticos e read-only orquestram a liberação:
   tempo/consultas por documento. O serviço agrega no SQL (sem N+1, atento a
   caches por versão); o núcleo apenas monta o retrato sobre números já computados.
 
-## Modelo de dados (migrações aditivas 0019–0026)
+## Modelo de dados
 
-Todas as migrações da Fase 5 são **aditivas** (novas tabelas, `ADD COLUMN`,
-`CREATE INDEX`, `ADD CONSTRAINT`) — nenhum `DROP` nem `ALTER COLUMN`.
+Em bancos novos, estas estruturas são criadas pela baseline. Evoluções futuras
+devem ser migrations incrementais, preservando dados e evitando remoções sem um
+plano explícito de migração.
 
-| Migração | Conteúdo |
-| --- | --- |
-| `0019_fase5_fiscal_pagamentos_eventos` | Tabela `fiscal_pagamentos_eventos` (trilha de pagamento/estorno) |
-| `0020_fase5_guias_vinculo_apuracao` | Vínculo da guia à versão de apuração (`fechamento_id`) |
-| `0021_fase5_guias_divergencia_obrigacao` | Sinalização de divergência guia × obrigação |
-| `0022_fase5_guias_cancelamento_logico` | Cancelamento lógico (sem delete físico) |
-| `0023_fase5_guias_emitida_orgao` | Separação registrada ≠ emitida no órgão |
-| `0024_fase5_guias_idempotency_key` | Idempotency key sem bloquear obrigações legítimas |
-| `0025_fase5_fiscal_entregas` | Tabela `fiscal_entregas` (entrega + retificação) |
-| `0026_fase5_fiscal_entregas_retry_storage` | Rastreio de falha/retry de storage |
+- `fiscal_pagamentos_eventos`: trilha de pagamento e estorno.
+- `fiscal_apuracoes_guias`: vínculo da guia à versão de apuração, divergência,
+  cancelamento lógico, emissão no órgão e idempotência.
+- `fiscal_entregas`: entrega, retificação e rastreio de falha/retry de storage.
 
 ## Verificação
 
@@ -215,7 +210,7 @@ Todas as migrações da Fase 5 são **aditivas** (novas tabelas, `ADD COLUMN`,
 # api
 pnpm test --runInBand
 pnpm build
-pnpm db:check   # migrações aditivas 0019–0026
+pnpm db:check   # schema, journal e snapshot da baseline
 
 # web
 pnpm exec tsc --noEmit

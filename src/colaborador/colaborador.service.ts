@@ -233,6 +233,8 @@ export class ColaboradorService {
           competencia: folhasPagamento.competencia,
           periodoInicio: folhasPagamento.periodoInicio,
           periodoFim: folhasPagamento.periodoFim,
+          tipo: folhasPagamento.tipo,
+          diasFerias: folhasPagamento.diasFerias,
         })
         .from(itensFolhaPagamento)
         .innerJoin(
@@ -256,6 +258,8 @@ export class ColaboradorService {
         competencia: r.competencia,
         periodoInicio: r.periodoInicio,
         periodoFim: r.periodoFim,
+        tipo: r.tipo ?? 'FOLHA_MENSAL',
+        diasFerias: r.diasFerias ?? null,
       })),
     };
   }
@@ -288,6 +292,10 @@ export class ColaboradorService {
           competencia: folhasPagamento.competencia,
           periodoInicio: folhasPagamento.periodoInicio,
           periodoFim: folhasPagamento.periodoFim,
+          tipo: folhasPagamento.tipo,
+          diasFerias: folhasPagamento.diasFerias,
+          periodoAquisitivoInicio: folhasPagamento.periodoAquisitivoInicio,
+          periodoAquisitivoFim: folhasPagamento.periodoAquisitivoFim,
         },
         empresa: {
           razaoSocial: clientes.razaoSocial,
@@ -333,6 +341,10 @@ export class ColaboradorService {
       competencia: row.folha.competencia,
       periodoInicio: row.folha.periodoInicio,
       periodoFim: row.folha.periodoFim,
+      tipo: row.folha.tipo ?? 'FOLHA_MENSAL',
+      diasFerias: row.folha.diasFerias ?? null,
+      periodoAquisitivoInicio: row.folha.periodoAquisitivoInicio ?? null,
+      periodoAquisitivoFim: row.folha.periodoAquisitivoFim ?? null,
       empresa: {
         razaoSocial: row.empresa.razaoSocial,
         cnpj: row.empresa.cnpj,
@@ -375,6 +387,10 @@ export class ColaboradorService {
           competencia: folhasPagamento.competencia,
           periodoInicio: folhasPagamento.periodoInicio,
           periodoFim: folhasPagamento.periodoFim,
+          tipo: folhasPagamento.tipo,
+          diasFerias: folhasPagamento.diasFerias,
+          periodoAquisitivoInicio: folhasPagamento.periodoAquisitivoInicio,
+          periodoAquisitivoFim: folhasPagamento.periodoAquisitivoFim,
         },
         empresa: {
           razaoSocial: clientes.razaoSocial,
@@ -424,6 +440,10 @@ export class ColaboradorService {
       competencia: row.folha.competencia,
       periodoInicio: row.folha.periodoInicio,
       periodoFim: row.folha.periodoFim,
+      tipo: row.folha.tipo ?? 'FOLHA_MENSAL',
+      diasFerias: row.folha.diasFerias ?? null,
+      periodoAquisitivoInicio: row.folha.periodoAquisitivoInicio ?? null,
+      periodoAquisitivoFim: row.folha.periodoAquisitivoFim ?? null,
       funcionario: {
         codigoFuncionario: row.funcionario.codigoFuncionario,
         nomeCompleto: row.funcionario.nomeCompleto,

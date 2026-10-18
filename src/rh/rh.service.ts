@@ -210,6 +210,191 @@ export class RhService {
     }
   }
 
+  // ─── Process 13th-salary advance (Adiantamento do 13º) upload ───
+  async processarAdiantamento13(input: {
+    dados: DadosFolhaPagamento;
+    clienteId: string;
+    r2Key: string;
+    fileName: string;
+    actorUserId: string;
+    requestId?: string;
+  }): Promise<{ ok: boolean; folhaId?: string; code?: string }> {
+    const { dados, clienteId, r2Key, fileName, actorUserId } = input;
+
+    const codigos = dados.funcionarios.map((func) => func.codigoFuncionario);
+    if (
+      dados.totalFuncionarios !== dados.funcionarios.length ||
+      new Set(codigos).size !== codigos.length
+    ) {
+      this.logger.warn('rh_adiantamento13_inconsistent_employee_count', {
+        requestId: input.requestId,
+        clienteId,
+        totalInformado: dados.totalFuncionarios,
+        totalExtraido: dados.funcionarios.length,
+      });
+      return { ok: false, code: 'DADOS_INCONSISTENTES' };
+    }
+
+    try {
+      const folhaId = crypto.randomUUID();
+      const funcionariosPayload = JSON.stringify(
+        dados.funcionarios.map((func) => ({
+          codigo_funcionario: func.codigoFuncionario,
+          nome_completo: func.nomeCompleto,
+          data_admissao: func.dataAdmissao
+            ? this.parseDataAdmissao(func.dataAdmissao)
+            : null,
+          cargo: func.cargo,
+          salario_base: func.salarioBase,
+          total_proventos: func.totalProventos,
+          total_descontos: func.totalDescontos,
+          salario_liquido: func.salarioLiquido,
+          base_inss: func.baseInss,
+          aliquota_inss: func.aliquotaInss,
+          valor_inss: func.valorInss,
+          base_fgts: func.baseFgts,
+          valor_fgts: func.valorFgts,
+          base_irrf: func.baseIrrf,
+          valor_irrf: func.valorIrrf,
+          referencia: func.referencia,
+          codigo_folha: func.codigoFolha,
+          dependentes_ir: func.dependentesIr,
+          dependentes_sf: func.dependentesSf,
+          rubricas: func.rubricas,
+        })),
+      );
+
+      // Uma unica instrucao SQL mantem folha, funcionarios, itens e auditoria
+      // atomicos inclusive no driver HTTP do Neon, que nao oferece transacoes
+      // interativas.
+      const result = await this.database.db.execute(sql`
+        WITH input_funcionarios AS MATERIALIZED (
+          SELECT *
+          FROM jsonb_to_recordset(${funcionariosPayload}::jsonb) AS f(
+            codigo_funcionario text,
+            nome_completo text,
+            data_admissao date,
+            cargo text,
+            salario_base numeric,
+            total_proventos numeric,
+            total_descontos numeric,
+            salario_liquido numeric,
+            base_inss numeric,
+            aliquota_inss numeric,
+            valor_inss numeric,
+            base_fgts numeric,
+            valor_fgts numeric,
+            base_irrf numeric,
+            valor_irrf numeric,
+            referencia text,
+            codigo_folha text,
+            dependentes_ir integer,
+            dependentes_sf integer,
+            rubricas jsonb
+          )
+        ),
+        inserted_folha AS (
+          INSERT INTO folhas_pagamento (
+            id, cliente_id, arquivo_key, arquivo_nome, tipo, competencia,
+            periodo_inicio, periodo_fim, total_bruto, total_descontos,
+            total_liquido, total_funcionarios, total_inss, total_fgts,
+            total_irrf, total_salario_familia, uploadado_por
+          ) VALUES (
+            ${folhaId}::uuid, ${clienteId}::uuid, ${r2Key}, ${fileName},
+            'ADIANTAMENTO_13', ${dados.competencia}, ${dados.periodoInicio}::date,
+            ${dados.periodoFim}::date, ${dados.totalBruto}::numeric,
+            ${dados.totalDescontos}::numeric, ${dados.totalLiquido}::numeric,
+            ${dados.totalFuncionarios}, ${dados.totalInss}::numeric,
+            ${dados.totalFgts}::numeric, ${dados.totalIrrf}::numeric,
+            ${dados.totalSalarioFamilia}::numeric, ${actorUserId}
+          )
+          RETURNING id, cliente_id
+        ),
+        upserted_funcionarios AS (
+          INSERT INTO funcionarios_rh (
+            id, cliente_id, codigo_funcionario, nome_completo,
+            data_admissao, cargo
+          )
+          SELECT
+            gen_random_uuid(), folha.cliente_id, f.codigo_funcionario,
+            f.nome_completo, f.data_admissao, f.cargo
+          FROM input_funcionarios f
+          CROSS JOIN inserted_folha folha
+          ON CONFLICT (cliente_id, codigo_funcionario) DO UPDATE SET
+            nome_completo = EXCLUDED.nome_completo,
+            data_admissao = COALESCE(
+              EXCLUDED.data_admissao,
+              funcionarios_rh.data_admissao
+            ),
+            cargo = EXCLUDED.cargo,
+            atualizado_em = now()
+          RETURNING id, cliente_id, codigo_funcionario
+        ),
+        inserted_itens AS (
+          INSERT INTO itens_folha_pagamento (
+            folha_id, funcionario_id, cliente_id, salario_base,
+            total_proventos, total_descontos, salario_liquido, base_inss,
+            aliquota_inss, valor_inss, base_fgts, valor_fgts, base_irrf,
+            valor_irrf, referencia, codigo_folha, dependentes_ir,
+            dependentes_sf, rubricas
+          )
+          SELECT
+            folha.id, funcionario.id, folha.cliente_id, f.salario_base,
+            f.total_proventos, f.total_descontos, f.salario_liquido,
+            f.base_inss, f.aliquota_inss, f.valor_inss, f.base_fgts,
+            f.valor_fgts, f.base_irrf, f.valor_irrf, f.referencia,
+            f.codigo_folha, f.dependentes_ir, f.dependentes_sf, f.rubricas
+          FROM input_funcionarios f
+          JOIN upserted_funcionarios funcionario
+            ON funcionario.codigo_funcionario = f.codigo_funcionario
+          CROSS JOIN inserted_folha folha
+          RETURNING id
+        ),
+        audit_event AS (
+          INSERT INTO eventos_auditoria (
+            ator_user_id, acao, entidade_tipo, entidade_id, dados
+          )
+          SELECT
+            ${actorUserId}, 'ADIANTAMENTO_13_UPLOADADO', 'FOLHA_PAGAMENTO',
+            folha.id::text,
+            jsonb_build_object(
+              'clienteId', folha.cliente_id::text,
+              'competencia', ${dados.competencia}::text,
+              'tipo', 'ADIANTAMENTO_13',
+              'totalFuncionarios', ${dados.totalFuncionarios}::integer
+            )
+          FROM inserted_folha folha
+          RETURNING id
+        )
+        SELECT
+          EXISTS (SELECT 1 FROM inserted_folha) AS inserted,
+          (SELECT count(*)::integer FROM inserted_itens) AS item_count
+      `);
+
+      const persisted = resultRows<{
+        inserted: boolean;
+        item_count: number;
+      }>(result)[0];
+      if (
+        !persisted?.inserted ||
+        Number(persisted.item_count) !== dados.totalFuncionarios
+      ) {
+        throw new Error('ADIANTAMENTO_13_INSERT_INCOMPLETE');
+      }
+
+      return { ok: true, folhaId };
+    } catch (error) {
+      this.logger.error('rh_processar_adiantamento13_failed', error, {
+        requestId: input.requestId,
+        clienteId,
+      });
+      if (this.isUniqueViolation(error)) {
+        return { ok: false, code: 'ADIANTAMENTO_13_DUPLICADO' };
+      }
+      return { ok: false, code: 'DATABASE_FAILED' };
+    }
+  }
+
   // ─── Process vacation document (Férias) upload ───
   async processarFerias(input: {
     dados: DadosFerias;
@@ -390,6 +575,22 @@ export class RhService {
         and(
           eq(folhasPagamento.clienteId, clienteId),
           eq(folhasPagamento.tipo, 'FOLHA_MENSAL'),
+          eq(folhasPagamento.competencia, competencia),
+        ),
+      )
+      .limit(1);
+    return result[0] ?? null;
+  }
+
+  // ─── Check duplicate adiantamento 13 ───
+  async checkDuplicateAdiantamento13(clienteId: string, competencia: string) {
+    const result = await this.database.db
+      .select({ id: folhasPagamento.id })
+      .from(folhasPagamento)
+      .where(
+        and(
+          eq(folhasPagamento.clienteId, clienteId),
+          eq(folhasPagamento.tipo, 'ADIANTAMENTO_13'),
           eq(folhasPagamento.competencia, competencia),
         ),
       )

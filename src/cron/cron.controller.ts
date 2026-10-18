@@ -76,7 +76,7 @@ export class CronController {
   @ApiOperation({
     summary: 'Sincronização fiscal com SEFAZ (cron)',
     description:
-      'Endpoint chamado por cron job externo (a cada 4-6h) para sincronizar documentos fiscais eletrônicos via Distribuição de DFe. Atualiza status de certificados e consulta NSU de todos os clientes ativos.',
+      'Endpoint chamado por cron job externo a cada 24 horas para sincronizar documentos fiscais eletrônicos via Distribuição de DFe. A API respeita o intervalo mínimo da SEFAZ por cliente.',
   })
   @ApiHeader({
     name: 'authorization',
