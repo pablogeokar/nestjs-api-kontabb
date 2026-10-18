@@ -13,12 +13,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DacteService } from './dacte.service';
+import { NfsePdfService } from './nfse-pdf.service';
 
 const PDF_WRITE_TIMEOUT_MS = 10_000;
 const PDF_POLL_INTERVAL_MS = 25;
 
 /**
- * Gera e serve DANFE (NF-e/NFC-e) e DACTE (CT-e) a partir do XML fiscal.
+ * Gera e serve DANFE, DACTE e espelho de NFS-e a partir do XML fiscal.
  */
 @Injectable()
 export class DanfeService {
@@ -28,6 +29,7 @@ export class DanfeService {
     private readonly database: DatabaseService,
     private readonly storage: StorageService,
     private readonly dacteService: DacteService,
+    private readonly nfsePdfService: NfsePdfService,
   ) {}
 
   /**
@@ -73,20 +75,22 @@ export class DanfeService {
       const xmlContent = xmlBuffer.toString('utf-8');
 
       const pdfBuffer =
-        doc[0].tipoDocumento === 'CTE'
-          ? await this.dacteService.generatePdf(xmlContent)
-          : await this.generateDanfePdf(
-              xmlContent,
-              doc[0].chaveAcesso,
-              doc[0].tipoDocumento,
-            );
+        doc[0].tipoDocumento === 'NFSE'
+          ? await this.nfsePdfService.generatePdf(xmlContent)
+          : doc[0].tipoDocumento === 'CTE'
+            ? await this.dacteService.generatePdf(xmlContent)
+            : await this.generateDanfePdf(
+                xmlContent,
+                doc[0].chaveAcesso,
+                doc[0].tipoDocumento,
+              );
 
       return { buffer: pdfBuffer, contentType: 'application/pdf' };
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'erro desconhecido';
       this.logger.error(
-        `Erro ao gerar documento auxiliar para ${doc[0].chaveAcesso}: ${message}`,
+        `Erro ao gerar documento auxiliar para ${doc[0].id}: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
       throw new ServiceUnavailableException(

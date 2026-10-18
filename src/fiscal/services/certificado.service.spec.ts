@@ -156,3 +156,96 @@ describe('substituição de certificado A1', () => {
     );
   });
 });
+
+describe('status do certificado para o cliente', () => {
+  it('inicia o alerta exatamente 30 dias antes do vencimento', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-18T12:00:00.000Z'));
+    try {
+      const certificate = {
+        id: 'certificado-1',
+        cnpj: '12345678000190',
+        razaoSocial: 'Empresa Exemplo',
+        thumbprint: null,
+        emissor: null,
+        validadeInicio: new Date('2025-10-01T00:00:00.000Z'),
+        status: 'ATIVO',
+        criadoEm: new Date('2025-10-01T00:00:00.000Z'),
+      };
+      const limit = jest
+        .fn()
+        .mockResolvedValueOnce([
+          { ...certificate, validadeFim: new Date('2026-11-17T13:00:00.000Z') },
+        ])
+        .mockResolvedValueOnce([
+          { ...certificate, validadeFim: new Date('2026-11-17T12:00:00.000Z') },
+        ]);
+      const database = {
+        db: {
+          select: jest.fn().mockReturnValue({
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit }),
+            }),
+          }),
+        },
+      };
+      const service = new CertificadoService(
+        database as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(
+        service.getCertificadoStatus('cliente-1'),
+      ).resolves.toMatchObject({ status: 'ATIVO' });
+      await expect(
+        service.getCertificadoStatus('cliente-1'),
+      ).resolves.toMatchObject({ status: 'PRESTES_A_EXPIRAR' });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('retorna o certificado vencido mesmo antes de o job atualizar o status persistido', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-18T12:00:00.000Z'));
+    try {
+      const limit = jest.fn().mockResolvedValue([
+        {
+          id: 'certificado-1',
+          cnpj: '12345678000190',
+          razaoSocial: 'Empresa Exemplo',
+          thumbprint: null,
+          emissor: null,
+          validadeInicio: new Date('2025-10-01T00:00:00.000Z'),
+          validadeFim: new Date('2026-10-17T23:00:00.000Z'),
+          status: 'ATIVO',
+          criadoEm: new Date('2025-10-01T00:00:00.000Z'),
+        },
+      ]);
+      const database = {
+        db: {
+          select: jest.fn().mockReturnValue({
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit }),
+            }),
+          }),
+        },
+      };
+      const service = new CertificadoService(
+        database as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(
+        service.getCertificadoStatus('cliente-1'),
+      ).resolves.toMatchObject({
+        id: 'certificado-1',
+        status: 'EXPIRADO',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

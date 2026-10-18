@@ -16,6 +16,7 @@ import { DistribuicaoDfeService } from './services/distribuicao-dfe.service';
 import { DanfeService } from './services/danfe.service';
 import { FiscalCronService } from './services/fiscal-cron.service';
 import { DacteService } from './services/dacte.service';
+import { NfsePdfService } from './services/nfse-pdf.service';
 import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.service';
 import { FiscalItensService } from './services/fiscal-itens.service';
 import { CfopService } from './services/cfop.service';
@@ -84,6 +85,7 @@ import { FiscalIssLivroService } from './services/fiscal-iss-livro.service';
     NfeWizardService,
     DistribuicaoDfeService,
     DacteService,
+    NfsePdfService,
     DanfeService,
     FiscalCronService,
     ImportacaoXmlFiscalService,

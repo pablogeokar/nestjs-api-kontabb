@@ -1,4 +1,5 @@
 import {
+  FiscalIssLivroService,
   resumirLivroIss,
   type LivroIssLinha,
 } from './fiscal-iss-livro.service';
@@ -74,5 +75,56 @@ describe('resumirLivroIss', () => {
     expect(resumo.total_servicos).toBe('100.00');
     expect(resumo.total_iss_proprio).toBe('0.00');
     expect(resumo.total_iss_retido).toBe('2.00');
+  });
+
+  it('não soma o ISS do serviço tomado ao ISS próprio da empresa', () => {
+    const resumo = resumirLivroIss(
+      [
+        linha('prestado', '100.00', '2.00'),
+        {
+          ...linha('tomado', '200.00', '4.00'),
+          tipo_operacao: 'ENTRADA',
+        },
+      ],
+      false,
+    );
+
+    expect(resumo.quantidade_documentos).toBe(2);
+    expect(resumo.total_servicos).toBe('300.00');
+    expect(resumo.total_iss_proprio).toBe('2.00');
+    expect(resumo.saldo_iss_recolher_municipio).toBe('2.00');
+  });
+});
+
+describe('FiscalIssLivroService PDF', () => {
+  it('gera um livro completo a partir dos dados da competência', async () => {
+    const service = Object.create(
+      FiscalIssLivroService.prototype,
+    ) as FiscalIssLivroService;
+    const linhas = [linha('2026000000196', '225.00', '4.50')];
+    jest.spyOn(service, 'obter').mockResolvedValue({
+      cabecalho: {
+        cliente_id: 'cliente-1',
+        razao_social: 'Empresa de exemplo',
+        cnpj: '03155128000112',
+        inscricao_municipal: '12345',
+        endereco: 'Rua de exemplo, 1',
+        municipio: 'Feira de Santana',
+        uf: 'BA',
+        competencia: '2026-09',
+        regime_tributario: 'SIMPLES_NACIONAL',
+        tipo_operacao: 'TODAS',
+      },
+      resumo: resumirLivroIss(linhas, true),
+      linhas,
+    });
+
+    const pdf = await service.gerarPdf({
+      clienteId: 'cliente-1',
+      competencia: '2026-09',
+    });
+
+    expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+    expect(pdf.subarray(-1_024).includes('%%EOF')).toBe(true);
   });
 });

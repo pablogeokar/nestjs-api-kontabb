@@ -500,7 +500,8 @@ export class CertificadoService {
   }
 
   /**
-   * Retorna o status do certificado ativo de um cliente.
+   * Retorna o certificado cadastrado do cliente, inclusive após o vencimento,
+   * para que a área do cliente possa orientar a renovação.
    */
   async getCertificadoStatus(clienteId: string) {
     const cert = await this.database.db
@@ -516,12 +517,7 @@ export class CertificadoService {
         criadoEm: certificadosDigitais.criadoEm,
       })
       .from(certificadosDigitais)
-      .where(
-        and(
-          eq(certificadosDigitais.clienteId, clienteId),
-          inArray(certificadosDigitais.status, ['ATIVO', 'PRESTES_A_EXPIRAR']),
-        ),
-      )
+      .where(eq(certificadosDigitais.clienteId, clienteId))
       .limit(1);
 
     if (!cert[0]) return null;
@@ -539,7 +535,16 @@ export class CertificadoService {
       emissor: cert[0].emissor,
       validade_inicio: cert[0].validadeInicio.toISOString(),
       validade_fim: cert[0].validadeFim.toISOString(),
-      status: cert[0].status,
+      status:
+        cert[0].status === 'REVOGADO'
+          ? 'REVOGADO'
+          : cert[0].status === 'EXPIRADO' ||
+              cert[0].validadeFim.getTime() <= now.getTime()
+            ? 'EXPIRADO'
+            : cert[0].validadeFim.getTime() - now.getTime() <=
+                30 * 24 * 60 * 60 * 1000
+              ? 'PRESTES_A_EXPIRAR'
+              : 'ATIVO',
       dias_para_expirar: diasParaExpirar,
       criado_em: cert[0].criadoEm.toISOString(),
     };

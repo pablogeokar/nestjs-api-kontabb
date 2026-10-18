@@ -85,8 +85,17 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
   const prestadorServico = asRecord(infNfse.PrestadorServico);
   const prestadorDeclaracao = asRecord(infDeclaracao.Prestador);
   const prestador = parsePrestador(prestadorServico, prestadorDeclaracao);
-  const tomador = parseTomador(asRecord(infDeclaracao.Tomador));
-  if (!prestador?.cnpjCpf || !tomador?.cnpjCpf) return null;
+  const tomadorXml = asRecord(infDeclaracao.Tomador);
+  const tomador = parseTomador(tomadorXml);
+  const identificacaoTomador = asRecord(tomadorXml?.IdentificacaoTomador);
+  const cpfCnpjTomador =
+    asRecord(identificacaoTomador?.CpfCnpj) ?? identificacaoTomador;
+  const tomadorInformouIdentificador = Boolean(
+    text(cpfCnpjTomador?.Cnpj) || text(cpfCnpjTomador?.Cpf),
+  );
+  if (!prestador?.cnpjCpf || (tomadorInformouIdentificador && !tomador)) {
+    return null;
+  }
 
   const chaveInformada = text(infNfse.ChaveAcesso);
   const idInfNfse = text(infNfse['@_Id']);
@@ -200,8 +209,8 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
     numeroDocumento,
     emitenteCnpjCpf: prestador.cnpjCpf,
     emitenteRazaoSocial: prestador.nome,
-    destinatarioCnpjCpf: tomador.cnpjCpf,
-    destinatarioRazaoSocial: tomador.nome,
+    destinatarioCnpjCpf: tomador?.cnpjCpf ?? '',
+    destinatarioRazaoSocial: tomador?.nome ?? '',
     emitente: prestador,
     destinatario: tomador,
     tomador,
@@ -213,7 +222,9 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
     valorTotal: valorServicos,
     tpNfXml: '1',
     situacao: nfseDados.cancelada ? 'CANCELADA' : 'AUTORIZADA',
-    participantesCnpjCpf: [prestador.cnpjCpf, tomador.cnpjCpf],
+    participantesCnpjCpf: tomador
+      ? [prestador.cnpjCpf, tomador.cnpjCpf]
+      : [prestador.cnpjCpf],
     itens: [item],
     quantidadeItensDeclarada: 1,
     icmsTot: null,
