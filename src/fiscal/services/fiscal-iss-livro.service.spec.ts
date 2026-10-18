@@ -126,5 +126,8 @@ describe('FiscalIssLivroService PDF', () => {
 
     expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
     expect(pdf.subarray(-1_024).includes('%%EOF')).toBe(true);
+    expect(
+      (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length,
+    ).toBe(2);
   });
 });
