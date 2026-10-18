@@ -21,6 +21,17 @@ describe('NfsePdfService', () => {
     expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
     expect(pdf.subarray(-1_024).includes('%%EOF')).toBe(true);
     expect(pdf.length).toBeGreaterThan(2_000);
+    expect(pageCount(pdf)).toBe(1);
+  });
+
+  it('pagina descrições extensas sem perder o conteúdo', async () => {
+    const description = `Início da descrição. ${'Detalhe do serviço prestado. '.repeat(500)} Fim da descrição.`;
+    const xml = XML_NFSE.replace(
+      'Serviço de exemplo para visualização.',
+      description,
+    );
+    const pdf = await service.generatePdf(xml);
+    expect(pageCount(pdf)).toBeGreaterThan(1);
   });
 
   it('recusa XML que não seja uma NFS-e suportada', async () => {
@@ -29,3 +40,7 @@ describe('NfsePdfService', () => {
     );
   });
 });
+
+function pageCount(pdf: Buffer) {
+  return (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length;
+}
