@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
-import PDFDocument from 'pdfkit';
+import { renderLivroIssPdf } from './fiscal-iss-livro.pdf';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
@@ -37,8 +37,16 @@ export interface LivroIssLinha {
   iss_retido: boolean;
   valor_iss_retido: string;
   municipio_incidencia: string | null;
+  municipio_incidencia_label?: string;
   iss_outro_municipio: boolean;
   exigibilidade_iss: string | null;
+  valor_pis?: string;
+  valor_cofins?: string;
+  valor_inss?: string;
+  valor_ir?: string;
+  valor_csll?: string;
+  outras_retencoes?: string;
+  retencoes_federais?: string;
   situacao: string;
 }
 
@@ -157,12 +165,27 @@ export class FiscalIssLivroService {
         iss_retido: row.issRetido,
         valor_iss_retido: row.issRetido ? valorIss : '0.00',
         municipio_incidencia: municipioIncidencia,
+        municipio_incidencia_label: municipioIncidencia
+          ? municipioIncidencia ===
+            (entrada
+              ? stringValue(destinatario.codMun)
+              : stringValue(emitente.codMun))
+            ? [cliente.municipio, cliente.uf].filter(Boolean).join('/')
+            : `IBGE ${municipioIncidencia}`
+          : 'Não informado',
         iss_outro_municipio: Boolean(
           municipioPrestador &&
           municipioIncidencia &&
           municipioPrestador !== municipioIncidencia,
         ),
         exigibilidade_iss: row.exigibilidadeIss,
+        valor_pis: optionalMoney(nfse.valorPis),
+        valor_cofins: optionalMoney(nfse.valorCofins),
+        valor_inss: optionalMoney(nfse.valorInss),
+        valor_ir: optionalMoney(nfse.valorIr),
+        valor_csll: optionalMoney(nfse.valorCsll),
+        outras_retencoes: optionalMoney(nfse.outrasRetencoes),
+        retencoes_federais: optionalMoney(nfse.retencoesFederais),
         situacao: row.situacao,
       };
     });
@@ -200,92 +223,7 @@ export class FiscalIssLivroService {
   }
 
   async gerarPdf(input: LivroIssInput) {
-    const livro = await this.obter(input);
-    const document = new PDFDocument({ size: 'A4', margin: 36 });
-    const chunks: Buffer[] = [];
-    document.on('data', (chunk: Buffer) => chunks.push(chunk));
-    const completed = new Promise<Buffer>((resolve, reject) => {
-      document.on('end', () => resolve(Buffer.concat(chunks)));
-      document.on('error', reject);
-    });
-
-    document.fontSize(15).text('Livro de Registro e Apuração do ISS', {
-      align: 'center',
-    });
-    document.moveDown(0.5);
-    document.fontSize(9).text(livro.cabecalho.razao_social);
-    document.text(
-      `CNPJ: ${livro.cabecalho.cnpj}  |  IM: ${livro.cabecalho.inscricao_municipal ?? 'não informada'}`,
-    );
-    document.text(
-      `Competência: ${livro.cabecalho.competencia}  |  Regime: ${livro.cabecalho.regime_tributario ?? 'não informado'}`,
-    );
-    document.text(`Operação: ${livro.cabecalho.tipo_operacao}`);
-    document.moveDown();
-    document.fontSize(11).text('Resumo da competência');
-    document.fontSize(9);
-    document.text(`NFS-e autorizadas: ${livro.resumo.quantidade_documentos}`);
-    document.text(
-      `Serviços prestados e tomados: R$ ${formatBrMoney(toCents(livro.resumo.total_servicos))}`,
-    );
-    document.text(
-      `Base no município: R$ ${formatBrMoney(toCents(livro.resumo.base_calculo_municipio))}`,
-    );
-    document.text(
-      `Base em outros municípios: R$ ${formatBrMoney(toCents(livro.resumo.base_calculo_outros_municipios))}`,
-    );
-    document.text(
-      `ISS próprio: R$ ${formatBrMoney(toCents(livro.resumo.total_iss_proprio))}`,
-    );
-    document.text(
-      `ISS retido: R$ ${formatBrMoney(toCents(livro.resumo.total_iss_retido))}`,
-    );
-    document.text(
-      `ISS próprio a recolher no município: R$ ${formatBrMoney(toCents(livro.resumo.saldo_iss_recolher_municipio))}`,
-    );
-    document.text(livro.resumo.observacao);
-    document.moveDown();
-    document.fontSize(11).text('Documentos');
-    document
-      .fontSize(7)
-      .fillColor('#475569')
-      .text(
-        'Notas canceladas constam para conferência e não integram os totais da apuração.',
-      )
-      .fillColor('#000000');
-    document.moveDown(0.5);
-    for (const linha of livro.linhas) {
-      if (document.y > 680) document.addPage();
-      const contraparte =
-        linha.contraparte_razao_social ||
-        linha.contraparte_cnpj_cpf ||
-        (linha.tipo_operacao === 'SAIDA'
-          ? 'Tomador não identificado'
-          : 'Prestador não identificado');
-      document
-        .font('Helvetica-Bold')
-        .fontSize(8)
-        .text(
-          `NFS-e ${linha.numero_nfse} | ${linha.data_emissao.slice(0, 10)} | ${linha.tipo_operacao === 'SAIDA' ? 'Prestado' : 'Tomado'} | ${linha.situacao}`,
-        );
-      document
-        .font('Helvetica')
-        .fontSize(7)
-        .fillColor('#475569')
-        .text(
-          `Contraparte: ${contraparte} | CNPJ/CPF: ${linha.contraparte_cnpj_cpf || 'não informado'}`,
-        )
-        .text(
-          `Serviço: ${linha.item_lista_servico ?? 'não informado'} | CNAE: ${linha.cnae ?? 'não informado'} | Município de incidência: ${linha.municipio_incidencia ?? 'não informado'}`,
-        )
-        .text(
-          `Valor: R$ ${formatBrMoney(toCents(linha.valor_servicos))} | Base ISS: R$ ${formatBrMoney(toCents(linha.base_calculo_iss))} | Alíquota: ${linha.aliquota_iss}% | ISS: R$ ${formatBrMoney(toCents(linha.valor_iss))}${linha.iss_retido ? ' (retido)' : ''}`,
-        )
-        .fillColor('#000000');
-      document.moveDown(0.5);
-    }
-    document.end();
-    return completed;
+    return renderLivroIssPdf(await this.obter(input));
   }
 }
 
@@ -355,6 +293,10 @@ function stringValue(value: unknown) {
 
 function money(value: string | null) {
   return value == null ? '0.00' : fromCents(toCents(value));
+}
+
+function optionalMoney(value: unknown) {
+  return typeof value === 'string' ? fromCents(toCents(value)) : undefined;
 }
 
 function rate(value: string | null) {

@@ -25,6 +25,20 @@ export interface ParsedNfseDados {
   cnae: string;
   codigoTributacaoMunicipio: string;
   inscricaoMunicipalPrestador: string;
+  nomeFantasiaPrestador: string;
+  telefonePrestador: string;
+  emailPrestador: string;
+  inscricaoMunicipalTomador: string;
+  telefoneTomador: string;
+  emailTomador: string;
+  dataHoraEmissao: string;
+  incentivoFiscal: boolean;
+  valorPis: string;
+  valorCofins: string;
+  valorInss: string;
+  valorIr: string;
+  valorCsll: string;
+  outrasRetencoes: string;
   valorServicos: string;
   baseCalculoIss: string;
   aliquotaIss: string;
@@ -86,6 +100,8 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
   const prestadorDeclaracao = asRecord(infDeclaracao.Prestador);
   const prestador = parsePrestador(prestadorServico, prestadorDeclaracao);
   const tomadorXml = asRecord(infDeclaracao.Tomador);
+  const contatoPrestador = asRecord(prestadorServico?.Contato);
+  const contatoTomador = asRecord(tomadorXml?.Contato);
   const tomador = parseTomador(tomadorXml);
   const identificacaoTomador = asRecord(tomadorXml?.IdentificacaoTomador);
   const cpfCnpjTomador =
@@ -184,6 +200,20 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
       text(
         asRecord(prestadorServico?.IdentificacaoPrestador)?.InscricaoMunicipal,
       ) || text(prestadorDeclaracao?.InscricaoMunicipal),
+    nomeFantasiaPrestador: text(prestadorServico?.NomeFantasia),
+    telefonePrestador: text(contatoPrestador?.Telefone),
+    emailPrestador: text(contatoPrestador?.Email),
+    inscricaoMunicipalTomador: text(identificacaoTomador?.InscricaoMunicipal),
+    telefoneTomador: text(contatoTomador?.Telefone),
+    emailTomador: text(contatoTomador?.Email),
+    dataHoraEmissao: dataEmissaoValue,
+    incentivoFiscal: text(infDeclaracao.IncentivoFiscal) === '1',
+    valorPis: money(valoresServico.ValorPis, '0.00'),
+    valorCofins: money(valoresServico.ValorCofins, '0.00'),
+    valorInss: money(valoresServico.ValorInss, '0.00'),
+    valorIr: money(valoresServico.ValorIr, '0.00'),
+    valorCsll: money(valoresServico.ValorCsll, '0.00'),
+    outrasRetencoes: money(valoresServico.OutrasRetencoes, '0.00'),
     valorServicos,
     baseCalculoIss,
     aliquotaIss,
