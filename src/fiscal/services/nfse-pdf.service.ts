@@ -88,6 +88,12 @@ export class NfsePdfService {
           .filter(Boolean)
           .join(', '),
       );
+    } else {
+      document
+        .font('Helvetica')
+        .fontSize(9)
+        .fillColor('#475569')
+        .text('Tomador não identificado no XML.');
     }
 
     section(document, 'Serviço');

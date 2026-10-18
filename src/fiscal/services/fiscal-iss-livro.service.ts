@@ -256,6 +256,12 @@ export class FiscalIssLivroService {
     document.moveDown(0.5);
     for (const linha of livro.linhas) {
       if (document.y > 680) document.addPage();
+      const contraparte =
+        linha.contraparte_razao_social ||
+        linha.contraparte_cnpj_cpf ||
+        (linha.tipo_operacao === 'SAIDA'
+          ? 'Tomador não identificado'
+          : 'Prestador não identificado');
       document
         .font('Helvetica-Bold')
         .fontSize(8)
@@ -267,7 +273,7 @@ export class FiscalIssLivroService {
         .fontSize(7)
         .fillColor('#475569')
         .text(
-          `Contraparte: ${linha.contraparte_razao_social ?? linha.contraparte_cnpj_cpf} | CNPJ/CPF: ${linha.contraparte_cnpj_cpf}`,
+          `Contraparte: ${contraparte} | CNPJ/CPF: ${linha.contraparte_cnpj_cpf || 'não informado'}`,
         )
         .text(
           `Serviço: ${linha.item_lista_servico ?? 'não informado'} | CNAE: ${linha.cnae ?? 'não informado'} | Município de incidência: ${linha.municipio_incidencia ?? 'não informado'}`,
