@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NFeWizard as NFeWizardInstance } from 'nfewizard-io';
-import { CertificadoService } from './certificado.service';
+import {
+  CertificateAccessError,
+  CertificadoService,
+} from './certificado.service';
+import { SefazConsultaControlService } from './sefaz-consulta-control.service';
 
 type ManifestacaoTipoEvento = '210210' | '210200' | '210220' | '210240';
 
@@ -92,6 +96,7 @@ export class NfeWizardService {
   constructor(
     private readonly certificadoService: CertificadoService,
     private readonly configService: ConfigService,
+    private readonly consultaControl: SefazConsultaControlService,
   ) {}
 
   /**
@@ -105,7 +110,8 @@ export class NfeWizardService {
     const certData =
       await this.certificadoService.getDecryptedCertificate(clienteId);
     if (!certData) {
-      throw new Error(
+      throw new CertificateAccessError(
+        'CERTIFICATE_UNAVAILABLE',
         `Nenhum certificado digital A1 ativo para o cliente ${clienteId}`,
       );
     }
@@ -117,29 +123,37 @@ export class NfeWizardService {
       this.configService.get<string>('SEFAZ_AMBIENTE') === 'PRODUCAO' ? 1 : 2;
 
     const wizard = new NFeWizard();
-    await wizard.NFE_LoadEnvironment({
-      config: {
-        dfe: {
-          UF: uf,
-          CPFCNPJ: cnpj,
-          pathCertificado: certData.buffer,
-          senhaCertificado: certData.senha,
-          baixarXMLDistribuicao: false,
-          armazenarXMLAutorizacao: false,
-          armazenarXMLConsulta: false,
-          armazenarXMLRetorno: false,
-          armazenarRetornoEmJSON: false,
+    try {
+      await wizard.NFE_LoadEnvironment({
+        config: {
+          dfe: {
+            UF: uf,
+            CPFCNPJ: cnpj,
+            pathCertificado: certData.buffer,
+            senhaCertificado: certData.senha,
+            baixarXMLDistribuicao: false,
+            armazenarXMLAutorizacao: false,
+            armazenarXMLConsulta: false,
+            armazenarXMLRetorno: false,
+            armazenarRetornoEmJSON: false,
+          },
+          nfe: {
+            ambiente,
+            versaoDF: '4.00',
+          },
+          lib: {
+            useOpenSSL: false,
+            useForSchemaValidation: 'validateSchemaJsBased',
+          },
         },
-        nfe: {
-          ambiente,
-          versaoDF: '4.00',
-        },
-        lib: {
-          useOpenSSL: false,
-          useForSchemaValidation: 'validateSchemaJsBased',
-        },
-      },
-    });
+      });
+    } catch (error) {
+      throw new CertificateAccessError(
+        'CERTIFICATE_INITIALIZATION_FAILED',
+        'Não foi possível preparar o certificado e o ambiente de consulta.',
+        { cause: error },
+      );
+    }
 
     return wizard;
   }
@@ -179,13 +193,21 @@ export class NfeWizardService {
         `Consultando DistribuicaoDFe para CNPJ ${input.cnpj} a partir do NSU ${ultNSU}`,
       );
 
-      const resposta: unknown = await wizard.NFE_DistribuicaoDFePorUltNSU({
-        cUFAutor: this.getCodigoUF(input.uf),
-        CNPJ: input.cnpj,
-        distNSU: {
-          ultNSU,
+      const resposta: unknown = await this.consultaControl.consultar(
+        {
+          cnpj: input.cnpj,
+          ambiente: this.ambiente(),
+          porChave: false,
         },
-      });
+        () =>
+          wizard.NFE_DistribuicaoDFePorUltNSU({
+            cUFAutor: this.getCodigoUF(input.uf),
+            CNPJ: input.cnpj,
+            distNSU: {
+              ultNSU,
+            },
+          }),
+      );
 
       return resposta;
     } catch (error: unknown) {
@@ -353,13 +375,21 @@ export class NfeWizardService {
         input.cnpj,
       );
 
-      const resposta: unknown = await wizard.NFE_DistribuicaoDFePorChave({
-        cUFAutor: this.getCodigoUF(input.uf),
-        CNPJ: input.cnpj,
-        consChNFe: {
-          chNFe: input.chaveAcesso,
+      const resposta: unknown = await this.consultaControl.consultar(
+        {
+          cnpj: input.cnpj,
+          ambiente: this.ambiente(),
+          porChave: true,
         },
-      });
+        () =>
+          wizard.NFE_DistribuicaoDFePorChave({
+            cUFAutor: this.getCodigoUF(input.uf),
+            CNPJ: input.cnpj,
+            consChNFe: {
+              chNFe: input.chaveAcesso,
+            },
+          }),
+      );
 
       return resposta;
     } catch (error: unknown) {
@@ -369,6 +399,12 @@ export class NfeWizardService {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private ambiente() {
+    return this.configService.get<string>('SEFAZ_AMBIENTE') === 'PRODUCAO'
+      ? 1
+      : 2;
+  }
 
   private logError(context: string, error: unknown): void {
     const message =

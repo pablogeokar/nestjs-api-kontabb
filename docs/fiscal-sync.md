@@ -65,6 +65,54 @@ aplicada pelo fluxo incremental do ambiente, incluindo as migrations `0001` e
 
 ## Erros e observabilidade
 
+### Importação por lista de chaves
+
+#### Assistente local do portal
+
+Os endpoints administrativos `POST /admin/fiscal/recuperacao-portal/preparar` e
+`POST /admin/fiscal/recuperacao-portal/importar` atendem o assistente local próprio.
+O primeiro valida NF-e modelo 55 e remove XMLs completos já existentes, sem
+consultar a SEFAZ. O segundo recebe `arquivo`, `clienteId` e `chave`, exige o XML
+processado correspondente e usa o importador existente com empresa fixa.
+Ambos exigem sessão da equipe e rate limit. A fila fica no computador do operador;
+a sessão da API nunca é entregue ao processo local. Não há migration.
+Consulte `web/docs/portal-recovery.md` no projeto frontend para operação,
+retomada, retenção dos arquivos e limitações de CAPTCHA/certificado.
+
+#### Distribuição e recuperação assistida
+
+- A prévia de TXT/CSV/XLSX informa a janela de 90 dias e o limite de 20 consultas
+  por hora do serviço `consChNFe`. Como a chave só contém mês/ano, apenas meses
+  inteiramente anteriores à janela são encaminhados à recuperação assistida
+  antes da chamada externa.
+  O resultado `RECUPERACAO_PORTAL_NECESSARIA` indica uma pendência, não uma
+  comprovação de indisponibilidade do XML. A UI oferece a consulta no Portal
+  Nacional, cópia individual das chaves e exportação TXT. O usuário conclui o
+  hCaptcha no portal e, quando disponível, baixa o XML original usando seu
+  certificado no navegador. Depois importa os arquivos pelo fluxo de XML já
+  existente. Este fluxo é assistido: não é um robô de download e não utiliza
+  serviços pagos. A recuperação automática de notas antigas ainda não foi
+  validada. O certificado guardado pela API não é instalado no navegador.
+  A contagem `recuperacao_portal` é separada de `nao_localizados`.
+- `SefazConsultaControlService`, usado pelo `NfeWizardService`, reserva até 20
+  slots de uma hora em `app_rate_limits`, por CNPJ/ambiente. As reservas são
+  atômicas com advisory lock transacional e compartilhadas entre importações,
+  recuperações pós-manifestação, processos e reinícios. Não há migration nova.
+  Uma tentativa enviada ocupa o slot mesmo se a resposta falhar, por precaução.
+- O retorno 656 (objeto ou exceção da biblioteca) persiste uma suspensão de uma
+  hora para consultas NF-e por chave e por distribuição. Recusas locais não
+  prorrogam essa suspensão. Bloqueios legados de `controle_nsu` também são lidos.
+  Outros aplicativos que consultem o mesmo CNPJ podem consumir a cota ou renovar
+  o bloqueio; o sistema não consegue contabilizar antecipadamente essas chamadas.
+- `ADIADO_LIMITE_CONSULTAS` diferencia a prevenção local da rejeição da SEFAZ.
+  `proxima_tentativa_em` informa quando reenviar as chaves adiadas. O lote não
+  fica aberto por horas e não é retomado automaticamente após fechar a janela.
+- Falhas de comunicação e rejeições fiscais não são apresentadas como prova de
+  certificado inválido. Uma falha inesperada interrompe as consultas restantes,
+  preservando os documentos já gravados e o identificador da requisição.
+
+Referência: [regras oficiais de uso da distribuição DF-e](https://www.nfe.fazenda.gov.br/portal/informe.aspx?AspxAutoDetectCookieSupport=1&Informe=0cu%2FyBLKrCs%3D&ehCTG=false).
+
 - Mensagens brutas do navegador, biblioteca fiscal ou infraestrutura não são
   exibidas ao usuário.
 - Erros HTTP conhecidos usam o contrato público `code`, `message` e `requestId`.

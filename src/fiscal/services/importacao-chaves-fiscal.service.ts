@@ -28,9 +28,22 @@ import {
 } from './listagem-chaves.parser';
 import { NfeWizardService } from './nfewizard.service';
 import { CertificateAccessError } from './certificado.service';
+import { SefazConsultaAdiadaError } from './sefaz-consulta-control.service';
 
 const MAX_KEYS = 500;
 const MIN_SEFAZ_INTERVAL_MS = 1_200;
+
+// A chave só informa mês/ano. Identificar meses fora da distribuição automática,
+// sem concluir que o XML esteja indisponível nos demais canais oficiais.
+export function foraDaJanelaSefaz(chave: string, now = new Date()): boolean {
+  const ano = 2000 + Number(chave.slice(2, 4));
+  const mes = Number(chave.slice(4, 6));
+  const fimMes = Date.UTC(ano, mes, 1, 3) - 1;
+  return fimMes < now.getTime() - 90 * 24 * 60 * 60 * 1000;
+}
+
+const FORA_JANELA_MESSAGE =
+  'Esta chave precisa de recuperação por outro canal: sua competência está fora dos 90 dias da distribuição automática. Consulte o Portal Nacional da NF-e com o certificado do participante; se o XML original estiver disponível, baixe e importe no sistema. A disponibilidade no portal ainda não foi verificada.';
 
 type DocumentoExistente = {
   id: string;
@@ -48,6 +61,8 @@ export type ImportacaoChaveStatus =
   | 'NAO_SUPORTADO'
   | 'INVALIDA'
   | 'FALHA'
+  | 'RECUPERACAO_PORTAL_NECESSARIA'
+  | 'ADIADO_LIMITE_CONSULTAS'
   | 'ABORTADO_CONSUMO_INDEVIDO'
   | 'ABORTADO_CERTIFICADO_INDISPONIVEL';
 
@@ -142,7 +157,13 @@ export class ImportacaoChavesFiscalService {
         ).length,
       },
       itens,
-      avisos: parsed.avisos,
+      avisos: [
+        ...parsed.avisos,
+        'O serviço de distribuição automática da SEFAZ permite até 20 consultas por chave por hora por CNPJ e disponibiliza documentos dos últimos 90 dias. A chave, por si só, não garante acesso ao XML completo.',
+        ...(itens.some((item) => item.status_local !== 'JA_IMPORTADA' && item.apta_para_busca && foraDaJanelaSefaz(item.chave_acesso))
+          ? [FORA_JANELA_MESSAGE]
+          : []),
+      ],
     };
   }
 
@@ -176,28 +197,10 @@ export class ImportacaoChavesFiscalService {
     const resultados: ImportacaoChaveItem[] = [];
     let consumoIndevido = false;
     let certificadoIndisponivel = false;
+    let adiamento: SefazConsultaAdiadaError | null = null;
+    let falhaConsulta: string | null = null;
 
     for (const item of parsed.itens) {
-      if (certificadoIndisponivel) {
-        resultados.push(
-          this.result(
-            item,
-            'ABORTADO_CERTIFICADO_INDISPONIVEL',
-            'Lote interrompido: o certificado digital não pôde ser utilizado.',
-          ),
-        );
-        continue;
-      }
-      if (consumoIndevido) {
-        resultados.push(
-          this.result(
-            item,
-            'ABORTADO_CONSUMO_INDEVIDO',
-            'Lote interrompido para respeitar o bloqueio temporário da SEFAZ.',
-          ),
-        );
-        continue;
-      }
       if (!item.valida) {
         resultados.push(
           this.result(item, 'INVALIDA', item.motivo ?? 'Chave inválida.'),
@@ -224,6 +227,55 @@ export class ImportacaoChavesFiscalService {
             'O documento completo já está importado.',
             local,
           ),
+        );
+        continue;
+      }
+
+      if (foraDaJanelaSefaz(item.chaveAcesso)) {
+        resultados.push(
+          this.result(
+            item,
+            'RECUPERACAO_PORTAL_NECESSARIA',
+            FORA_JANELA_MESSAGE,
+          ),
+        );
+        continue;
+      }
+      if (certificadoIndisponivel) {
+        resultados.push(
+          this.result(
+            item,
+            'ABORTADO_CERTIFICADO_INDISPONIVEL',
+            'Lote interrompido: o certificado digital não pôde ser utilizado.',
+          ),
+        );
+        continue;
+      }
+      if (consumoIndevido) {
+        resultados.push(
+          this.result(
+            item,
+            'ABORTADO_CONSUMO_INDEVIDO',
+            'Lote interrompido para respeitar o bloqueio temporário da SEFAZ.',
+          ),
+        );
+        continue;
+      }
+      if (adiamento) {
+        resultados.push(
+          this.result(
+            item,
+            adiamento.motivo === 'LIMITE_LOCAL'
+              ? 'ADIADO_LIMITE_CONSULTAS'
+              : 'ABORTADO_CONSUMO_INDEVIDO',
+            adiamento.message,
+          ),
+        );
+        continue;
+      }
+      if (falhaConsulta) {
+        resultados.push(
+          this.result(item, 'FALHA', `Lote interrompido. ${falhaConsulta}`),
         );
         continue;
       }
@@ -262,6 +314,13 @@ export class ImportacaoChavesFiscalService {
           );
           continue;
         }
+        if (metadata.cStat !== 138) {
+          throw new Error(
+            metadata.cStat
+              ? `Rejeição SEFAZ (${metadata.cStat}): ${metadata.motivo || 'Consulta não autorizada.'}`
+              : 'Resposta inválida da SEFAZ.',
+          );
+        }
 
         const docZips = extractDfeDocZips(resposta);
         const documento = docZips
@@ -282,8 +341,10 @@ export class ImportacaoChavesFiscalService {
           resultados.push(
             this.result(
               item,
-              local ? 'JA_EXISTENTE' : 'IMPORTADO',
-              local
+              local && local.situacao !== 'RESUMIDA'
+                ? 'JA_EXISTENTE'
+                : 'IMPORTADO',
+              local && local.situacao !== 'RESUMIDA'
                 ? 'Documento conferido novamente e mantido.'
                 : 'XML completo importado.',
               saved,
@@ -351,8 +412,12 @@ export class ImportacaoChavesFiscalService {
               }),
             );
           } catch (error: unknown) {
-            if (/consumo indevido|\b656\b/i.test(this.rootCause(error))) {
-              throw error;
+            if (error instanceof SefazConsultaAdiadaError) {
+              adiamento = error;
+            } else if (
+              /consumo indevido|\b656\b/i.test(this.rootCause(error))
+            ) {
+              consumoIndevido = true;
             }
             // A Ciência já foi autorizada. A propagação do XML completo é
             // eventual e não deve converter a manifestação em falha.
@@ -388,6 +453,19 @@ export class ImportacaoChavesFiscalService {
           ),
         );
       } catch (error: unknown) {
+        if (error instanceof SefazConsultaAdiadaError) {
+          adiamento = error;
+          resultados.push(
+            this.result(
+              item,
+              error.motivo === 'LIMITE_LOCAL'
+                ? 'ADIADO_LIMITE_CONSULTAS'
+                : 'ABORTADO_CONSUMO_INDEVIDO',
+              error.message,
+            ),
+          );
+          continue;
+        }
         const certError = this.findCertificateAccessError(error);
         if (certError) {
           certificadoIndisponivel = true;
@@ -395,7 +473,11 @@ export class ImportacaoChavesFiscalService {
             certError.code === 'CERTIFICATE_OBJECT_NOT_FOUND' ||
             certError.code === 'CERTIFICATE_STORAGE_UNAVAILABLE'
               ? 'O certificado está cadastrado, mas o arquivo não pôde ser lido do armazenamento. Verifique a configuração de storage ou contate o suporte.'
-              : 'O arquivo do certificado está corrompido ou a senha foi alterada. Reenvie o certificado digital A1.';
+              : certError.code === 'CERTIFICATE_INITIALIZATION_FAILED'
+                ? 'Não foi possível inicializar o certificado e a biblioteca de consulta. Verifique a validade, a senha do A1 e a configuração da integração.'
+                : certError.code === 'CERTIFICATE_UNAVAILABLE'
+                  ? 'Nenhum certificado A1 ativo está disponível para esta empresa.'
+                  : 'Não foi possível decifrar o certificado armazenado. Verifique a configuração de criptografia e o cadastro do A1.';
           this.logger.error('fiscal_key_import_item_failed', error, {
             requestId: input.requestId,
             userId: input.actorUserId,
@@ -410,6 +492,16 @@ export class ImportacaoChavesFiscalService {
         }
         const message = this.rootCause(error);
         if (/consumo indevido|\b656\b/i.test(message)) consumoIndevido = true;
+        // A biblioteca encapsula rejeições em Error e remove o cStat.
+        // Exibir somente o motivo fiscal reconhecido, nunca erros brutos de storage/SQL.
+        const rejeicao = message.match(/Rejei[çc][ãa]o[^\r\n]*/i)?.[0];
+        falhaConsulta = rejeicao
+          ? `A SEFAZ recusou a consulta: ${rejeicao.slice(0, 400)}`
+          : /timeout|timed out|ETIMEDOUT|ECONN|ENOTFOUND|socket|network|TLS|SSL|unable to verify|self.signed|certificate/i.test(
+                message,
+              )
+            ? 'Falha de comunicação segura com a SEFAZ. Tente mais tarde; isso não confirma que o certificado A1 seja inválido.'
+            : 'Não foi possível concluir a consulta ou salvar o documento. O lote foi interrompido; consulte o suporte com o identificador da requisição.';
         this.logger.error('fiscal_key_import_item_failed', error, {
           requestId: input.requestId,
           userId: input.actorUserId,
@@ -423,7 +515,7 @@ export class ImportacaoChavesFiscalService {
             consumoIndevido ? 'ABORTADO_CONSUMO_INDEVIDO' : 'FALHA',
             consumoIndevido
               ? 'A SEFAZ bloqueou temporariamente novas consultas (cStat 656).'
-              : 'Não foi possível consultar esta chave. Verifique o certificado e tente novamente.',
+              : `${falhaConsulta} Referência: ${input.requestId}.`,
           ),
         );
       }
@@ -442,7 +534,11 @@ export class ImportacaoChavesFiscalService {
       falhas: resumo.falhas,
     });
 
-    return { resumo, itens: resultados };
+    return {
+      resumo,
+      itens: resultados,
+      proxima_tentativa_em: adiamento?.retryAt.toISOString() ?? null,
+    };
   }
 
   private async getCliente(
@@ -539,7 +635,10 @@ export class ImportacaoChavesFiscalService {
       chave_acesso: item.chaveAcesso,
       valida: item.valida,
       apta_para_busca: item.aptaParaBusca,
-      motivo: item.motivo,
+      motivo:
+        statusLocal !== 'JA_IMPORTADA' && item.aptaParaBusca && foraDaJanelaSefaz(item.chaveAcesso)
+          ? FORA_JANELA_MESSAGE
+          : item.motivo,
       ocorrencias: item.ocorrencias,
       modelo: item.metadata?.modelo ?? null,
       uf: item.metadata?.uf ?? null,
@@ -581,10 +680,13 @@ export class ImportacaoChavesFiscalService {
       ja_existentes: count('JA_EXISTENTE'),
       resumos: count('RESUMO_COM_CIENCIA', 'RESUMO_PENDENTE'),
       nao_localizados: count('NAO_LOCALIZADO'),
+      recuperacao_portal: count('RECUPERACAO_PORTAL_NECESSARIA'),
+      adiados: count('ADIADO_LIMITE_CONSULTAS'),
       nao_suportados: count('NAO_SUPORTADO'),
       invalidas: count('INVALIDA'),
       falhas: count(
         'FALHA',
+        'ADIADO_LIMITE_CONSULTAS',
         'ABORTADO_CONSUMO_INDEVIDO',
         'ABORTADO_CERTIFICADO_INDISPONIVEL',
       ),

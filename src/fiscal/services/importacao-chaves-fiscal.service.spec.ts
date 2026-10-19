@@ -2,11 +2,22 @@ import type { DatabaseService } from '../../database/database.service';
 import type { AppLogger } from '../../common/logger.service';
 import type { DistribuicaoDfeService } from './distribuicao-dfe.service';
 import type { NfeWizardService } from './nfewizard.service';
-import { ImportacaoChavesFiscalService } from './importacao-chaves-fiscal.service';
+import {
+  foraDaJanelaSefaz,
+  ImportacaoChavesFiscalService,
+} from './importacao-chaves-fiscal.service';
+import { SefazConsultaAdiadaError } from './sefaz-consulta-control.service';
 import { CertificateAccessError } from './certificado.service';
 import { gzipSync } from 'node:zlib';
 
 describe('ImportacaoChavesFiscalService', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({
+      now: new Date('2024-09-01T12:00:00Z'),
+      doNotFake: ['setTimeout', 'clearTimeout'],
+    });
+  });
+  afterEach(() => jest.useRealTimers());
   const cliente = {
     id: 'bff6b350-3794-4d22-a3a2-18b0a6f72672',
     cnpj: '98765432000110',
@@ -15,6 +26,153 @@ describe('ImportacaoChavesFiscalService', () => {
     apuraIcms: true,
   };
   const actorUserId = 'user-1';
+
+  it.each([false, true])(
+    'importa XML completo e promove resumo existente (resumo=%s)',
+    async (hasSummary) => {
+      const chave = buildAccessKey('55');
+      const xml = `<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><NFe><infNFe Id="NFe${chave}" versao="4.00"><ide><mod>55</mod><serie>1</serie><nNF>123</nNF><tpNF>1</tpNF><dhEmi>2024-08-15T10:45:00-03:00</dhEmi></ide><emit><CNPJ>12345678000195</CNPJ><xNome>Fornecedor Teste</xNome></emit><dest><CNPJ>98765432000110</CNPJ><xNome>Cliente</xNome></dest><total><ICMSTot><vNF>150.75</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>${chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>`;
+      const response = {
+        cStat: 138,
+        data: {
+          retDistDFeInt: {
+            loteDistDFeInt: {
+              docZip: [
+                {
+                  $: { NSU: '000000000000123', schema: 'procNFe_v4.00.xsd' },
+                  _: gzipSync(Buffer.from(xml)).toString('base64'),
+                },
+              ],
+            },
+          },
+        },
+      };
+      const service = makeService(
+        databaseWithResponses([
+          [cliente],
+          [{ id: 'cert-1', validadeFim: futureDate() }],
+          hasSummary ? [existingDocument(chave, 'RESUMIDA')] : [],
+          [existingDocument(chave, 'AUTORIZADA')],
+        ]),
+        nfeWizardMock(response),
+      );
+      const result = await service.executar({
+        clienteId: cliente.id,
+        chaves: [chave],
+        actorUserId,
+        requestId: 'req-xml',
+      });
+      expect(result.itens[0]).toMatchObject({
+        status: 'IMPORTADO',
+        documento_id: '7bc10448-3bcf-4d1f-aace-78411d72c635',
+        valor_total: '150.75',
+      });
+      expect(result.resumo.importados).toBe(1);
+      expect(result.resumo.ja_existentes).toBe(0);
+    },
+  );
+
+  it('não consulta notas antigas, mesmo com reimportação forçada', async () => {
+    jest.setSystemTime(new Date('2026-10-19T12:00:00Z'));
+    const nfeWizard = nfeWizardMock();
+    const service = makeService(
+      databaseWithResponses([
+        [cliente],
+        [{ id: 'cert-1', validadeFim: futureDate() }],
+        [],
+      ]),
+      nfeWizard,
+    );
+    const result = await service.executar({
+      clienteId: cliente.id,
+      chaves: [buildAccessKey('55')],
+      forcarReimportacao: true,
+      actorUserId,
+      requestId: 'req-old',
+    });
+    expect(result.itens[0].status).toBe('RECUPERACAO_PORTAL_NECESSARIA');
+    expect(result.resumo.recuperacao_portal).toBe(1);
+    expect(result.resumo.nao_localizados).toBe(0);
+    expect(result.itens[0].mensagem).toContain('ainda não foi verificada');
+    expect(nfeWizard.consultarPorChave).not.toHaveBeenCalled();
+  });
+
+  it('não exclui o mês que contém a borda dos 90 dias', () => {
+    expect(
+      foraDaJanelaSefaz(buildAccessKey('55'), new Date('2024-11-15T12:00:00Z')),
+    ).toBe(false);
+    expect(
+      foraDaJanelaSefaz(buildAccessKey('55'), new Date('2024-12-01T12:00:00Z')),
+    ).toBe(true);
+  });
+
+  it.each([
+    [
+      new Error('NFE_DistribuicaoDFePorChave: Rejeição: CNPJ não autorizado'),
+      'FALHA',
+      'CNPJ não autorizado',
+    ],
+    [new Error('connect ETIMEDOUT'), 'FALHA', 'comunicação segura'],
+    [
+      new SefazConsultaAdiadaError(
+        'LIMITE_LOCAL',
+        new Date('2024-09-01T13:00:00Z'),
+      ),
+      'ADIADO_LIMITE_CONSULTAS',
+      '20 consultas',
+    ],
+  ])(
+    'interrompe o lote e diferencia o motivo da falha: %s',
+    async (error, status, message) => {
+      const nfeWizard = nfeWizardMock();
+      nfeWizard.consultarPorChave.mockRejectedValue(error);
+      const service = makeService(
+        databaseWithResponses([
+          [cliente],
+          [{ id: 'cert-1', validadeFim: futureDate() }],
+          [],
+        ]),
+        nfeWizard,
+      );
+      const result = await service.executar({
+        clienteId: cliente.id,
+        chaves: [
+          buildAccessKey('55', '000000001'),
+          buildAccessKey('55', '000000002'),
+        ],
+        actorUserId,
+        requestId: 'req-error',
+      });
+      expect(result.itens.map((item) => item.status)).toEqual([status, status]);
+      expect(result.itens[0].mensagem).toContain(message);
+      expect(nfeWizard.consultarPorChave).toHaveBeenCalledTimes(1);
+      expect(result.resumo.certificado_indisponivel).toBe(false);
+    },
+  );
+
+  it('não classifica rejeição como documento não localizado', async () => {
+    const nfeWizard = nfeWizardMock({
+      cStat: 593,
+      xMotivo: 'CNPJ não autorizado',
+    });
+    const service = makeService(
+      databaseWithResponses([
+        [cliente],
+        [{ id: 'cert-1', validadeFim: futureDate() }],
+        [],
+      ]),
+      nfeWizard,
+    );
+    const result = await service.executar({
+      clienteId: cliente.id,
+      chaves: [buildAccessKey('55')],
+      actorUserId,
+      requestId: 'req-rejection',
+    });
+    expect(result.itens[0].status).toBe('FALHA');
+    expect(result.itens[0].mensagem).toContain('593');
+    expect(result.resumo.nao_localizados).toBe(0);
+  });
 
   it('classifica documento já importado sem consultar a SEFAZ', async () => {
     const chave = buildAccessKey('55');

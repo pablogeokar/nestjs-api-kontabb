@@ -18,6 +18,7 @@ import {
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { NfeWizardService } from './nfewizard.service';
+import { SefazConsultaAdiadaError } from './sefaz-consulta-control.service';
 import {
   extractDfeDocZips,
   extractDfeResponseMetadata,
@@ -217,6 +218,18 @@ export class DistribuicaoDfeService {
             });
           }
         } catch (error: unknown) {
+          if (error instanceof SefazConsultaAdiadaError) {
+            await this.atualizarControleNsu(control.id, {
+              statusSefaz: error.motivo === 'CONSUMO_INDEVIDO' ? 656 : 999,
+              motivoSefaz: error.message,
+              proximaConsultaEm: error.retryAt,
+            });
+            return {
+              status: 'ADIADO',
+              message: error.message,
+              documentosProcessados,
+            };
+          }
           const errorMessage = this.getRootCauseMessage(error);
           this.logger.error(
             `Erro na consulta SEFAZ para ${cnpj}: ${errorMessage}`,
