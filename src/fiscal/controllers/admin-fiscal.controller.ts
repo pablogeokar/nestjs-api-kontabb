@@ -734,7 +734,7 @@ export class AdminFiscalController {
   @ApiOperation({
     summary: 'Visualizar documento auxiliar (PDF)',
     description:
-      'Gera a DANFE/DACTE em PDF a partir do XML e transmite o arquivo em memória.',
+      'Gera DANFE, DACTE ou espelho da NFS-e em PDF a partir do XML e transmite o arquivo em memória.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({

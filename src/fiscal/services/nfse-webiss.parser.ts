@@ -25,6 +25,20 @@ export interface ParsedNfseDados {
   cnae: string;
   codigoTributacaoMunicipio: string;
   inscricaoMunicipalPrestador: string;
+  nomeFantasiaPrestador: string;
+  telefonePrestador: string;
+  emailPrestador: string;
+  inscricaoMunicipalTomador: string;
+  telefoneTomador: string;
+  emailTomador: string;
+  dataHoraEmissao: string;
+  incentivoFiscal: boolean;
+  valorPis: string;
+  valorCofins: string;
+  valorInss: string;
+  valorIr: string;
+  valorCsll: string;
+  outrasRetencoes: string;
   valorServicos: string;
   baseCalculoIss: string;
   aliquotaIss: string;
@@ -85,8 +99,19 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
   const prestadorServico = asRecord(infNfse.PrestadorServico);
   const prestadorDeclaracao = asRecord(infDeclaracao.Prestador);
   const prestador = parsePrestador(prestadorServico, prestadorDeclaracao);
-  const tomador = parseTomador(asRecord(infDeclaracao.Tomador));
-  if (!prestador?.cnpjCpf || !tomador?.cnpjCpf) return null;
+  const tomadorXml = asRecord(infDeclaracao.Tomador);
+  const contatoPrestador = asRecord(prestadorServico?.Contato);
+  const contatoTomador = asRecord(tomadorXml?.Contato);
+  const tomador = parseTomador(tomadorXml);
+  const identificacaoTomador = asRecord(tomadorXml?.IdentificacaoTomador);
+  const cpfCnpjTomador =
+    asRecord(identificacaoTomador?.CpfCnpj) ?? identificacaoTomador;
+  const tomadorInformouIdentificador = Boolean(
+    text(cpfCnpjTomador?.Cnpj) || text(cpfCnpjTomador?.Cpf),
+  );
+  if (!prestador?.cnpjCpf || (tomadorInformouIdentificador && !tomador)) {
+    return null;
+  }
 
   const chaveInformada = text(infNfse.ChaveAcesso);
   const idInfNfse = text(infNfse['@_Id']);
@@ -175,6 +200,20 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
       text(
         asRecord(prestadorServico?.IdentificacaoPrestador)?.InscricaoMunicipal,
       ) || text(prestadorDeclaracao?.InscricaoMunicipal),
+    nomeFantasiaPrestador: text(prestadorServico?.NomeFantasia),
+    telefonePrestador: text(contatoPrestador?.Telefone),
+    emailPrestador: text(contatoPrestador?.Email),
+    inscricaoMunicipalTomador: text(identificacaoTomador?.InscricaoMunicipal),
+    telefoneTomador: text(contatoTomador?.Telefone),
+    emailTomador: text(contatoTomador?.Email),
+    dataHoraEmissao: dataEmissaoValue,
+    incentivoFiscal: text(infDeclaracao.IncentivoFiscal) === '1',
+    valorPis: money(valoresServico.ValorPis, '0.00'),
+    valorCofins: money(valoresServico.ValorCofins, '0.00'),
+    valorInss: money(valoresServico.ValorInss, '0.00'),
+    valorIr: money(valoresServico.ValorIr, '0.00'),
+    valorCsll: money(valoresServico.ValorCsll, '0.00'),
+    outrasRetencoes: money(valoresServico.OutrasRetencoes, '0.00'),
     valorServicos,
     baseCalculoIss,
     aliquotaIss,
@@ -200,8 +239,8 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
     numeroDocumento,
     emitenteCnpjCpf: prestador.cnpjCpf,
     emitenteRazaoSocial: prestador.nome,
-    destinatarioCnpjCpf: tomador.cnpjCpf,
-    destinatarioRazaoSocial: tomador.nome,
+    destinatarioCnpjCpf: tomador?.cnpjCpf ?? '',
+    destinatarioRazaoSocial: tomador?.nome ?? '',
     emitente: prestador,
     destinatario: tomador,
     tomador,
@@ -213,7 +252,9 @@ export function parseNfseWebissXml(xml: string): ParsedDocumentoFiscal | null {
     valorTotal: valorServicos,
     tpNfXml: '1',
     situacao: nfseDados.cancelada ? 'CANCELADA' : 'AUTORIZADA',
-    participantesCnpjCpf: [prestador.cnpjCpf, tomador.cnpjCpf],
+    participantesCnpjCpf: tomador
+      ? [prestador.cnpjCpf, tomador.cnpjCpf]
+      : [prestador.cnpjCpf],
     itens: [item],
     quantidadeItensDeclarada: 1,
     icmsTot: null,

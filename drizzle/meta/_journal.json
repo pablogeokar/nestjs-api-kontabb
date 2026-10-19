@@ -8,6 +8,20 @@
       "when": 1792166524025,
       "tag": "0000_baseline_kontabb",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792253292867,
+      "tag": "0001_fiscal_xml_retry",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792253468652,
+      "tag": "0002_fiscal_auto_ciencia",
+      "breakpoints": true
     }
   ]
 }

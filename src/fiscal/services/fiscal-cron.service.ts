@@ -20,7 +20,8 @@ export class FiscalCronService {
 
   /**
    * Job principal: sincroniza DFe para todos os clientes com certificado ativo.
-   * Deve ser chamado a cada 4-6 horas via cron externo.
+   * Deve ser chamado a cada 24 horas via cron externo. O controle por cliente
+   * respeita o intervalo mínimo exigido pela SEFAZ.
    */
   async executarSincronizacao() {
     this.logger.log('Iniciando sincronização fiscal programada...');

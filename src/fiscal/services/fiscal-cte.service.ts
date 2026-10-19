@@ -629,9 +629,23 @@ export class FiscalCteService {
       eq(documentosFiscais.situacao, 'AUTORIZADA'),
       eq(documentosFiscaisCteEscrituracao.cfopRevisaoNecessaria, false),
     );
-    return this.database.db
+    const contraparteNome = sql<
+      string | null
+    >`CASE WHEN ${documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada} = 'ENTRADA' THEN ${documentosFiscais.emitenteRazaoSocial} ELSE ${documentosFiscais.destinatarioRazaoSocial} END`;
+    const contraparteUf = sql<
+      string | null
+    >`CASE WHEN ${documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada} = 'ENTRADA' THEN NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '') ELSE NULLIF(UPPER(BTRIM(${documentosFiscais.destinatarioDados} ->> 'uf')), '') END`;
+    const rows = await this.database.db
       .select({
         bloco: sql<string>`'D'`,
+        documento_fiscal_id: documentosFiscais.id,
+        data_emissao: documentosFiscais.dataEmissao,
+        tipo_documento: documentosFiscais.tipoDocumento,
+        modelo: documentosFiscais.modelo,
+        serie: documentosFiscais.serie,
+        numero_documento: documentosFiscais.numeroDocumento,
+        contraparte_nome: contraparteNome,
+        contraparte_uf: contraparteUf,
         tipo_operacao: documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
         cfop: documentosFiscaisCteEscrituracao.cfop,
         aliquota_icms: documentosFiscaisCteEscrituracao.aliquotaIcms,
@@ -650,11 +664,28 @@ export class FiscalCteService {
       )
       .where(and(...conditions))
       .groupBy(
+        documentosFiscais.id,
+        documentosFiscais.dataEmissao,
+        documentosFiscais.tipoDocumento,
+        documentosFiscais.modelo,
+        documentosFiscais.serie,
+        documentosFiscais.numeroDocumento,
+        contraparteNome,
+        contraparteUf,
         documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
         documentosFiscaisCteEscrituracao.cfop,
         documentosFiscaisCteEscrituracao.aliquotaIcms,
       )
-      .orderBy(documentosFiscaisCteEscrituracao.cfop);
+      .orderBy(
+        documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
+        documentosFiscais.dataEmissao,
+        documentosFiscais.numeroDocumento,
+        documentosFiscaisCteEscrituracao.cfop,
+      );
+    return rows.map((row) => ({
+      ...row,
+      data_emissao: row.data_emissao.toISOString(),
+    }));
   }
 
   async getTotalCreditoIcms(input: CteFiscalFilters) {
