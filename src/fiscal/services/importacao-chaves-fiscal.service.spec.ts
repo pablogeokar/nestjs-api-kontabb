@@ -76,11 +76,7 @@ describe('ImportacaoChavesFiscalService', () => {
     jest.setSystemTime(new Date('2026-10-19T12:00:00Z'));
     const nfeWizard = nfeWizardMock();
     const service = makeService(
-      databaseWithResponses([
-        [cliente],
-        [{ id: 'cert-1', validadeFim: futureDate() }],
-        [],
-      ]),
+      databaseWithResponses([[cliente], []]),
       nfeWizard,
     );
     const result = await service.executar({
@@ -104,6 +100,23 @@ describe('ImportacaoChavesFiscalService', () => {
     expect(
       foraDaJanelaSefaz(buildAccessKey('55'), new Date('2024-12-01T12:00:00Z')),
     ).toBe(true);
+  });
+
+  it('separa na prévia notas antigas das consultas à SEFAZ', async () => {
+    jest.setSystemTime(new Date('2026-10-19T12:00:00Z'));
+    const chave = buildAccessKey('55');
+    const service = makeService(
+      databaseWithResponses([[cliente], []]),
+      nfeWizardMock(),
+    );
+    const result = await service.analisar({
+      clienteId: cliente.id,
+      chavesTexto: chave,
+    });
+
+    expect(result.resumo.consultas_sefaz).toBe(0);
+    expect(result.itens[0].recuperacao_portal_necessaria).toBe(true);
+    expect(result.avisos).toEqual([]);
   });
 
   it.each([
@@ -143,10 +156,17 @@ describe('ImportacaoChavesFiscalService', () => {
         actorUserId,
         requestId: 'req-error',
       });
-      expect(result.itens.map((item) => item.status)).toEqual([status, status]);
+      expect(result.itens.map((item) => item.status)).toEqual([
+        status,
+        status === 'FALHA' ? 'NAO_PROCESSADO_FALHA_LOTE' : status,
+      ]);
       expect(result.itens[0].mensagem).toContain(message);
       expect(nfeWizard.consultarPorChave).toHaveBeenCalledTimes(1);
       expect(result.resumo.certificado_indisponivel).toBe(false);
+      expect(result.resumo.nao_processadas).toBe(status === 'FALHA' ? 1 : 0);
+      expect(result.resumo.falhas).toBe(
+        status === 'FALHA' ? 1 : status === 'ADIADO_LIMITE_CONSULTAS' ? 2 : 0,
+      );
     },
   );
 
@@ -172,6 +192,43 @@ describe('ImportacaoChavesFiscalService', () => {
     expect(result.itens[0].status).toBe('FALHA');
     expect(result.itens[0].mensagem).toContain('593');
     expect(result.resumo.nao_localizados).toBe(0);
+  });
+
+  it('registra só a primeira falha e preserva as outras 39 chaves para nova tentativa', async () => {
+    const keys = Array.from({ length: 40 }, (_, index) =>
+      buildAccessKey('55', String(index + 1).padStart(9, '0')),
+    );
+    const nfeWizard = nfeWizardMock();
+    nfeWizard.consultarPorChave.mockRejectedValue(
+      new Error('connect ECONNREFUSED 127.0.0.1:9'),
+    );
+    const service = makeService(
+      databaseWithResponses([
+        [cliente],
+        [{ id: 'cert-1', validadeFim: futureDate() }],
+        [],
+      ]),
+      nfeWizard,
+    );
+
+    const result = await service.executar({
+      clienteId: cliente.id,
+      chaves: keys,
+      actorUserId,
+      requestId: 'req-network',
+    });
+
+    expect(result.resumo.falhas).toBe(1);
+    expect(result.resumo.nao_processadas).toBe(39);
+    expect(result.itens[0].mensagem).toContain(
+      'configuração de rede do servidor',
+    );
+    expect(
+      result.itens
+        .slice(1)
+        .every((item) => item.status === 'NAO_PROCESSADO_FALHA_LOTE'),
+    ).toBe(true);
+    expect(nfeWizard.consultarPorChave).toHaveBeenCalledTimes(1);
   });
 
   it('classifica documento já importado sem consultar a SEFAZ', async () => {

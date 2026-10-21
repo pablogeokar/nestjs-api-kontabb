@@ -61,6 +61,7 @@ export type ImportacaoChaveStatus =
   | 'NAO_SUPORTADO'
   | 'INVALIDA'
   | 'FALHA'
+  | 'NAO_PROCESSADO_FALHA_LOTE'
   | 'RECUPERACAO_PORTAL_NECESSARIA'
   | 'ADIADO_LIMITE_CONSULTAS'
   | 'ABORTADO_CONSUMO_INDEVIDO'
@@ -147,6 +148,12 @@ export class ImportacaoChavesFiscalService {
         chaves_unicas: parsed.itens.length,
         validas: parsed.validas,
         aptas_para_busca: parsed.aptasParaBusca,
+        consultas_sefaz: itens.filter(
+          (item) =>
+            item.apta_para_busca &&
+            item.status_local !== 'JA_IMPORTADA' &&
+            !item.fora_janela_sefaz,
+        ).length,
         invalidas: parsed.invalidas,
         duplicadas: parsed.duplicadas,
         ja_existentes: itens.filter(
@@ -159,9 +166,12 @@ export class ImportacaoChavesFiscalService {
       itens,
       avisos: [
         ...parsed.avisos,
-        'O serviço de distribuição automática da SEFAZ permite até 20 consultas por chave por hora por CNPJ e disponibiliza documentos dos últimos 90 dias. A chave, por si só, não garante acesso ao XML completo.',
-        ...(itens.some((item) => item.status_local !== 'JA_IMPORTADA' && item.apta_para_busca && foraDaJanelaSefaz(item.chave_acesso))
-          ? [FORA_JANELA_MESSAGE]
+        ...(itens.some(
+          (item) => item.apta_para_busca && !item.fora_janela_sefaz,
+        )
+          ? [
+              'A SEFAZ permite até 20 consultas por chave por hora por CNPJ. A consulta não garante o XML completo.',
+            ]
           : []),
       ],
     };
@@ -185,8 +195,14 @@ export class ImportacaoChavesFiscalService {
       );
     }
 
-    const cliente = await this.getCliente(input.clienteId, true);
-    await this.assertCertificadoDisponivel(input.clienteId);
+    const hasSefazQuery = parsed.itens.some(
+      (item) =>
+        item.valida &&
+        item.aptaParaBusca &&
+        !foraDaJanelaSefaz(item.chaveAcesso),
+    );
+    const cliente = await this.getCliente(input.clienteId, hasSefazQuery);
+    if (hasSefazQuery) await this.assertCertificadoDisponivel(input.clienteId);
     const existing = await this.getDocumentosExistentes(
       input.clienteId,
       parsed.itens.map((item) => item.chaveAcesso).filter(Boolean),
@@ -275,11 +291,21 @@ export class ImportacaoChavesFiscalService {
       }
       if (falhaConsulta) {
         resultados.push(
-          this.result(item, 'FALHA', `Lote interrompido. ${falhaConsulta}`),
+          this.result(
+            item,
+            'NAO_PROCESSADO_FALHA_LOTE',
+            `Não consultada: a execução foi interrompida após a falha da primeira chave. ${falhaConsulta}`,
+          ),
         );
         continue;
       }
 
+      let etapa:
+        | 'CONSULTA_SEFAZ'
+        | 'INTERPRETACAO_RESPOSTA'
+        | 'GRAVACAO_XML'
+        | 'GRAVACAO_RESUMO'
+        | 'MANIFESTACAO' = 'CONSULTA_SEFAZ';
       try {
         const resposta = await this.withSefazRateLimit(input.clienteId, () =>
           this.nfeWizard.consultarPorChave({
@@ -289,6 +315,7 @@ export class ImportacaoChavesFiscalService {
             chaveAcesso: item.chaveAcesso,
           }),
         );
+        etapa = 'INTERPRETACAO_RESPOSTA';
         const metadata = extractDfeResponseMetadata(resposta);
         if (
           metadata.cStat === 656 ||
@@ -327,6 +354,7 @@ export class ImportacaoChavesFiscalService {
           .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
           .find((candidate) => candidate?.chaveAcesso === item.chaveAcesso);
         if (documento) {
+          etapa = 'GRAVACAO_XML';
           await this.distribuicao.salvarDocumentoConsultado({
             clienteId: input.clienteId,
             cnpj: cliente.cnpj,
@@ -370,6 +398,7 @@ export class ImportacaoChavesFiscalService {
           continue;
         }
 
+        etapa = 'GRAVACAO_RESUMO';
         await this.distribuicao.salvarResumoConsultado({
           clienteId: input.clienteId,
           cnpj: cliente.cnpj,
@@ -381,6 +410,7 @@ export class ImportacaoChavesFiscalService {
           saved &&
           saved.manifestacaoStatus === 'SEM_MANIFESTACAO'
         ) {
+          etapa = 'MANIFESTACAO';
           const manifestacao = await this.withSefazRateLimit(
             input.clienteId,
             () =>
@@ -483,6 +513,7 @@ export class ImportacaoChavesFiscalService {
             userId: input.actorUserId,
             entityId: input.clienteId,
             operation: 'importar_dfe_por_chave',
+            stage: etapa,
             result: 'CERTIFICATE_UNAVAILABLE',
           });
           resultados.push(
@@ -491,22 +522,27 @@ export class ImportacaoChavesFiscalService {
           continue;
         }
         const message = this.rootCause(error);
+        const proxyBloqueado = /ECONNREFUSED\s+127\.0\.0\.1:9\b/i.test(message);
         if (/consumo indevido|\b656\b/i.test(message)) consumoIndevido = true;
         // A biblioteca encapsula rejeições em Error e remove o cStat.
         // Exibir somente o motivo fiscal reconhecido, nunca erros brutos de storage/SQL.
         const rejeicao = message.match(/Rejei[çc][ãa]o[^\r\n]*/i)?.[0];
-        falhaConsulta = rejeicao
-          ? `A SEFAZ recusou a consulta: ${rejeicao.slice(0, 400)}`
-          : /timeout|timed out|ETIMEDOUT|ECONN|ENOTFOUND|socket|network|TLS|SSL|unable to verify|self.signed|certificate/i.test(
-                message,
-              )
-            ? 'Falha de comunicação segura com a SEFAZ. Tente mais tarde; isso não confirma que o certificado A1 seja inválido.'
-            : 'Não foi possível concluir a consulta ou salvar o documento. O lote foi interrompido; consulte o suporte com o identificador da requisição.';
+        falhaConsulta = proxyBloqueado
+          ? 'A configuração de rede do servidor bloqueou a conexão com a SEFAZ. Corrija a saída HTTPS antes de tentar novamente.'
+          : rejeicao
+            ? `A SEFAZ recusou a consulta: ${rejeicao.slice(0, 400)}`
+            : /timeout|timed out|ETIMEDOUT|ECONN|ENOTFOUND|socket|network|TLS|SSL|unable to verify|self.signed|certificate/i.test(
+                  message,
+                )
+              ? 'Falha de comunicação segura com a SEFAZ. Tente mais tarde; isso não confirma que o certificado A1 seja inválido.'
+              : 'Não foi possível concluir a consulta ou salvar o documento. O lote foi interrompido; consulte o suporte com o identificador da requisição.';
         this.logger.error('fiscal_key_import_item_failed', error, {
           requestId: input.requestId,
           userId: input.actorUserId,
           entityId: input.clienteId,
           operation: 'importar_dfe_por_chave',
+          stage: etapa,
+          failureCategory: proxyBloqueado ? 'LOCAL_PROXY_BLOCKED' : undefined,
           result: consumoIndevido ? 'CONSUMO_INDEVIDO' : 'FAILED',
         });
         resultados.push(
@@ -621,6 +657,8 @@ export class ImportacaoChavesFiscalService {
     item: ParsedFiscalAccessKey,
     existing?: DocumentoExistente,
   ) {
+    const foraJanelaSefaz =
+      item.aptaParaBusca && foraDaJanelaSefaz(item.chaveAcesso);
     const statusLocal = !item.valida
       ? 'INVALIDA'
       : !item.aptaParaBusca
@@ -635,8 +673,11 @@ export class ImportacaoChavesFiscalService {
       chave_acesso: item.chaveAcesso,
       valida: item.valida,
       apta_para_busca: item.aptaParaBusca,
+      fora_janela_sefaz: foraJanelaSefaz,
+      recuperacao_portal_necessaria:
+        statusLocal !== 'JA_IMPORTADA' && foraJanelaSefaz,
       motivo:
-        statusLocal !== 'JA_IMPORTADA' && item.aptaParaBusca && foraDaJanelaSefaz(item.chaveAcesso)
+        statusLocal !== 'JA_IMPORTADA' && foraJanelaSefaz
           ? FORA_JANELA_MESSAGE
           : item.motivo,
       ocorrencias: item.ocorrencias,
@@ -680,6 +721,7 @@ export class ImportacaoChavesFiscalService {
       ja_existentes: count('JA_EXISTENTE'),
       resumos: count('RESUMO_COM_CIENCIA', 'RESUMO_PENDENTE'),
       nao_localizados: count('NAO_LOCALIZADO'),
+      nao_processadas: count('NAO_PROCESSADO_FALHA_LOTE'),
       recuperacao_portal: count('RECUPERACAO_PORTAL_NECESSARIA'),
       adiados: count('ADIADO_LIMITE_CONSULTAS'),
       nao_suportados: count('NAO_SUPORTADO'),
