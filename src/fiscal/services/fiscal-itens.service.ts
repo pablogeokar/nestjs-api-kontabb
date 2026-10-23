@@ -1,13 +1,26 @@
 import { alias } from 'drizzle-orm/pg-core';
 import { descricaoCst } from './cst-catalogo';
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lte, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { PaginationParams } from '../../common/types';
 import { DatabaseService } from '../../database/database.service';
 import {
   cfops,
   clientes,
   documentosFiscais,
+  documentosFiscaisCteEscrituracao,
   documentosFiscaisItens,
 } from '../../database/schema';
 import { type RegimeTributario } from '../../clientes/clientes.types';
@@ -326,6 +339,125 @@ export class FiscalItensService {
         : rows;
 
     return projectedRows.map((row) => ({
+      ...row,
+      data_emissao: row.data_emissao.toISOString(),
+    }));
+  }
+
+  /** Identificação das notas do período que ainda não compõem os totais do livro. */
+  async getDocumentosPeriodoLivro(input: ItemFilters) {
+    if (!input.clienteId) return [];
+
+    const conditions: SQL[] = [
+      eq(documentosFiscais.clienteId, input.clienteId),
+      inArray(documentosFiscais.tipoDocumento, ['NFE', 'NFCE', 'CTE']),
+    ];
+    if (input.documentoId)
+      conditions.push(eq(documentosFiscais.id, input.documentoId));
+    if (input.tipoOperacao)
+      conditions.push(
+        eq(documentosFiscais.tipoOperacaoEscriturada, input.tipoOperacao),
+      );
+    if (input.dataInicio)
+      conditions.push(gte(documentosFiscais.dataEmissao, input.dataInicio));
+    if (input.dataFim)
+      conditions.push(lte(documentosFiscais.dataEmissao, input.dataFim));
+
+    const itemFilters: SQL[] = [];
+    const cteFilters: SQL[] = [];
+    if (input.cfop) {
+      itemFilters.push(eq(documentosFiscaisItens.cfop, input.cfop));
+      cteFilters.push(eq(documentosFiscaisCteEscrituracao.cfop, input.cfop));
+    }
+    if (input.cfopXml) {
+      itemFilters.push(eq(documentosFiscaisItens.cfopXml, input.cfopXml));
+      cteFilters.push(
+        eq(documentosFiscaisCteEscrituracao.cfopXml, input.cfopXml),
+      );
+    }
+    if (input.cst) {
+      itemFilters.push(
+        or(
+          eq(documentosFiscaisItens.cstIcms, input.cst),
+          eq(documentosFiscaisItens.csosnIcms, input.cst),
+          eq(documentosFiscaisItens.cstPis, input.cst),
+          eq(documentosFiscaisItens.cstCofins, input.cst),
+        )!,
+      );
+      cteFilters.push(
+        or(
+          eq(documentosFiscaisCteEscrituracao.cstIcms, input.cst),
+          eq(documentosFiscaisCteEscrituracao.csosnIcms, input.cst),
+        )!,
+      );
+    }
+    if (input.ncm) itemFilters.push(eq(documentosFiscaisItens.ncm, input.ncm));
+    if (input.codigoProduto)
+      itemFilters.push(
+        eq(documentosFiscaisItens.codigoProduto, input.codigoProduto),
+      );
+    if (itemFilters.length || cteFilters.length) {
+      const matchesItem = exists(
+        this.database.db
+          .select({ id: documentosFiscaisItens.id })
+          .from(documentosFiscaisItens)
+          .where(
+            and(
+              eq(
+                documentosFiscaisItens.documentoFiscalId,
+                documentosFiscais.id,
+              ),
+              ...itemFilters,
+            ),
+          ),
+      );
+      const matchesCte =
+        !input.ncm &&
+        !input.codigoProduto &&
+        exists(
+          this.database.db
+            .select({ id: documentosFiscaisCteEscrituracao.id })
+            .from(documentosFiscaisCteEscrituracao)
+            .where(
+              and(
+                eq(
+                  documentosFiscaisCteEscrituracao.documentoFiscalId,
+                  documentosFiscais.id,
+                ),
+                ...cteFilters,
+              ),
+            ),
+        );
+      conditions.push(matchesCte ? or(matchesItem, matchesCte)! : matchesItem);
+    }
+
+    const rows = await this.database.db
+      .select({
+        documento_fiscal_id: documentosFiscais.id,
+        data_emissao: documentosFiscais.dataEmissao,
+        tipo_documento: documentosFiscais.tipoDocumento,
+        modelo: documentosFiscais.modelo,
+        serie: documentosFiscais.serie,
+        numero_documento: documentosFiscais.numeroDocumento,
+        contraparte_nome: sql<
+          string | null
+        >`CASE WHEN ${documentosFiscais.tipoOperacaoEscriturada} = 'ENTRADA' THEN ${documentosFiscais.emitenteRazaoSocial} ELSE ${documentosFiscais.destinatarioRazaoSocial} END`,
+        contraparte_uf: sql<
+          string | null
+        >`CASE WHEN ${documentosFiscais.tipoOperacaoEscriturada} = 'ENTRADA' THEN NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '') ELSE NULLIF(UPPER(BTRIM(${documentosFiscais.destinatarioDados} ->> 'uf')), '') END`,
+        tipo_operacao: documentosFiscais.tipoOperacaoEscriturada,
+        valor_documento: documentosFiscais.valorTotal,
+        situacao: documentosFiscais.situacao,
+        escrituracao_status: documentosFiscais.escrituracaoStatus,
+      })
+      .from(documentosFiscais)
+      .where(and(...conditions))
+      .orderBy(
+        documentosFiscais.dataEmissao,
+        documentosFiscais.numeroDocumento,
+      );
+
+    return rows.map((row) => ({
       ...row,
       data_emissao: row.data_emissao.toISOString(),
     }));
