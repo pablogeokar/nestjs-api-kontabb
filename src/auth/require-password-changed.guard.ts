@@ -25,7 +25,7 @@ export class RequirePasswordChangedGuard implements CanActivate {
     const user = request.user;
 
     // If no user or not a CLIENTE, allow through
-    if (!user || user.role !== 'CLIENTE') {
+    if (!user || user.role !== 'CLIENTE' || user.impersonatedBy) {
       return true;
     }
 
