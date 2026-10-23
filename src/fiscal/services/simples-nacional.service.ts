@@ -34,12 +34,17 @@ import {
 } from './simples-calculador.service';
 import { FiscalClosingService } from './fiscal-closing.service';
 import { FiscalGuiasService } from './fiscal-guias.service';
+import {
+  classificarOperacaoSimples,
+  somarReceitaSimples,
+  valorReceitaSimples,
+} from './simples-receita';
 import type {
   SalvarHistoricoSimplesDto,
   SalvarSimplesTabelaDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@2';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@3';
 
 interface ReceitaAgrupada {
   anexo: SimplesAnexo;
@@ -332,6 +337,13 @@ export class SimplesNacionalService {
         'Somente uma apuração em rascunho pode ser fechada.',
       );
     }
+    if (apuracaoInicial.memoriaCalculo.motorVersao !== SIMPLES_MOTOR_VERSAO) {
+      throw new UnprocessableEntityException({
+        code: 'APURACAO_SIMPLES_MOTOR_DESATUALIZADO',
+        message:
+          'Recalcule esta apuração com o motor fiscal atual antes do fechamento.',
+      });
+    }
     const pendencias = apuracaoInicial.memoriaCalculo.pendencias;
     if (Array.isArray(pendencias) && pendencias.length > 0) {
       throw new UnprocessableEntityException({
@@ -467,6 +479,8 @@ export class SimplesNacionalService {
       folha,
       sublimite,
       anexos,
+      auditoriaReceitas,
+      folhaMes,
     ] = await Promise.all([
       this.carregarReceitasMensais(clienteId, competenciaDate),
       this.carregarPrimeiraCompetenciaReceita(clienteId),
@@ -474,6 +488,17 @@ export class SimplesNacionalService {
       this.carregarFolha12m(clienteId, competenciaDate),
       this.carregarSublimite(cliente.uf, competencia.slice(0, 4)),
       this.carregarAnexosCalculo(tabela.id),
+      this.auditarReceitasPeriodo(
+        clienteId,
+        `${mesesAnteriores(competencia, 12)[0]}-01`,
+        fim.toISOString().slice(0, 10),
+        competencia,
+      ),
+      this.carregarFolhasAutomaticasPeriodo(
+        clienteId,
+        competenciaDate,
+        competenciaDate,
+      ),
     ]);
     const receitaMesDocumentos =
       receitasMensais.rows.find((row) => row.mes === competencia)?.receita ??
@@ -481,7 +506,7 @@ export class SimplesNacionalService {
     const anteriores = receitasMensais.rows
       .filter((row) => row.mes < competencia)
       .map((row) => row.receita);
-    const mesesAnteriores = Math.max(
+    const quantidadeMesesAnteriores = Math.max(
       0,
       monthsBetweenCompetencias(
         primeiraCompetencia ?? competencia,
@@ -490,10 +515,19 @@ export class SimplesNacionalService {
     );
     const rbt = this.calculador.calcularRbt12({
       receitasAnteriores: anteriores,
-      mesesAnteriores,
+      mesesAnteriores: quantidadeMesesAnteriores,
       receitaPrimeiroMes: receitaMesDocumentos,
     });
-    const fatorR = this.calculador.calcularFatorR(folha.valor, rbt.rbt12);
+    const fatorR = this.calculador.calcularFatorR(
+      folha.valor,
+      rbt.rbt12,
+      quantidadeMesesAnteriores === 0
+        ? {
+            folhaMes: folhaMes[0]?.valor ?? '0.00',
+            receitaMes: receitaMesDocumentos,
+          }
+        : undefined,
+    );
     const excedeuSublimite =
       toScaledInteger(rbt.rbt12) > toScaledInteger(sublimite.valor);
     const calculados: SimplesItemCalculoResult[] = [];
@@ -529,7 +563,10 @@ export class SimplesNacionalService {
     const receitaClassificada = fromScaledInteger(
       receitasAtividade.grupos.reduce((sum, item) => sum + item.receita, 0n),
     );
-    const pendencias = [...receitasAtividade.pendencias];
+    const pendencias = [
+      ...receitasAtividade.pendencias,
+      ...auditoriaReceitas.pendencias,
+    ];
     if (
       toScaledInteger(receitaClassificada) !==
       toScaledInteger(receitaMesDocumentos)
@@ -558,7 +595,7 @@ export class SimplesNacionalService {
       guia_id: null,
       origens: {
         rbt12: `${rbt.origem}:${receitasMensais.origem}`,
-        receita: 'DOCUMENTOS_FISCAIS_SAIDA_AUTORIZADOS',
+        receita: 'ITENS_DE_VENDA_E_SERVICO_AUTORIZADOS',
         folha: folha.origem,
         sublimite: sublimite.origem,
         classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R',
@@ -567,6 +604,13 @@ export class SimplesNacionalService {
         motorVersao: SIMPLES_MOTOR_VERSAO,
         receitaMesDocumentos,
         receitaClassificada,
+        folhaMesPrimeiroPeriodo:
+          quantidadeMesesAnteriores === 0
+            ? (folhaMes[0]?.valor ?? '0.00')
+            : null,
+        bonificacoesExcluidas: auditoriaReceitas.bonificacoesExcluidas,
+        operacoesSemReceitaExcluidas:
+          auditoriaReceitas.operacoesSemReceitaExcluidas,
         sublimiteEstadual: sublimite.valor,
         receitaIssOutroMunicipio: fromScaledInteger(
           receitasAtividade.grupos
@@ -775,29 +819,12 @@ export class SimplesNacionalService {
     clienteId: string,
     competencia: string,
   ) {
-    const automaticas = await this.database.db
-      .select({
-        mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
-        receita: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}), 0)::text`,
-      })
-      .from(documentosFiscais)
-      .where(
-        and(
-          eq(documentosFiscais.clienteId, clienteId),
-          eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
-          eq(documentosFiscais.situacao, 'AUTORIZADA'),
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= (${competencia}::date - interval '12 months')`,
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) < (${competencia}::date + interval '1 month')`,
-        ),
-      )
-      .groupBy(
-        sql`date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
-      )
-      .orderBy(
-        asc(
-          sql`date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
-        ),
-      );
+    const inicio = `${mesesAnteriores(competencia.slice(0, 7), 12)[0]}-01`;
+    const automaticas = await this.carregarReceitasAutomaticasPeriodo(
+      clienteId,
+      inicio,
+      competencia,
+    );
     const manuais = await this.database.db
       .select({
         mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
@@ -812,7 +839,7 @@ export class SimplesNacionalService {
           sql`${fiscalSimplesHistoricosMensais.receitaBruta} IS NOT NULL`,
         ),
       );
-    const porMes = new Map(automaticas.map((row) => [row.mes, row.receita]));
+    const porMes = new Map(automaticas.map((row) => [row.mes, row.valor]));
     for (const manual of manuais) {
       if (manual.receita != null) porMes.set(manual.mes, manual.receita);
     }
@@ -835,12 +862,18 @@ export class SimplesNacionalService {
             string | null
           >`to_char(min(coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
         })
-        .from(documentosFiscais)
+        .from(documentosFiscaisItens)
+        .innerJoin(
+          documentosFiscais,
+          eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+        )
         .where(
           and(
             eq(documentosFiscais.clienteId, clienteId),
             eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
             eq(documentosFiscais.situacao, 'AUTORIZADA'),
+            eq(documentosFiscaisItens.indTotal, '1'),
+            sql`(${documentosFiscais.tipoDocumento} = 'NFSE' OR coalesce(${documentosFiscaisItens.cfopXml}, ${documentosFiscaisItens.cfop}) ~ '^[567](10[1-9]|11[0-9]|12[0-5]|35[1-9]|360|40[1-5]|65[1-6])$')`,
           ),
         ),
       this.database.db
@@ -869,15 +902,87 @@ export class SimplesNacionalService {
     inicio: Date,
     fim: Date,
   ) {
-    const rows = await this.database.db
+    const rows = await this.carregarItensReceitaPeriodo(
+      clienteId,
+      inicio.toISOString().slice(0, 10),
+      fim.toISOString().slice(0, 10),
+    );
+    const grupos = new Map<string, ReceitaAgrupada>();
+    const pendencias = new Set<string>();
+    for (const row of rows) {
+      if (row.indTotal !== '1') continue;
+      const cfop = row.cfopXml ?? row.cfop;
+      const classificacao = classificarOperacaoSimples(row.tipoDocumento, cfop);
+      if (classificacao === 'NAO_RECEITA') continue;
+      if (classificacao === 'REVISAR') {
+        pendencias.add(
+          `CFOP ${cfop ?? 'ausente'} sem classificação segura no Simples. Revise a operação antes de fechar.`,
+        );
+        continue;
+      }
+      const receita = valorReceitaSimples(row);
+      if (receita < 0n) {
+        pendencias.add(
+          `Item com valor líquido negativo na nota ${row.numeroDocumento}. Revise os descontos.`,
+        );
+        continue;
+      }
+      if (receita === 0n) continue;
+      const anexo =
+        row.tipoDocumento === 'NFSE'
+          ? anexoPorServico(row.itemListaServico, row.cnae)
+          : anexoPorCfop(cfop);
+      const st = ['5405', '6405'].includes(cfop) || row.csosn === '500';
+      const monofasico = row.cstPis === '04' || row.cstCofins === '04';
+      const segregacao: SimplesSegregacao = row.issRetido
+        ? 'ISS_RETIDO'
+        : st
+          ? 'ICMS_ST'
+          : monofasico
+            ? 'PIS_COFINS_MONOFASICO'
+            : 'TRIBUTACAO_INTEGRAL';
+      const deducoes = [
+        ...(row.issRetido ? (['ISS'] as const) : []),
+        ...(st ? (['ICMS'] as const) : []),
+        ...(monofasico ? (['PIS', 'COFINS'] as const) : []),
+      ];
+      const issOutroMunicipio = Boolean(
+        row.tipoDocumento === 'NFSE' &&
+        row.municipioIncidencia &&
+        row.municipioPrestador &&
+        row.municipioIncidencia !== row.municipioPrestador,
+      );
+      const key = `${anexo}:${segregacao}:${issOutroMunicipio ? 'OUTRO_MUNICIPIO' : 'LOCAL'}:${deducoes.join('+') || 'INTEGRAL'}`;
+      const atual = grupos.get(key) ?? {
+        anexo,
+        segregacao,
+        deducoes: [...deducoes],
+        receita: 0n,
+        issOutroMunicipio,
+      };
+      atual.receita += receita;
+      grupos.set(key, atual);
+    }
+    return { grupos: [...grupos.values()], pendencias: [...pendencias] };
+  }
+
+  private async carregarItensReceitaPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+  ) {
+    return this.database.db
       .select({
         documentoId: documentosFiscais.id,
+        numeroDocumento: documentosFiscais.numeroDocumento,
+        mes: sql<string>`to_char(coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date), 'YYYY-MM')`,
         documentoTotal: documentosFiscais.valorTotal,
         tipoDocumento: documentosFiscais.tipoDocumento,
         municipioPrestador: sql<
           string | null
         >`NULLIF(${documentosFiscais.emitenteDados} ->> 'codMun', '')`,
         cfop: documentosFiscaisItens.cfop,
+        cfopXml: documentosFiscaisItens.cfopXml,
         itemListaServico: documentosFiscaisItens.itemListaServico,
         cnae: documentosFiscaisItens.cnae,
         issRetido: documentosFiscaisItens.issRetido,
@@ -901,83 +1006,129 @@ export class SimplesNacionalService {
         and(
           eq(documentosFiscaisItens.clienteId, clienteId),
           eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'SAIDA'),
+          eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio.toISOString().slice(0, 10)}::date`,
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= ${fim.toISOString().slice(0, 10)}::date`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}::date`,
+          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= ${fim}::date`,
         ),
       );
-    const grupos = new Map<string, ReceitaAgrupada>();
-    const porDocumento = new Map<string, typeof rows>();
-    for (const row of rows) {
-      const itens = porDocumento.get(row.documentoId) ?? [];
-      itens.push(row);
-      porDocumento.set(row.documentoId, itens);
+  }
+
+  private async auditarReceitasPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+    competencia: string,
+  ) {
+    const [documentos, itens, historicosManuais] = await Promise.all([
+      this.database.db
+        .select({
+          id: documentosFiscais.id,
+          numero: documentosFiscais.numeroDocumento,
+          mes: sql<string>`to_char(coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date), 'YYYY-MM')`,
+          total: documentosFiscais.valorTotal,
+        })
+        .from(documentosFiscais)
+        .where(
+          and(
+            eq(documentosFiscais.clienteId, clienteId),
+            eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
+            eq(documentosFiscais.situacao, 'AUTORIZADA'),
+            sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}::date`,
+            sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= ${fim}::date`,
+          ),
+        ),
+      this.carregarItensReceitaPeriodo(clienteId, inicio, fim),
+      this.database.db
+        .select({
+          mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
+        })
+        .from(fiscalSimplesHistoricosMensais)
+        .where(
+          and(
+            eq(fiscalSimplesHistoricosMensais.clienteId, clienteId),
+            sql`${fiscalSimplesHistoricosMensais.competencia} >= ${inicio}::date`,
+            sql`${fiscalSimplesHistoricosMensais.competencia} <= ${fim}::date`,
+            sql`${fiscalSimplesHistoricosMensais.receitaBruta} IS NOT NULL`,
+          ),
+        ),
+    ]);
+    const mesesComReceitaManual = new Set(
+      historicosManuais.map((row) => row.mes),
+    );
+    const porDocumento = new Map<string, typeof itens>();
+    for (const item of itens) {
+      const grupo = porDocumento.get(item.documentoId) ?? [];
+      grupo.push(item);
+      porDocumento.set(item.documentoId, grupo);
     }
-    for (const itensDocumento of porDocumento.values()) {
-      const itens = itensDocumento.filter((row) => row.indTotal === '1');
-      const pesos = itens.map((row) => {
-        const valor =
-          toScaledInteger(row.bruto) +
-          toScaledInteger(row.frete) +
-          toScaledInteger(row.seguro) +
-          toScaledInteger(row.outras) -
-          toScaledInteger(row.desconto);
-        return valor > 0n ? valor : 0n;
-      });
-      const pesoTotal = pesos.reduce((sum, valor) => sum + valor, 0n);
-      const totalDocumento = toScaledInteger(itensDocumento[0].documentoTotal);
-      let alocado = 0n;
-      for (const [index, row] of itens.entries()) {
-        const receita =
-          index === itens.length - 1
-            ? totalDocumento - alocado
-            : pesoTotal > 0n
-              ? (totalDocumento * pesos[index] + pesoTotal / 2n) / pesoTotal
-              : 0n;
-        alocado += receita;
-        const anexo =
-          row.tipoDocumento === 'NFSE'
-            ? anexoPorServico(row.itemListaServico, row.cnae)
-            : anexoPorCfop(row.cfop);
-        const st = ['5405', '6405'].includes(row.cfop) || row.csosn === '500';
-        const monofasico = row.cstPis === '04' || row.cstCofins === '04';
-        const segregacao: SimplesSegregacao = row.issRetido
-          ? 'ISS_RETIDO'
-          : st
-            ? 'ICMS_ST'
-            : monofasico
-              ? 'PIS_COFINS_MONOFASICO'
-              : 'TRIBUTACAO_INTEGRAL';
-        const deducoes = [
-          ...(row.issRetido ? (['ISS'] as const) : []),
-          ...(st ? (['ICMS'] as const) : []),
-          ...(monofasico ? (['PIS', 'COFINS'] as const) : []),
-        ];
-        const issOutroMunicipio = Boolean(
-          row.tipoDocumento === 'NFSE' &&
-          row.municipioIncidencia &&
-          row.municipioPrestador &&
-          row.municipioIncidencia !== row.municipioPrestador,
+    const pendencias: string[] = [];
+    let bonificacoes = 0n;
+    let demais = 0n;
+    for (const documento of documentos) {
+      if (
+        documento.mes !== competencia &&
+        mesesComReceitaManual.has(documento.mes)
+      )
+        continue;
+      const linhas = porDocumento.get(documento.id) ?? [];
+      if (linhas.length === 0) {
+        pendencias.push(
+          `Nota ${documento.numero} (${documento.mes}) sem itens fiscais para avaliar a receita.`,
         );
-        const key = `${anexo}:${segregacao}:${issOutroMunicipio ? 'OUTRO_MUNICIPIO' : 'LOCAL'}:${deducoes.join('+') || 'INTEGRAL'}`;
-        const atual = grupos.get(key) ?? {
-          anexo,
-          segregacao,
-          deducoes: [...deducoes],
-          receita: 0n,
-          issOutroMunicipio,
-        };
-        atual.receita += receita;
-        grupos.set(key, atual);
+        continue;
+      }
+      let totalElegivel = 0n;
+      let somenteReceita = true;
+      for (const linha of linhas) {
+        if (linha.indTotal !== '1') {
+          somenteReceita = false;
+          continue;
+        }
+        const cfop = linha.cfopXml ?? linha.cfop;
+        const classificacao = classificarOperacaoSimples(
+          linha.tipoDocumento,
+          cfop,
+        );
+        const valor = valorReceitaSimples(linha);
+        if (
+          classificacao === 'REVISAR' ||
+          (classificacao === 'RECEITA' && valor < 0n)
+        ) {
+          pendencias.push(
+            `Nota ${documento.numero} (${documento.mes}): CFOP ${cfop ?? 'ausente'} ou valor líquido requer conferência.`,
+          );
+          somenteReceita = false;
+        } else if (classificacao === 'RECEITA') {
+          totalElegivel += valor;
+        } else {
+          somenteReceita = false;
+          if (documento.mes === competencia && valor > 0n) {
+            if (/^[567]91[01]$/.test(cfop)) bonificacoes += valor;
+            else demais += valor;
+          }
+        }
+      }
+      if (
+        somenteReceita &&
+        totalElegivel !== toScaledInteger(documento.total)
+      ) {
+        pendencias.push(
+          `Nota ${documento.numero} (${documento.mes}): itens de receita (${fromScaledInteger(totalElegivel)}) divergem do total da nota (${documento.total}). Confira tributos e parcelas antes de fechar.`,
+        );
       }
     }
+    const pendenciasUnicas = [...new Set(pendencias)];
     return {
-      grupos: [...grupos.values()].filter((item) => item.receita > 0n),
-      pendencias: rows.some((row) => row.indTotal !== '1')
-        ? [
-            'Itens com indTot diferente de 1 foram excluídos da receita classificada.',
-          ]
-        : [],
+      pendencias:
+        pendenciasUnicas.length > 20
+          ? [
+              ...pendenciasUnicas.slice(0, 20),
+              `Há mais ${pendenciasUnicas.length - 20} pendências documentais. Revise o histórico fiscal.`,
+            ]
+          : pendenciasUnicas,
+      bonificacoesExcluidas: fromScaledInteger(bonificacoes),
+      operacoesSemReceitaExcluidas: fromScaledInteger(demais),
     };
   }
 
@@ -1016,7 +1167,7 @@ export class SimplesNacionalService {
       origem:
         manuais.length > 0
           ? 'HISTORICO_MANUAL_COM_SOBRESCRITA_POR_COMPETENCIA'
-          : 'FOLHAS_PAGAMENTO_TOTAL_LIQUIDO_MAIS_INSS_E_FGTS',
+          : 'FOLHAS_PAGAMENTO_TOTAL_BRUTO_MAIS_FGTS',
     };
   }
 
@@ -1025,24 +1176,34 @@ export class SimplesNacionalService {
     inicio: string,
     fim: string,
   ) {
-    return this.database.db
-      .select({
-        mes: sql<string>`to_char(date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
-        valor: sql<string>`coalesce(sum(${documentosFiscais.valorTotal}), 0)::text`,
-      })
-      .from(documentosFiscais)
-      .where(
-        and(
-          eq(documentosFiscais.clienteId, clienteId),
-          eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
-          eq(documentosFiscais.situacao, 'AUTORIZADA'),
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}`,
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= (${fim}::date + interval '1 month' - interval '1 day')`,
-        ),
+    const ultimoDia = new Date(`${fim.slice(0, 7)}-01T00:00:00.000Z`);
+    ultimoDia.setUTCMonth(ultimoDia.getUTCMonth() + 1);
+    ultimoDia.setUTCDate(0);
+    const rows = await this.carregarItensReceitaPeriodo(
+      clienteId,
+      inicio,
+      ultimoDia.toISOString().slice(0, 10),
+    );
+    const porMes = new Map<string, bigint[]>();
+    for (const row of rows) {
+      if (row.indTotal !== '1') continue;
+      if (
+        classificarOperacaoSimples(
+          row.tipoDocumento,
+          row.cfopXml ?? row.cfop,
+        ) !== 'RECEITA'
       )
-      .groupBy(
-        sql`date_trunc('month', coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date))`,
-      );
+        continue;
+      const valor = valorReceitaSimples(row);
+      if (valor < 0n) continue;
+      const valores = porMes.get(row.mes) ?? [];
+      valores.push(valor);
+      porMes.set(row.mes, valores);
+    }
+    return [...porMes.entries()].map(([mes, valores]) => ({
+      mes,
+      valor: somarReceitaSimples(valores),
+    }));
   }
 
   private async carregarFolhasAutomaticasPeriodo(
@@ -1053,7 +1214,7 @@ export class SimplesNacionalService {
     return this.database.db
       .select({
         mes: sql<string>`to_char(to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY'), 'YYYY-MM')`,
-        valor: sql<string>`coalesce(sum(${folhasPagamento.totalLiquido} + ${folhasPagamento.totalInss} + ${folhasPagamento.totalFgts}), 0)::text`,
+        valor: sql<string>`coalesce(sum(${folhasPagamento.totalBruto} + ${folhasPagamento.totalFgts}), 0)::text`,
       })
       .from(folhasPagamento)
       .where(

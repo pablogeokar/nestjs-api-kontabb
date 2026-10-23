@@ -53,6 +53,18 @@ describe('SimplesCalculadorService', () => {
     expect(service.resolverAnexoFatorR('0.2800')).toBe('ANEXO_III');
   });
 
+  it('aplica os casos especiais do Fator R e usa a receita do primeiro mês', () => {
+    expect(service.calcularFatorR('0.00', '0.00')).toBe('0.0100');
+    expect(service.calcularFatorR('100.00', '0.00')).toBe('0.2800');
+    expect(service.calcularFatorR('0.00', '100.00')).toBe('0.0100');
+    expect(
+      service.calcularFatorR('0.00', '120000.00', {
+        folhaMes: '3000.00',
+        receitaMes: '10000.00',
+      }),
+    ).toBe('0.3000');
+  });
+
   it('anualiza o primeiro mês e a média dos meses iniciais', () => {
     expect(
       service.calcularRbt12({

@@ -88,10 +88,21 @@ export class SimplesCalculadorService {
     );
   }
 
-  calcularFatorR(folhaSalarios12m: string, rbt12: string): string | null {
-    const folha = this.money(folhaSalarios12m, 'folha de salários');
-    const receita = this.money(rbt12, 'RBT12');
-    if (receita === 0n) return null;
+  calcularFatorR(
+    folhaSalarios12m: string,
+    rbt12: string,
+    primeiroMes?: { folhaMes: string; receitaMes: string },
+  ): string {
+    const folha = this.money(
+      primeiroMes?.folhaMes ?? folhaSalarios12m,
+      'folha de salários',
+    );
+    const receita = this.money(
+      primeiroMes?.receitaMes ?? rbt12,
+      'receita do Fator R',
+    );
+    if (receita === 0n) return folha > 0n ? '0.2800' : '0.0100';
+    if (folha === 0n) return '0.0100';
     return fromScaledInteger(
       this.divideRound(folha * RATE_FACTOR, receita),
       RATE_SCALE,
