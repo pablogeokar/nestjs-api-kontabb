@@ -584,27 +584,41 @@ export class ClienteFiscalController {
   ) {
     const cliente = await this.clientesService.getClientForUser(user.id);
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
-    const data = await this.fiscalItensService.getResumoLivros({
+    const filtros = {
       clienteId: cliente.id,
+      documentoId: query.documentoId,
       cfop: query.cfop,
       cfopXml: query.cfopXml,
       tipoOperacao: query.tipoOperacao,
       cst: query.cst,
+      codigoProduto: query.codigoProduto,
       ncm: query.ncm,
       dataInicio: parseFiscalStartDate(query.dataInicio),
       dataFim: parseFiscalEndDate(query.dataFim),
-    });
-    const transportesBlocoD = await this.fiscalCteService.getResumoLivros({
-      clienteId: cliente.id,
-      cfop: query.cfop,
-      cst: query.cst,
-      dataInicio: parseFiscalStartDate(query.dataInicio),
-      dataFim: parseFiscalEndDate(query.dataFim),
-    });
+    };
+    const [data, transportesBlocoD, documentosPeriodo] = await Promise.all([
+      this.fiscalItensService.getResumoLivros(filtros),
+      this.fiscalCteService.getResumoLivros({
+        clienteId: cliente.id,
+        documentoId: query.documentoId,
+        cfop: query.cfop,
+        cst: query.cst,
+        dataInicio: filtros.dataInicio,
+        dataFim: filtros.dataFim,
+      }),
+      this.fiscalItensService.getDocumentosPeriodoLivro(filtros),
+    ]);
+    const documentosValidados = new Set([
+      ...data.map((row) => row.documento_fiscal_id),
+      ...transportesBlocoD.map((row) => row.documento_fiscal_id),
+    ]);
     // Resumo documental por CFOP: parcial em relação ao imposto final (R7.3).
     return {
       data,
       transportes_bloco_d: transportesBlocoD,
+      documentos_pendentes: documentosPeriodo.filter(
+        (documento) => !documentosValidados.has(documento.documento_fiscal_id),
+      ),
       parcial: true,
       observacao: RESUMO_DOCUMENTAL_PARCIAL_OBSERVACAO,
     };
