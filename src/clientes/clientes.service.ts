@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes, contadores } from '../database/schema';
+import { clientes, contadores, user } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageService } from '../storage/storage.service';
@@ -590,6 +590,7 @@ export class ClientesService {
     const result = await this.database.db
       .select({
         id: clientes.id,
+        portalUserName: user.name,
         tipoPessoa: clientes.tipoPessoa,
         cnpj: clientes.cnpj,
         cpf: clientes.cpf,
@@ -619,12 +620,14 @@ export class ClientesService {
       })
       .from(clientes)
       .leftJoin(contadores, eq(contadores.id, clientes.contadorId))
+      .leftJoin(user, eq(clientes.userId, user.id))
       .where(eq(clientes.id, clientId))
       .limit(1);
     const client = result[0];
     if (!client) return undefined;
     return {
       id: client.id,
+      portal_user_name: client.portalUserName,
       tipo_pessoa: client.tipoPessoa,
       cnpj: client.cnpj,
       cpf: client.cpf,

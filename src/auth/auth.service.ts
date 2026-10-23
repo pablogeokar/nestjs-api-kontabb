@@ -2,12 +2,31 @@ import { Injectable } from '@nestjs/common';
 import { eq, and, gt } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { DatabaseService } from '../database/database.service';
-import { account, session, user, verification } from '../database/schema';
+import { account, clientes, session, user, verification } from '../database/schema';
 import type { CurrentUser, UserRole } from '../common/types';
 
 @Injectable()
 export class AuthService {
   constructor(private readonly database: DatabaseService) {}
+
+  /** Resolves the client identity used by an authenticated staff preview. */
+  async getClientPreviewUser(clientId: string): Promise<CurrentUser | null> {
+    const [row] = await this.database.db
+      .select({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      })
+      .from(clientes)
+      .innerJoin(user, eq(clientes.userId, user.id))
+      .where(and(eq(clientes.id, clientId), eq(user.role, 'CLIENTE')))
+      .limit(1);
+
+    return row
+      ? { id: row.id, name: row.name, email: row.email, role: 'CLIENTE' }
+      : null;
+  }
 
   /**
    * Validates a session token from the Authorization header (Bearer token)

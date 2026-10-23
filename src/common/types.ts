@@ -44,6 +44,7 @@ export interface CurrentUser {
   name: string;
   email: string;
   role: UserRole;
+  impersonatedBy?: string;
 }
 
 export interface PaginationParams {
