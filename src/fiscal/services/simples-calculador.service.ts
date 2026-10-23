@@ -78,12 +78,13 @@ export class SimplesCalculadorService {
     const rbt12 = this.money(input.rbt12, 'RBT12');
     const nominal = this.rate(input.aliquotaNominal, 'alíquota nominal');
     const deducao = this.money(input.parcelaDeduzir, 'parcela a deduzir');
-    if (rbt12 === 0n) return fromScaledInteger(0n, RATE_SCALE);
-    if (rbt12 <= 18_000_000n) return fromScaledInteger(nominal, RATE_SCALE);
-    const impostoNominal = this.divideRound(rbt12 * nominal, RATE_FACTOR);
-    const base = impostoNominal > deducao ? impostoNominal - deducao : 0n;
+    const { numerador, denominador } = this.aliquotaRacional(
+      rbt12,
+      nominal,
+      deducao,
+    );
     return fromScaledInteger(
-      this.divideRound(base * RATE_FACTOR, rbt12),
+      this.divideRound(numerador * RATE_FACTOR, denominador),
       RATE_SCALE,
     );
   }
@@ -178,13 +179,17 @@ export class SimplesCalculadorService {
 
   calcularItem(input: SimplesItemCalculoInput): SimplesItemCalculoResult {
     const receita = this.money(input.receita, 'receita da atividade');
-    const aliquotaEfetiva = this.rate(
-      this.calcularAliquotaEfetiva({
-        rbt12: input.rbt12,
-        aliquotaNominal: input.faixa.aliquotaNominal,
-        parcelaDeduzir: input.faixa.parcelaDeduzir,
-      }),
-      'alíquota efetiva',
+    const rbt12 = this.money(input.rbt12, 'RBT12');
+    const nominal = this.rate(input.faixa.aliquotaNominal, 'alíquota nominal');
+    const deducao = this.money(input.faixa.parcelaDeduzir, 'parcela a deduzir');
+    const { numerador, denominador } = this.aliquotaRacional(
+      rbt12,
+      nominal,
+      deducao,
+    );
+    const aliquotaEfetiva = this.divideRound(
+      numerador * RATE_FACTOR,
+      denominador,
     );
     const removidos = new Set<keyof SimplesPartilha>();
     if (input.excedeuSublimite) removidos.add('icms');
@@ -199,18 +204,6 @@ export class SimplesCalculadorService {
       removidos.add(deducao.toLowerCase() as keyof SimplesPartilha);
     }
 
-    const rates = Object.fromEntries(
-      TRIBUTOS.map((tributo) => {
-        const percentual = this.rate(
-          input.faixa.partilha[tributo],
-          `partilha ${tributo}`,
-        );
-        const rate = removidos.has(tributo)
-          ? 0n
-          : this.divideRound(aliquotaEfetiva * percentual, RATE_FACTOR);
-        return [tributo, rate];
-      }),
-    ) as Record<keyof SimplesPartilha, bigint>;
     const percentualRemovido = TRIBUTOS.reduce(
       (sum, tributo) =>
         sum +
@@ -220,34 +213,32 @@ export class SimplesCalculadorService {
       0n,
     );
     const aliquotaAposDeducoes = this.divideRound(
-      aliquotaEfetiva * (RATE_FACTOR - percentualRemovido),
-      RATE_FACTOR,
-    );
-    const valorDevido = this.divideRound(
-      receita * aliquotaAposDeducoes,
-      RATE_FACTOR,
+      numerador * (RATE_FACTOR - percentualRemovido),
+      denominador,
     );
     const partilhaCentavos = Object.fromEntries(
-      TRIBUTOS.map((tributo) => [
-        tributo,
-        removidos.has(tributo)
-          ? 0n
-          : this.divideRound(receita * rates[tributo], RATE_FACTOR),
-      ]),
+      TRIBUTOS.map((tributo) => {
+        const percentual = this.rate(
+          input.faixa.partilha[tributo],
+          `partilha ${tributo}`,
+        );
+        return [
+          tributo,
+          removidos.has(tributo)
+            ? 0n
+            : this.divideRound(
+                receita * numerador * percentual,
+                denominador * RATE_FACTOR,
+              ),
+        ];
+      }),
     ) as Record<keyof SimplesPartilha, bigint>;
-
-    // O arredondamento individual da partilha pode diferir um ou dois centavos
-    // do total. O residual vai para o primeiro tributo incluído, mantendo a
-    // identidade contábil entre a memória e o DAS.
-    const somaPartilha = TRIBUTOS.reduce(
+    // O PGDAS-D soma os débitos apurados por tributo após arredondá-los a
+    // centavos. A alíquota mostrada na interface é apenas a versão resumida.
+    const valorDevido = TRIBUTOS.reduce(
       (sum, tributo) => sum + partilhaCentavos[tributo],
       0n,
     );
-    const residual = valorDevido - somaPartilha;
-    const primeiroIncluido = TRIBUTOS.find(
-      (tributo) => !removidos.has(tributo),
-    );
-    if (primeiroIncluido) partilhaCentavos[primeiroIncluido] += residual;
 
     return {
       anexo: input.anexo,
@@ -279,6 +270,20 @@ export class SimplesCalculadorService {
         ...(removidos.has('pis') ? (['PIS'] as const) : []),
         ...(removidos.has('cofins') ? (['COFINS'] as const) : []),
       ],
+    };
+  }
+
+  private aliquotaRacional(
+    rbt12: bigint,
+    nominal: bigint,
+    deducao: bigint,
+  ): { numerador: bigint; denominador: bigint } {
+    // RBT12=0 é tratado como R$ 1,00 na determinação da alíquota efetiva.
+    const base = rbt12 === 0n ? 100n : rbt12;
+    const calculado = base * nominal - deducao * RATE_FACTOR;
+    return {
+      numerador: calculado > 0n ? calculado : 0n,
+      denominador: base * RATE_FACTOR,
     };
   }
 

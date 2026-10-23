@@ -12,6 +12,10 @@ A primeira competência de atividade ainda é inferida da primeira receita dispo
 
 Rascunhos do motor anterior precisam ser recalculados antes do fechamento. Apurações fechadas permanecem imutáveis e devem ser revisadas e retificadas pelo fluxo fiscal quando afetadas. O valor mostrado pelo sistema é uma memória de apoio; o PGDAS-D continua sendo o meio oficial de declaração e geração do DAS.
 
+## Precisão da partilha (motor 4)
+
+No PA 09/2026 de referência, a receita de R$ 58.837,00 e o RBT12 de R$ 741.731,29 coincidiam com o PGDAS-D, mas o motor 3 arredondava a alíquota efetiva para 8,17% antes da tributação. Isso gerava R$ 4.806,98 em vez dos R$ 4.804,95 declarados. O motor 4 mantém a fração exata da fórmula no cálculo de cada tributo, arredonda cada parcela a centavos e soma as parcelas para obter o DAS. A alíquota mostrada em tela/PDF continua resumida para leitura e não é reutilizada como entrada do cálculo.
+
 ## Referências oficiais
 
 - [Perguntas e Respostas do Simples Nacional, item 3.15](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoSN.pdf)

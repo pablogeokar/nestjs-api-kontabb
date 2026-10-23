@@ -132,7 +132,7 @@ export function renderSimplesNacionalPdf(input: {
   ensureSpace(document, 72);
   const fatorRDetail = apuracao.fator_r
     ? `${percent(apuracao.fator_r)} — ${decimalCompare(apuracao.fator_r, '0.2800') >= 0 ? 'percentual igual ou superior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo III.' : 'percentual inferior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo V.'}`
-    : 'Não calculado porque não houve base de receita suficiente para o período.';
+    : 'Não se aplica às atividades classificadas nesta apuração.';
   infoBox(document, 'Critério do Fator R', fatorRDetail);
   if (apuracao.excedeu_sublimite) {
     infoBox(
@@ -146,7 +146,7 @@ export function renderSimplesNacionalPdf(input: {
   sectionTitle(document, '3. Memória por atividade e segregação');
   paragraph(
     document,
-    'Alíquota efetiva = [(RBT12 × alíquota nominal) - parcela a deduzir] ÷ RBT12. Em seguida, são retiradas as parcelas incompatíveis com cada segregação fiscal.',
+    'Alíquota efetiva = [(RBT12 × alíquota nominal) - parcela a deduzir] ÷ RBT12. A taxa exibida é arredondada; o DAS usa a taxa integral e soma os tributos arredondados em centavos.',
   );
   drawItemsTable(document, apuracao);
 
@@ -175,13 +175,13 @@ export function renderSimplesNacionalPdf(input: {
         .fontSize(7.5)
         .fillColor(MUTED)
         .text(
-          `[(${money(apuracao.rbt12)} × ${percent(item.aliquota_nominal)}) - ${money(item.parcela_deduzir)}] ÷ ${money(apuracao.rbt12)} = ${percent(item.aliquota_efetiva)}`,
+          `[(${money(apuracao.rbt12)} × ${percent(item.aliquota_nominal)}) - ${money(item.parcela_deduzir)}] ÷ ${money(apuracao.rbt12)} = aprox. ${percent(item.aliquota_efetiva)}`,
           36,
           document.y,
           { width: 523, lineGap: 2 },
         )
         .text(
-          `${money(item.receita_bruta_atividade)} × ${percent(item.aliquota_efetiva_apos_deducoes)} = ${money(item.valor_devido)} de DAS${item.aliquota_efetiva !== item.aliquota_efetiva_apos_deducoes ? ' após as segregações aplicáveis' : ''}.`,
+          `${money(item.receita_bruta_atividade)} × alíquota integral, com partilha por tributo = ${money(item.valor_devido)} de DAS${item.aliquota_efetiva !== item.aliquota_efetiva_apos_deducoes ? ' após as segregações aplicáveis' : ''}.`,
           36,
           document.y,
           { width: 523, lineGap: 2 },
@@ -433,12 +433,13 @@ function drawItemsTable(document: PDFKit.PDFDocument, apuracao: Apuracao) {
 }
 
 function drawTaxTable(document: PDFKit.PDFDocument, apuracao: Apuracao) {
+  const itens = apuracao.itens as Array<{
+    tributos_partilhados: Record<string, string>;
+  }>;
   const totals = Object.fromEntries(
     TRIBUTOS.map(([key]) => [
       key,
-      sumMoney(
-        apuracao.itens.map((item) => item.tributos_partilhados[key] ?? '0'),
-      ),
+      sumMoney(itens.map((item) => item.tributos_partilhados[key] ?? '0')),
     ]),
   ) as Record<(typeof TRIBUTOS)[number][0], string>;
   const widths = [130, 130, 130, 133];

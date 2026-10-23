@@ -44,7 +44,7 @@ import type {
   SalvarSimplesTabelaDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@3';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@4';
 
 interface ReceitaAgrupada {
   anexo: SimplesAnexo;
@@ -518,16 +518,20 @@ export class SimplesNacionalService {
       mesesAnteriores: quantidadeMesesAnteriores,
       receitaPrimeiroMes: receitaMesDocumentos,
     });
-    const fatorR = this.calculador.calcularFatorR(
-      folha.valor,
-      rbt.rbt12,
-      quantidadeMesesAnteriores === 0
-        ? {
-            folhaMes: folhaMes[0]?.valor ?? '0.00',
-            receitaMes: receitaMesDocumentos,
-          }
-        : undefined,
-    );
+    const fatorR = receitasAtividade.grupos.some(
+      (grupo) => grupo.anexo === 'ANEXO_V',
+    )
+      ? this.calculador.calcularFatorR(
+          folha.valor,
+          rbt.rbt12,
+          quantidadeMesesAnteriores === 0
+            ? {
+                folhaMes: folhaMes[0]?.valor ?? '0.00',
+                receitaMes: receitaMesDocumentos,
+              }
+            : undefined,
+        )
+      : null;
     const excedeuSublimite =
       toScaledInteger(rbt.rbt12) > toScaledInteger(sublimite.valor);
     const calculados: SimplesItemCalculoResult[] = [];
@@ -605,7 +609,7 @@ export class SimplesNacionalService {
         receitaMesDocumentos,
         receitaClassificada,
         folhaMesPrimeiroPeriodo:
-          quantidadeMesesAnteriores === 0
+          fatorR !== null && quantidadeMesesAnteriores === 0
             ? (folhaMes[0]?.valor ?? '0.00')
             : null,
         bonificacoesExcluidas: auditoriaReceitas.bonificacoesExcluidas,
