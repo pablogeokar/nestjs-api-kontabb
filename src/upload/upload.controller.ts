@@ -324,10 +324,19 @@ export class UploadController {
       ctx.manualDueDate ||
       (dados?.vencimento ? vencimentoToIso(dados.vencimento) : null) ||
       null;
-    const installmentNumber =
+    // For FGTS parcelamento the competency is fixed across all installments, so
+    // the installment identifier must include the installment number to keep
+    // each parcela distinct (and avoid false-positive duplicates).
+    const baseInstallmentNumber =
       dados?.parcelamento?.numeroParcelamento ??
       dados?.parcelamento?.codigoPgfn ??
       null;
+    const installmentNumber =
+      dados?.tipo === 'FGTS' &&
+      baseInstallmentNumber &&
+      dados.parcelamento?.parcela != null
+        ? `${baseInstallmentNumber}-${dados.parcelamento.parcela}/${dados.parcelamento.totalParcelas ?? '?'}`
+        : baseInstallmentNumber;
 
     if (!identifierRaw) {
       return {

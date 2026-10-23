@@ -88,6 +88,16 @@ function normalizeMes(mes: string): string {
 }
 
 function extractPeriodo(text: string): string | null {
+  // FGTS Digital (GFD): the competency (MM/YYYY) appears in the "Composição do
+  // Documento" block, glued to the value columns right before "N Total Geral".
+  // It must be read before the generic rules, otherwise the due date (dd/mm/yyyy)
+  // is picked up by mistake.
+  const fgtsCompetencia = text.match(
+    /(\d{2})\/(20\d{2})\s+\d+\s+Total\s+Geral/i,
+  );
+  if (fgtsCompetencia) {
+    return `${fgtsCompetencia[1]}/${fgtsCompetencia[2]}`;
+  }
   const extenso = text.match(
     /\b(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/(20\d{2})\b/i,
   );
@@ -154,6 +164,17 @@ function extractParcelamento(
   text: string,
   tipo: TipoDocumento,
 ): DadosFiscais['parcelamento'] {
+  // FGTS Digital parcelamento: identified by the "PARCELAMENTO:<numero>:<p>/<t>"
+  // tag printed on the guia (e.g. "Tag PARCELAMENTO:2026049459:1/10").
+  if (tipo === 'FGTS') {
+    const fgtsTag = text.match(/PARCELAMENTO:\s*(\d+)\s*:\s*(\d+)\/(\d+)/i);
+    if (!fgtsTag) return null;
+    return {
+      numeroParcelamento: fgtsTag[1],
+      parcela: parseInt(fgtsTag[2], 10),
+      totalParcelas: parseInt(fgtsTag[3], 10),
+    };
+  }
   if (tipo !== 'DAS-PARCSN' && tipo !== 'DAS-PGFN' && tipo !== 'PGFN-SISPAR') {
     return null;
   }

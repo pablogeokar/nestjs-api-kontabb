@@ -12,6 +12,7 @@ import {
 } from './controllers/cfop.controller';
 import { CertificadoService } from './services/certificado.service';
 import { NfeWizardService } from './services/nfewizard.service';
+import { SefazConsultaControlService } from './services/sefaz-consulta-control.service';
 import { DistribuicaoDfeService } from './services/distribuicao-dfe.service';
 import { DanfeService } from './services/danfe.service';
 import { FiscalCronService } from './services/fiscal-cron.service';
@@ -61,10 +62,13 @@ import { SimplesNacionalService } from './services/simples-nacional.service';
 import { SimplesNacionalRelatorioService } from './services/simples-nacional-relatorio.service';
 import { ImportacaoChavesFiscalService } from './services/importacao-chaves-fiscal.service';
 import { FiscalIssLivroService } from './services/fiscal-iss-livro.service';
+import { RecuperacaoPortalController } from './controllers/recuperacao-portal.controller';
+import { RecuperacaoPortalService } from './services/recuperacao-portal.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
   controllers: [
+    RecuperacaoPortalController,
     AdminFiscalController,
     ClienteFiscalController,
     AdminCfopController,
@@ -80,9 +84,11 @@ import { FiscalIssLivroService } from './services/fiscal-iss-livro.service';
     ClienteSimplesNacionalController,
   ],
   providers: [
+    RecuperacaoPortalService,
     ClassificacaoDestinacaoService,
     CertificadoService,
     NfeWizardService,
+    SefazConsultaControlService,
     DistribuicaoDfeService,
     DacteService,
     NfsePdfService,

@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  SimplesNacionalService,
   anexoPorServico,
   mesesAnteriores,
   proximaCompetencia,
@@ -48,5 +49,50 @@ describe('utilitários do SimplesNacionalService', () => {
 
   it('mantém serviços gerais no Anexo III direto', () => {
     expect(anexoPorServico('1401', '4520001')).toBe('ANEXO_III');
+  });
+});
+
+describe('integração da receita do Simples entre atividade e RBT12', () => {
+  it('ignora bonificação em nota mista nos dois caminhos de cálculo', async () => {
+    const service = new SimplesNacionalService(null!, null!, null!, null!);
+    const base = {
+      documentoId: 'nota-1',
+      numeroDocumento: '123',
+      mes: '2026-04',
+      documentoTotal: '1130.00',
+      tipoDocumento: 'NFE',
+      municipioPrestador: null,
+      itemListaServico: null,
+      cnae: null,
+      issRetido: false,
+      municipioIncidencia: null,
+      csosn: null,
+      cstPis: null,
+      cstCofins: null,
+      indTotal: '1',
+      frete: '0.00',
+      seguro: '0.00',
+      outras: '0.00',
+      desconto: '0.00',
+    };
+    const rows = [
+      { ...base, cfop: '5102', cfopXml: '5102', bruto: '930.00' },
+      { ...base, cfop: '5910', cfopXml: '5910', bruto: '200.00' },
+    ];
+    Object.defineProperty(service, 'carregarItensReceitaPeriodo', {
+      value: jest.fn().mockResolvedValue(rows),
+    });
+    const atividade = await service['carregarReceitasAtividade'](
+      'cliente',
+      new Date('2026-04-01'),
+      new Date('2026-04-30'),
+    );
+    const mensal = await service['carregarReceitasAutomaticasPeriodo'](
+      'cliente',
+      '2026-04-01',
+      '2026-04-01',
+    );
+    expect(atividade.grupos.map((grupo) => grupo.receita)).toEqual([93000n]);
+    expect(mensal).toEqual([{ mes: '2026-04', valor: '930.00' }]);
   });
 });

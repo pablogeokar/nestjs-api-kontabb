@@ -53,6 +53,18 @@ describe('SimplesCalculadorService', () => {
     expect(service.resolverAnexoFatorR('0.2800')).toBe('ANEXO_III');
   });
 
+  it('aplica os casos especiais do Fator R e usa a receita do primeiro mês', () => {
+    expect(service.calcularFatorR('0.00', '0.00')).toBe('0.0100');
+    expect(service.calcularFatorR('100.00', '0.00')).toBe('0.2800');
+    expect(service.calcularFatorR('0.00', '100.00')).toBe('0.0100');
+    expect(
+      service.calcularFatorR('0.00', '120000.00', {
+        folhaMes: '3000.00',
+        receitaMes: '10000.00',
+      }),
+    ).toBe('0.3000');
+  });
+
   it('anualiza o primeiro mês e a média dos meses iniciais', () => {
     expect(
       service.calcularRbt12({
@@ -81,7 +93,46 @@ describe('SimplesCalculadorService', () => {
     expect(result.aliquotaEfetiva).toBe('0.0532');
     expect(result.tributosPartilhados.icms).toBe('0.00');
     expect(result.deducoes).toContain('ICMS');
-    expect(result.valorDevido).toBe('351.00');
+    expect(result.valorDevido).toBe('351.12');
+  });
+
+  it('reproduz a declaração PGDAS-D de 09/2026 com partilha em centavos', () => {
+    const result = service.calcularItem({
+      anexo: 'ANEXO_II',
+      receita: '58837.00',
+      segregacao: 'TRIBUTACAO_INTEGRAL',
+      faixa: {
+        faixa: 4,
+        rbt12De: '720000.01',
+        rbt12Ate: '1800000.00',
+        aliquotaNominal: '0.1120',
+        parcelaDeduzir: '22500.00',
+        partilha: {
+          irpj: '0.0550',
+          csll: '0.0350',
+          cofins: '0.1151',
+          pis: '0.0249',
+          cpp: '0.3750',
+          ipi: '0.0750',
+          icms: '0.3200',
+          iss: '0.0000',
+        },
+      },
+      rbt12: '741731.29',
+      excedeuSublimite: false,
+    });
+    expect(result.aliquotaEfetiva).toBe('0.0817');
+    expect(result.valorDevido).toBe('4804.95');
+    expect(result.tributosPartilhados).toEqual({
+      irpj: '264.27',
+      csll: '168.17',
+      cofins: '553.05',
+      pis: '119.64',
+      cpp: '1801.86',
+      ipi: '360.37',
+      icms: '1537.59',
+      iss: '0.00',
+    });
   });
 
   it('deduz PIS e COFINS de receita monofásica', () => {
