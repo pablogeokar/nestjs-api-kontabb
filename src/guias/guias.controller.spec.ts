@@ -13,6 +13,7 @@ import { AppLogger } from '../common/logger.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import type { CurrentUser } from '../common/types';
 import { AuthGuard } from '../auth/auth.guard';
+import { ROLES_KEY } from '../auth/roles.decorator';
 
 const USER: CurrentUser = {
   id: 'user-id',
@@ -179,6 +180,54 @@ describe('GuiasController data real do pagamento', () => {
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(confirmPayment).not.toHaveBeenCalled();
+  });
+});
+
+describe('GuiasController comprovante de guia já paga', () => {
+  const id = '08383b59-970d-48a1-b3fc-8a2c1c640779';
+  const getAccessibleGuia = jest.fn();
+  const attachReceiptToPaidGuia = jest.fn();
+  const controller = new GuiasController(
+    { getAccessibleGuia, attachReceiptToPaidGuia } as unknown as GuiasService,
+    { generateRequestId: jest.fn().mockReturnValue('request-1') } as unknown as AppLogger,
+    { consume: jest.fn().mockResolvedValue(undefined) } as unknown as RateLimitService,
+  );
+  const file = {
+    buffer: Buffer.from('%PDF-1.4\ncomprovante'),
+    size: 21,
+    mimetype: 'application/pdf',
+  } as unknown as Express.Multer.File;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getAccessibleGuia.mockResolvedValue({
+      guia: { status: 'PAGO', comprovanteKey: null }, authorized: true,
+    });
+    attachReceiptToPaidGuia.mockResolvedValue({ ok: true });
+  });
+
+  it('anexa PDF à guia paga sem registrar nova baixa', async () => {
+    expect(Reflect.getMetadata(ROLES_KEY, controller.attachReceiptToPaidGuia)).toEqual(['ADMIN', 'COLABORADOR']);
+    await expect(controller.attachReceiptToPaidGuia(id, { observation: 'Documento oficial' }, file, STAFF))
+      .resolves.toEqual({ success: true, message: 'Comprovante anexado à guia já paga.' });
+    expect(attachReceiptToPaidGuia).toHaveBeenCalledWith(expect.objectContaining({
+      guiaId: id, userId: STAFF.id, observation: 'Documento oficial',
+      receipt: expect.objectContaining({ contentType: 'application/pdf', extension: 'pdf' }),
+    }));
+  });
+
+  it('impede duplicação ou anexação em guia pendente', async () => {
+    getAccessibleGuia.mockResolvedValueOnce({ guia: { status: 'PAGO', comprovanteKey: 'receipt.pdf' }, authorized: true });
+    await expect(controller.attachReceiptToPaidGuia(id, {}, file, STAFF)).rejects.toBeInstanceOf(BadRequestException);
+    getAccessibleGuia.mockResolvedValueOnce({ guia: { status: 'PENDENTE', comprovanteKey: null }, authorized: true });
+    await expect(controller.attachReceiptToPaidGuia(id, {}, file, STAFF)).rejects.toBeInstanceOf(BadRequestException);
+    expect(attachReceiptToPaidGuia).not.toHaveBeenCalled();
+  });
+
+  it('rejeita PDF com assinatura inválida', async () => {
+    const invalid = { ...file, buffer: Buffer.from('HTML'), size: 4 } as Express.Multer.File;
+    await expect(controller.attachReceiptToPaidGuia(id, {}, invalid, STAFF)).rejects.toBeInstanceOf(BadRequestException);
+    expect(attachReceiptToPaidGuia).not.toHaveBeenCalled();
   });
 });
 

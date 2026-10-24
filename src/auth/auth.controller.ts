@@ -257,7 +257,7 @@ export class AuthController {
 
     return {
       session: { active: true },
-      features: { extensionPaymentDate: true },
+      features: { extensionPaymentDate: true, extensionPaidGuideReceipt: true },
       user: {
         id: user.id,
         name: user.name,
