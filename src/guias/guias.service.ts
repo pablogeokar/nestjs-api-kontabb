@@ -824,6 +824,7 @@ export class GuiasService {
     guiaId: string;
     userId: string;
     observation: string | null;
+    paidAtDate?: string | null;
     receipt?: { bytes: Buffer; contentType: string; extension: string };
   }) {
     let receiptKey: string | null = null;
@@ -878,7 +879,7 @@ export class GuiasService {
       const updateResult = await this.database.db.execute(sql`
         WITH updated_guia AS (
           UPDATE guias SET
-            status = 'PAGO', pago_em = now(), pagamento_confirmado_por = ${input.userId},
+            status = 'PAGO', pago_em = COALESCE(${input.paidAtDate ?? null}::date + time '12:00', now()::timestamp), pagamento_confirmado_por = ${input.userId},
             observacao_pagamento = ${input.observation},
             comprovante_key = CASE WHEN ${receiptKey}::text IS NOT NULL THEN ${receiptKey} ELSE comprovante_key END
           WHERE id = ${input.guiaId}::uuid AND status <> 'PAGO'
@@ -887,7 +888,7 @@ export class GuiasService {
         audit_event AS (
           INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
           SELECT ${input.userId}, 'PAGAMENTO_CONFIRMADO', 'GUIA', id::text,
-            jsonb_build_object('possuiComprovante', ${receiptKey}::text IS NOT NULL)
+            jsonb_build_object('possuiComprovante', ${receiptKey}::text IS NOT NULL, 'dataPagamentoInformada', ${input.paidAtDate ?? null}::text)
           FROM updated_guia
           RETURNING id
         )

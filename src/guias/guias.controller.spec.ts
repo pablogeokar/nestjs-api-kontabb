@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   type INestApplication,
   NotFoundException,
@@ -116,6 +117,68 @@ describe('GuiasController receipt URL', () => {
         USER,
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('GuiasController data real do pagamento', () => {
+  const id = '08383b59-970d-48a1-b3fc-8a2c1c640779';
+  const getAccessibleGuia = jest.fn();
+  const confirmPayment = jest.fn();
+  const controller = new GuiasController(
+    { getAccessibleGuia, confirmPayment } as unknown as GuiasService,
+    { generateRequestId: jest.fn() } as unknown as AppLogger,
+    {
+      consume: jest.fn().mockResolvedValue(undefined),
+    } as unknown as RateLimitService,
+  );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getAccessibleGuia.mockResolvedValue({
+      guia: { status: 'PENDENTE' },
+      authorized: true,
+    });
+    confirmPayment.mockResolvedValue({ ok: true });
+  });
+
+  it('permite à equipe registrar a data informada pelo e-CAC', async () => {
+    await expect(
+      controller.confirmPayment(
+        id,
+        { paid_at: '2026-10-20' },
+        undefined,
+        STAFF,
+      ),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Pagamento registrado com sucesso.',
+    });
+    expect(confirmPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        guiaId: id,
+        userId: STAFF.id,
+        paidAtDate: '2026-10-20',
+      }),
+    );
+  });
+
+  it('impede que clientes informem uma data retroativa', async () => {
+    await expect(
+      controller.confirmPayment(id, { paid_at: '2026-10-20' }, undefined, USER),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(confirmPayment).not.toHaveBeenCalled();
+  });
+
+  it('rejeita data de pagamento impossível', async () => {
+    await expect(
+      controller.confirmPayment(
+        id,
+        { paid_at: '2026-02-30' },
+        undefined,
+        STAFF,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(confirmPayment).not.toHaveBeenCalled();
   });
 });
 

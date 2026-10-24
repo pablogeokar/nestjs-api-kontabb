@@ -35,6 +35,8 @@ import {
 } from '../common/file-validation';
 import type { CurrentUser as CurrentUserType } from '../common/types';
 import { RateLimitService } from '../common/rate-limit.service';
+import { getBahiaDate } from '../common/document-status';
+import { isValidPaymentDate } from './payment-date';
 
 @ApiTags('Guias')
 @ApiBearerAuth('session-token')
@@ -155,6 +157,12 @@ export class GuiasController {
           type: 'string',
           description: 'Observação sobre o pagamento',
         },
+        paid_at: {
+          type: 'string',
+          format: 'date',
+          description:
+            'Data real do pagamento (YYYY-MM-DD); disponível apenas para equipe.',
+        },
         receipt: {
           type: 'string',
           format: 'binary',
@@ -179,7 +187,7 @@ export class GuiasController {
   @ApiResponse({ status: 429, description: 'Rate limit excedido.' })
   async confirmPayment(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Body() body: { observation?: string },
+    @Body() body: { observation?: string; paid_at?: string },
     @UploadedFile() receiptFile: Express.Multer.File | undefined,
     @CurrentUser() currentUser: CurrentUserType,
   ) {
@@ -194,6 +202,21 @@ export class GuiasController {
     if (!authorized) throw new ForbiddenException('Sem permissão.');
     if (guia.status === 'PAGO') {
       throw new BadRequestException('Esta guia já foi marcada como paga.');
+    }
+
+    if (body.paid_at !== undefined && typeof body.paid_at !== 'string') {
+      throw new BadRequestException('Data de pagamento inválida.');
+    }
+    const paidAtDate = body.paid_at?.trim() || null;
+    if (paidAtDate) {
+      if (currentUser.role !== 'ADMIN' && currentUser.role !== 'COLABORADOR') {
+        throw new ForbiddenException(
+          'Data retroativa disponível apenas para equipe.',
+        );
+      }
+      if (!isValidPaymentDate(paidAtDate, getBahiaDate())) {
+        throw new BadRequestException('Data de pagamento inválida ou futura.');
+      }
     }
 
     let receiptData:
@@ -223,6 +246,7 @@ export class GuiasController {
       guiaId: id,
       userId: currentUser.id,
       observation: body.observation?.trim() || null,
+      paidAtDate,
       receipt: receiptData,
     });
 
