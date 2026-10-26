@@ -36,6 +36,7 @@ import { FiscalClosingService } from './fiscal-closing.service';
 import { FiscalGuiasService } from './fiscal-guias.service';
 import {
   classificarOperacaoSimples,
+  regimeCompetenciaParaApuracao,
   somarReceitaSimples,
   valorReceitaSimples,
 } from './simples-receita';
@@ -44,7 +45,7 @@ import type {
   SalvarSimplesTabelaDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@4';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@5';
 
 interface ReceitaAgrupada {
   anexo: SimplesAnexo;
@@ -344,6 +345,21 @@ export class SimplesNacionalService {
           'Recalcule esta apuração com o motor fiscal atual antes do fechamento.',
       });
     }
+    const clienteAtual = await this.buscarClienteSimples(input.clienteId);
+    const regimeCompetenciaAtual = regimeCompetenciaParaApuracao(
+      input.competencia,
+      clienteAtual.regimeCompetencia,
+    );
+    if (
+      apuracaoInicial.memoriaCalculo.regimeCompetencia !==
+      regimeCompetenciaAtual
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'APURACAO_SIMPLES_REGIME_ALTERADO',
+        message:
+          'O regime de apuração do cliente mudou. Recalcule antes de fechar.',
+      });
+    }
     const pendencias = apuracaoInicial.memoriaCalculo.pendencias;
     if (Array.isArray(pendencias) && pendencias.length > 0) {
       throw new UnprocessableEntityException({
@@ -472,10 +488,16 @@ export class SimplesNacionalService {
       this.buscarClienteSimples(clienteId),
       this.buscarTabelaVigente(competenciaDate),
     ]);
+    // O regime de caixa deixa de compor a base mensal a partir de 2027.
+    const regimeCompetencia = regimeCompetenciaParaApuracao(
+      competencia,
+      cliente.regimeCompetencia,
+    );
     const [
       receitasMensais,
       primeiraCompetencia,
       receitasAtividade,
+      receitasMesApuracao,
       folha,
       sublimite,
       anexos,
@@ -484,7 +506,15 @@ export class SimplesNacionalService {
     ] = await Promise.all([
       this.carregarReceitasMensais(clienteId, competenciaDate),
       this.carregarPrimeiraCompetenciaReceita(clienteId),
-      this.carregarReceitasAtividade(clienteId, inicio, fim),
+      this.carregarReceitasAtividade(clienteId, inicio, fim, regimeCompetencia),
+      regimeCompetencia
+        ? Promise.resolve(null)
+        : this.carregarReceitasAutomaticasPeriodo(
+            clienteId,
+            competenciaDate,
+            competenciaDate,
+            false,
+          ),
       this.carregarFolha12m(clienteId, competenciaDate),
       this.carregarSublimite(cliente.uf, competencia.slice(0, 4)),
       this.carregarAnexosCalculo(tabela.id),
@@ -493,6 +523,7 @@ export class SimplesNacionalService {
         `${mesesAnteriores(competencia, 12)[0]}-01`,
         fim.toISOString().slice(0, 10),
         competencia,
+        regimeCompetencia,
       ),
       this.carregarFolhasAutomaticasPeriodo(
         clienteId,
@@ -500,9 +531,13 @@ export class SimplesNacionalService {
         competenciaDate,
       ),
     ]);
-    const receitaMesDocumentos =
+    const receitaMesCompetencia =
       receitasMensais.rows.find((row) => row.mes === competencia)?.receita ??
       '0.00';
+    const receitaMesDocumentos = regimeCompetencia
+      ? receitaMesCompetencia
+      : (receitasMesApuracao?.find((row) => row.mes === competencia)?.valor ??
+        '0.00');
     const anteriores = receitasMensais.rows
       .filter((row) => row.mes < competencia)
       .map((row) => row.receita);
@@ -516,7 +551,7 @@ export class SimplesNacionalService {
     const rbt = this.calculador.calcularRbt12({
       receitasAnteriores: anteriores,
       mesesAnteriores: quantidadeMesesAnteriores,
-      receitaPrimeiroMes: receitaMesDocumentos,
+      receitaPrimeiroMes: receitaMesCompetencia,
     });
     const fatorR = receitasAtividade.grupos.some(
       (grupo) => grupo.anexo === 'ANEXO_V',
@@ -527,7 +562,7 @@ export class SimplesNacionalService {
           quantidadeMesesAnteriores === 0
             ? {
                 folhaMes: folhaMes[0]?.valor ?? '0.00',
-                receitaMes: receitaMesDocumentos,
+                receitaMes: receitaMesCompetencia,
               }
             : undefined,
         )
@@ -599,13 +634,17 @@ export class SimplesNacionalService {
       guia_id: null,
       origens: {
         rbt12: `${rbt.origem}:${receitasMensais.origem}`,
-        receita: 'ITENS_DE_VENDA_E_SERVICO_AUTORIZADOS',
+        receita: regimeCompetencia
+          ? 'ITENS_DE_VENDA_E_SERVICO_POR_COMPETENCIA'
+          : 'ITENS_DE_VENDA_E_SERVICO_NFSE_POR_EMISSAO',
         folha: folha.origem,
         sublimite: sublimite.origem,
         classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R',
       },
       memoria_calculo: {
         motorVersao: SIMPLES_MOTOR_VERSAO,
+        regimeCompetencia,
+        receitaMesCompetencia,
         receitaMesDocumentos,
         receitaClassificada,
         folhaMesPrimeiroPeriodo:
@@ -780,6 +819,7 @@ export class SimplesNacionalService {
       .select({
         id: clientes.id,
         regimeTributario: clientes.regimeTributario,
+        regimeCompetencia: clientes.regimeCompetencia,
         uf: clientes.uf,
       })
       .from(clientes)
@@ -905,11 +945,13 @@ export class SimplesNacionalService {
     clienteId: string,
     inicio: Date,
     fim: Date,
+    regimeCompetencia = true,
   ) {
     const rows = await this.carregarItensReceitaPeriodo(
       clienteId,
       inicio.toISOString().slice(0, 10),
       fim.toISOString().slice(0, 10),
+      regimeCompetencia,
     );
     const grupos = new Map<string, ReceitaAgrupada>();
     const pendencias = new Set<string>();
@@ -974,12 +1016,14 @@ export class SimplesNacionalService {
     clienteId: string,
     inicio: string,
     fim: string,
+    regimeCompetencia = true,
   ) {
+    const dataReceita = this.dataReceitaDocumento(regimeCompetencia);
     return this.database.db
       .select({
         documentoId: documentosFiscais.id,
         numeroDocumento: documentosFiscais.numeroDocumento,
-        mes: sql<string>`to_char(coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date), 'YYYY-MM')`,
+        mes: sql<string>`to_char(${dataReceita}, 'YYYY-MM')`,
         documentoTotal: documentosFiscais.valorTotal,
         tipoDocumento: documentosFiscais.tipoDocumento,
         municipioPrestador: sql<
@@ -1012,10 +1056,18 @@ export class SimplesNacionalService {
           eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}::date`,
-          sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= ${fim}::date`,
+          sql`${dataReceita} >= ${inicio}::date`,
+          sql`${dataReceita} <= ${fim}::date`,
         ),
       );
+  }
+
+  private dataReceitaDocumento(regimeCompetencia: boolean) {
+    const emissao = sql`coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)`;
+    if (!regimeCompetencia) {
+      return sql`CASE WHEN ${documentosFiscais.tipoDocumento} = 'NFSE' THEN ${emissao} ELSE coalesce(${documentosFiscais.competenciaDeclarada}, ${emissao}) END`;
+    }
+    return sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${emissao})`;
   }
 
   private async auditarReceitasPeriodo(
@@ -1023,13 +1075,15 @@ export class SimplesNacionalService {
     inicio: string,
     fim: string,
     competencia: string,
+    regimeCompetencia = true,
   ) {
+    const dataReceita = this.dataReceitaDocumento(regimeCompetencia);
     const [documentos, itens, historicosManuais] = await Promise.all([
       this.database.db
         .select({
           id: documentosFiscais.id,
           numero: documentosFiscais.numeroDocumento,
-          mes: sql<string>`to_char(coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date), 'YYYY-MM')`,
+          mes: sql<string>`to_char(${dataReceita}, 'YYYY-MM')`,
           total: documentosFiscais.valorTotal,
         })
         .from(documentosFiscais)
@@ -1038,11 +1092,16 @@ export class SimplesNacionalService {
             eq(documentosFiscais.clienteId, clienteId),
             eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
             eq(documentosFiscais.situacao, 'AUTORIZADA'),
-            sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) >= ${inicio}::date`,
-            sql`coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date) <= ${fim}::date`,
+            sql`${dataReceita} >= ${inicio}::date`,
+            sql`${dataReceita} <= ${fim}::date`,
           ),
         ),
-      this.carregarItensReceitaPeriodo(clienteId, inicio, fim),
+      this.carregarItensReceitaPeriodo(
+        clienteId,
+        inicio,
+        fim,
+        regimeCompetencia,
+      ),
       this.database.db
         .select({
           mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
@@ -1072,6 +1131,7 @@ export class SimplesNacionalService {
     for (const documento of documentos) {
       if (
         documento.mes !== competencia &&
+        regimeCompetencia &&
         mesesComReceitaManual.has(documento.mes)
       )
         continue;
@@ -1179,6 +1239,7 @@ export class SimplesNacionalService {
     clienteId: string,
     inicio: string,
     fim: string,
+    regimeCompetencia = true,
   ) {
     const ultimoDia = new Date(`${fim.slice(0, 7)}-01T00:00:00.000Z`);
     ultimoDia.setUTCMonth(ultimoDia.getUTCMonth() + 1);
@@ -1187,6 +1248,7 @@ export class SimplesNacionalService {
       clienteId,
       inicio,
       ultimoDia.toISOString().slice(0, 10),
+      regimeCompetencia,
     );
     const porMes = new Map<string, bigint[]>();
     for (const row of rows) {

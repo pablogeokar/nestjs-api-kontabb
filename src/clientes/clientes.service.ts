@@ -101,6 +101,7 @@ export class ClientesService {
           cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
           cnaesSecundarios: clientes.cnaesSecundarios,
           regimeTributario: clientes.regimeTributario,
+          regimeCompetencia: clientes.regimeCompetencia,
           apuraIcms: clientes.apuraIcms,
           inscricaoEstadual: clientes.inscricaoEstadual,
           tipoContribuinteIcms: clientes.tipoContribuinteIcms,
@@ -157,6 +158,7 @@ export class ClientesService {
           client.cnaesSecundarios,
         ),
         regime_tributario: client.regimeTributario as RegimeTributario | null,
+        regime_competencia: client.regimeCompetencia,
         apura_icms: client.apuraIcms,
         inscricao_estadual: client.inscricaoEstadual,
         tipo_contribuinte_icms:
@@ -196,6 +198,7 @@ export class ClientesService {
     requestId?: string;
     actorUserId: string;
     tipoPessoa: 'PF' | 'PJ';
+    regimeCompetencia?: boolean;
     companyName: string;
     cnpj: string;
     cpf: string;
@@ -254,7 +257,7 @@ export class ClientesService {
             tipo_pessoa, razao_social, cnpj, cpf, emails,
             cep, logradouro, numero, complemento, bairro, municipio, uf,
             cnae_principal_codigo, cnae_principal_descricao, cnaes_secundarios,
-            regime_tributario, apura_icms, optante_simples_nacional,
+            regime_tributario, regime_competencia, apura_icms, optante_simples_nacional,
             simples_nacional_fonte, simples_nacional_consultado_em,
             primeiro_login, user_id, contador_id
           )
@@ -271,6 +274,7 @@ export class ClientesService {
             ${this.nullableText(input.primaryActivity?.description)},
             ${secondaryActivities}::jsonb,
             ${simplesNacional.regimeTributario}::text,
+            ${input.regimeCompetencia ?? true}::boolean,
             ${simplesNacional.apuraIcms}::boolean,
             ${simplesNacional.optanteSimplesNacional}::boolean,
             ${simplesNacional.simplesNacionalFonte}::text,
@@ -284,6 +288,7 @@ export class ClientesService {
           SELECT ${input.actorUserId}, 'CLIENTE_CRIADO', 'CLIENTE', id::text,
             jsonb_build_object(
               'tipoPessoa', ${input.tipoPessoa}::text,
+              'regimeCompetencia', ${input.regimeCompetencia ?? true}::boolean,
               'optanteSimplesNacional', ${simplesNacional.optanteSimplesNacional}::boolean,
               'simplesNacionalFonte', ${simplesNacional.simplesNacionalFonte}::text
             )
@@ -330,6 +335,7 @@ export class ClientesService {
     primaryActivity?: StoredCnae | null;
     secondaryActivities?: StoredCnae[];
     regimeTributario?: RegimeTributario | null;
+    regimeCompetencia?: boolean;
     apuraIcms?: boolean;
     inscricaoEstadual?: string | null;
     tipoContribuinteIcms?: TipoContribuinteIcms | null;
@@ -384,6 +390,7 @@ export class ClientesService {
           cnae_principal_descricao = CASE WHEN ${hasPrimaryActivity} THEN ${this.nullableText(input.primaryActivity?.description)} ELSE cnae_principal_descricao END,
           cnaes_secundarios = CASE WHEN ${hasSecondaryActivities} THEN ${secondaryActivities}::jsonb ELSE cnaes_secundarios END,
           regime_tributario = CASE WHEN ${fiscalUpdate.writeRegimeTributario} THEN ${fiscalUpdate.regimeTributario}::text ELSE regime_tributario END,
+          regime_competencia = COALESCE(${input.regimeCompetencia ?? null}::boolean, regime_competencia),
           apura_icms = CASE WHEN ${fiscalUpdate.writeApuraIcms} THEN ${fiscalUpdate.apuraIcms}::boolean ELSE apura_icms END,
           inscricao_estadual = CASE WHEN ${fiscalUpdate.writeInscricaoEstadual} THEN ${fiscalUpdate.inscricaoEstadual}::text ELSE inscricao_estadual END,
           tipo_contribuinte_icms = CASE WHEN ${fiscalUpdate.writeTipoContribuinteIcms} THEN ${fiscalUpdate.tipoContribuinteIcms}::text ELSE tipo_contribuinte_icms END,
@@ -415,6 +422,11 @@ export class ClientesService {
             CASE WHEN ${fiscalUpdate.writeApuraIcms} THEN jsonb_build_object(
               'apuraIcms', ${fiscalUpdate.apuraIcms}::boolean,
               'apuraIcmsOrigem', ${fiscalUpdate.apuraIcmsOrigem}::text
+            ) ELSE '{}'::jsonb END
+          )
+          || (
+            CASE WHEN ${input.regimeCompetencia !== undefined} THEN jsonb_build_object(
+              'regimeCompetencia', ${input.regimeCompetencia ?? null}::boolean
             ) ELSE '{}'::jsonb END
           )
         FROM updated_client
@@ -492,6 +504,7 @@ export class ClientesService {
         primeiroLogin: clientes.primeiroLogin,
         suspenso: clientes.suspenso,
         regimeTributario: clientes.regimeTributario,
+        regimeCompetencia: clientes.regimeCompetencia,
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
@@ -606,6 +619,7 @@ export class ClientesService {
         cnaePrincipalDescricao: clientes.cnaePrincipalDescricao,
         cnaesSecundarios: clientes.cnaesSecundarios,
         regimeTributario: clientes.regimeTributario,
+        regimeCompetencia: clientes.regimeCompetencia,
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
@@ -641,6 +655,7 @@ export class ClientesService {
         : null,
       secondary_activities: this.normalizeStoredCnaes(client.cnaesSecundarios),
       regime_tributario: client.regimeTributario as RegimeTributario | null,
+      regime_competencia: client.regimeCompetencia,
       apura_icms: client.apuraIcms,
       inscricao_estadual: client.inscricaoEstadual,
       tipo_contribuinte_icms:

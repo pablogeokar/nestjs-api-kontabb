@@ -186,6 +186,7 @@ export const clientes = pgTable(
       .notNull()
       .default([]),
     regimeTributario: text('regime_tributario'),
+    regimeCompetencia: boolean('regime_competencia').notNull().default(true),
     apuraIcms: boolean('apura_icms').notNull().default(false),
     inscricaoEstadual: text('inscricao_estadual'),
     tipoContribuinteIcms: text('tipo_contribuinte_icms'),

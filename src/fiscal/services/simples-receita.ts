@@ -1,5 +1,12 @@
 import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
 
+export function regimeCompetenciaParaApuracao(
+  competencia: string,
+  regimeCompetenciaCliente: boolean,
+): boolean {
+  return competencia.slice(0, 4) >= '2027' || regimeCompetenciaCliente;
+}
+
 /** A classificação é conservadora: CFOP desconhecido exige conferência fiscal. */
 export function classificarOperacaoSimples(
   tipoDocumento: string,
