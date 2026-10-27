@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -146,6 +147,65 @@ export class AuthController {
     };
   }
 
+  @Post('extension/login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Login da extensão Kontabb',
+    description:
+      'Cria uma sessão Bearer de uma hora apenas para ADMIN ou COLABORADOR. Não define cookie.',
+  })
+  @ApiBody({ type: LoginDto })
+  @ApiResponse({ status: 200, description: 'Sessão da extensão criada.' })
+  @ApiResponse({ status: 401, description: 'Credenciais inválidas.' })
+  @ApiResponse({ status: 403, description: 'Perfil não autorizado.' })
+  async extensionLogin(@Body() body: LoginDto, @Req() req: Request) {
+    const email = body.email?.trim().toLowerCase();
+    const password = body.password;
+    if (!email || !password) {
+      throw new BadRequestException('E-mail e senha são obrigatórios.');
+    }
+
+    await this.rateLimit.consume({
+      key: `auth-extension-login:${email}`,
+      limit: 5,
+      windowMs: 60_000,
+    });
+
+    const result = await this.authService.authenticateUser(email, password);
+    if (!result) {
+      throw new UnauthorizedException('Credenciais inválidas.');
+    }
+    if (result.role !== 'ADMIN' && result.role !== 'COLABORADOR') {
+      throw new ForbiddenException('Perfil não autorizado para a extensão.');
+    }
+
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await this.authService.createSession({
+      id: randomBytes(16).toString('hex'),
+      token,
+      userId: result.id,
+      expiresAt,
+      ipAddress: req.ip ?? req.socket.remoteAddress ?? null,
+      userAgent: req.headers['user-agent'] ?? null,
+    });
+
+    this.logger.info('extension_user_login', {
+      userId: result.id,
+      role: result.role,
+    });
+
+    return {
+      user: {
+        id: result.id,
+        name: result.name,
+        email: result.email,
+        role: result.role,
+      },
+      session: { token, expiresAt: expiresAt.toISOString() },
+    };
+  }
+
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('session-token')
@@ -197,6 +257,7 @@ export class AuthController {
 
     return {
       session: { active: true },
+      features: { extensionPaymentDate: true, extensionPaidGuideReceipt: true },
       user: {
         id: user.id,
         name: user.name,

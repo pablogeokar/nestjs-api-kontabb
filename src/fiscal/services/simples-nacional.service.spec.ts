@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   SimplesNacionalService,
   anexoPorServico,
@@ -53,6 +54,75 @@ describe('utilitários do SimplesNacionalService', () => {
 });
 
 describe('integração da receita do Simples entre atividade e RBT12', () => {
+  it('mantém a receita de competência no RBT12 e usa a emissão como base mensal no caixa', async () => {
+    const calcularRbt12 = jest.fn().mockReturnValue({
+      rbt12: '100.00',
+      proporcional: false,
+      origem: 'DOCUMENTOS',
+    });
+    const service = new SimplesNacionalService(
+      null!,
+      { calcularRbt12 } as never,
+      null!,
+      null!,
+    );
+    const mock = (name: string, value: unknown) =>
+      Object.defineProperty(service, name, {
+        value: jest.fn().mockResolvedValue(value),
+      });
+    mock('buscarClienteSimples', { uf: 'SP', regimeCompetencia: false });
+    mock('buscarTabelaVigente', { id: 'tabela' });
+    mock('carregarReceitasMensais', {
+      rows: [{ mes: '2026-04', receita: '100.00' }],
+      origem: 'DOCUMENTOS_FISCAIS',
+    });
+    mock('carregarPrimeiraCompetenciaReceita', '2026-04');
+    mock('carregarReceitasAtividade', { grupos: [], pendencias: [] });
+    mock('carregarReceitasAutomaticasPeriodo', []);
+    mock('carregarFolha12m', { valor: '0.00', origem: 'FOLHA' });
+    mock('carregarSublimite', { valor: '3600000.00', origem: 'TABELA' });
+    mock('carregarAnexosCalculo', new Map());
+    mock('auditarReceitasPeriodo', {
+      pendencias: [],
+      bonificacoesExcluidas: '0.00',
+      operacoesSemReceitaExcluidas: '0.00',
+    });
+    mock('carregarFolhasAutomaticasPeriodo', []);
+
+    const apuracao = await service['calcular']('cliente', '2026-04');
+    expect(calcularRbt12).toHaveBeenCalledWith(
+      expect.objectContaining({ receitaPrimeiroMes: '100.00' }),
+    );
+    expect(service['carregarReceitasAtividade']).toHaveBeenCalledWith(
+      'cliente',
+      expect.any(Date),
+      expect.any(Date),
+      false,
+    );
+    expect(service['carregarReceitasAutomaticasPeriodo']).toHaveBeenCalledWith(
+      'cliente',
+      '2026-04-01',
+      '2026-04-01',
+      false,
+    );
+    expect(apuracao.memoria_calculo.receitaMesCompetencia).toBe('100.00');
+    expect(apuracao.memoria_calculo.receitaMesDocumentos).toBe('0.00');
+    expect(apuracao.receita_bruta_mes).toBe('0.00');
+  });
+
+  it('seleciona emissão da NFS-e no caixa e competência declarada nos demais casos', () => {
+    const service = new SimplesNacionalService(null!, null!, null!, null!);
+    const dialect = new PgDialect();
+    const caixa = dialect.sqlToQuery(service['dataReceitaDocumento'](false)).sql;
+    const competencia = dialect.sqlToQuery(service['dataReceitaDocumento'](true)).sql;
+    expect(caixa).toContain("CASE WHEN");
+    expect(caixa).toContain('tipo_documento');
+    expect(caixa).toContain('data_emissao_fiscal');
+    expect(caixa).toContain('competencia_declarada');
+    expect(competencia).not.toContain('CASE WHEN');
+    expect(competencia).toContain('competencia_declarada');
+  });
+
   it('ignora bonificação em nota mista nos dois caminhos de cálculo', async () => {
     const service = new SimplesNacionalService(null!, null!, null!, null!);
     const base = {

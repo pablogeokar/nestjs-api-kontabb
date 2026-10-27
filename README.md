@@ -192,6 +192,20 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 pnpm db:check
 ```
 
+### Regime de apuração do Simples Nacional
+
+A migration `0003_clientes_regime_competencia` adiciona `clientes.regime_competencia`
+(`true` para cadastros novos e clientes existentes). Aplique-a antes de publicar
+a API e o frontend que exibem o campo.
+
+Nas apurações até dezembro de 2026, `false` usa a data de emissão da NFS-e como
+referência operacional da base mensal, conforme a configuração adotada neste
+sistema; `true` usa a competência declarada. RBT12 e fator R continuam usando
+receitas por competência em ambos os casos. A partir de janeiro de 2027, o
+motor usa competência para a base mensal mesmo quando a flag histórica é
+`false`. A data de emissão não comprova recebimento efetivo; conferir essa
+limitação antes de transmitir valores ao PGDAS-D.
+
 Para iniciar uma instalação sem restore de dados, defina
 `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD` (mínimo de 6 caracteres) e,
 opcionalmente, `ADMIN_SEED_NAME` no ambiente. Então execute:

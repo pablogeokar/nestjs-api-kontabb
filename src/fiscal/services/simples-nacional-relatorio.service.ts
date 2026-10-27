@@ -129,6 +129,21 @@ export function renderSimplesNacionalPdf(input: {
     ['Total do DAS', money(apuracao.valor_total_das)],
   ]);
 
+  if (apuracao.memoria_calculo.regimeCompetencia === false) {
+    const receitaCompetencia = apuracao.memoria_calculo.receitaMesCompetencia;
+    infoBox(
+      document,
+      'Referência da base mensal: emissão',
+      `No regime de caixa cadastrado, as NFS-e foram alocadas pela data de emissão. RBT12 e Fator R usam a competência declarada.${typeof receitaCompetencia === 'string' ? ` Receita do mês por competência: ${money(receitaCompetencia)}.` : ''} Confirme os recebimentos antes de transmitir.`,
+    );
+  } else if (apuracao.memoria_calculo.regimeCompetencia === true) {
+    infoBox(
+      document,
+      'Referência da base mensal: competência',
+      'As NFS-e foram alocadas pela competência declarada.',
+    );
+  }
+
   ensureSpace(document, 72);
   const fatorRDetail = apuracao.fator_r
     ? `${percent(apuracao.fator_r)} — ${decimalCompare(apuracao.fator_r, '0.2800') >= 0 ? 'percentual igual ou superior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo III.' : 'percentual inferior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo V.'}`

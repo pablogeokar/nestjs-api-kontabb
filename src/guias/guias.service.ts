@@ -824,6 +824,7 @@ export class GuiasService {
     guiaId: string;
     userId: string;
     observation: string | null;
+    paidAtDate?: string | null;
     receipt?: { bytes: Buffer; contentType: string; extension: string };
   }) {
     let receiptKey: string | null = null;
@@ -878,7 +879,7 @@ export class GuiasService {
       const updateResult = await this.database.db.execute(sql`
         WITH updated_guia AS (
           UPDATE guias SET
-            status = 'PAGO', pago_em = now(), pagamento_confirmado_por = ${input.userId},
+            status = 'PAGO', pago_em = COALESCE(${input.paidAtDate ?? null}::date + time '12:00', now()::timestamp), pagamento_confirmado_por = ${input.userId},
             observacao_pagamento = ${input.observation},
             comprovante_key = CASE WHEN ${receiptKey}::text IS NOT NULL THEN ${receiptKey} ELSE comprovante_key END
           WHERE id = ${input.guiaId}::uuid AND status <> 'PAGO'
@@ -887,7 +888,7 @@ export class GuiasService {
         audit_event AS (
           INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
           SELECT ${input.userId}, 'PAGAMENTO_CONFIRMADO', 'GUIA', id::text,
-            jsonb_build_object('possuiComprovante', ${receiptKey}::text IS NOT NULL)
+            jsonb_build_object('possuiComprovante', ${receiptKey}::text IS NOT NULL, 'dataPagamentoInformada', ${input.paidAtDate ?? null}::text)
           FROM updated_guia
           RETURNING id
         )
@@ -903,6 +904,75 @@ export class GuiasService {
       if (receiptKey) await this.storage.delete(receiptKey).catch(() => {});
       this.logger.error('payment_database_failed', error, {
         requestId: input.requestId,
+      });
+      return { ok: false as const, code: 'DATABASE_FAILED' };
+    }
+
+    return { ok: true as const };
+  }
+
+  async attachReceiptToPaidGuia(input: {
+    requestId?: string;
+    guiaId: string;
+    userId: string;
+    observation: string | null;
+    receipt: { bytes: Buffer; contentType: string; extension: string };
+  }) {
+    const guiaRow = await this.database.db
+      .select({ cnpj: clientes.cnpj, cpf: clientes.cpf, tipoPessoa: clientes.tipoPessoa })
+      .from(guias)
+      .innerJoin(clientes, eq(clientes.id, guias.clienteId))
+      .where(eq(guias.id, input.guiaId))
+      .limit(1);
+    if (!guiaRow[0]) return { ok: false as const, code: 'NOT_FOUND' };
+
+    const cnpjCpf = guiaRow[0].tipoPessoa === 'PF' && guiaRow[0].cpf
+      ? guiaRow[0].cpf.replace(/\D/g, '') : guiaRow[0].cnpj;
+    const receiptKey = this.storage.receiptObjectKey({
+      cnpjCpf,
+      receiptId: crypto.randomUUID(),
+      extension: input.receipt.extension,
+    });
+
+    try {
+      await this.storage.upload(receiptKey, input.receipt.bytes, input.receipt.contentType);
+    } catch (error) {
+      this.logger.error('paid_guia_receipt_upload_failed', error, {
+        requestId: input.requestId, guiaId: input.guiaId,
+      });
+      return { ok: false as const, code: 'STORAGE_FAILED' };
+    }
+
+    try {
+      const updateResult = await this.database.db.execute(sql`
+        WITH updated_guia AS (
+          UPDATE guias SET
+            comprovante_key = ${receiptKey},
+            observacao_pagamento = CASE
+              WHEN ${input.observation}::text IS NULL THEN observacao_pagamento
+              ELSE concat_ws(chr(10), NULLIF(observacao_pagamento, ''), ${input.observation})
+            END
+          WHERE id = ${input.guiaId}::uuid AND status = 'PAGO' AND comprovante_key IS NULL
+          RETURNING id
+        ),
+        audit_event AS (
+          INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
+          SELECT ${input.userId}, 'COMPROVANTE_ANEXADO_GUIA_PAGA', 'GUIA', id::text,
+            jsonb_build_object('possuiComprovante', true)
+          FROM updated_guia
+          RETURNING id
+        )
+        SELECT EXISTS (SELECT 1 FROM updated_guia) AS updated
+      `);
+      const updated = resultRows<{ updated: boolean }>(updateResult)[0]?.updated;
+      if (!updated) {
+        await this.storage.delete(receiptKey).catch(() => {});
+        return { ok: false as const, code: 'NOT_ELIGIBLE' };
+      }
+    } catch (error) {
+      await this.storage.delete(receiptKey).catch(() => {});
+      this.logger.error('paid_guia_receipt_database_failed', error, {
+        requestId: input.requestId, guiaId: input.guiaId,
       });
       return { ok: false as const, code: 'DATABASE_FAILED' };
     }

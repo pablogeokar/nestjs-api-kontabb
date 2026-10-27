@@ -81,6 +81,15 @@ export class LookupCnpjParamsDto {
 }
 
 export class CreateClientDto {
+  @ApiPropertyOptional({
+    description: 'Apuração do Simples por competência (true) ou caixa (false)',
+    type: Boolean,
+    default: true,
+  })
+  @ValidateIf((_dto: CreateClientDto, value: unknown) => value !== undefined)
+  @IsBoolean()
+  regime_competencia?: boolean;
+
   @ApiProperty({
     description: 'Tipo de pessoa',
     enum: ['PF', 'PJ'],
@@ -182,6 +191,14 @@ export class CreateClientDto {
 }
 
 export class UpdateClientDto {
+  @ApiPropertyOptional({
+    description: 'Apuração do Simples por competência (true) ou caixa (false)',
+    type: Boolean,
+  })
+  @ValidateIf((_dto: UpdateClientDto, value: unknown) => value !== undefined)
+  @IsBoolean()
+  regime_competencia?: boolean;
+
   @ApiPropertyOptional({
     description: 'Nova razão social',
     minLength: 1,

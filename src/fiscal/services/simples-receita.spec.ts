@@ -1,10 +1,16 @@
 import {
   classificarOperacaoSimples,
+  regimeCompetenciaParaApuracao,
   somarReceitaSimples,
   valorReceitaSimples,
 } from './simples-receita';
 
 describe('receita documental do Simples Nacional', () => {
+  it('usa caixa apenas nos períodos permitidos e mantém competência a partir de 2027', () => {
+    expect(regimeCompetenciaParaApuracao('2026-12', false)).toBe(false);
+    expect(regimeCompetenciaParaApuracao('2026-12', true)).toBe(true);
+    expect(regimeCompetenciaParaApuracao('2027-01', false)).toBe(true);
+  });
   it.each(['5910', '6910', '5911', '6911', '5901', '5152'])(
     'não transforma a saída %s em receita de venda',
     (cfop) =>
