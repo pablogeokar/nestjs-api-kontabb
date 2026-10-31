@@ -1,5 +1,7 @@
 import { RhService } from './rh.service';
 import type { DadosFolhaPagamento } from '../common/pdf-extraction-rh';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 function makeDados(): DadosFolhaPagamento {
   return {
@@ -94,5 +96,42 @@ describe('RhService', () => {
 
     expect(result).toEqual({ ok: false, code: 'DADOS_INCONSISTENTES' });
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('RhService - busca de folhas', () => {
+  it('preserva letras do CNPJ na consulta administrativa', async () => {
+    const whereClauses: SQL[] = [];
+    let selectIndex = 0;
+    const select = jest.fn(() => {
+      const index = selectIndex++;
+      const query = {
+        from: () => query,
+        leftJoin: () => query,
+        where: (where: SQL) => {
+          whereClauses.push(where);
+          return index === 0 ? Promise.resolve([{ count: 0 }]) : query;
+        },
+        orderBy: () => query,
+        limit: () => query,
+        offset: () => Promise.resolve([]),
+      };
+      return query;
+    });
+    const service = new RhService(
+      { db: { select } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.listFolhas({
+      search: 'ab.12c.d34/ef56-78',
+      pagination: { page: 1, pageSize: 15, limit: 15, offset: 0 },
+    });
+
+    expect(whereClauses).toHaveLength(2);
+    const params = new PgDialect().sqlToQuery(whereClauses[0]).params;
+    expect(params).toContain('%AB12CD34EF5678%');
   });
 });

@@ -29,6 +29,7 @@ import { ClientesService } from '../clientes/clientes.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import { AppLogger } from '../common/logger.service';
 import { parsePaginationParams } from '../common/pagination';
+import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
 
 @ApiTags('Colaborador')
 @Controller('colaborador')
@@ -53,9 +54,7 @@ export class ColaboradorController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const cnpj =
-      typeof body?.cnpj === 'string'
-        ? body.cnpj.toUpperCase().replace(/[^0-9A-Z]/g, '')
-        : '';
+      typeof body?.cnpj === 'string' ? normalizeCnpjIdentifier(body.cnpj) : '';
     const codigoFuncionario =
       typeof body?.codigoFuncionario === 'string'
         ? body.codigoFuncionario.trim()

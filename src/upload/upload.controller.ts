@@ -35,6 +35,7 @@ import {
 } from '../common/pdf-extraction';
 import type { CurrentUser as CurrentUserType } from '../common/types';
 import { RateLimitService } from '../common/rate-limit.service';
+import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
 
 interface FileResult {
   fileName: string;
@@ -129,7 +130,7 @@ export class UploadController {
 
     const manualCnpj =
       typeof body?.cnpj === 'string'
-        ? body.cnpj.toUpperCase().replace(/[^0-9A-Z]/g, '') || null
+        ? normalizeCnpjIdentifier(body.cnpj) || null
         : null;
     const manualPeriod = body.period?.trim() || null;
     const manualType = body.type?.trim() || null;
@@ -229,7 +230,7 @@ export class UploadController {
           const text = await extractPdfText(Buffer.from(file.buffer));
           const dados = extractDadosFiscais(text);
           const rawCnpj = dados.cnpj
-            ? dados.cnpj.toUpperCase().replace(/[^0-9A-Z]/g, '')
+            ? normalizeCnpjIdentifier(dados.cnpj)
             : null;
           if (rawCnpj) cnpjSet.add(rawCnpj);
           return {
@@ -318,9 +319,7 @@ export class UploadController {
 
     const identifierRaw =
       ctx.manualCnpj ||
-      (dados?.cnpj
-        ? dados.cnpj.toUpperCase().replace(/[^0-9A-Z]/g, '')
-        : null) ||
+      (dados?.cnpj ? normalizeCnpjIdentifier(dados.cnpj) : null) ||
       (dados?.cpf ? dados.cpf.replace(/\D/g, '') : null) ||
       null;
     const tipo =

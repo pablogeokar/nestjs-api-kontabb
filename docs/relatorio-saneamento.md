@@ -124,6 +124,10 @@ O cadastro já aceita CNPJ alfanumérico, mas `ColaboradorController.login` remo
 
 O upload manual de guias também descartava letras na máscara, no `FormData` e no controller. Essas etapas agora preservam CNPJ alfanumérico; o CPF segue com normalização numérica. Teste de controller com PDF de assinatura válida e conteúdo ilegível confirmou que o identificador manual numérico ou alfanumérico chega intacto à busca do cliente, mesmo quando a extração do PDF falha. O HTML do recibo de salário no web passou a preservar letras do CNPJ sem mudar a representação numérica anterior. A extração **automática** de CNPJ em PDFs fiscais e de RH ainda usa padrões numéricos; ela não foi ampliada sem um PDF alfanumérico representativo para verificar falsas capturas e os resultados de processamento. Senhas iniciais fixas também permanecem sem mudança, pois exigem fluxo de provisionamento e compatibilidade próprios.
 
+### Continuação da fase 2: buscas administrativas e encaminhamento de RH
+
+As listas administrativas de guias e folhas ainda removiam letras ao construir o filtro por CNPJ. Ambas agora usam `normalizeCnpjIdentifier`, helper que só remove a máscara e não valida dígitos. Nas guias, a busca numérica ainda consulta CPF; um CNPJ alfanumérico completo não gera um filtro parcial de CPF que poderia trazer outro cliente. Buscas apenas por nome, sem dígitos, não acrescentam filtro de CNPJ. Testes inspecionam os parâmetros SQL de CNPJ numérico/alfanumérico, CPF e busca textual. Após os parsers de folha, adiantamento de 13º e férias, o controller de RH também passa o CNPJ normalizado à busca do cliente e à chave R2; para os PDFs numéricos atuais, as chaves permanecem iguais. Os parsers em si continuam numéricos e precisam de arquivo alfanumérico representativo antes de qualquer ampliação. Nenhum arquivo existente foi renomeado e não houve alteração de schema ou dados.
+
 ## Decisões preservadas por risco
 
 - A escrituração fiscal continua baixando e interpretando XML, pois `EscrituracaoFiscalService.reprocessar` usa campos que não têm equivalência demonstrada com os itens persistidos. Sem comparação de EFD por bytes e de contadores de erro em amostra real, reduzir downloads poderia alterar resultado fiscal.
@@ -137,7 +141,7 @@ O upload manual de guias também descartava letras na máscara, no `FormData` e 
 | --- | --- |
 | `pnpm exec tsc --noEmit` | Passou. |
 | `pnpm exec eslint "{src,apps,libs,test}/**/*.ts"` | Passou, sem `--fix`. |
-| `pnpm exec jest --runInBand --silent` | 132 suites, 2.143 testes passaram. |
+| `pnpm exec jest --runInBand --silent` | 132 suites, 2.147 testes passaram. |
 | `web`: Vitest, Playwright login desktop/mobile, lint, tipos e build | 32 arquivos/230 testes unitários e 4 testes Playwright passaram; lint sem erros, com 16 avisos preexistentes; tipos e build passaram. |
 | `pnpm build` | Passou. |
 | `pnpm db:check` | Passou. |

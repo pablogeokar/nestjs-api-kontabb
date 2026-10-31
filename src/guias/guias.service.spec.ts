@@ -1,4 +1,6 @@
 import { avaliarVinculoGuiaSimples, GuiasService } from './guias.service';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 const candidata = {
   id: 'guia-fiscal-1',
@@ -137,4 +139,59 @@ describe('GuiasService - regime tributário', () => {
     expect(result).toEqual({ ok: false, code: 'ICMS_NOT_APPLICABLE' });
     expect(storage.upload).not.toHaveBeenCalled();
   });
+});
+
+describe('GuiasService - busca por identificador', () => {
+  it.each([
+    ['12.345.678/0001-99', '%12345678000199%', true],
+    ['ab.12c.d34/ef56-78', '%AB12CD34EF5678%', false],
+    ['Empresa', null, false],
+  ])(
+    'aplica a busca por %s sem perder o contrato anterior',
+    async (search, cnpjParam, buscaCpf) => {
+      const whereClauses: SQL[] = [];
+      let selectIndex = 0;
+      const select = jest.fn(() => {
+        const index = selectIndex++;
+        const query = {
+          from: () => query,
+          leftJoin: () => query,
+          where: (where: SQL) => {
+            whereClauses.push(where);
+            return index === 0 ? Promise.resolve([{ count: 0 }]) : query;
+          },
+          orderBy: () => query,
+          limit: () => query,
+          offset: () => Promise.resolve([]),
+        };
+        return query;
+      });
+      const service = new GuiasService(
+        { db: { select } } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await service.listAdminGuias({
+        type: '',
+        status: '',
+        search,
+        pagination: { page: 1, pageSize: 15, limit: 15, offset: 0 },
+      });
+
+      expect(whereClauses).toHaveLength(2);
+      const params = new PgDialect().sqlToQuery(whereClauses[0]).params;
+      expect(params).toContain(`%${search}%`);
+      if (cnpjParam) {
+        expect(params).toContain(cnpjParam);
+        expect(params.filter((param) => param === cnpjParam)).toHaveLength(
+          buscaCpf ? 2 : 1,
+        );
+      } else {
+        expect(params).not.toContain('%EMPRESA%');
+      }
+    },
+  );
 });

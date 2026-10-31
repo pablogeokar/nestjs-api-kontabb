@@ -16,6 +16,7 @@ import { resultRows } from '../common/db-result';
 import type { DadosFolhaPagamento } from '../common/pdf-extraction-rh';
 import type { DadosFerias } from '../common/pdf-extraction-ferias';
 import type { PaginationParams } from '../common/types';
+import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
 
 @Injectable()
 export class RhService {
@@ -642,13 +643,15 @@ export class RhService {
     if (input.competencia)
       conditions.push(eq(folhasPagamento.competencia, input.competencia));
     if (input.search) {
-      const digits = input.search.replace(/\D/g, '');
+      const cnpjSearch = /\d/.test(input.search)
+        ? normalizeCnpjIdentifier(input.search)
+        : '';
       conditions.push(
         sql`EXISTS (
           SELECT 1 FROM clientes c
           WHERE c.id = ${folhasPagamento.clienteId}
           AND (c.razao_social ILIKE ${'%' + input.search + '%'}
-            ${digits ? sql`OR c.cnpj ILIKE ${'%' + digits + '%'}` : sql``})
+            ${cnpjSearch ? sql`OR c.cnpj ILIKE ${'%' + cnpjSearch + '%'}` : sql``})
         )`,
       );
     }
