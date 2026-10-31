@@ -44,6 +44,8 @@ import {
   type EventoPagamentoTrilha,
 } from '../fiscal/services/fiscal-pagamentos-trilha';
 
+class FiscalGuiaAlreadySettledError extends Error {}
+
 export type StatusVinculoGuiaUpload =
   | 'VINCULADO'
   | 'PENDENTE_CONFIRMACAO'
@@ -935,6 +937,9 @@ export class GuiasService {
             valor: evento.valor,
             sinal: evento.sinal === -1 ? -1 : 1,
           }));
+          if (projetarSaldoObrigacao(guiaFiscal.valorTotal, trilha).quitada) {
+            throw new FiscalGuiaAlreadySettledError();
+          }
           const saldo = projetarSaldoObrigacao(guiaFiscal.valorTotal, [
             ...trilha,
             { tipo: 'PAGAMENTO', valor: updatedGuia.valor, sinal: 1 },
@@ -988,6 +993,9 @@ export class GuiasService {
       }
     } catch (error) {
       if (receiptKey) await this.storage.delete(receiptKey).catch(() => {});
+      if (error instanceof FiscalGuiaAlreadySettledError) {
+        return { ok: false as const, code: 'FISCAL_ALREADY_SETTLED' };
+      }
       this.logger.error('payment_database_failed', error, {
         requestId: input.requestId,
       });

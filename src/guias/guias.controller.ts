@@ -255,6 +255,11 @@ export class GuiasController {
       if (result.code === 'ALREADY_PAID') {
         throw new BadRequestException('Esta guia já foi marcada como paga.');
       }
+      if (result.code === 'FISCAL_ALREADY_SETTLED') {
+        throw new BadRequestException(
+          'A obrigação fiscal vinculada já está quitada. Revise a conciliação antes de confirmar esta guia.',
+        );
+      }
       throw new BadRequestException(
         result.code === 'STORAGE_FAILED'
           ? 'Falha ao enviar comprovante.'

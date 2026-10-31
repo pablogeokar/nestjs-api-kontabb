@@ -226,6 +226,23 @@ describe('GuiasService.confirmPayment', () => {
     expect(state.fiscalStatus).toBe('PENDENTE');
   });
 
+  it('não duplica pagamento fiscal já quitado e compensa o comprovante do retry', async () => {
+    const { state, service, storage } = paymentStore({ linked: true });
+    state.events.push({ tipo: 'PAGAMENTO', valor: '100.00', sinal: 1 });
+    const receipt = {
+      bytes: Buffer.from('receipt'),
+      contentType: 'application/pdf',
+      extension: 'pdf',
+    };
+    await expect(
+      service.confirmPayment({ ...input, receipt }),
+    ).resolves.toEqual({ ok: false, code: 'FISCAL_ALREADY_SETTLED' });
+    expect(state.status).toBe('PENDENTE');
+    expect(state.events).toHaveLength(1);
+    expect(state.audits).toHaveLength(0);
+    expect(storage.delete).toHaveBeenCalledWith('receipts/test.pdf');
+  });
+
   it('reverte guia e evento quando a auditoria falha, compensando o R2', async () => {
     const { state, service, storage } = paymentStore({
       linked: true,

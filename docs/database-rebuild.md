@@ -5,7 +5,10 @@ O histórico foi consolidado em uma única migration
 uma baseline para banco vazio e não deve ser executada sobre o banco antigo.
 
 O backup data-only contém somente dados. O schema, constraints e índices sempre
-devem ser criados primeiro pelo Drizzle.
+devem ser criados primeiro pelo Drizzle. Confirme quais tabelas o backup inclui:
+o utilitário aceita `--exclude-table`, e o restore faz `TRUNCATE` nas tabelas
+do schema de destino antes de importar. Uma tabela ausente no backup ficará
+vazia após o restore.
 
 ## Pré-requisitos
 
@@ -33,15 +36,15 @@ pnpm db:check
 
 ```bash
 cd ../backup-restore
-go run . -mode=restore -input=backup-kontabb.sql -database-url="$KONTABB_NEW_DATABASE_URL" --dry-run
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -mode=restore -input=backup-kontabb.sql -database-url-from-env --dry-run
 ```
 
 5. Se o dry-run reproduzir a contagem do backup usado e validar todas as FKs,
    execute o restore real no **mesmo banco novo**:
 
 ```bash
-go run . -mode=restore -input=backup-kontabb.sql -database-url="$KONTABB_NEW_DATABASE_URL"
-go run . -validate -database-url="$KONTABB_NEW_DATABASE_URL"
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -mode=restore -input=backup-kontabb.sql -database-url-from-env
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -validate -database-url-from-env
 ```
 
 6. Como o restore limpa as tabelas antes de inserir os dados, execute agora os
@@ -52,8 +55,8 @@ cd ../api
 DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:seed:required
 ```
 
-O backup atual já contém os usuários ADMIN e os CFOPs; por isso não execute
-`db:seed:admin` nem `db:seed:cfops` como parte desse restore.
+Confira o conteúdo do backup escolhido. Se ele já incluir usuários ADMIN e
+CFOPs, não execute `db:seed:admin` nem `db:seed:cfops` como parte do restore.
 
 7. Execute os diagnósticos de domínio:
 

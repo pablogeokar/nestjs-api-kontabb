@@ -181,6 +181,16 @@ describe('GuiasController data real do pagamento', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(confirmPayment).not.toHaveBeenCalled();
   });
+
+  it('orienta conciliação quando a obrigação fiscal já está quitada', async () => {
+    confirmPayment.mockResolvedValueOnce({
+      ok: false,
+      code: 'FISCAL_ALREADY_SETTLED',
+    });
+    await expect(
+      controller.confirmPayment(id, {}, undefined, USER),
+    ).rejects.toThrow('A obrigação fiscal vinculada já está quitada');
+  });
 });
 
 describe('GuiasController comprovante de guia já paga', () => {

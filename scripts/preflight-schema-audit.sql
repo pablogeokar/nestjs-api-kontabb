@@ -128,4 +128,38 @@ WHERE g.status = 'PAGO' AND f.cancelada = false
       AND e.documento_externo = concat('guia-upload:', g.id)
   );
 
+WITH saldos AS (
+  SELECT f.id, f.status_pagamento, f.valor_total,
+         COALESCE(sum(e.sinal * e.valor), 0) AS total_pago
+  FROM fiscal_apuracoes_guias f
+  LEFT JOIN fiscal_pagamentos_eventos e ON e.guia_id = f.id
+  WHERE f.cancelada = false
+  GROUP BY f.id
+)
+SELECT count(*) AS guias_fiscais_pagas_com_saldo_aberto
+FROM saldos
+WHERE status_pagamento = 'PAGO' AND total_pago < valor_total;
+
+WITH saldos AS (
+  SELECT f.id, f.guia_upload_id, f.valor_total,
+         COALESCE(sum(e.sinal * e.valor), 0) AS total_pago
+  FROM fiscal_apuracoes_guias f
+  LEFT JOIN fiscal_pagamentos_eventos e ON e.guia_id = f.id
+  WHERE f.cancelada = false AND f.guia_upload_id IS NOT NULL
+  GROUP BY f.id
+)
+SELECT count(*) AS guias_upload_pendentes_com_fiscal_ja_quitado
+FROM saldos s
+JOIN guias g ON g.id = s.guia_upload_id
+WHERE g.status = 'PENDENTE' AND s.total_pago >= s.valor_total;
+
+SELECT count(*) AS origens_de_upload_duplicadas
+FROM (
+  SELECT guia_id, documento_externo
+  FROM fiscal_pagamentos_eventos
+  WHERE documento_externo LIKE 'guia-upload:%'
+  GROUP BY guia_id, documento_externo
+  HAVING count(*) > 1
+) duplicadas;
+
 COMMIT;
