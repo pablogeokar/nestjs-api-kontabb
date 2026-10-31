@@ -2,7 +2,7 @@
 
 ## Escopo e limite da evidência
 
-Implementação do `PROMPT_REFATORACAO_E_OTIMIZACAO_API_CONSOLIDADO.md` em `api/`, com inspeção dos consumidores em `web/` e `extensao/`. A raiz `kontabb/` não é repositório Git. O banco `kontabb_audit_20261031` foi criado no PostgreSQL local exclusivamente para migrar e testar, e removido após a validação; o banco local `kontabb-development` foi consultado apenas em transações `READ ONLY`. Não houve conexão com produção, DDL no banco configurado pela API nem remoção de dados da aplicação. Os números locais não demonstram ocupação ou compatibilidade do banco implantado.
+Implementação do `PROMPT_REFATORACAO_E_OTIMIZACAO_API_CONSOLIDADO.md` em `api/`, com inspeção dos consumidores em `web/` e `extensao/`. A raiz `kontabb/` não é repositório Git. Os ensaios usaram bancos isolados no PostgreSQL local; `kontabb-development` foi consultado apenas em transações `READ ONLY`. O usuário identificou `backup-drive/documentos/kontabb-20261031-153521.sql.gz` como backup do banco implantado, e ele foi restaurado em clone isolado. Não houve conexão direta com produção, DDL no banco configurado pela API nem remoção de dados da aplicação. O arquivo é data-only e não contém o schema ou o tracker originais do ambiente implantado.
 
 ## Baseline e contratos
 
@@ -31,7 +31,7 @@ O schema possui 57 tabelas, e o journal contém `0000`–`0003`. No banco local 
 
 | Objeto candidato | Uso encontrado no código | Linhas no banco local | FK inbound no banco local | Decisão |
 | --- | --- | ---: | --- | --- |
-| `sped_contabilistas` | Sem leitor/writer de produção localizado | 0 | Nenhuma | Preservar até preflight no alvo e verificação de integrações/backups. |
+| `sped_contabilistas` | Sem leitor/writer de produção localizado | 0 | Nenhuma | Preservar até inspecionar schema/tracker do alvo e consumidores externos. |
 | `fiscal_lancamentos` | Sem leitor/writer; menções em comentários | 0 | Nenhuma | Preservar pelo mesmo motivo. |
 | `fiscal_perfis_vigencia` | Sem leitor/writer localizado | 0 | Nenhuma | Preservar pelo mesmo motivo. |
 | `ciap_competencias_apropriadas` | `INSERT` em `CiapService` | 0 | Nenhuma | Preservar enquanto writer existe; investigar retenção histórica. |
@@ -56,9 +56,25 @@ O novo `scripts/preflight-schema-audit.sql` reúne contagens, índices, FKs inbo
 | `regras_fiscais.apropria_credito_pis_cofins` | 0 | 0 | Default |
 | `fiscal_catalogos_versoes.data_carga` | 0 | 0 | Default |
 
-As nove tabelas candidatas estão presentes no banco local e têm 26 índices ao todo. `ciap_movimentos` recebe duas FKs inbound (de `ciap_apropriacoes` e dela própria). Nenhuma referência direta aos nove nomes de tabela foi localizada em `web/`, `extensao/` ou `backup-restore/`; este último descobre tabelas dinamicamente, permite exclusões por flag e faz `TRUNCATE` antes do restore. Logo, ausência de referência textual não demonstra que um backup real inclua os dados. Nenhum arquivo de backup representativo foi localizado no projeto ou em `Downloads`; artefatos externos e integrações fora do workspace não foram inspecionados.
+As nove tabelas candidatas estão presentes no banco local e têm 26 índices ao todo. `ciap_movimentos` recebe duas FKs inbound (de `ciap_apropriacoes` e dela própria). Nenhuma referência direta aos nove nomes de tabela foi localizada em `web/`, `extensao/` ou `backup-restore/`; este último descobre tabelas dinamicamente, permite exclusões por flag e faz `TRUNCATE` antes do restore. O backup identificado pelo usuário foi posteriormente localizado em `backup-drive/documentos/` e ensaiado como descrito abaixo. O usuário informou que não conhece consumidores externos das três tabelas sem uso encontrado; integrações fora do workspace não foram inspecionadas.
 
 Os diagnósticos locais de pagamentos retornaram zero para guia de upload paga sem evento de origem, guia fiscal `PAGO` com saldo aberto, guia de upload pendente com obrigação fiscal já quitada e origem de upload duplicada. A mesma verificação no banco implantado ainda é necessária antes de qualquer correção histórica. `docs/database-rebuild.md` e `README.md` foram alinhados ao journal atual e o runbook passou a usar uma variável dedicada para o banco novo, preservando o `.env` da API em operação.
+
+### Ensaio local de migration, com autorização para descartar o banco de testes
+
+O usuário autorizou apagar `kontabb-development`. Para manter uma referência intacta, foi criado `kontabb_schema_trial_20261031` por `pg_dump`/`pg_restore` do banco local (28 MB; 57 tabelas; 48 linhas de aprendizado). Ambos os preflights passaram no clone. O ensaio em `scripts/dry-run-unused-tables.sql` verificou que `sped_contabilistas`, `fiscal_lancamentos` e `fiscal_perfis_vigencia` estavam vazias, executou `DROP TABLE ... RESTRICT` dentro de uma transação e confirmou o retorno das três tabelas após `ROLLBACK`.
+
+Uma linha sintética foi então inserida em `sped_contabilistas` **somente no clone**. O mesmo ensaio abortou com erro antes de qualquer `DROP`, como exigido pela guarda de dados. A linha de teste foi removida do clone, e clone e dump temporário foram descartados. O `kontabb-development` original segue com 57 tabelas e 48 linhas de aprendizado. O arquivo de ensaio não faz parte do journal Drizzle e **não é migration de deploy**. Naquele momento ainda não havia inventário do backup informado como implantado; o preflight do schema/tracker do alvo e a revisão de consumidores externos seguem pendentes. Por isso não foi versionado um `0004` destrutivo.
+
+O utilitário `backup-restore` também foi ensaiado com dados locais: backup de **57 tabelas e 13.390 registros**; `dry-run` de restore em banco vazio recém-migrado validou **104 FKs** e reverteu sem persistir linhas; restore real no banco isolado trouxe as 57 tabelas/13.390 registros; os dois preflights passaram (22 consultas de integridade sem violações), o ensaio `DROP ... RESTRICT` voltou a passar com `ROLLBACK` e o `AppModule` iniciou e fechou usando o banco restaurado. O banco de restore e o backup temporário foram descartados. Isso comprova o fluxo com dados **locais**, não a cobertura de um backup do ambiente implantado.
+
+### Ensaio do backup identificado como implantado
+
+O usuário apontou `backup-drive/documentos/kontabb-20261031-153521.sql.gz` e confirmou que foi gerado a partir do banco implantado. O arquivo passou por `gzip -t` (SHA-256 `f6af225420db1d6eb2f09e7a2d873e1721a0bcad601c90053ee2ba5274c79035`); seu manifesto declara **57 tabelas e 13.389 registros**. A origem foi informada pelo usuário, pois o cabeçalho do arquivo não registra o host nem o banco fonte. O diretório `backup-drive/documentos/` está ignorado pelo Git.
+
+Em `kontabb_backup_trial_20261031`, banco isolado criado vazio, foram aplicadas as migrations locais `0000`–`0003`. O restore `--dry-run` do arquivo validou **104 FKs** e reverteu; o restore transacional real importou as 57 tabelas/13.389 registros. `scripts/preflight-migrations.sql` executou **22 consultas sem linhas de violação**. `scripts/preflight-schema-audit.sql` confirmou nove tabelas candidatas presentes, três tabelas sem uso encontrado com **zero linhas e nenhuma FK inbound**, `classificacao_destinacao_aprendizado` com **48 linhas**, quatro colunas candidatas sem valores não nulos e os quatro diagnósticos de pagamento com **zero ocorrências**. O ensaio `DROP TABLE ... RESTRICT` com `ROLLBACK` passou, restaurando as três tabelas. O `AppModule` iniciou e encerrou com esse clone. Nenhuma alteração foi aplicada ao banco implantado.
+
+As contagens do backup coincidiram com as do banco local de testes em 56 das 57 tabelas; apenas `session` tinha 42 no arquivo e 43 no teste. Isso não permite comprovar a origem do arquivo. Como o backup contém **somente dados**, o tracker de quatro migrations observado no clone foi criado neste ensaio; não prova que o tracker, o DDL, as views, triggers ou as dependências do banco implantado sejam iguais. O usuário ofereceu acesso total a `localhost/kontabb-development`, mas essa é a base de testes; `DATABASE_URL` não está definida no processo e `api/.env` aponta a essa base local. Antes de uma migration destrutiva, ainda faltam preflight somente leitura do schema/tracker **no banco alvo** e revisão dos consumidores externos. O clone do backup foi descartado ao encerrar a auditoria; `kontabb-development` permaneceu intacto.
 
 ### Fase 5: organização
 
@@ -69,7 +85,7 @@ Foram revisados os módulos `cliente`, `clientes`, `upload`, `guias`, `health`, 
 - A escrituração fiscal continua baixando e interpretando XML, pois `EscrituracaoFiscalService.reprocessar` usa campos que não têm equivalência demonstrada com os itens persistidos. Sem comparação de EFD por bytes e de contadores de erro em amostra real, reduzir downloads poderia alterar resultado fiscal.
 - Pool de conexões, cache e índices não foram modificados sem medição de carga e plano de invalidação. O `EXPLAIN` local de rate limit não justifica índice adicional neste volume.
 - Não houve divisão de `schema.ts`, move de módulos nem mudança da senha inicial fixa. Essas alterações exigem migração de comportamento e testes de provisionamento/compatibilidade próprios.
-- Antes de qualquer DDL futuro: executar no banco alvo consultas somente leitura de contagem, valores não nulos, FKs, índices e `drizzle.__drizzle_migrations`; verificar SQL externo, exports, restore e consumidores; preparar migration incremental e ensaiar em clone com dados representativos. O banco local consultado não satisfaz esse gate.
+- Antes de qualquer DDL futuro: executar no banco alvo consultas somente leitura de contagem, valores não nulos, FKs, índices, views/triggers e `drizzle.__drizzle_migrations`; verificar SQL externo, exports, restore e consumidores; preparar migration incremental com guarda de dados e ensaiá-la em clone. O backup representativo cobre dados, mas não esses metadados originais.
 
 ## Validação final
 
@@ -82,4 +98,4 @@ Foram revisados os módulos `cliente`, `clientes`, `upload`, `guias`, `health`, 
 | `pnpm db:check` | Passou. |
 | `git diff --check` | Passou. |
 
-Nenhuma migration nova foi necessária ou aplicada fora do banco isolado. As mudanças de schema continuam bloqueadas pela falta de preflight no banco implantado e de clone com dados representativos.
+Nenhuma migration nova foi criada ou aplicada fora dos bancos isolados de ensaio. Mudanças destrutivas de schema continuam adiadas até o preflight read-only do schema/tracker no banco implantado e a revisão de consumidores externos. O backup informado como implantado já foi validado em clone com dados.
