@@ -114,7 +114,7 @@ pnpm start:prod
 | Método | Rota                           | Descrição                   |
 | ------ | ------------------------------ | --------------------------- |
 | POST   | `/api/admin/storage/cleanup`   | Executar limpeza de storage |
-| POST   | `/api/admin/storage/reconcile` | Reconciliar storage         |
+| POST   | `/api/admin/storage/reconcile` | Processar fila de limpeza (rota legada; não faz reconciliação R2 × banco) |
 
 ### Cliente
 

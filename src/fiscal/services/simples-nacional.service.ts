@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
@@ -1371,21 +1371,34 @@ export class SimplesNacionalService {
       .from(fiscalSimplesAnexos)
       .where(eq(fiscalSimplesAnexos.tabelaId, tabelaId))
       .orderBy(asc(fiscalSimplesAnexos.anexo));
-    return Promise.all(
-      anexos.map(async (anexo) => ({
-        id: anexo.id,
-        anexo: anexo.anexo,
-        descricao: anexo.descricao,
-        tipo_atividade: anexo.tipoAtividade,
-        permite_fator_r: anexo.permiteFatorR,
-        recolhe_cpp_no_das: anexo.recolheCppNoDas,
-        faixas: await this.database.db
-          .select()
-          .from(fiscalSimplesFaixas)
-          .where(eq(fiscalSimplesFaixas.anexoId, anexo.id))
-          .orderBy(asc(fiscalSimplesFaixas.faixa)),
-      })),
-    );
+    if (anexos.length === 0) return [];
+
+    const faixas = await this.database.db
+      .select()
+      .from(fiscalSimplesFaixas)
+      .where(
+        inArray(
+          fiscalSimplesFaixas.anexoId,
+          anexos.map((anexo) => anexo.id),
+        ),
+      )
+      .orderBy(asc(fiscalSimplesFaixas.faixa));
+    const faixasPorAnexo = new Map<string, typeof faixas>();
+    for (const faixa of faixas) {
+      const grupo = faixasPorAnexo.get(faixa.anexoId) ?? [];
+      grupo.push(faixa);
+      faixasPorAnexo.set(faixa.anexoId, grupo);
+    }
+
+    return anexos.map((anexo) => ({
+      id: anexo.id,
+      anexo: anexo.anexo,
+      descricao: anexo.descricao,
+      tipo_atividade: anexo.tipoAtividade,
+      permite_fator_r: anexo.permiteFatorR,
+      recolhe_cpp_no_das: anexo.recolheCppNoDas,
+      faixas: faixasPorAnexo.get(anexo.id) ?? [],
+    }));
   }
 
   private async carregarItens(apuracaoId: string) {

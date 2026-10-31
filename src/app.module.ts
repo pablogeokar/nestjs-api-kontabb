@@ -18,7 +18,6 @@ import { FiscalModule } from './fiscal/fiscal.module';
 import { ColaboradorModule } from './colaborador/colaborador.module';
 import { ContadoresModule } from './cadastros/contadores/contadores.module';
 import { HealthController } from './health/health.controller';
-import { SetupController } from './health/setup.controller';
 import { DashboardController } from './health/dashboard.controller';
 import { CronController } from './cron/cron.controller';
 import { StorageAdminController } from './storage/storage.controller';
@@ -51,7 +50,6 @@ import { CrmModule } from './crm/crm.module';
   ],
   controllers: [
     HealthController,
-    SetupController,
     DashboardController,
     CronController,
     StorageAdminController,

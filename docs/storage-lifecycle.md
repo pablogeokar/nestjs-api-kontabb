@@ -24,14 +24,15 @@ até 50 jobs pendentes ou com falha e pode ser chamado repetidamente. `DeleteObj
 é tratado como uma operação idempotente.
 
 O cron `GET /api/cron/storage-cleanup` processa até 50 jobs diariamente e exige
-`Authorization: Bearer <CRON_SECRET>`. A agenda `0 3 * * *` usa UTC, equivalente
-a 00:00 no fuso de Bahia. O próximo cron ou a execução administrativa retomam
+`Authorization: Bearer <CRON_SECRET>`. A agenda `0 9 * * *` usa UTC, equivalente
+a 06:00 no fuso de Bahia. O próximo cron ou a execução administrativa retomam
 jobs `FALHOU` e claims abandonados.
 
-O endpoint diagnóstico `POST /api/admin/storage/reconcile` também exige ADMIN e
-compara, em lotes de até 100 itens, as referências do PostgreSQL com os objetos
-do R2. A resposta usa cursores e fingerprints; keys completas não atravessam a
-API. A operação é somente leitura e não remove órfãos automaticamente.
+O endpoint legado `POST /api/admin/storage/reconcile` também exige ADMIN e
+processa a fila de limpeza, com `limit` opcional entre 1 e 50 (padrão 50).
+Ele **remove objetos** de jobs elegíveis no R2 e não compara referências do
+PostgreSQL com o bucket. Uma reconciliação somente leitura ainda não foi
+implementada; não use esta rota como diagnóstico de órfãos.
 
 Depois de uma exclusão ou execução do job, monitore:
 
