@@ -118,6 +118,12 @@ O usuário pediu para pular a entrega/homologação do Backup Drive em outros Ma
 
 Em `EscrituracaoFiscalService.reprocessar`, a leitura e o parse dos XMLs do R2 agora são feitos em lotes de até quatro. Cada lote usa `Promise.all`, que devolve resultados na ordem de entrada; a resolução de CFOP, a preparação de CT-e, os contadores e a transação de escrita continuam sequenciais na ordem anterior. O tratamento de XML ausente/inválido continua retornando `null`. Um teste com cinco documentos mantém o primeiro download pendente e confirma que só os quatro primeiros são iniciados, nenhum update ocorre antes da leitura e a ordem de processamento e os contadores permanecem corretos. Não houve alteração de schema ou contrato HTTP. O limite reduz a pressão simultânea no R2; ganho de latência real ainda não foi medido.
 
+### Continuação da fase 2: CNPJ alfanumérico em login e upload manual
+
+O cadastro já aceita CNPJ alfanumérico, mas `ColaboradorController.login` removia as letras antes da consulta, e a página web repetia o mesmo erro na máscara e no payload. O controller agora normaliza para maiúsculas, preserva `[0-9A-Z]` nas primeiras 12 posições e exige dois dígitos finais, sem passar a validar dígitos verificadores de contas já cadastradas. Mantém CNPJ numérico e o rate limit com chave normalizada. A página reutiliza `formatCnpjInput`/`normalizeCnpjIdentifier` existentes, permite teclado textual e envia o identificador inteiro. Testes de controller cobrem os dois formatos e a rejeição de letras nas posições verificadoras; Playwright confirmou o payload alfanumérico em desktop e mobile.
+
+O upload manual de guias também descartava letras na máscara, no `FormData` e no controller. Essas etapas agora preservam CNPJ alfanumérico; o CPF segue com normalização numérica. Teste de controller com PDF de assinatura válida e conteúdo ilegível confirmou que o identificador manual numérico ou alfanumérico chega intacto à busca do cliente, mesmo quando a extração do PDF falha. O HTML do recibo de salário no web passou a preservar letras do CNPJ sem mudar a representação numérica anterior. A extração **automática** de CNPJ em PDFs fiscais e de RH ainda usa padrões numéricos; ela não foi ampliada sem um PDF alfanumérico representativo para verificar falsas capturas e os resultados de processamento. Senhas iniciais fixas também permanecem sem mudança, pois exigem fluxo de provisionamento e compatibilidade próprios.
+
 ## Decisões preservadas por risco
 
 - A escrituração fiscal continua baixando e interpretando XML, pois `EscrituracaoFiscalService.reprocessar` usa campos que não têm equivalência demonstrada com os itens persistidos. Sem comparação de EFD por bytes e de contadores de erro em amostra real, reduzir downloads poderia alterar resultado fiscal.
@@ -131,7 +137,8 @@ Em `EscrituracaoFiscalService.reprocessar`, a leitura e o parse dos XMLs do R2 a
 | --- | --- |
 | `pnpm exec tsc --noEmit` | Passou. |
 | `pnpm exec eslint "{src,apps,libs,test}/**/*.ts"` | Passou, sem `--fix`. |
-| `pnpm exec jest --runInBand --silent` | 130 suites, 2.138 testes passaram. |
+| `pnpm exec jest --runInBand --silent` | 132 suites, 2.143 testes passaram. |
+| `web`: Vitest, Playwright login desktop/mobile, lint, tipos e build | 32 arquivos/230 testes unitários e 4 testes Playwright passaram; lint sem erros, com 16 avisos preexistentes; tipos e build passaram. |
 | `pnpm build` | Passou. |
 | `pnpm db:check` | Passou. |
 | Ensaio de `dry-run-unused-tables.sql` em clone do backup | Passou com `ROLLBACK`; abortou antes do `DROP` com linha sintética. |

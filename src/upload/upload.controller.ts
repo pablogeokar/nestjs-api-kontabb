@@ -89,7 +89,8 @@ export class UploadController {
         },
         cnpj: {
           type: 'string',
-          description: 'CNPJ manual (sobrescreve extração)',
+          description:
+            'CNPJ manual numérico ou alfanumérico (sobrescreve extração)',
         },
         period: { type: 'string', description: 'Período manual (MM/YYYY)' },
         type: { type: 'string', description: 'Tipo de obrigação manual' },
@@ -126,7 +127,10 @@ export class UploadController {
       throw new BadRequestException('Nenhum arquivo enviado.');
     }
 
-    const manualCnpj = body.cnpj?.trim().replace(/\D/g, '') || null;
+    const manualCnpj =
+      typeof body?.cnpj === 'string'
+        ? body.cnpj.toUpperCase().replace(/[^0-9A-Z]/g, '') || null
+        : null;
     const manualPeriod = body.period?.trim() || null;
     const manualType = body.type?.trim() || null;
     const manualDueDate = body.due_date?.trim() || null;
@@ -224,7 +228,9 @@ export class UploadController {
           }
           const text = await extractPdfText(Buffer.from(file.buffer));
           const dados = extractDadosFiscais(text);
-          const rawCnpj = dados.cnpj ? dados.cnpj.replace(/\D/g, '') : null;
+          const rawCnpj = dados.cnpj
+            ? dados.cnpj.toUpperCase().replace(/[^0-9A-Z]/g, '')
+            : null;
           if (rawCnpj) cnpjSet.add(rawCnpj);
           return {
             fileName: file.originalname,
@@ -312,7 +318,9 @@ export class UploadController {
 
     const identifierRaw =
       ctx.manualCnpj ||
-      (dados?.cnpj ? dados.cnpj.replace(/\D/g, '') : null) ||
+      (dados?.cnpj
+        ? dados.cnpj.toUpperCase().replace(/[^0-9A-Z]/g, '')
+        : null) ||
       (dados?.cpf ? dados.cpf.replace(/\D/g, '') : null) ||
       null;
     const tipo =
