@@ -119,6 +119,26 @@ Data de Pagamento
 ___/___/_____`;
 
 describe('extractDadosFerias', () => {
+  it('preserva os dados do recibo quando o CNPJ da empresa é alfanumérico', () => {
+    const original = extractDadosFerias(textoJailton);
+    const alfanumerico = extractDadosFerias(
+      textoJailton.replace('18103272000182', 'AB12CD34EF5678'),
+    );
+    expect(original).not.toBeNull();
+    expect(alfanumerico).toEqual({
+      ...original,
+      cnpj: 'AB.12C.D34/EF56-78',
+    });
+  });
+
+  it('não aceita letras nas duas posições finais do CNPJ alfanumérico', () => {
+    expect(
+      extractDadosFerias(
+        textoJailton.replace('18103272000182', 'AB12CD34EF56GH'),
+      ),
+    ).toBeNull();
+  });
+
   it('deve identificar corretamente recibo de férias', () => {
     expect(isReciboFerias(textoJailton)).toBe(true);
     expect(isReciboFerias(textoEbert)).toBe(true);

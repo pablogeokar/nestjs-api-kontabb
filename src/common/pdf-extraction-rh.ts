@@ -64,10 +64,13 @@ function parseBRL(str: string): number {
   return parseFloat(str.replace(/\./g, '').replace(',', '.'));
 }
 
-function formatCnpj(digits: string): string {
-  const d = digits.replace(/\D/g, '');
-  if (d.length !== 14) return digits;
-  return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+function formatCnpj(identifier: string): string {
+  const cnpj = identifier.toUpperCase().replace(/[^0-9A-Z]/g, '');
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(cnpj)) return identifier;
+  return cnpj.replace(
+    /^([0-9A-Z]{2})([0-9A-Z]{3})([0-9A-Z]{3})([0-9A-Z]{4})(\d{2})$/,
+    '$1.$2.$3/$4-$5',
+  );
 }
 
 function escapeRegExp(str: string): string {
@@ -121,14 +124,18 @@ function extractDadosFolhaComMarcador(
   }
 
   // Step 2: Extract CNPJ
-  // The CNPJ appears BEFORE "CNPJ/CEI:" — either as raw 14 digits or formatted XX.XXX.XXX/XXXX-XX
+  // The CNPJ appears next to "CNPJ/CEI:", with 12 alphanumeric positions
+  // followed by two numeric check-digit positions.
   const cnpjMatch =
-    text.match(/(\d{14})CNPJ\/CEI:/) ||
-    text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s*CNPJ\/CEI:/) ||
-    text.match(/CNPJ\/CEI:\s*(\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
+    text.match(/([0-9A-Z]{12}\d{2})CNPJ\/CEI:/i) ||
+    text.match(
+      /([0-9A-Z]{2}\.[0-9A-Z]{3}\.[0-9A-Z]{3}\/[0-9A-Z]{4}-\d{2})\s*CNPJ\/CEI:/i,
+    ) ||
+    text.match(
+      /CNPJ\/CEI:\s*([0-9A-Z]{12}\d{2}|[0-9A-Z]{2}\.[0-9A-Z]{3}\.[0-9A-Z]{3}\/[0-9A-Z]{4}-\d{2})/i,
+    );
   if (!cnpjMatch) return null;
-  const cnpjRaw = cnpjMatch[1].replace(/\D/g, '');
-  const cnpj = formatCnpj(cnpjRaw);
+  const cnpj = formatCnpj(cnpjMatch[1]);
 
   // Step 3: Extract razao social (between company code and "Empresa :")
   let razaoSocial = '';
@@ -155,8 +162,8 @@ function extractDadosFolhaComMarcador(
   const pageHeaderPattern = new RegExp(
     `\\d{5}[A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇÀÈÌÒÙa-záéíóúãõâêîôûçàèìòù\\s.,]+?Empresa\\s*:.*?${escapeRegExp(
       marcador,
-    )}\\s+(?:\\d{14}|\\d{2}\\.\\d{3}\\.\\d{3}\\/\\d{4}-\\d{2})\\s*CNPJ\\/CEI:\\s*`,
-    'g',
+    )}\\s+(?:[0-9A-Z]{12}\\d{2}|[0-9A-Z]{2}\\.[0-9A-Z]{3}\\.[0-9A-Z]{3}\\/[0-9A-Z]{4}-\\d{2})\\s*CNPJ\\/CEI:\\s*`,
+    'gi',
   );
   let cleanedText = text;
   const headerMatches = [...text.matchAll(pageHeaderPattern)];

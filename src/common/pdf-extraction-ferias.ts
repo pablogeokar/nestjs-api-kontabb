@@ -53,10 +53,13 @@ function parseBRL(str: string): number {
   return parseFloat(str.replace(/\./g, '').replace(',', '.'));
 }
 
-function formatCnpj(digits: string): string {
-  const d = digits.replace(/\D/g, '');
-  if (d.length !== 14) return digits;
-  return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+function formatCnpj(identifier: string): string {
+  const cnpj = identifier.toUpperCase().replace(/[^0-9A-Z]/g, '');
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(cnpj)) return identifier;
+  return cnpj.replace(
+    /^([0-9A-Z]{2})([0-9A-Z]{3})([0-9A-Z]{3})([0-9A-Z]{4})(\d{2})$/,
+    '$1.$2.$3/$4-$5',
+  );
 }
 
 export function isReciboFerias(text: string): boolean {
@@ -81,10 +84,12 @@ export function extractDadosFerias(text: string): DadosFerias | null {
   // depender de quebras de linha presentes no PDF original.
   const normalizedText = text.replace(/\s+/g, ' ').trim();
 
-  // 1. CNPJ (14 dígitos)
+  // 1. CNPJ. Neste layout, o código da empresa precede o identificador.
+  // A âncora evita confundir outros campos posicionais com CNPJ alfanumérico.
   const cnpjMatch =
     normalizedText.match(/\b(\d{14})\b/) ||
-    normalizedText.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/);
+    normalizedText.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/) ||
+    normalizedText.match(/\b\d{5}\s+([0-9A-Z]{12}\d{2})\b/i);
   if (!cnpjMatch) return null;
   const cnpj = formatCnpj(cnpjMatch[1]);
 
@@ -117,7 +122,7 @@ export function extractDadosFerias(text: string): DadosFerias | null {
 
   // 5. Razão Social da Empresa
   const empresaMatch = normalizedText.match(
-    /Período a ser gozado\s+\d{2}\/\d{2}\/\d{4}\s+\d{2}\/\d{2}\/\d{4}\s+(.+?)(?:\s+\d{5})?\s+\d{14}/,
+    /Período a ser gozado\s+\d{2}\/\d{2}\/\d{4}\s+\d{2}\/\d{2}\/\d{4}\s+(.+?)(?:\s+\d{5})?\s+[0-9A-Z]{12}\d{2}/i,
   );
   let razaoSocial = empresaMatch ? empresaMatch[1].trim() : '';
   if (!razaoSocial) {
@@ -127,7 +132,7 @@ export function extractDadosFerias(text: string): DadosFerias | null {
 
   // 6. Cargo / Função e Data de Admissão
   const cargoMatch = normalizedText.match(
-    /\d{14}\s+(.+?)(?:Admissão:\s*(\d{2}\/\d{2}\/\d{4}))/,
+    /[0-9A-Z]{12}\d{2}\s+(.+?)(?:Admissão:\s*(\d{2}\/\d{2}\/\d{4}))/i,
   );
   const cargo = cargoMatch ? cargoMatch[1].trim() : null;
   const dataAdmissao = cargoMatch ? cargoMatch[2] : null;

@@ -147,6 +147,21 @@ describe('extractDadosAdiantamento13 - RITA RAIMUNDA (4 funcionários)', () => {
 });
 
 describe('extractDadosAdiantamento13 - PADARIA (multi-página, 12 funcionários)', () => {
+  it('mantém os 12 funcionários e totais com CNPJ alfanumérico em todos os cabeçalhos', () => {
+    const original = extractDadosAdiantamento13(textoPadaria);
+    const alfanumerico = extractDadosAdiantamento13(
+      textoPadaria.replaceAll(
+        '07754759000109CNPJ/CEI:',
+        'AB12CD34EF5678CNPJ/CEI:',
+      ),
+    );
+    expect(original).not.toBeNull();
+    expect(alfanumerico).toEqual({
+      ...original,
+      cnpj: 'AB.12C.D34/EF56-78',
+    });
+  });
+
   it('extrai todos os 12 funcionários e os totais', () => {
     const result = extractDadosAdiantamento13(textoPadaria);
     expect(result).not.toBeNull();
