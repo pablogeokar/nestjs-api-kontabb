@@ -271,7 +271,8 @@ export class GuiasController {
   @UseInterceptors(FileInterceptor('receipt'))
   @ApiOperation({
     summary: 'Anexar comprovante a guia já paga',
-    description: 'Aceita um PDF ou imagem de até 10 MB somente se a guia já estiver paga e ainda não tiver comprovante. Preserva a data e o status do pagamento.',
+    description:
+      'Aceita um PDF ou imagem de até 10 MB somente se a guia já estiver paga e ainda não tiver comprovante. Preserva a data e o status do pagamento.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -291,14 +292,26 @@ export class GuiasController {
     @CurrentUser() currentUser: CurrentUserType,
   ) {
     await this.consumeRateLimit('payment', currentUser, 10);
-    const { guia, authorized } = await this.guiasService.getAccessibleGuia(id, currentUser);
+    const { guia, authorized } = await this.guiasService.getAccessibleGuia(
+      id,
+      currentUser,
+    );
     if (!guia) throw new NotFoundException('Guia não encontrada.');
     if (!authorized) throw new ForbiddenException('Sem permissão.');
-    if (guia.status !== 'PAGO') throw new BadRequestException('A guia ainda não está paga.');
-    if (guia.comprovanteKey) throw new BadRequestException('A guia já possui comprovante.');
-    if (!receiptFile || receiptFile.size === 0) throw new BadRequestException('Informe o comprovante.');
-    if (!isAllowedUploadType(receiptFile.mimetype) || receiptFile.size > 10 * 1024 * 1024 ||
-        !hasValidFileSignature(new Uint8Array(receiptFile.buffer), receiptFile.mimetype)) {
+    if (guia.status !== 'PAGO')
+      throw new BadRequestException('A guia ainda não está paga.');
+    if (guia.comprovanteKey)
+      throw new BadRequestException('A guia já possui comprovante.');
+    if (!receiptFile || receiptFile.size === 0)
+      throw new BadRequestException('Informe o comprovante.');
+    if (
+      !isAllowedUploadType(receiptFile.mimetype) ||
+      receiptFile.size > 10 * 1024 * 1024 ||
+      !hasValidFileSignature(
+        new Uint8Array(receiptFile.buffer),
+        receiptFile.mimetype,
+      )
+    ) {
       throw new BadRequestException('Comprovante inválido ou maior que 10 MB.');
     }
 
@@ -314,10 +327,17 @@ export class GuiasController {
       },
     });
     if (!result.ok) {
-      if (result.code === 'NOT_FOUND') throw new NotFoundException('Guia não encontrada.');
-      if (result.code === 'NOT_ELIGIBLE') throw new BadRequestException('A guia não está mais apta a receber comprovante.');
-      throw new BadRequestException(result.code === 'STORAGE_FAILED'
-        ? 'Falha ao enviar comprovante.' : 'Falha ao anexar comprovante.');
+      if (result.code === 'NOT_FOUND')
+        throw new NotFoundException('Guia não encontrada.');
+      if (result.code === 'NOT_ELIGIBLE')
+        throw new BadRequestException(
+          'A guia não está mais apta a receber comprovante.',
+        );
+      throw new BadRequestException(
+        result.code === 'STORAGE_FAILED'
+          ? 'Falha ao enviar comprovante.'
+          : 'Falha ao anexar comprovante.',
+      );
     }
     return { success: true, message: 'Comprovante anexado à guia já paga.' };
   }

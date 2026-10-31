@@ -113,9 +113,13 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
   it('seleciona emissão da NFS-e no caixa e competência declarada nos demais casos', () => {
     const service = new SimplesNacionalService(null!, null!, null!, null!);
     const dialect = new PgDialect();
-    const caixa = dialect.sqlToQuery(service['dataReceitaDocumento'](false)).sql;
-    const competencia = dialect.sqlToQuery(service['dataReceitaDocumento'](true)).sql;
-    expect(caixa).toContain("CASE WHEN");
+    const caixa = dialect.sqlToQuery(
+      service['dataReceitaDocumento'](false),
+    ).sql;
+    const competencia = dialect.sqlToQuery(
+      service['dataReceitaDocumento'](true),
+    ).sql;
+    expect(caixa).toContain('CASE WHEN');
     expect(caixa).toContain('tipo_documento');
     expect(caixa).toContain('data_emissao_fiscal');
     expect(caixa).toContain('competencia_declarada');

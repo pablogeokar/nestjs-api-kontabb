@@ -28,6 +28,13 @@ O cron `GET /api/cron/storage-cleanup` processa até 50 jobs diariamente e exige
 a 06:00 no fuso de Bahia. O próximo cron ou a execução administrativa retomam
 jobs `FALHOU` e claims abandonados.
 
+Ao encerrar a tentativa de processar os jobs de storage, o mesmo cron remove
+até 1.000 janelas expiradas de `app_rate_limits` por execução. Só entram linhas
+cujo `reset_at` (milissegundos)
+venceu há mais de 24 horas; o expurgo usa `FOR UPDATE SKIP LOCKED` e confere o
+prazo novamente no `DELETE`. Uma falha nesse expurgo é registrada no log e não
+altera a resposta do cron nem o resultado da limpeza de storage.
+
 O endpoint legado `POST /api/admin/storage/reconcile` também exige ADMIN e
 processa a fila de limpeza, com `limit` opcional entre 1 e 50 (padrão 50).
 Ele **remove objetos** de jobs elegíveis no R2 e não compara referências do

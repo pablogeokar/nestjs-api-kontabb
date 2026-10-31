@@ -98,7 +98,7 @@ describe('AuthGuard', () => {
       headers: { 'x-client-preview-id': previewId },
       path: '/api/fiscal/documentos',
       method: 'GET',
-    } as Request & { user?: CurrentUser };
+    } as unknown as Request & { user?: CurrentUser };
     extract.mockReturnValue('raw-token');
     validateSession.mockResolvedValue(currentUser('ADMIN'));
     getClientPreviewUser.mockResolvedValue({
@@ -106,7 +106,9 @@ describe('AuthGuard', () => {
       id: 'client-user-id',
     });
 
-    await expect(guard.canActivate(executionContext(request))).resolves.toBe(true);
+    await expect(guard.canActivate(executionContext(request))).resolves.toBe(
+      true,
+    );
     expect(getClientPreviewUser).toHaveBeenCalledWith(previewId);
     expect(request.user).toMatchObject({
       id: 'client-user-id',
@@ -121,13 +123,20 @@ describe('AuthGuard', () => {
       headers: { 'x-client-preview-id': previewId },
       path: '/api/fiscal/documentos',
       method: 'GET',
-    } as Request;
+    } as unknown as Request;
     validateSession.mockResolvedValue(currentUser('CLIENTE'));
-    await expect(guard.canActivate(executionContext(request))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      guard.canActivate(executionContext(request)),
+    ).rejects.toBeInstanceOf(ForbiddenException);
 
     validateSession.mockResolvedValue(currentUser('ADMIN'));
-    request.path = '/api/admin/clientes';
-    await expect(guard.canActivate(executionContext(request))).rejects.toBeInstanceOf(ForbiddenException);
+    const adminRequest = {
+      ...request,
+      path: '/api/admin/clientes',
+    } as Request;
+    await expect(
+      guard.canActivate(executionContext(adminRequest)),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(getClientPreviewUser).not.toHaveBeenCalled();
   });
 
@@ -136,16 +145,19 @@ describe('AuthGuard', () => {
       headers: { 'x-client-preview-id': previewId },
       path: '/api/guias/123/pagar',
       method: 'PATCH',
-    } as Request;
+    } as unknown as Request;
     extract.mockReturnValue('raw-token');
     validateSession.mockResolvedValue(currentUser('COLABORADOR'));
     getClientPreviewUser.mockResolvedValue(currentUser('CLIENTE'));
 
     await guard.canActivate(executionContext(request));
-    expect(info).toHaveBeenCalledWith('client_preview_action', expect.objectContaining({
-      userId: 'user-id',
-      entityId: previewId,
-      operation: 'PATCH /api/guias/123/pagar',
-    }));
+    expect(info).toHaveBeenCalledWith(
+      'client_preview_action',
+      expect.objectContaining({
+        userId: 'user-id',
+        entityId: previewId,
+        operation: 'PATCH /api/guias/123/pagar',
+      }),
+    );
   });
 });

@@ -181,7 +181,10 @@ describe('ImportacaoXmlFiscalService', () => {
   it('escritura a NFS-e como saída para o prestador e entrada para o tomador', () => {
     const parsed = parseManualFiscalXml(
       readFileSync(
-        resolve(__dirname, '../../../../NFSe_2026000000196_2WRT-ZASA.xml'),
+        resolve(
+          __dirname,
+          '__fixtures__/webiss/NFSe_2026000000196_2WRT-ZASA.xml',
+        ),
         'utf8',
       ),
     );
@@ -189,17 +192,13 @@ describe('ImportacaoXmlFiscalService', () => {
 
     const prestador = prepararNfseEscrituracao(
       {
-        id: 'prestador',
         cnpj: '03155128000112',
-        razaoSocial: 'Prestador',
       },
       parsed.documento,
     );
     const tomador = prepararNfseEscrituracao(
       {
-        id: 'tomador',
         cnpj: '88636933587',
-        razaoSocial: 'Tomador',
       },
       parsed.documento,
     );
@@ -337,7 +336,10 @@ describe('ImportacaoXmlFiscalService', () => {
     );
     const parsed = parseManualFiscalXml(
       readFileSync(
-        resolve(__dirname, '../../../../NFSe_2026000000196_2WRT-ZASA.xml'),
+        resolve(
+          __dirname,
+          '__fixtures__/webiss/NFSe_2026000000196_2WRT-ZASA.xml',
+        ),
         'utf8',
       ),
     );

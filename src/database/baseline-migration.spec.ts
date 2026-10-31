@@ -36,8 +36,8 @@ describe('baseline do banco', () => {
       'CREATE TABLE "folhas_pagamento"',
       'CREATE TABLE "funcionarios_rh"',
       '"token_version" integer DEFAULT 0 NOT NULL',
-      '"tipo" IN (\'FOLHA_MENSAL\', \'FERIAS\', \'ADIANTAMENTO_13\')',
-      '"tipo_documento" IN (\'NFE\', \'CTE\', \'NFCE\', \'NFSE\')',
+      "\"tipo\" IN ('FOLHA_MENSAL', 'FERIAS', 'ADIANTAMENTO_13')",
+      "\"tipo_documento\" IN ('NFE', 'CTE', 'NFCE', 'NFSE')",
       '"fiscal_entregas_original_fk"',
       '"uidx_ciap_cliente_chave_aquisicao"',
     ]) {

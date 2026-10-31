@@ -39,8 +39,15 @@ describe('SimplesNacionalRelatorioService', () => {
         },
         memoria_calculo: {
           motorVersao: 'simples-nacional@2',
+          regimeCompetencia: true,
+          receitaMesCompetencia: '20000.00',
           receitaMesDocumentos: '20000.00',
           receitaClassificada: '20000.00',
+          folhaMesPrimeiroPeriodo: null,
+          bonificacoesExcluidas: '0.00',
+          operacoesSemReceitaExcluidas: '0.00',
+          sublimiteEstadual: '3600000.00',
+          receitaIssOutroMunicipio: '0.00',
           pendencias: [],
         },
         itens: [

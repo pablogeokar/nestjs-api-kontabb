@@ -17,6 +17,7 @@ import {
   clientes,
   eventosAuditoria,
   fiscalApuracoesGuias,
+  fiscalPagamentosEventos,
   fiscalSimplesApuracoes,
   guias,
   user,
@@ -38,6 +39,10 @@ import {
   fromScaledInteger,
   toScaledInteger,
 } from '../fiscal/sped/sped-decimal';
+import {
+  projetarSaldoObrigacao,
+  type EventoPagamentoTrilha,
+} from '../fiscal/services/fiscal-pagamentos-trilha';
 
 export type StatusVinculoGuiaUpload =
   | 'VINCULADO'
@@ -876,26 +881,107 @@ export class GuiasService {
     }
 
     try {
-      const updateResult = await this.database.db.execute(sql`
-        WITH updated_guia AS (
-          UPDATE guias SET
-            status = 'PAGO', pago_em = COALESCE(${input.paidAtDate ?? null}::date + time '12:00', now()::timestamp), pagamento_confirmado_por = ${input.userId},
-            observacao_pagamento = ${input.observation},
-            comprovante_key = CASE WHEN ${receiptKey}::text IS NOT NULL THEN ${receiptKey} ELSE comprovante_key END
-          WHERE id = ${input.guiaId}::uuid AND status <> 'PAGO'
-          RETURNING id
-        ),
-        audit_event AS (
-          INSERT INTO eventos_auditoria (ator_user_id, acao, entidade_tipo, entidade_id, dados)
-          SELECT ${input.userId}, 'PAGAMENTO_CONFIRMADO', 'GUIA', id::text,
-            jsonb_build_object('possuiComprovante', ${receiptKey}::text IS NOT NULL, 'dataPagamentoInformada', ${input.paidAtDate ?? null}::text)
-          FROM updated_guia
-          RETURNING id
-        )
-        SELECT EXISTS (SELECT 1 FROM updated_guia) AS updated
-      `);
-      const updated = resultRows<{ updated: boolean }>(updateResult)[0]
-        ?.updated;
+      const updated = await this.database.db.transaction(async (tx) => {
+        // A atualização condicional bloqueia a linha até o commit. Um retry ou
+        // segundo request concorrente não cria outro evento nem outra auditoria.
+        const [updatedGuia] = await tx
+          .update(guias)
+          .set({
+            status: 'PAGO',
+            pagoEm: sql`COALESCE(${input.paidAtDate ?? null}::date + time '12:00', now()::timestamp)`,
+            pagamentoConfirmadoPor: input.userId,
+            observacaoPagamento: input.observation,
+            ...(receiptKey ? { comprovanteKey: receiptKey } : {}),
+          })
+          .where(and(eq(guias.id, input.guiaId), ne(guias.status, 'PAGO')))
+          .returning({
+            id: guias.id,
+            clienteId: guias.clienteId,
+            valor: guias.valor,
+          });
+        if (!updatedGuia) return false;
+
+        const [guiaFiscal] = await tx
+          .select({
+            id: fiscalApuracoesGuias.id,
+            clienteId: fiscalApuracoesGuias.clienteId,
+            fechamentoId: fiscalApuracoesGuias.fechamentoId,
+            cancelada: fiscalApuracoesGuias.cancelada,
+            valorTotal: fiscalApuracoesGuias.valorTotal,
+          })
+          .from(fiscalApuracoesGuias)
+          .where(eq(fiscalApuracoesGuias.guiaUploadId, updatedGuia.id))
+          .limit(1);
+
+        if (guiaFiscal && !guiaFiscal.cancelada) {
+          if (guiaFiscal.clienteId !== updatedGuia.clienteId) {
+            throw new Error('PAYMENT_FISCAL_CLIENT_MISMATCH');
+          }
+          // O valor é o extraído do PDF da guia de upload. Não se usa o saldo
+          // residual: a confirmação pode suceder eventos parciais anteriores.
+          if (!updatedGuia.valor || toScaledInteger(updatedGuia.valor) <= 0n) {
+            throw new Error('PAYMENT_FISCAL_VALUE_UNAVAILABLE');
+          }
+          const eventos = await tx
+            .select({
+              tipo: fiscalPagamentosEventos.tipo,
+              valor: fiscalPagamentosEventos.valor,
+              sinal: fiscalPagamentosEventos.sinal,
+            })
+            .from(fiscalPagamentosEventos)
+            .where(eq(fiscalPagamentosEventos.guiaId, guiaFiscal.id));
+          const trilha: EventoPagamentoTrilha[] = eventos.map((evento) => ({
+            tipo: evento.tipo as 'PAGAMENTO' | 'PAGAMENTO_PARCIAL' | 'ESTORNO',
+            valor: evento.valor,
+            sinal: evento.sinal === -1 ? -1 : 1,
+          }));
+          const saldo = projetarSaldoObrigacao(guiaFiscal.valorTotal, [
+            ...trilha,
+            { tipo: 'PAGAMENTO', valor: updatedGuia.valor, sinal: 1 },
+          ]);
+          await tx.insert(fiscalPagamentosEventos).values({
+            clienteId: updatedGuia.clienteId,
+            guiaId: guiaFiscal.id,
+            fechamentoId: guiaFiscal.fechamentoId,
+            tipo: saldo.quitada ? 'PAGAMENTO' : 'PAGAMENTO_PARCIAL',
+            origem: 'CONCILIACAO',
+            valor: updatedGuia.valor,
+            sinal: 1,
+            dataEvento: input.paidAtDate ?? getBahiaDate(),
+            comprovanteKey: receiptKey,
+            declaracaoManual: !receiptKey,
+            documentoExterno: `guia-upload:${updatedGuia.id}`,
+            observacao: input.observation,
+          });
+          const [fiscalUpdated] = await tx
+            .update(fiscalApuracoesGuias)
+            .set({
+              ...(saldo.quitada ? { statusPagamento: 'PAGO' } : {}),
+              atualizadoEm: new Date(),
+            })
+            .where(
+              and(
+                eq(fiscalApuracoesGuias.id, guiaFiscal.id),
+                eq(fiscalApuracoesGuias.guiaUploadId, updatedGuia.id),
+                eq(fiscalApuracoesGuias.cancelada, false),
+              ),
+            )
+            .returning({ id: fiscalApuracoesGuias.id });
+          if (!fiscalUpdated) throw new Error('PAYMENT_FISCAL_LINK_CHANGED');
+        }
+
+        await tx.insert(eventosAuditoria).values({
+          atorUserId: input.userId,
+          acao: 'PAGAMENTO_CONFIRMADO',
+          entidadeTipo: 'GUIA',
+          entidadeId: updatedGuia.id,
+          dados: {
+            possuiComprovante: receiptKey !== null,
+            dataPagamentoInformada: input.paidAtDate ?? null,
+          },
+        });
+        return true;
+      });
       if (!updated) {
         if (receiptKey) await this.storage.delete(receiptKey).catch(() => {});
         return { ok: false as const, code: 'ALREADY_PAID' };
@@ -919,15 +1005,21 @@ export class GuiasService {
     receipt: { bytes: Buffer; contentType: string; extension: string };
   }) {
     const guiaRow = await this.database.db
-      .select({ cnpj: clientes.cnpj, cpf: clientes.cpf, tipoPessoa: clientes.tipoPessoa })
+      .select({
+        cnpj: clientes.cnpj,
+        cpf: clientes.cpf,
+        tipoPessoa: clientes.tipoPessoa,
+      })
       .from(guias)
       .innerJoin(clientes, eq(clientes.id, guias.clienteId))
       .where(eq(guias.id, input.guiaId))
       .limit(1);
     if (!guiaRow[0]) return { ok: false as const, code: 'NOT_FOUND' };
 
-    const cnpjCpf = guiaRow[0].tipoPessoa === 'PF' && guiaRow[0].cpf
-      ? guiaRow[0].cpf.replace(/\D/g, '') : guiaRow[0].cnpj;
+    const cnpjCpf =
+      guiaRow[0].tipoPessoa === 'PF' && guiaRow[0].cpf
+        ? guiaRow[0].cpf.replace(/\D/g, '')
+        : guiaRow[0].cnpj;
     const receiptKey = this.storage.receiptObjectKey({
       cnpjCpf,
       receiptId: crypto.randomUUID(),
@@ -935,10 +1027,15 @@ export class GuiasService {
     });
 
     try {
-      await this.storage.upload(receiptKey, input.receipt.bytes, input.receipt.contentType);
+      await this.storage.upload(
+        receiptKey,
+        input.receipt.bytes,
+        input.receipt.contentType,
+      );
     } catch (error) {
       this.logger.error('paid_guia_receipt_upload_failed', error, {
-        requestId: input.requestId, guiaId: input.guiaId,
+        requestId: input.requestId,
+        guiaId: input.guiaId,
       });
       return { ok: false as const, code: 'STORAGE_FAILED' };
     }
@@ -964,7 +1061,8 @@ export class GuiasService {
         )
         SELECT EXISTS (SELECT 1 FROM updated_guia) AS updated
       `);
-      const updated = resultRows<{ updated: boolean }>(updateResult)[0]?.updated;
+      const updated = resultRows<{ updated: boolean }>(updateResult)[0]
+        ?.updated;
       if (!updated) {
         await this.storage.delete(receiptKey).catch(() => {});
         return { ok: false as const, code: 'NOT_ELIGIBLE' };
@@ -972,7 +1070,8 @@ export class GuiasService {
     } catch (error) {
       await this.storage.delete(receiptKey).catch(() => {});
       this.logger.error('paid_guia_receipt_database_failed', error, {
-        requestId: input.requestId, guiaId: input.guiaId,
+        requestId: input.requestId,
+        guiaId: input.guiaId,
       });
       return { ok: false as const, code: 'DATABASE_FAILED' };
     }

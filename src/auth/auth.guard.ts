@@ -40,17 +40,22 @@ export class AuthGuard implements CanActivate {
     const previewClientId = request.headers?.['x-client-preview-id'];
     if (previewClientId !== undefined) {
       const path = request.path ?? '';
-      const isClientRoute = /^\/api\/(cliente|fiscal|guias|rh)(\/|$)/.test(path);
+      const isClientRoute = /^\/api\/(cliente|fiscal|guias|rh)(\/|$)/.test(
+        path,
+      );
       if (
         typeof previewClientId !== 'string' ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(previewClientId) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          previewClientId,
+        ) ||
         !isClientRoute ||
         (user.role !== 'ADMIN' && user.role !== 'COLABORADOR')
       ) {
         throw new ForbiddenException('Prévia do cliente não autorizada.');
       }
 
-      const previewUser = await this.authService.getClientPreviewUser(previewClientId);
+      const previewUser =
+        await this.authService.getClientPreviewUser(previewClientId);
       if (!previewUser) {
         throw new ForbiddenException('Cliente indisponível para prévia.');
       }
