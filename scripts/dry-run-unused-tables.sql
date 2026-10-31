@@ -1,12 +1,19 @@
 -- Ensaio local de uma possível migration futura. Em sucesso termina em
 -- ROLLBACK; com ON_ERROR_STOP, uma falha encerra a sessão e reverte a transação.
 -- Execute SOMENTE em clone descartável, com psql -v ON_ERROR_STOP=1.
--- Não é uma migration Drizzle; não inclua no journal sem verificar o banco
--- implantado, consumidores externos, backup/restauração e janela de deploy.
+-- Não é uma migration Drizzle; não inclua no journal sem compatibilizar o
+-- restore dos backups de 57 tabelas, revisar consumidores externos e a janela
+-- de deploy. Nunca rode no banco implantado: o usuário proibiu alterações
+-- nele, inclusive este ensaio DDL.
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '15s';
+
+-- Trave antes de verificar o vazio. Assim, ninguém pode inserir uma linha
+-- entre a guarda e o DROP. O lock é liberado pelo ROLLBACK final.
+LOCK TABLE public.sped_contabilistas, public.fiscal_lancamentos,
+           public.fiscal_perfis_vigencia IN ACCESS EXCLUSIVE MODE;
 
 DO $$
 BEGIN

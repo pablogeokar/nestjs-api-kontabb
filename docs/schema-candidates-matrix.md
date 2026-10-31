@@ -10,8 +10,9 @@ em conexão separada, sem escrita, conforme a restrição do usuário.
 Em `web`, `extensao` e `backup-restore` não há referência textual direta aos
 nove nomes de tabela abaixo. A API pode expor seus dados **indiretamente** por
 serviços, como indicado na coluna de consumo. O usuário informou que não
-conhece consumidores externos das três tabelas sem uso encontrado; isso não
-constitui inventário de integrações do deploy. O utilitário de backup descobre
+conhece consumidores externos das três tabelas sem uso encontrado e confirmou
+que não há uso planejado nem exigência de retenção. Isso não constitui
+inventário de integrações do deploy. O utilitário de backup descobre
 tabelas do schema `public` dinamicamente, salvo filtros `--exclude-table` ou
 `--include-table`; o restore trunca as tabelas de destino antes da importação.
 Um backup **local** feito pelo próprio utilitário incluiu as 57 tabelas e
@@ -27,9 +28,9 @@ tabelas e o tracker `0000`–`0003` com hashes iguais aos arquivos SQL locais.
 
 | Tabela | Leitor / writer TypeScript de produção | SQL cru de produção | Consumo pela API / export | Linhas local / alvo | Índices no alvo | FK inbound no alvo | Decisão |
 | --- | --- | --- | --- | ---: | ---: | --- | --- |
-| `sped_contabilistas` | Nenhum encontrado | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 2 | Nenhuma | Adiar DROP até revisar consumidores externos e retenção. |
-| `fiscal_lancamentos` | Nenhum; apenas comentários sobre migração futura | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 4 | Nenhuma | Adiar DROP pelo mesmo motivo. |
-| `fiscal_perfis_vigencia` | Nenhum encontrado | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 3 | Nenhuma | Adiar DROP pelo mesmo motivo. |
+| `sped_contabilistas` | Nenhum encontrado | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 2 | Nenhuma | Preservar para restore dos backups atuais. |
+| `fiscal_lancamentos` | Nenhum; comentários históricos de migração futura | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 4 | Nenhuma | Preservar para restore dos backups atuais. |
+| `fiscal_perfis_vigencia` | Nenhum encontrado; comentário histórico de design | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 3 | Nenhuma | Preservar para restore dos backups atuais. |
 | `ciap_competencias_apropriadas` | `INSERT` em `CiapService` | Nenhum encontrado | Marcador escrito pela apropriação CIAP; sem leitura localizada | 0 / 0 | 3 | Nenhuma | Preservar enquanto o writer existir e até definir retenção. |
 | `ciap_movimentos` | Dois caminhos de `INSERT` em `CiapService` | Nenhum encontrado | Trilha patrimonial de correções, referenciada por apropriações | 0 / 0 | 4 | `ciap_apropriacoes`; autorreferência | Preservar. |
 | `sped_arquivos_gerados` | `INSERT` e `UPDATE` em `EfdIcmsIpiService` | Nenhum encontrado | Histórico de geração do arquivo EFD; o TXT vai ao storage | 0 / 0 | 3 | Nenhuma | Preservar. |
@@ -56,7 +57,25 @@ consumidores SQL externos não é demonstrável apenas pelo catálogo. Nenhum
 
 O ensaio reversível em `../scripts/dry-run-unused-tables.sql` foi executado em
 clone local e no clone do backup identificado como implantado: `DROP ...
-RESTRICT` passou com as três tabelas vazias e `ROLLBACK` as restaurou. No
-clone local, uma linha sintética fez a guarda abortar antes do `DROP`. Esse
-ensaio não integra o journal de migrations e não substitui a decisão de
-retenção nem a revisão de consumidores externos.
+RESTRICT` passou com as três tabelas vazias e `ROLLBACK` as restaurou. O script
+agora obtém `ACCESS EXCLUSIVE` antes de conferir o vazio, impedindo inserção
+entre a guarda e o `DROP`; foi revalidado no clone do backup. Uma linha
+sintética no clone fez a guarda abortar e deixou as três tabelas intactas.
+
+Um segundo ensaio criou o schema com 57 tabelas, removeu essas três **somente
+no clone** e tentou restaurar o backup atual com `--dry-run`. O utilitário
+falhou no primeiro `COPY` para uma tabela ausente
+(`fiscal_perfis_vigencia`, SQLSTATE `42P01`) e reverteu a transação; o clone
+continuou com 54 tabelas e zero linhas em `clientes`. Logo, uma migration de
+remoção quebraria o procedimento com o helper antigo.
+
+O código do helper v1.2 passou a aceitar uma lista **explícita** de tabelas
+ausentes, com verificação do bloco `COPY` vazio; o Backup Drive expõe essa
+opção. Em novo clone de 54 tabelas, `dry-run` e restore real do mesmo arquivo
+passaram: 54 tabelas/13.389 registros, três blocos vazios ignorados, 98 FKs e
+boot do `AppModule`. Um bloco sintético com linha foi rejeitado e o rollback
+preservou os dados restaurados; sem a opção, o erro antigo permaneceu. O
+binários locais macOS e Windows foram recompilados; o app macOS com helper v1.2
+foi compilado e validado localmente. Nenhuma migration `0004` foi gerada:
+faltam distribuição/homologação do helper atualizado e revisão de consumidores
+externos antes de tornar o novo schema implantável.

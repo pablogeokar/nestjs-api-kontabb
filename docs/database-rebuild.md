@@ -10,6 +10,19 @@ o utilitário aceita `--exclude-table`, e o restore faz `TRUNCATE` nas tabelas
 do schema de destino antes de importar. Uma tabela ausente no backup ficará
 vazia após o restore.
 
+O inverso exige cuidado: se um backup antigo contém `COPY` de uma tabela que
+foi removida do schema novo, o restore padrão aborta e faz rollback.
+O backup de 31/10/2026 contém 57 tabelas, inclusive três candidatas vazias;
+um ensaio em clone com essas três removidas falhou em `fiscal_perfis_vigencia`
+(`42P01`). O helper `backup-restore` v1.2 acrescenta a opção explícita
+`-skip-missing-empty-tables`: no clone com 54 tabelas, restaurou as 54 tabelas
+restantes e os 13.389 registros, validando 98 FKs. Se houver qualquer linha no
+`COPY` de tabela ausente, aborta e reverte tudo. O Backup Drive também expõe
+essa lista opcional, mas precisa embarcar o helper v1.2. As três tabelas
+**continuam no schema atual**; nenhuma migration `0004` foi gerada ou aplicada.
+Antes de retirá-las, distribua o helper atualizado e repita o ensaio com os
+backups antigos, sem executar DDL no banco implantado.
+
 ## Pré-requisitos
 
 - PostgreSQL 15 ou superior; localmente a validação usa PostgreSQL 17.

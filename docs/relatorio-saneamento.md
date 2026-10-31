@@ -31,9 +31,9 @@ O schema possui 57 tabelas, e o journal contém `0000`–`0003`. No banco local 
 
 | Objeto candidato | Uso encontrado no código | Linhas no banco local | FK inbound no banco local | Decisão |
 | --- | --- | ---: | --- | --- |
-| `sped_contabilistas` | Sem leitor/writer de produção localizado | 0 | Nenhuma | Adiar remoção até revisar consumidores externos e retenção. |
-| `fiscal_lancamentos` | Sem leitor/writer; menções em comentários | 0 | Nenhuma | Preservar pelo mesmo motivo. |
-| `fiscal_perfis_vigencia` | Sem leitor/writer localizado | 0 | Nenhuma | Preservar pelo mesmo motivo. |
+| `sped_contabilistas` | Sem leitor/writer de produção localizado | 0 | Nenhuma | Preservar para restaurar os backups atuais. |
+| `fiscal_lancamentos` | Sem leitor/writer; comentários históricos sobre migração futura | 0 | Nenhuma | Preservar pelo mesmo motivo. |
+| `fiscal_perfis_vigencia` | Sem leitor/writer; comentário histórico de design | 0 | Nenhuma | Preservar pelo mesmo motivo. |
 | `ciap_competencias_apropriadas` | `INSERT` em `CiapService` | 0 | Nenhuma | Preservar enquanto writer existe; investigar retenção histórica. |
 | `ciap_movimentos` | Dois caminhos de `INSERT` em `CiapService` | 0 | `ciap_apropriacoes` e autorreferência | Preservar; integra a trilha patrimonial. |
 | `sped_arquivos_gerados` | `INSERT` e `UPDATE` em geração de EFD | 0 | Nenhuma | Preservar como histórico de geração. |
@@ -84,6 +84,24 @@ O catálogo do alvo contém **57 tabelas** em `public` e o tracker `drizzle.__dr
 
 Os quatro diagnósticos de pagamentos históricos retornaram **zero**: guia de upload paga sem evento de origem, obrigação fiscal `PAGO` com saldo aberto, upload pendente com obrigação já quitada e origem de upload duplicada. `scripts/preflight-migrations.sql` produziu **22 conjuntos de zero linhas de violação**. Seus resultados foram redirecionados temporariamente para evitar expor linhas de clientes caso houvesse anomalia; o arquivo temporário foi eliminado. Nenhum `DROP`, migration, backfill, `UPDATE`, `INSERT` ou `DELETE` foi executado no alvo. A ausência de referências no catálogo e no workspace não comprova que não exista SQL externo; o usuário informou que não conhece consumidores externos.
 
+### Continuação da fase 4: decisão de preservação e segurança do ensaio
+
+O usuário confirmou que não há uso planejado nem exigência de retenção para `sped_contabilistas`, `fiscal_lancamentos` e `fiscal_perfis_vigencia`. Os comentários antigos em `schema.ts`/`FiscalItensService` descrevem intenção futura, mas não há writer/leitor ativo dessas tabelas. Ainda assim, a retirada agora prejudicaria a recuperação: o backup informado como implantado contém comandos `COPY` para todas as 57 tabelas, inclusive as três vazias.
+
+Em banco isolado recém-migrado, foram removidas as três tabelas, restando 54. O `backup-restore --dry-run` com o arquivo de 57 tabelas falhou no primeiro `COPY` ausente (`fiscal_perfis_vigencia`, SQLSTATE `42P01`) e reverteu a transação. Depois do rollback, `clientes` continuou com zero linhas. Esse clone foi descartado. Para manter restauráveis os backups existentes, **não foi gerada a migration `0004`** nem removidas as declarações de `schema.ts`. Se uma retirada futura justificar o custo, primeiro será necessário adaptar e distribuir o utilitário de restore, ensaiar backups antigos no schema novo e revisar consumidores externos.
+
+O script reversível `scripts/dry-run-unused-tables.sql` foi corrigido para obter `ACCESS EXCLUSIVE` nas três tabelas antes de verificar se estão vazias. Isso fecha a janela em que uma escrita concorrente poderia ocorrer entre a guarda e o `DROP`. No clone do backup de 13.389 registros, o ensaio passou e o `ROLLBACK` restaurou as três tabelas; com uma linha sintética em `sped_contabilistas`, abortou antes do `DROP` e preservou as três. O clone também foi descartado. Nenhum desses ensaios tocou o banco implantado.
+
+### Continuação: helper de restore compatível, sem migration de produção
+
+O utilitário `backup-restore` ganhou a opção explícita `-skip-missing-empty-tables` na versão v1.2. O restore verifica o **conteúdo real** do bloco `COPY`, sem confiar na contagem do cabeçalho: apenas tabelas ausentes nomeadas na opção e com bloco vazio são ignoradas. Uma linha, bloco incompleto ou outra tabela ausente continua causando erro e rollback. O comportamento padrão sem a opção permanece igual. `backup-drive` ganhou um campo opcional para enviar essa lista ao helper; os nomes são validados e o campo começa vazio. Binários locais macOS e Windows foram recompilados, mas ainda não houve distribuição de uma nova versão do aplicativo.
+
+Em clone com schema de 54 tabelas, criado somente para esse ensaio, o backup de 57 tabelas passou no `--dry-run` e no restore real com a opção: **54 tabelas e 13.389 registros** importados, **3 blocos vazios** ignorados e **98 FKs** validadas. O clone manteve 19 clientes, 8.124 itens fiscais, 48 linhas de aprendizado e as quatro migrations; o `AppModule` iniciou e encerrou. Um backup sintético com linha em tabela ausente foi recusado e fez rollback, preservando essas contagens. Sem a opção, o mesmo backup antigo continuou falhando em `fiscal_perfis_vigencia` e revertendo. Nenhum dos ensaios usou o banco implantado. O clone e o backup sintético temporário foram descartados.
+
+Essa mudança remove o bloqueio técnico no **código-fonte** do restore. A migration de retirada ainda não foi gerada: é preciso distribuir o helper atualizado aos operadores do Backup Drive, homologar a recuperação com essa versão e revisar consumidores externos antes de versionar DDL destrutivo. A restrição do usuário de não alterar o banco em produção continua vigente.
+
+Os binários locais macOS e Windows do helper v1.2 foram recompilados. `flutter build macos` encontrou primeiro um banco de build do Xcode bloqueado por outra compilação; outra tentativa falhou no CodeSign devido ao atributo `com.apple.provenance` nos artefatos locais. Depois de remover esse atributo **somente** do helper local e do bundle gerado, o build passou. `codesign --verify --deep` validou o app, e o helper embarcado mostrou v1.2 e a nova flag. O bundle foi compactado localmente em `backup-drive/build/release/backup-drive-macos-20261031-helper-v1.2.zip` (25 MB, SHA-256 `2d985f0d087e666d8540278d39690a983fdb0f7c6b2c86cca07add2e14ae55ab`); `unzip -tq` passou. A assinatura é **ad hoc**, sem TeamIdentifier; não há notarização, publicação ou instalação do aplicativo. A distribuição continua pendente.
+
 ### Fase 5: organização
 
 Foram revisados os módulos `cliente`, `clientes`, `upload`, `guias`, `health`, `cadastros/contadores` e `rh` contra o inventário de 216 rotas. Os controllers já delimitam escopos de acesso distintos, e seus módulos declaram imports/exports explícitos; há dezenas de referências cruzadas que uma movimentação de arquivos exigiria atualizar. Não foi encontrada falha de DI, rota ou Swagger que um move corrigisse. A fase 5 foi encerrada **sem mover arquivos**, conforme o caráter condicional do prompt. Nenhum cálculo ou artefato fiscal foi alterado nesta continuação.
@@ -93,7 +111,7 @@ Foram revisados os módulos `cliente`, `clientes`, `upload`, `guias`, `health`, 
 - A escrituração fiscal continua baixando e interpretando XML, pois `EscrituracaoFiscalService.reprocessar` usa campos que não têm equivalência demonstrada com os itens persistidos. Sem comparação de EFD por bytes e de contadores de erro em amostra real, reduzir downloads poderia alterar resultado fiscal.
 - Pool de conexões, cache e índices não foram modificados sem medição de carga e plano de invalidação. O `EXPLAIN` local de rate limit não justifica índice adicional neste volume.
 - Não houve divisão de `schema.ts`, move de módulos nem mudança da senha inicial fixa. Essas alterações exigem migração de comportamento e testes de provisionamento/compatibilidade próprios.
-- Antes de qualquer DDL futuro: usar os preflights somente leitura já executados como referência, verificar integrações e consumidores SQL externos, definir a política de retenção das três tabelas e só então preparar migration incremental com guarda de dados e ensaiá-la em clone. O usuário proibiu alterações no banco implantado nesta etapa.
+- Antes de qualquer DDL futuro: usar os preflights somente leitura já executados como referência, verificar integrações e consumidores SQL externos e distribuir/homologar o helper v1.2 do Backup Drive. Só então preparar migration incremental com guarda de dados e ensaiá-la em clone. O usuário proibiu alterações no banco implantado nesta etapa.
 
 ## Validação final
 
@@ -104,6 +122,11 @@ Foram revisados os módulos `cliente`, `clientes`, `upload`, `guias`, `health`, 
 | `pnpm exec jest --runInBand --silent` | 130 suites, 2.137 testes passaram. |
 | `pnpm build` | Passou. |
 | `pnpm db:check` | Passou. |
+| Ensaio de `dry-run-unused-tables.sql` em clone do backup | Passou com `ROLLBACK`; abortou antes do `DROP` com linha sintética. |
+| Restore de backup antigo em clone com 54 tabelas | Falhou como esperado em `COPY fiscal_perfis_vigencia` (`42P01`) e reverteu; comprova incompatibilidade. |
+| Helper v1.2 em clone com 54 tabelas | `dry-run` e restore real passaram: 13.389 registros, 3 tabelas vazias ignoradas, 98 FKs e boot do `AppModule`. Linha sintética em tabela ausente abortou com rollback. |
+| `go test ./...`; `flutter analyze` e `flutter test test/database_backup_service_test.dart` | Passaram nos projetos `backup-restore` e `backup-drive`. |
+| `flutter build macos`, `codesign --verify --deep`, `unzip -tq` | Passaram após remover `com.apple.provenance` dos artefatos locais; helper v1.2 embarcado e ZIP de 25 MB preparado. |
 | `git diff --check` | Passou. |
 
-Nenhuma migration nova foi criada ou aplicada fora dos bancos isolados de ensaio. O preflight read-only do schema/tracker implantado e a restauração do backup em clone passaram. Mudanças destrutivas de schema continuam adiadas por cautela com consumidores externos e pela instrução explícita de não alterar o banco em produção.
+Nenhuma migration nova foi criada ou aplicada fora dos bancos isolados de ensaio. O preflight read-only do schema/tracker implantado e a restauração do backup no schema atual passaram. O novo helper v1.2 também restaurou o backup em clone sem as três tabelas vazias; elas permanecem no schema até a distribuição e homologação do helper e a revisão de consumidores externos. Nenhuma alteração foi feita no banco em produção.
