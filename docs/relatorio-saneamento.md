@@ -102,9 +102,21 @@ Essa mudança remove o bloqueio técnico no **código-fonte** do restore. A migr
 
 Os binários locais macOS e Windows do helper v1.2 foram recompilados. `flutter build macos` encontrou primeiro um banco de build do Xcode bloqueado por outra compilação; outra tentativa falhou no CodeSign devido ao atributo `com.apple.provenance` nos artefatos locais. Depois de remover esse atributo **somente** do helper local e do bundle gerado, o build passou. `codesign --verify --deep` validou o app, e o helper embarcado mostrou v1.2 e a nova flag. O bundle foi compactado localmente em `backup-drive/build/release/backup-drive-macos-20261031-helper-v1.2.zip` (25 MB, SHA-256 `2d985f0d087e666d8540278d39690a983fdb0f7c6b2c86cca07add2e14ae55ab`); `unzip -tq` passou. A assinatura é **ad hoc**, sem TeamIdentifier; não há notarização, publicação ou instalação do aplicativo. A distribuição continua pendente.
 
+### Continuação: preparo de entrega para macOS Intel/Apple Silicon e Windows
+
+O usuário confirmou que outros Macs e Windows também usam a restauração. O primeiro pacote macOS acima tinha aplicativo universal, mas helper somente arm64. `backup-drive/scripts/build-macos-release.sh` agora compila o helper para arm64 e x86_64, une os binários, assina o helper localmente, compila o app e verifica as duas arquiteturas, a versão v1.2, a nova opção, a assinatura do bundle e o ZIP. A fase de cópia do Xcode passou a executar em cada build; antes ela reutilizava o helper antigo apesar da recompilação. O novo ZIP local é `backup-drive/build/release/backup-drive-macos-helper-v1.2.zip`, SHA-256 `235b41db1c9a56d7f749029f491dcf1956b951b75d18ebefb93fe5114a6bba5b`. A extração em diretório temporário confirmou as duas arquiteturas do helper e `codesign --verify --deep --strict` do app extraído. A execução x86_64 não pôde ser testada neste Mac porque Rosetta não está instalado; as duas slices foram verificadas com `lipo`.
+
+`backup-drive/scripts/build-windows-release.ps1` compila o helper x64 em Windows, compila o app Flutter, exige que o helper embarcado tenha exatamente o mesmo SHA-256 do recém-compilado e verifica versão/opção antes de compactar. O helper PE x64 foi compilado localmente; o script e o aplicativo Windows ainda precisam ser executados/testados em host Windows. Neste Mac há apenas identidade **Apple Development**, sem `Developer ID Application`; o pacote macOS permanece com assinatura ad hoc, sem notarização, instalação ou distribuição. Não foi feita homologação em máquinas dos operadores. Esses gates e a revisão de SQL externo continuam antes de uma eventual migration `0004`. Nenhum banco de produção foi modificado.
+
 ### Fase 5: organização
 
 Foram revisados os módulos `cliente`, `clientes`, `upload`, `guias`, `health`, `cadastros/contadores` e `rh` contra o inventário de 216 rotas. Os controllers já delimitam escopos de acesso distintos, e seus módulos declaram imports/exports explícitos; há dezenas de referências cruzadas que uma movimentação de arquivos exigiria atualizar. Não foi encontrada falha de DI, rota ou Swagger que um move corrigisse. A fase 5 foi encerrada **sem mover arquivos**, conforme o caráter condicional do prompt. Nenhum cálculo ou artefato fiscal foi alterado nesta continuação.
+
+### Continuação independente da fase 2 após pular o rollout
+
+O usuário pediu para pular a entrega/homologação do Backup Drive em outros Macs e Windows e avançar nas demais implementações. A retirada das três tabelas permanece suspensa: sem o helper v1.2 distribuído, o restore de backups antigos falha no schema de 54 tabelas. Nenhuma migration `0004` foi gerada e nenhum banco de produção foi alterado.
+
+Em `EscrituracaoFiscalService.reprocessar`, a leitura e o parse dos XMLs do R2 agora são feitos em lotes de até quatro. Cada lote usa `Promise.all`, que devolve resultados na ordem de entrada; a resolução de CFOP, a preparação de CT-e, os contadores e a transação de escrita continuam sequenciais na ordem anterior. O tratamento de XML ausente/inválido continua retornando `null`. Um teste com cinco documentos mantém o primeiro download pendente e confirma que só os quatro primeiros são iniciados, nenhum update ocorre antes da leitura e a ordem de processamento e os contadores permanecem corretos. Não houve alteração de schema ou contrato HTTP. O limite reduz a pressão simultânea no R2; ganho de latência real ainda não foi medido.
 
 ## Decisões preservadas por risco
 
@@ -119,14 +131,15 @@ Foram revisados os módulos `cliente`, `clientes`, `upload`, `guias`, `health`, 
 | --- | --- |
 | `pnpm exec tsc --noEmit` | Passou. |
 | `pnpm exec eslint "{src,apps,libs,test}/**/*.ts"` | Passou, sem `--fix`. |
-| `pnpm exec jest --runInBand --silent` | 130 suites, 2.137 testes passaram. |
+| `pnpm exec jest --runInBand --silent` | 130 suites, 2.138 testes passaram. |
 | `pnpm build` | Passou. |
 | `pnpm db:check` | Passou. |
 | Ensaio de `dry-run-unused-tables.sql` em clone do backup | Passou com `ROLLBACK`; abortou antes do `DROP` com linha sintética. |
 | Restore de backup antigo em clone com 54 tabelas | Falhou como esperado em `COPY fiscal_perfis_vigencia` (`42P01`) e reverteu; comprova incompatibilidade. |
 | Helper v1.2 em clone com 54 tabelas | `dry-run` e restore real passaram: 13.389 registros, 3 tabelas vazias ignoradas, 98 FKs e boot do `AppModule`. Linha sintética em tabela ausente abortou com rollback. |
 | `go test ./...`; `flutter analyze` e `flutter test test/database_backup_service_test.dart` | Passaram nos projetos `backup-restore` e `backup-drive`. |
-| `flutter build macos`, `codesign --verify --deep`, `unzip -tq` | Passaram após remover `com.apple.provenance` dos artefatos locais; helper v1.2 embarcado e ZIP de 25 MB preparado. |
+| Script macOS de release, `lipo`, `codesign --verify --deep --strict`, extração do ZIP | Passaram; app/helper universais arm64+x86_64, helper v1.2 embarcado e ZIP local gerado. Execução Intel pendente sem Rosetta. |
+| Build Go Windows x64 | Passou; PE gerado. Build/teste do app Windows dependem de host Windows. |
 | `git diff --check` | Passou. |
 
 Nenhuma migration nova foi criada ou aplicada fora dos bancos isolados de ensaio. O preflight read-only do schema/tracker implantado e a restauração do backup no schema atual passaram. O novo helper v1.2 também restaurou o backup em clone sem as três tabelas vazias; elas permanecem no schema até a distribuição e homologação do helper e a revisão de consumidores externos. Nenhuma alteração foi feita no banco em produção.

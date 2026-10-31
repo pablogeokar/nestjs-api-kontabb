@@ -75,7 +75,10 @@ opção. Em novo clone de 54 tabelas, `dry-run` e restore real do mesmo arquivo
 passaram: 54 tabelas/13.389 registros, três blocos vazios ignorados, 98 FKs e
 boot do `AppModule`. Um bloco sintético com linha foi rejeitado e o rollback
 preservou os dados restaurados; sem a opção, o erro antigo permaneceu. O
-binários locais macOS e Windows foram recompilados; o app macOS com helper v1.2
-foi compilado e validado localmente. Nenhuma migration `0004` foi gerada:
-faltam distribuição/homologação do helper atualizado e revisão de consumidores
-externos antes de tornar o novo schema implantável.
+Os binários locais macOS e Windows foram recompilados; o app macOS com helper v1.2
+universal arm64/x86_64 foi compilado e validado localmente. O script de release
+Windows foi preparado, mas requer build e teste em host Windows. O pacote Mac
+segue ad hoc e sem notarização. O usuário pediu para pular a etapa de
+distribuição/homologação; por isso nenhuma migration `0004` foi gerada. A
+retirada das tabelas permanece suspensa, inclusive pela revisão de consumidores
+externos ainda pendente.
