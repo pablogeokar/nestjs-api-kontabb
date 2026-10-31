@@ -1,9 +1,13 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthController } from './auth.controller';
+import type { AuthService } from './auth.service';
 
 describe('login da extensão', () => {
   const authenticateUser = jest.fn();
-  const createSession = jest.fn();
+  const createSession = jest.fn<
+    Promise<void>,
+    [Parameters<AuthService['createSession']>[0]]
+  >();
   const consume = jest.fn();
   const info = jest.fn();
   let controller: AuthController;

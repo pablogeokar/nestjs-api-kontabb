@@ -1,0 +1,93 @@
+<?xml version='1.0' encoding='utf-8'?>
+<CompNfse xmlns="http://www.abrasf.org.br/nfse.xsd">
+  <Nfse versao="2.02">
+    <InfNfse Id="NFSe2026000000197_03155128000112">
+      <Numero>2026000000197</Numero>
+      <CodigoVerificacao>LY43-SBWA</CodigoVerificacao>
+      <DataEmissao>2026-09-19T19:09:27.353</DataEmissao>
+      <OutrasInformacoes>DOCUMENTO DE TESTE</OutrasInformacoes>
+      <ValoresNfse>
+        <BaseCalculo>225</BaseCalculo>
+        <Aliquota>2</Aliquota>
+        <ValorIss>4.5</ValorIss>
+        <ValorLiquidoNfse>225</ValorLiquidoNfse>
+      </ValoresNfse>
+      <PrestadorServico>
+        <IdentificacaoPrestador>
+          <CpfCnpj>
+            <Cnpj>03155128000112</Cnpj>
+          </CpfCnpj>
+          <InscricaoMunicipal>000000</InscricaoMunicipal>
+          <InscricaoEstadual>000000</InscricaoEstadual>
+        </IdentificacaoPrestador>
+        <RazaoSocial>EMPRESA EXEMPLO</RazaoSocial>
+        <NomeFantasia>EXEMPLO</NomeFantasia>
+        <Endereco>
+          <Endereco>RUA EXEMPLO</Endereco>
+          <Numero>100</Numero>
+          <Bairro>CENTRO</Bairro>
+          <CodigoMunicipio>2910800</CodigoMunicipio>
+          <Uf>BA</Uf>
+          <Cep>40000000</Cep>
+        </Endereco>
+        <Contato>
+          <Telefone>00000000000</Telefone>
+          <Email>teste@example.invalid</Email>
+        </Contato>
+      </PrestadorServico>
+      <OrgaoGerador>
+        <CodigoMunicipio>2910800</CodigoMunicipio>
+        <Uf>BA</Uf>
+      </OrgaoGerador>
+      <DeclaracaoPrestacaoServico>
+        <InfDeclaracaoPrestacaoServico>
+          <Competencia>2026-09-01</Competencia>
+          <Servico>
+            <Valores>
+              <ValorServicos>225</ValorServicos>
+            </Valores>
+            <IssRetido>2</IssRetido>
+            <ItemListaServico>0416</ItemListaServico>
+            <CodigoCnae>8650003</CodigoCnae>
+            <CodigoTributacaoMunicipio>0416</CodigoTributacaoMunicipio>
+            <Discriminacao>SERVICOS DE TESTE</Discriminacao>
+            <CodigoMunicipio>2910800</CodigoMunicipio>
+            <ExigibilidadeISS>1</ExigibilidadeISS>
+            <MunicipioIncidencia>2910800</MunicipioIncidencia>
+          </Servico>
+          <Prestador>
+            <CpfCnpj>
+              <Cnpj>03155128000112</Cnpj>
+            </CpfCnpj>
+            <InscricaoMunicipal>000000</InscricaoMunicipal>
+          </Prestador>
+          <Tomador>
+            <IdentificacaoTomador>
+              <CpfCnpj>
+                <Cpf>88636933587</Cpf>
+              </CpfCnpj>
+            </IdentificacaoTomador>
+            <RazaoSocial>EMPRESA EXEMPLO</RazaoSocial>
+            <Endereco>
+              <Endereco>RUA EXEMPLO</Endereco>
+              <Numero>100</Numero>
+              <Complemento />
+              <Bairro>CENTRO</Bairro>
+              <CodigoMunicipio>2910800</CodigoMunicipio>
+              <Uf>BA</Uf>
+              <CodigoPais>1058</CodigoPais>
+              <Cep>40000000</Cep>
+            </Endereco>
+            <Contato>
+              <Email>teste@example.invalid</Email>
+            </Contato>
+          </Tomador>
+          <RegimeEspecialTributacao>6</RegimeEspecialTributacao>
+          <OptanteSimplesNacional>1</OptanteSimplesNacional>
+          <IncentivoFiscal>2</IncentivoFiscal>
+        </InfDeclaracaoPrestacaoServico>
+      </DeclaracaoPrestacaoServico>
+      <ChaveAcesso>29108001203155128000112202600000019726090407576290</ChaveAcesso>
+    </InfNfse>
+  </Nfse>
+</CompNfse>

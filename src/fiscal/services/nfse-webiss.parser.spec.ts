@@ -4,7 +4,7 @@ import { parseManualFiscalXml } from './dfe-document.parser';
 import { parseNfseWebissXml } from './nfse-webiss.parser';
 
 function fixture(name: string) {
-  return readFileSync(resolve(__dirname, '../../../../', name), 'utf8');
+  return readFileSync(resolve(__dirname, '__fixtures__/webiss', name), 'utf8');
 }
 
 describe('parseNfseWebissXml', () => {

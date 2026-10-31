@@ -114,7 +114,7 @@ pnpm start:prod
 | Método | Rota                           | Descrição                   |
 | ------ | ------------------------------ | --------------------------- |
 | POST   | `/api/admin/storage/cleanup`   | Executar limpeza de storage |
-| POST   | `/api/admin/storage/reconcile` | Reconciliar storage         |
+| POST   | `/api/admin/storage/reconcile` | Processar fila de limpeza (rota legada; não faz reconciliação R2 × banco) |
 
 ### Cliente
 
@@ -178,10 +178,11 @@ possui driver, ORM, schema, migrations, seeds ou credenciais de banco.
 - configuração de migration: `drizzle.config.ts`;
 - preflight e backfill operacionais: `scripts/`.
 
-Novos ambientes recebem todo o schema por uma única baseline gerada do schema
-Drizzle atual: `drizzle/0000_baseline_kontabb.sql`. Essa baseline é destinada a
-bancos novos; ela não deve ser aplicada sobre o banco antigo. O procedimento de
-recriação, restore e validação está documentado em `docs/database-rebuild.md`.
+Novos ambientes começam pela baseline `drizzle/0000_baseline_kontabb.sql` e
+recebem depois as migrations incrementais registradas em
+`drizzle/meta/_journal.json` (`0001`–`0003` nesta revisão). A baseline é
+destinada a bancos vazios; não a aplique sobre o banco antigo. O procedimento
+de recriação, restore e validação está em `docs/database-rebuild.md`.
 
 Para desenvolvimento local, suba o PostgreSQL e aplique as migrations:
 

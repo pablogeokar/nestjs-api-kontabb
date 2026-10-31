@@ -19,6 +19,15 @@ import { AdminOnly } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AppLogger } from '../common/logger.service';
 import type { CurrentUser as CurrentUserType } from '../common/types';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+
+class ReconcileStorageDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit?: number;
+}
 
 @ApiTags('Storage')
 @ApiBearerAuth('session-token')
@@ -54,31 +63,39 @@ export class StorageAdminController {
   @Post('reconcile')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Reconciliar storage',
+    summary: 'Processar fila de limpeza do storage',
     description:
-      'Executa reconciliação de arquivos no storage, processando jobs de limpeza pendentes.',
+      'Processa até 50 jobs pendentes de limpeza. Não compara objetos do R2 com referências no banco.',
   })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        limit: { type: 'number', description: 'Limite de jobs a processar' },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 50,
+          description: 'Limite de jobs a processar',
+        },
       },
     },
     required: false,
   })
-  @ApiResponse({ status: 200, description: 'Resultado da reconciliação.' })
+  @ApiResponse({ status: 200, description: 'Resultado da limpeza.' })
   async reconcile(
-    @Body() body: { limit?: number },
+    @Body() body: ReconcileStorageDto,
     @CurrentUser() currentUser: CurrentUserType,
   ) {
     const requestId = this.logger.generateRequestId();
-    // Simplified reconciliation — trigger cleanup
-    const summary = await this.storageCleanup.processJobs(undefined, {
-      requestId,
-      userId: currentUser.id,
-      trigger: 'manual',
-    });
+    const summary = await this.storageCleanup.processJobs(
+      undefined,
+      {
+        requestId,
+        userId: currentUser.id,
+        trigger: 'manual',
+      },
+      body?.limit,
+    );
     return { success: true, ...summary, requestId };
   }
 }

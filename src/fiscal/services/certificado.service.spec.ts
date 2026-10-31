@@ -89,8 +89,9 @@ describe('substituição de certificado A1', () => {
     const database = {
       db: {
         select: jest.fn().mockReturnValue(initialQuery),
-        transaction: jest.fn((callback: (tx: typeof tx) => unknown) =>
-          Promise.resolve(callback(tx)),
+        transaction: jest.fn(
+          (callback: (transactionMock: typeof tx) => unknown) =>
+            Promise.resolve(callback(tx)),
         ),
       },
     };

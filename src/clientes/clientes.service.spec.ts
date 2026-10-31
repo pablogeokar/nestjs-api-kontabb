@@ -299,3 +299,36 @@ describe('ClientesService - configuração fiscal', () => {
     );
   });
 });
+
+describe('ClientesService - CNPJs cadastrados', () => {
+  it('mantém a ordem e o conteúdo do Set com uma consulta para todas as raízes', async () => {
+    const select = jest.fn().mockReturnValue({
+      from: () => ({
+        where: () => Promise.resolve([{ cnpj: '12345678000190' }]),
+      }),
+    });
+    const selectDistinct = jest.fn().mockReturnValue({
+      from: () => ({
+        where: () => Promise.resolve([{ root: '87654321' }]),
+      }),
+    });
+    const service = new ClientesService(
+      { db: { select, selectDistinct } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const found = await service.findRegisteredCnpjs([
+      '12345678000190',
+      '87654321',
+      '00000000',
+      '87654321',
+    ]);
+
+    expect([...found]).toEqual(['12345678000190', '87654321']);
+    expect(selectDistinct).toHaveBeenCalledTimes(1);
+  });
+});

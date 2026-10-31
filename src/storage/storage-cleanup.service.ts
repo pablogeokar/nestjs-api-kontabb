@@ -33,6 +33,7 @@ export class StorageCleanupService {
   async processJobs(
     jobIds?: string[],
     context: { requestId?: string; userId?: string; trigger?: string } = {},
+    limit = CLEANUP_BATCH_SIZE,
   ): Promise<CleanupSummary> {
     if (jobIds && jobIds.length === 0) {
       return { processed: 0, completed: 0, failed: 0 };
@@ -59,7 +60,7 @@ export class StorageCleanupService {
         ${requestedJobs}
         ORDER BY criado_em
         FOR UPDATE SKIP LOCKED
-        LIMIT ${CLEANUP_BATCH_SIZE}
+        LIMIT ${Math.min(CLEANUP_BATCH_SIZE, Math.max(1, limit))}
       )
       UPDATE storage_cleanup_jobs AS job
       SET

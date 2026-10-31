@@ -171,13 +171,13 @@ describe('DistribuicaoDfeService', () => {
     ]);
     const salvarResumo = jest
       .spyOn(service as never, 'salvarResumoNfe')
-      .mockResolvedValue(true);
+      .mockResolvedValue(true as never);
     jest
       .spyOn(service as never, 'manifestarResumosPendentes')
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(undefined as never);
     jest
       .spyOn(service as never, 'recuperarUmResumoManifestado')
-      .mockResolvedValue(false);
+      .mockResolvedValue(false as never);
 
     const resultado = await service.sincronizarCliente('client-1', 'NFE');
 
@@ -210,7 +210,7 @@ describe('DistribuicaoDfeService', () => {
     ]);
     jest
       .spyOn(service as never, 'manifestarResumosPendentes')
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(undefined as never);
 
     const resultado = await service.sincronizarCliente('client-1', 'NFE');
 
@@ -230,10 +230,10 @@ describe('DistribuicaoDfeService', () => {
     ]);
     jest
       .spyOn(service as never, 'manifestarResumosPendentes')
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(undefined as never);
     const recuperar = jest
       .spyOn(service as never, 'recuperarUmResumoManifestado')
-      .mockResolvedValue(false);
+      .mockResolvedValue(false as never);
 
     const resultado = await service.sincronizarCliente('client-1', 'NFE');
 
@@ -432,7 +432,7 @@ describe('DistribuicaoDfeService', () => {
     const result = await service.listDocumentosFiscais({
       tipoOperacao: 'SAIDA',
       excluirTipoDocumento: 'NFSE',
-      pagination: { limit: 15, offset: 0 },
+      pagination: { page: 1, pageSize: 15, limit: 15, offset: 0 },
     });
 
     expect(result.resumo).toEqual({

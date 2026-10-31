@@ -181,6 +181,16 @@ describe('GuiasController data real do pagamento', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(confirmPayment).not.toHaveBeenCalled();
   });
+
+  it('orienta conciliação quando a obrigação fiscal já está quitada', async () => {
+    confirmPayment.mockResolvedValueOnce({
+      ok: false,
+      code: 'FISCAL_ALREADY_SETTLED',
+    });
+    await expect(
+      controller.confirmPayment(id, {}, undefined, USER),
+    ).rejects.toThrow('A obrigação fiscal vinculada já está quitada');
+  });
 });
 
 describe('GuiasController comprovante de guia já paga', () => {
@@ -189,8 +199,12 @@ describe('GuiasController comprovante de guia já paga', () => {
   const attachReceiptToPaidGuia = jest.fn();
   const controller = new GuiasController(
     { getAccessibleGuia, attachReceiptToPaidGuia } as unknown as GuiasService,
-    { generateRequestId: jest.fn().mockReturnValue('request-1') } as unknown as AppLogger,
-    { consume: jest.fn().mockResolvedValue(undefined) } as unknown as RateLimitService,
+    {
+      generateRequestId: jest.fn().mockReturnValue('request-1'),
+    } as unknown as AppLogger,
+    {
+      consume: jest.fn().mockResolvedValue(undefined),
+    } as unknown as RateLimitService,
   );
   const file = {
     buffer: Buffer.from('%PDF-1.4\ncomprovante'),
@@ -201,32 +215,72 @@ describe('GuiasController comprovante de guia já paga', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     getAccessibleGuia.mockResolvedValue({
-      guia: { status: 'PAGO', comprovanteKey: null }, authorized: true,
+      guia: { status: 'PAGO', comprovanteKey: null },
+      authorized: true,
     });
     attachReceiptToPaidGuia.mockResolvedValue({ ok: true });
   });
 
   it('anexa PDF à guia paga sem registrar nova baixa', async () => {
-    expect(Reflect.getMetadata(ROLES_KEY, controller.attachReceiptToPaidGuia)).toEqual(['ADMIN', 'COLABORADOR']);
-    await expect(controller.attachReceiptToPaidGuia(id, { observation: 'Documento oficial' }, file, STAFF))
-      .resolves.toEqual({ success: true, message: 'Comprovante anexado à guia já paga.' });
-    expect(attachReceiptToPaidGuia).toHaveBeenCalledWith(expect.objectContaining({
-      guiaId: id, userId: STAFF.id, observation: 'Documento oficial',
-      receipt: expect.objectContaining({ contentType: 'application/pdf', extension: 'pdf' }),
-    }));
+    const handler = Object.getOwnPropertyDescriptor(
+      GuiasController.prototype,
+      'attachReceiptToPaidGuia',
+    )?.value as (...args: unknown[]) => unknown;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+      'ADMIN',
+      'COLABORADOR',
+    ]);
+    await expect(
+      controller.attachReceiptToPaidGuia(
+        id,
+        { observation: 'Documento oficial' },
+        file,
+        STAFF,
+      ),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Comprovante anexado à guia já paga.',
+    });
+    expect(attachReceiptToPaidGuia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        guiaId: id,
+        userId: STAFF.id,
+        observation: 'Documento oficial',
+        receipt: expect.objectContaining({
+          contentType: 'application/pdf',
+          extension: 'pdf',
+        }) as unknown,
+      }),
+    );
   });
 
   it('impede duplicação ou anexação em guia pendente', async () => {
-    getAccessibleGuia.mockResolvedValueOnce({ guia: { status: 'PAGO', comprovanteKey: 'receipt.pdf' }, authorized: true });
-    await expect(controller.attachReceiptToPaidGuia(id, {}, file, STAFF)).rejects.toBeInstanceOf(BadRequestException);
-    getAccessibleGuia.mockResolvedValueOnce({ guia: { status: 'PENDENTE', comprovanteKey: null }, authorized: true });
-    await expect(controller.attachReceiptToPaidGuia(id, {}, file, STAFF)).rejects.toBeInstanceOf(BadRequestException);
+    getAccessibleGuia.mockResolvedValueOnce({
+      guia: { status: 'PAGO', comprovanteKey: 'receipt.pdf' },
+      authorized: true,
+    });
+    await expect(
+      controller.attachReceiptToPaidGuia(id, {}, file, STAFF),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    getAccessibleGuia.mockResolvedValueOnce({
+      guia: { status: 'PENDENTE', comprovanteKey: null },
+      authorized: true,
+    });
+    await expect(
+      controller.attachReceiptToPaidGuia(id, {}, file, STAFF),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(attachReceiptToPaidGuia).not.toHaveBeenCalled();
   });
 
   it('rejeita PDF com assinatura inválida', async () => {
-    const invalid = { ...file, buffer: Buffer.from('HTML'), size: 4 } as Express.Multer.File;
-    await expect(controller.attachReceiptToPaidGuia(id, {}, invalid, STAFF)).rejects.toBeInstanceOf(BadRequestException);
+    const invalid = {
+      ...file,
+      buffer: Buffer.from('HTML'),
+      size: 4,
+    } as Express.Multer.File;
+    await expect(
+      controller.attachReceiptToPaidGuia(id, {}, invalid, STAFF),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(attachReceiptToPaidGuia).not.toHaveBeenCalled();
   });
 });

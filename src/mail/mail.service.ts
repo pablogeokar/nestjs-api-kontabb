@@ -330,6 +330,7 @@ export class MailService {
           Authorization: `Bearer ${this.apiToken}`,
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (!response.ok) {

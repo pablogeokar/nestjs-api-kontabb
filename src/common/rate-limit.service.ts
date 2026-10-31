@@ -1,11 +1,38 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
+import { appRateLimits } from '../database/schema';
 import { resultRows } from './db-result';
+
+const EXPIRED_GRACE_MS = 24 * 60 * 60 * 1000;
+const CLEANUP_BATCH_SIZE = 1000;
 
 @Injectable()
 export class RateLimitService {
   constructor(private readonly database: DatabaseService) {}
+
+  async cleanupExpired(): Promise<number> {
+    // O mesmo armazenamento contém as janelas de consulta da SEFAZ. A margem
+    // evita apagar uma reserva ativa ou recém-expirada durante concorrência.
+    const cutoff = Date.now() - EXPIRED_GRACE_MS;
+    const result = await this.database.db.execute(sql`
+      WITH expired AS (
+        SELECT ${appRateLimits.key} AS key
+        FROM ${appRateLimits}
+        WHERE ${appRateLimits.resetAt} < ${cutoff}
+        ORDER BY ${appRateLimits.resetAt}
+        FOR UPDATE SKIP LOCKED
+        LIMIT ${CLEANUP_BATCH_SIZE}
+      ), deleted AS (
+        DELETE FROM ${appRateLimits} AS limits
+        USING expired
+        WHERE limits.key = expired.key AND limits.reset_at < ${cutoff}
+        RETURNING 1
+      )
+      SELECT count(*)::int AS deleted FROM deleted
+    `);
+    return Number(resultRows<{ deleted: number }>(result)[0]?.deleted ?? 0);
+  }
 
   async consume(input: {
     key: string;

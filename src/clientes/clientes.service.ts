@@ -716,19 +716,17 @@ export class ClientesService {
             .where(inArray(clientes.cnpj, fullCnpjs))
         : []
     ) as Array<{ cnpj: string }>;
-    const rootRows = await Promise.all(
-      rootCnpjs.map(async (root) => {
-        const result = await this.database.db
-          .select({ cnpj: clientes.cnpj })
+    const rootExpr = sql<string>`substring(${clientes.cnpj}, 1, 8)`;
+    const rootRows = rootCnpjs.length
+      ? await this.database.db
+          .selectDistinct({ root: rootExpr })
           .from(clientes)
-          .where(like(clientes.cnpj, `${root}%`))
-          .limit(1);
-        return result[0] ? root : null;
-      }),
-    );
+          .where(inArray(rootExpr, rootCnpjs))
+      : [];
+    const registeredRoots = new Set(rootRows.map((row) => row.root));
     return new Set([
       ...fullRows.map((r) => r.cnpj),
-      ...rootRows.filter((r): r is string => Boolean(r)),
+      ...rootCnpjs.filter((root) => registeredRoots.has(root)),
     ]);
   }
 

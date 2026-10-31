@@ -216,6 +216,15 @@ function criarStore(seed: {
   };
 }
 
+function serviceComStore(store: ReturnType<typeof criarStore>) {
+  return new FiscalEntregasService(
+    store as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+}
+
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
 
@@ -283,7 +292,7 @@ function baseRegistrar(
 describe('FiscalEntregasService — registrarEntrega (R2.1/R2.4)', () => {
   it('registra uma entrega ORIGINAL (sem vínculo de retificação nem diferença)', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     const entrega = await service.registrarEntrega(baseRegistrar());
 
@@ -302,7 +311,7 @@ describe('FiscalEntregasService — registrarEntrega (R2.1/R2.4)', () => {
       clienteId: 'c1',
       fechamentos: [{ id: 'f1', clienteId: 'c1', hashEntradas: HASH_A }],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     const entrega = await service.registrarEntrega(
       baseRegistrar({ fechamentoId: 'f1', hashArquivo: HASH_A }),
@@ -316,7 +325,7 @@ describe('FiscalEntregasService — registrarEntrega (R2.1/R2.4)', () => {
       clienteId: 'c1',
       fechamentos: [{ id: 'f1', clienteId: 'c1', hashEntradas: HASH_A }],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.registrarEntrega(
@@ -330,7 +339,7 @@ describe('FiscalEntregasService — registrarEntrega (R2.1/R2.4)', () => {
       clienteId: 'c1',
       fechamentos: [{ id: 'f-outro', clienteId: 'c2', hashEntradas: HASH_A }],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.registrarEntrega(
@@ -346,7 +355,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
       clienteId: 'c1',
       entregas: [entregaOriginalRow()],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     const retificadora = await service.retificarEntrega(baseRetificar());
 
@@ -365,7 +374,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
   it('a entrega ANTERIOR permanece imutável (nenhum UPDATE/DELETE; original intacta)', async () => {
     const original = entregaOriginalRow();
     const store = criarStore({ clienteId: 'c1', entregas: [original] });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await service.retificarEntrega(baseRetificar());
 
@@ -391,7 +400,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
       ],
       fechamentos: [{ id: 'f1', clienteId: 'c1', hashEntradas: HASH_B }],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     // A retificadora usa HASH_B (= hash_entradas de f1) e herda o fechamento.
     const retificadora = await service.retificarEntrega(
@@ -405,7 +414,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
       clienteId: 'c1',
       entregas: [entregaOriginalRow({ clienteId: 'c2' })],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(service.retificarEntrega(baseRetificar())).rejects.toThrow(
       'Entrega não encontrada',
@@ -426,7 +435,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
         }),
       ],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(service.retificarEntrega(baseRetificar())).rejects.toThrow(
       'já foi retificada',
@@ -445,7 +454,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
         }),
       ],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.retificarEntrega(
@@ -459,7 +468,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
       clienteId: 'c1',
       entregas: [entregaOriginalRow()],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.retificarEntrega(baseRetificar({ valorDiferenca: 'abc' })),
@@ -471,7 +480,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
       clienteId: 'c1',
       entregas: [entregaOriginalRow()],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.retificarEntrega(baseRetificar({ hashArquivo: 'XYZ' })),
@@ -482,7 +491,7 @@ describe('FiscalEntregasService — retificarEntrega (R2.2)', () => {
 describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5, tarefa 2.4)', () => {
   it('deriva o leiaute 3.2.2 para competência de 2026 quando não informado', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     const entrega = await service.registrarEntrega(
       baseRegistrar({ competencia: '2026-08', leiauteVersao: undefined }),
@@ -492,7 +501,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
 
   it('deriva o leiaute 3.2.3 para competência de 2027 quando não informado', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     const entrega = await service.registrarEntrega(
       baseRegistrar({ competencia: '2027-03', leiauteVersao: undefined }),
@@ -502,7 +511,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
 
   it('aceita o leiaute informado quando casa a vigência da competência', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     const entrega = await service.registrarEntrega(
       baseRegistrar({ competencia: '2027-03', leiauteVersao: '3.2.3' }),
@@ -512,7 +521,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
 
   it('REJEITA leiaute de outra vigência (3.2.2 numa competência de 2027) — sem reutilização silenciosa', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.registrarEntrega(
@@ -525,7 +534,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
 
   it('REJEITA a entrega quando a versão do PVA não é confirmada (N05)', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.registrarEntrega(
@@ -537,7 +546,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
 
   it('REJEITA quando a confirmação do PVA não casa a versão informada (N05)', async () => {
     const store = criarStore({ clienteId: 'c1' });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.registrarEntrega(
@@ -558,7 +567,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
         }),
       ],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     const retificadora = await service.retificarEntrega(
       baseRetificar({ leiauteVersao: undefined }),
@@ -576,7 +585,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
         }),
       ],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.retificarEntrega(baseRetificar({ leiauteVersao: '3.2.2' })),
@@ -588,7 +597,7 @@ describe('FiscalEntregasService — leiaute por vigência e PVA confirmado (R2.5
       clienteId: 'c1',
       entregas: [entregaOriginalRow()],
     });
-    const service = new FiscalEntregasService(store as never);
+    const service = serviceComStore(store);
 
     await expect(
       service.retificarEntrega(baseRetificar({ pvaVersaoConfirmada: '' })),

@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { eq, and, gt } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { DatabaseService } from '../database/database.service';
-import { account, clientes, session, user, verification } from '../database/schema';
+import {
+  account,
+  clientes,
+  session,
+  user,
+  verification,
+} from '../database/schema';
 import type { CurrentUser, UserRole } from '../common/types';
 
 @Injectable()

@@ -42,6 +42,10 @@ function createController(overrides?: Partial<Deps>) {
     {} as never, // entregasService
     {} as never, // pisCofinsService
     deps.fiscalItensService as never,
+    {} as never, // closingService
+    {} as never, // onboardingMatrizService
+    {} as never, // rolloutInventarioService
+    {} as never, // rolloutMetricasService
   );
   return { controller, deps };
 }

@@ -12,6 +12,7 @@ import { timingSafeEqual } from 'crypto';
 import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import { FiscalCronService } from '../fiscal/services/fiscal-cron.service';
 import { AppLogger } from '../common/logger.service';
+import { RateLimitService } from '../common/rate-limit.service';
 
 @ApiTags('Cron')
 @Controller('cron')
@@ -21,6 +22,7 @@ export class CronController {
     private readonly fiscalCron: FiscalCronService,
     private readonly configService: ConfigService,
     private readonly logger: AppLogger,
+    private readonly rateLimit: RateLimitService,
   ) {}
 
   @Get('storage-cleanup')
@@ -52,11 +54,27 @@ export class CronController {
     }
 
     const requestId = this.logger.generateRequestId();
-    const summary = await this.cleanupService.processJobs(undefined, {
-      requestId,
-      trigger: 'cron',
-    });
-    return { success: true, ...summary };
+    try {
+      const summary = await this.cleanupService.processJobs(undefined, {
+        requestId,
+        trigger: 'cron',
+      });
+      return { success: true, ...summary };
+    } finally {
+      try {
+        const deleted = await this.rateLimit.cleanupExpired();
+        this.logger.info('rate_limit_cleanup_completed', {
+          operation: 'rate_limit_cleanup',
+          requestId,
+          deleted,
+        });
+      } catch (error) {
+        this.logger.error('rate_limit_cleanup_failed', error, {
+          operation: 'rate_limit_cleanup',
+          requestId,
+        });
+      }
+    }
   }
 
   private hasValidAuthorization(

@@ -1132,7 +1132,7 @@ describe('FiscalClosingService', () => {
         ]);
         const svc = serviceComDb(db);
         const r = await db.transaction(() =>
-          svc.sinalizarRevisaoPosFechamento(tx, ESCOPO),
+          svc.sinalizarRevisaoPosFechamento(tx as never, ESCOPO),
         );
 
         expect(r.revisaoNecessaria).toBe(true);

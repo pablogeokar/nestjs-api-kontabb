@@ -2,6 +2,55 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import { CiapService } from './ciap.service';
 
+describe('CiapService - importação de bens', () => {
+  it('consulta os códigos do lote uma vez e não duplica bem repetido', async () => {
+    const item = {
+      documentoFiscalId: 'doc-1',
+      documentoFiscalItemId: 'item-1',
+      codigoProduto: 'BEM-NOVO',
+      descricao: 'Bem de teste',
+      cfop: '1551',
+      valorIcms: '100.00',
+      dataEmissao: new Date('2026-09-10T12:00:00Z'),
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({
+          innerJoin: () => ({
+            where: () =>
+              Promise.resolve([
+                { ...item, codigoProduto: 'BEM-EXISTENTE' },
+                item,
+                { ...item, documentoFiscalItemId: 'item-2' },
+              ]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => Promise.resolve([{ codigoBem: 'BEM-EXISTENTE' }]),
+        }),
+      });
+    const service = new CiapService({ db: { select } } as never, {} as never);
+    const registrarBem = jest
+      .spyOn(service, 'registrarBem')
+      .mockResolvedValue({} as never);
+
+    const result = await service.importarBensDoPeriodo({
+      clienteId: 'cliente-1',
+      competencia: '2026-09',
+    });
+
+    expect(result).toEqual({ importados: 1, elegiveis: 3 });
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(registrarBem).toHaveBeenCalledTimes(1);
+    expect(registrarBem).toHaveBeenCalledWith(
+      expect.objectContaining({ codigoBem: 'BEM-NOVO' }),
+    );
+  });
+});
+
 // Double do FiscalClosingService (tarefas 3.4/3.5) para os caminhos que
 // participam do fechamento (ex.: baixarBem). `withEscopoLock` apenas executa a
 // mutação dentro da transação (o lock de escopo é testado no serviço de

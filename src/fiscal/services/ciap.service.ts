@@ -10,6 +10,7 @@ import {
   eq,
   gt,
   gte,
+  inArray,
   isNull,
   lte,
   or,
@@ -298,6 +299,25 @@ export class CiapService {
       );
 
     const ativos = itens.filter((item) => CFOPS_ATIVO_ENTRADA.has(item.cfop));
+    const codigosBem = [
+      ...new Set(
+        ativos.map((item) =>
+          (item.codigoProduto ?? item.documentoFiscalItemId).slice(0, 60),
+        ),
+      ),
+    ];
+    const existentes = codigosBem.length
+      ? await this.database.db
+          .select({ codigoBem: ciapAtivoPermanente.codigoBem })
+          .from(ciapAtivoPermanente)
+          .where(
+            and(
+              eq(ciapAtivoPermanente.clienteId, input.clienteId),
+              inArray(ciapAtivoPermanente.codigoBem, codigosBem),
+            ),
+          )
+      : [];
+    const codigosExistentes = new Set(existentes.map((row) => row.codigoBem));
     let importados = 0;
     for (const item of ativos) {
       // Código do bem estável: produto do documento/item. Se não houver
@@ -306,17 +326,7 @@ export class CiapService {
         item.codigoProduto ?? item.documentoFiscalItemId
       ).slice(0, 60);
       const dataEntrada = item.dataEmissao.toISOString().slice(0, 10);
-      const jaExiste = await this.database.db
-        .select({ id: ciapAtivoPermanente.id })
-        .from(ciapAtivoPermanente)
-        .where(
-          and(
-            eq(ciapAtivoPermanente.clienteId, input.clienteId),
-            eq(ciapAtivoPermanente.codigoBem, codigoBem),
-          ),
-        )
-        .limit(1);
-      if (jaExiste[0]) continue;
+      if (codigosExistentes.has(codigoBem)) continue;
 
       await this.registrarBem({
         clienteId: input.clienteId,
@@ -327,6 +337,7 @@ export class CiapService {
         dataEntrada,
         valorIcmsTotal: item.valorIcms ?? '0',
       });
+      codigosExistentes.add(codigoBem);
       importados += 1;
     }
     return { importados, elegiveis: ativos.length };
