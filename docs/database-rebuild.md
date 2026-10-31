@@ -17,13 +17,15 @@ devem ser criados primeiro pelo Drizzle.
 
 ## Procedimento
 
-1. Crie o novo banco no Neon, sem apagar o banco anterior.
-2. Aponte temporariamente `api/.env` para o banco novo.
+1. Crie o novo banco no Neon, sem apagar o banco anterior. Configure a variável
+   `KONTABB_NEW_DATABASE_URL` com a URL **desse banco novo**, fora do `.env` da
+   API em execução. Confirme host e nome do banco antes dos comandos seguintes.
+2. Mantenha a URL do banco antigo intacta para rollback.
 3. Crie o schema:
 
 ```bash
 cd api
-pnpm db:migrate
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:migrate
 pnpm db:check
 ```
 
@@ -31,15 +33,15 @@ pnpm db:check
 
 ```bash
 cd ../backup-restore
-go run . -mode=restore -input=backup-kontabb.sql -env=../api/.env --dry-run
+go run . -mode=restore -input=backup-kontabb.sql -database-url="$KONTABB_NEW_DATABASE_URL" --dry-run
 ```
 
-5. Se o dry-run restaurar 34 tabelas/5.657 registros e validar todas as FKs,
-   execute o restore real:
+5. Se o dry-run reproduzir a contagem do backup usado e validar todas as FKs,
+   execute o restore real no **mesmo banco novo**:
 
 ```bash
-go run . -mode=restore -input=backup-kontabb.sql -env=../api/.env
-go run . -validate -env=../api/.env
+go run . -mode=restore -input=backup-kontabb.sql -database-url="$KONTABB_NEW_DATABASE_URL"
+go run . -validate -database-url="$KONTABB_NEW_DATABASE_URL"
 ```
 
 6. Como o restore limpa as tabelas antes de inserir os dados, execute agora os
@@ -47,7 +49,7 @@ go run . -validate -env=../api/.env
 
 ```bash
 cd ../api
-pnpm db:seed:required
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:seed:required
 ```
 
 O backup atual já contém os usuários ADMIN e os CFOPs; por isso não execute
@@ -57,11 +59,12 @@ O backup atual já contém os usuários ADMIN e os CFOPs; por isso não execute
 
 ```bash
 cd ../api
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
+psql "$KONTABB_NEW_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 ```
 
-Todas as consultas devem retornar zero linhas. Confirme também que
-`drizzle.__drizzle_migrations` contém exatamente uma migration.
+Todas as consultas devem retornar zero linhas. Confirme também que o tracker
+`drizzle.__drizzle_migrations` corresponde a todas as entradas de
+`drizzle/meta/_journal.json` (quatro, `0000`–`0003`, nesta revisão).
 
 8. Faça smoke tests de login, listagem/download de guias, pagamento,
    upload e recibos de folha. Somente depois atualize a `DATABASE_URL` do deploy.

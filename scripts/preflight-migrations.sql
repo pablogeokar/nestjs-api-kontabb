@@ -1,5 +1,7 @@
 -- Execute em uma branch/copia representativa do Neon antes de aplicar as
 -- migrations. Todas as consultas devem retornar zero linhas.
+-- Este arquivo é somente leitura. Execute com psql -v ON_ERROR_STOP=1.
+BEGIN READ ONLY;
 
 -- Autenticacao
 SELECT provider_id, account_id, count(*) AS quantidade
@@ -31,7 +33,7 @@ GROUP BY role;
 SELECT id, tipo_pessoa, cnpj, cpf
 FROM clientes
 WHERE NOT (
-  (tipo_pessoa = 'PJ' AND cnpj ~ '^[0-9]{14}$' AND cpf IS NULL)
+  (tipo_pessoa = 'PJ' AND cnpj ~ '^[0-9A-Z]{12}[0-9]{2}$' AND cpf IS NULL)
   OR
   (tipo_pessoa = 'PF' AND cnpj ~ '^[0-9]{11}$' AND cpf = cnpj)
 );
@@ -49,14 +51,14 @@ WHERE (cep IS NOT NULL AND cep !~ '^[0-9]{8}$')
    OR (cnae_principal_codigo IS NOT NULL AND cnae_principal_codigo !~ '^[0-9]{7}$')
    OR jsonb_typeof(cnaes_secundarios) <> 'array';
 
--- Documentos
+-- Guias de pagamento (nome atual da tabela; "documentos" não existe)
 SELECT cliente_id, tipo, periodo, numero_parcelamento, count(*) AS quantidade
-FROM documentos
+FROM guias
 GROUP BY cliente_id, tipo, periodo, numero_parcelamento
 HAVING count(*) > 1;
 
 SELECT tipo, count(*)
-FROM documentos
+FROM guias
 WHERE tipo NOT IN (
   'FGTS', 'DARF', 'DAS', 'DAS-COMPL', 'DAS-PARCSN', 'DAS-PGFN', 'INSS', 'ISS',
   'ICMS', 'PIS', 'COFINS', 'CSLL', 'IRPJ', 'DAE', 'PGFN-SISPAR',
@@ -65,17 +67,17 @@ WHERE tipo NOT IN (
 GROUP BY tipo;
 
 SELECT status, count(*)
-FROM documentos
+FROM guias
 WHERE status NOT IN ('PENDENTE', 'PAGO')
 GROUP BY status;
 
 SELECT email_status, count(*)
-FROM documentos
-WHERE email_status NOT IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL')
+FROM guias
+WHERE email_status NOT IN ('NAO_ENVIADO', 'PENDENTE', 'ENVIADO', 'FALHOU', 'SEM_EMAIL', 'SUSPENSO')
 GROUP BY email_status;
 
 SELECT id, periodo, arquivo_key, arquivo_nome, valor, status, pago_em, numero_parcelamento
-FROM documentos
+FROM guias
 WHERE periodo !~ '^(0[1-9]|1[0-2])/[0-9]{4}$'
    OR arquivo_key IS NULL
    OR btrim(arquivo_key) = ''
@@ -89,6 +91,7 @@ WHERE periodo !~ '^(0[1-9]|1[0-2])/[0-9]{4}$'
 -- RH
 SELECT cliente_id, competencia, count(*) AS quantidade
 FROM folhas_pagamento
+WHERE tipo = 'FOLHA_MENSAL'
 GROUP BY cliente_id, competencia
 HAVING count(*) > 1;
 
@@ -141,6 +144,7 @@ WHERE NOT (
   (tipo_documento = 'NFE' AND modelo = '55')
   OR (tipo_documento = 'CTE' AND modelo = '57')
   OR (tipo_documento = 'NFCE' AND modelo = '65')
+  OR (tipo_documento = 'NFSE' AND modelo = 'NFSE')
 );
 
 -- Jobs operacionais
@@ -154,3 +158,5 @@ WHERE btrim(object_key) = ''
 SELECT key, count, reset_at
 FROM app_rate_limits
 WHERE count < 0 OR reset_at <= 0;
+
+COMMIT;
