@@ -44,8 +44,7 @@ import type { DifalHipotese } from './difal-hipotese';
 import type { DifalBaseComposta } from './difal-base';
 
 // Escala das alíquotas (pontos percentuais com 4 casas, ex.: '18.0000'),
-// coerente com `fiscal_lancamentos.aliquota` (numeric(9,4)) e com o uso de
-// escala 4 em `DifalEntradaService`.
+// coerente com o uso de escala 4 em `DifalEntradaService`.
 const ESCALA_ALIQUOTA = 4;
 // Escala monetária (centavos), padrão das colunas `numeric(_,2)` do fiscal.
 const ESCALA_VALOR = 2;

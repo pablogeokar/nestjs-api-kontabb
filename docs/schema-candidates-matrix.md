@@ -6,6 +6,9 @@ Esta matriz complementa `relatorio-saneamento.md`. Evidência: varredura de
 implantado, sempre em transações `READ ONLY`. O banco configurado em
 `api/.env` aponta para `localhost/kontabb-development`; o alvo foi consultado
 em conexão separada, sem escrita, conforme a restrição do usuário.
+As contagens local/alvo abaixo são do preflight **anterior** à `0004`;
+`kontabb-development` terminou a etapa com 54 tabelas e cinco migrations,
+enquanto o banco implantado permaneceu com 57 e quatro.
 
 Em `web` e `extensao` não há referência textual direta aos nove nomes de tabela
 abaixo. No código de produção de `backup-drive` e `backup-restore`, a opção de
@@ -31,9 +34,9 @@ tabelas e o tracker `0000`–`0003` com hashes iguais aos arquivos SQL locais.
 
 | Tabela | Leitor / writer TypeScript de produção | SQL cru de produção | Consumo pela API / export | Linhas local / alvo | Índices no alvo | FK inbound no alvo | Decisão |
 | --- | --- | --- | --- | ---: | ---: | --- | --- |
-| `sped_contabilistas` | Nenhum encontrado | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 2 | Nenhuma | Preservar para restore dos backups atuais. |
-| `fiscal_lancamentos` | Nenhum; comentários históricos de migração futura | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 4 | Nenhuma | Preservar para restore dos backups atuais. |
-| `fiscal_perfis_vigencia` | Nenhum encontrado; comentário histórico de design | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 3 | Nenhuma | Preservar para restore dos backups atuais. |
+| `sped_contabilistas` | Nenhum encontrado | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 2 | Nenhuma | Remoção preparada na `0004`; execução só em clone. |
+| `fiscal_lancamentos` | Nenhum encontrado | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 4 | Nenhuma | Remoção preparada na `0004`; execução só em clone. |
+| `fiscal_perfis_vigencia` | Nenhum encontrado | Nenhum encontrado | Nenhum endpoint/export direto encontrado | 0 / 0 | 3 | Nenhuma | Remoção preparada na `0004`; execução só em clone. |
 | `ciap_competencias_apropriadas` | `INSERT` em `CiapService` | Nenhum encontrado | Marcador escrito pela apropriação CIAP; sem leitura localizada | 0 / 0 | 3 | Nenhuma | Preservar enquanto o writer existir e até definir retenção. |
 | `ciap_movimentos` | Dois caminhos de `INSERT` em `CiapService` | Nenhum encontrado | Trilha patrimonial de correções, referenciada por apropriações | 0 / 0 | 4 | `ciap_apropriacoes`; autorreferência | Preservar. |
 | `sped_arquivos_gerados` | `INSERT` e `UPDATE` em `EfdIcmsIpiService` | Nenhum encontrado | Histórico de geração do arquivo EFD; o TXT vai ao storage | 0 / 0 | 3 | Nenhuma | Preservar. |
@@ -55,8 +58,8 @@ original tem os quatro hashes das migrations locais, os quatro diagnósticos
 históricos de pagamento retornaram zero e `preflight-migrations.sql` produziu
 22 conjuntos de **zero linhas de violação**. Consultas adicionais ao catálogo
 não encontraram views nem triggers nas três tabelas candidatas. A ausência de
-consumidores SQL externos não é demonstrável apenas pelo catálogo. Nenhum
-`DROP` de deploy é proposto agora.
+consumidores SQL externos não é demonstrável apenas pelo catálogo. A `0004`
+prepara os drops, mas não foi aplicada no banco implantado.
 
 O ensaio reversível em `../scripts/dry-run-unused-tables.sql` foi executado em
 clone local e no clone do backup identificado como implantado: `DROP ...
@@ -83,8 +86,19 @@ helper v1.2 universal arm64/x86_64 foi compilado e validado localmente. Na
 retomada da entrega, o app passou a limpar cópias temporárias também em falhas,
 e o script macOS passou a comparar o helper embarcado byte a byte com o
 recém-compilado. O ZIP foi reconstruído e verificado após extração. O script de
-release Windows foi preparado, mas requer build e teste em host Windows, que o
-usuário ainda não tem disponível. O pacote Mac segue ad hoc e sem notarização;
-neste Mac só há identidade Apple Development. Nenhuma migration `0004` foi
-gerada. A retirada das tabelas permanece suspensa até a distribuição e
-homologação do helper e a revisão de consumidores externos.
+release Windows foi preparado e um workflow manual no repositório do helper,
+com runner Windows 2022, foi adicionado para executar testes, build e gerar o
+ZIP. Esse workflow passou em `actionlint` e na execução Windows
+`41292437714`; o ZIP e seu manifesto foram verificados por SHA-256. A
+instalação e o restore precisam ser homologados
+em Windows. O pacote Mac segue ad hoc e sem notarização;
+neste Mac só há identidade Apple Development. Na etapa seguinte, a pedido do
+usuário, a `0004` foi gerada e ensaiada em clone do backup. Seu snapshot retira
+somente as três tabelas acima; as outras 54 ficam idênticas. A migration usa
+lock exclusivo, guarda de vazio e `DROP RESTRICT`. Passou no clone restaurado,
+deixando 54 tabelas e cinco entradas no tracker; uma linha sintética e uma view
+dependente, em outro clone, fizeram a migration abortar sem remoção parcial.
+O backup antigo foi restaurado de novo sobre o clone **já migrado** com helper
+v1.2: 54 tabelas, 13.389 registros, três blocos vazios ignorados e 98 FKs.
+A aplicação no banco implantado permanece proibida; distribuição e
+homologação do helper e revisão de consumidores externos ainda são necessárias.

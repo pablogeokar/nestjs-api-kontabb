@@ -1573,51 +1573,6 @@ export const spedConfiguracoes = pgTable(
   ],
 );
 
-export const spedContabilistas = pgTable(
-  'sped_contabilistas',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    clienteId: uuid('cliente_id')
-      .notNull()
-      .references(() => clientes.id, { onDelete: 'cascade' }),
-    nome: text('nome').notNull(),
-    cpf: varchar('cpf', { length: 11 }),
-    crc: text('crc').notNull(),
-    cnpj: varchar('cnpj', { length: 14 }),
-    cep: varchar('cep', { length: 8 }),
-    logradouro: text('logradouro'),
-    numero: text('numero'),
-    complemento: text('complemento'),
-    bairro: text('bairro'),
-    telefone: text('telefone'),
-    fax: text('fax'),
-    email: text('email'),
-    codigoMunicipioIbge: varchar('codigo_municipio_ibge', {
-      length: 7,
-    }).notNull(),
-    atualizadoPor: text('atualizado_por').references(() => user.id, {
-      onDelete: 'set null',
-    }),
-    criadoEm: timestamp('criado_em').notNull().defaultNow(),
-    atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
-  },
-  (table) => [
-    index('idx_sped_contabilista_cliente').on(table.clienteId),
-    check(
-      'chk_sped_contabilista_documento',
-      sql`(${table.cpf} IS NOT NULL AND ${table.cpf} ~ '^[0-9]{11}$') OR (${table.cnpj} IS NOT NULL AND ${table.cnpj} ~ '^[0-9A-Z]{12}[0-9]{2}$')`,
-    ),
-    check(
-      'chk_sped_contabilista_cep',
-      sql`${table.cep} IS NULL OR ${table.cep} ~ '^[0-9]{8}$'`,
-    ),
-    check(
-      'chk_sped_contabilista_codigo_municipio',
-      sql`${table.codigoMunicipioIbge} ~ '^[0-9]{7}$'`,
-    ),
-  ],
-);
-
 export const spedParticipantes = pgTable(
   'sped_participantes',
   {
@@ -2938,149 +2893,6 @@ export const fiscalCatalogosVersoes = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Lançamentos fiscais normalizados (Fase 3 / tarefa 1.1, R2.1/R2.2; plano §7).
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// FONTE COMUM de créditos e débitos: livros, painéis e SPED passam a projetar
-// desta tabela, em vez de cada um recalcular por caminho próprio (F03/F16). Como
-// todos consomem o MESMO lançamento, para a MESMA versão de fechamento os
-// créditos/débitos documentais são idênticos entre livro e SPED (R2.1), e a
-// ponte documentos → lançamentos → apuração → livro → E110 (R2.2) fica explícita.
-//
-// VALORES DECIMAIS (restrição da fase): `numeric` — nunca `Number`. O navegador
-// apenas FORMATA o decimal, não recalcula imposto (F15/§9.2). `valor` é a
-// magnitude; o SINAL do efeito no saldo vem de `sinal` (+1 normal, -1 estorno/
-// reversão), separado da NATUREZA contábil (`DEBITO`/`CREDITO`). Natureza e
-// sinal são EXPLÍCITOS para não inferir o efeito a partir do valor.
-//
-// ORIGEM: de onde o fato veio (`DOCUMENTO`, `CIAP`, `AJUSTE`, `SALDO_ANTERIOR`,
-// `APURACAO`), para a ponte conseguir atribuir cada parcela da apuração à sua
-// fonte. `documentoFiscalId`/`documentoFiscalItemId` são opcionais: só os
-// lançamentos de origem documental os referenciam.
-//
-// COMPETÊNCIA: primeiro dia do mês de competência fiscal (não a data crua do
-// XML; a política de datas por finalidade é a tarefa 2 da fase). Mantida AQUI,
-// no lançamento, para que a seleção por competência não dependa de recalcular
-// datas em cada módulo.
-//
-// CHAVE IDEMPOTENTE POR FATO/VERSÃO: `fatoChave` identifica o fato gerador de
-// forma estável (ex.: `item:<uuid>:icms`, `ciap:<ficha>:<competencia>`), e
-// `fechamentoVersao` isola a versão do fechamento. O unique
-// (cliente, origem, fato, versão, tributo, natureza) garante que reprocessar a
-// mesma versão NÃO duplica lançamentos (reexecução idempotente), enquanto uma
-// NOVA versão (reabertura/edição, R1.4) gera novas linhas sem sobrescrever as da
-// versão anterior — preservando a reprodutibilidade do fechamento (F20).
-//
-// ADITIVA: só cria estruturas novas; não altera nem remove nada existente.
-export const fiscalLancamentos = pgTable(
-  'fiscal_lancamentos',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    clienteId: uuid('cliente_id')
-      .notNull()
-      .references(() => clientes.id, { onDelete: 'cascade' }),
-    // Versão do fechamento a que o lançamento pertence. Isola reprocessamentos
-    // (idempotência) de novas versões (reabertura/edição) — ver chave única.
-    fechamentoVersao: integer('fechamento_versao').notNull().default(1),
-    // Origem do fato gerador: permite atribuir cada parcela da apuração à fonte.
-    origem: varchar('origem', { length: 20 }).notNull(),
-    // Identidade estável do fato gerador dentro da origem (compõe a chave
-    // idempotente). Ex.: `item:<uuid>:icms`, `ciap:<ficha>:<competencia>`.
-    fatoChave: text('fato_chave').notNull(),
-    // Competência fiscal (primeiro dia do mês). Fixada no lançamento para a
-    // seleção por competência não recalcular datas em cada módulo.
-    competencia: date('competencia').notNull(),
-    // Tributo do lançamento (ICMS, ICMS_ST, IPI, PIS, COFINS, FCP, DIFAL).
-    tributo: varchar('tributo', { length: 12 }).notNull(),
-    // Natureza contábil EXPLÍCITA — não inferida pelo valor.
-    natureza: varchar('natureza', { length: 7 }).notNull(),
-    // Sinal do efeito no saldo: +1 lançamento normal, -1 estorno/reversão.
-    sinal: integer('sinal').notNull().default(1),
-    // Magnitude decimal do lançamento. `numeric`, nunca `Number`.
-    valor: numeric('valor', { precision: 15, scale: 2 }).notNull(),
-    // Base de cálculo e alíquota decimais (opcionais: ajustes/saldos não têm).
-    baseCalculo: numeric('base_calculo', { precision: 15, scale: 2 }),
-    aliquota: numeric('aliquota', { precision: 9, scale: 4 }),
-    // Lastro documental: só os lançamentos de origem documental referenciam.
-    documentoFiscalId: uuid('documento_fiscal_id').references(
-      () => documentosFiscais.id,
-      { onDelete: 'cascade' },
-    ),
-    documentoFiscalItemId: uuid('documento_fiscal_item_id').references(
-      () => documentosFiscaisItens.id,
-      { onDelete: 'cascade' },
-    ),
-    criadoEm: timestamp('criado_em', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    // Chave idempotente por fato/versão (R2.1): reprocessar a mesma versão não
-    // duplica; uma nova versão gera novas linhas sem sobrescrever as anteriores.
-    uniqueIndex('uidx_fiscal_lancamento_fato_versao').on(
-      table.clienteId,
-      table.origem,
-      table.fatoChave,
-      table.fechamentoVersao,
-      table.tributo,
-      table.natureza,
-    ),
-    // Projeção por competência/versão (livros, painéis e SPED consomem daqui).
-    index('idx_fiscal_lancamento_competencia').on(
-      table.clienteId,
-      table.competencia,
-      table.fechamentoVersao,
-    ),
-    // Ponte documento → lançamento (R2.2).
-    index('idx_fiscal_lancamento_documento').on(table.documentoFiscalId),
-    check(
-      'chk_fiscal_lancamento_origem',
-      sql`${table.origem} IN ('DOCUMENTO', 'CIAP', 'AJUSTE', 'SALDO_ANTERIOR', 'APURACAO')`,
-    ),
-    check(
-      'chk_fiscal_lancamento_tributo',
-      sql`${table.tributo} IN ('ICMS', 'ICMS_ST', 'IPI', 'PIS', 'COFINS', 'FCP', 'DIFAL')`,
-    ),
-    check(
-      'chk_fiscal_lancamento_natureza',
-      sql`${table.natureza} IN ('DEBITO', 'CREDITO')`,
-    ),
-    check('chk_fiscal_lancamento_sinal', sql`${table.sinal} IN (-1, 1)`),
-    check('chk_fiscal_lancamento_versao', sql`${table.fechamentoVersao} >= 1`),
-    // Magnitude não-negativa: o efeito no saldo vem de natureza + sinal, não de
-    // um valor negativo (mantém a decomposição explícita e conciliável).
-    check('chk_fiscal_lancamento_valor', sql`${table.valor} >= 0`),
-    check(
-      'chk_fiscal_lancamento_base',
-      sql`${table.baseCalculo} IS NULL OR ${table.baseCalculo} >= 0`,
-    ),
-    check(
-      'chk_fiscal_lancamento_aliquota',
-      sql`${table.aliquota} IS NULL OR ${table.aliquota} >= 0`,
-    ),
-    // Competência é sempre o primeiro dia do mês (competência fiscal, não a
-    // data crua do documento).
-    check(
-      'chk_fiscal_lancamento_competencia_dia1',
-      sql`date_part('day', ${table.competencia}) = 1`,
-    ),
-    // Lastro documental coerente: o item só existe junto do documento, e o par
-    // só aparece em lançamentos de origem documental.
-    check(
-      'chk_fiscal_lancamento_item_exige_documento',
-      sql`${table.documentoFiscalItemId} IS NULL OR ${table.documentoFiscalId} IS NOT NULL`,
-    ),
-    check(
-      'chk_fiscal_lancamento_documento_origem',
-      sql`${table.documentoFiscalId} IS NULL OR ${table.origem} = 'DOCUMENTO'`,
-    ),
-  ],
-);
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Fechamento fiscal versionado (Fase 3 / tarefa 3.1, R1.1; plano §7).
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -3585,7 +3397,7 @@ export const fiscalSimplesHistoricosMensais = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Catálogo normativo versionado — perfis de vigência e regras versionadas
+// Catálogo normativo versionado — regras versionadas
 // (Fase 4 / tarefa 1.1, R1.1/R2.1/R3.1; plano §6.2/§7).
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -3596,73 +3408,6 @@ export const fiscalSimplesHistoricosMensais = pgTable(
 // nunca guia definitiva (R1.2/R3.4).
 //
 // Todas ADITIVAS: só criam estruturas novas; não alteram nem removem nada.
-
-// `fiscal_perfis_vigencia` (design §7): o perfil fiscal de um estabelecimento
-// (cliente) por UF/regime/obrigação, com janela de vigência e fonte. É o que
-// liga a empresa à matriz legal aplicável numa competência — ex.: "cliente X,
-// UF SP, Simples, EFD_ICMS_IPI, vigente a partir de 2026-01-01". Impede
-// sobreposição indevida de perfis do mesmo escopo (índice GiST de exclusão
-// sobre o intervalo de vigência).
-export const fiscalPerfisVigencia = pgTable(
-  'fiscal_perfis_vigencia',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    clienteId: uuid('cliente_id')
-      .notNull()
-      .references(() => clientes.id, { onDelete: 'cascade' }),
-    // UF do perfil (jurisdição). Catálogo e regras são resolvidos por esta UF.
-    uf: varchar('uf', { length: 2 }).notNull(),
-    // Regime tributário vigente no período (coerente com `clientes`).
-    regime: varchar('regime', { length: 20 }).notNull(),
-    // Obrigação acessória a que o perfil se aplica (mesmo domínio de
-    // `fiscal_fechamentos.obrigacao`).
-    obrigacao: varchar('obrigacao', { length: 20 }).notNull(),
-    // Janela de vigência do perfil (fim aberto = ainda vigente).
-    vigenciaInicio: date('vigencia_inicio').notNull(),
-    vigenciaFim: date('vigencia_fim'),
-    // Origem da definição do perfil (matriz legal/inventário fiscal — a
-    // pré-condição bloqueante da fase). Deixa EXPLÍCITO de onde veio.
-    fonte: varchar('fonte', { length: 60 }).notNull(),
-    ativo: boolean('ativo').notNull().default(true),
-    criadoEm: timestamp('criado_em', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    atualizadoEm: timestamp('atualizado_em', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    // Um perfil por (cliente, uf, obrigacao, inicio): novas vigências geram
-    // novas linhas, preservando o histórico (não sobrescrevem a anterior).
-    uniqueIndex('uidx_fiscal_perfil_vigencia').on(
-      table.clienteId,
-      table.uf,
-      table.obrigacao,
-      table.vigenciaInicio,
-    ),
-    // Lookup por competência: perfis de um escopo ordenados por vigência.
-    index('idx_fiscal_perfil_lookup').on(
-      table.clienteId,
-      table.uf,
-      table.obrigacao,
-      table.vigenciaInicio,
-    ),
-    check('chk_fiscal_perfil_uf', sql`${table.uf} ~ '^[A-Z]{2}$'`),
-    check(
-      'chk_fiscal_perfil_regime',
-      sql`${table.regime} IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL')`,
-    ),
-    check(
-      'chk_fiscal_perfil_obrigacao',
-      sql`${table.obrigacao} IN ('EFD_ICMS_IPI', 'EFD_CONTRIBUICOES', 'GIA', 'DAS', 'DAPI')`,
-    ),
-    // Vigência fechada só quando o fim é posterior ou igual ao início.
-    check(
-      'chk_fiscal_perfil_vigencia',
-      sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,
-    ),
-  ],
-);
 
 // `fiscal_regras_versoes` (design §7): REVISÕES IMUTÁVEIS de uma regra fiscal,
 // ancoradas numa versão de catálogo. Cada linha é uma versão de regra com
@@ -3754,7 +3499,7 @@ export const fiscalRegrasVersoes = pgTable(
 //
 // VALORES: `valor` é a MAGNITUDE decimal não-negativa (string, nunca `Number`);
 // o efeito no saldo vem de `sinal` (+1 pagamento, -1 estorno), mantendo a
-// decomposição explícita e conciliável (mesma convenção de `fiscal_lancamentos`).
+// decomposição explícita e conciliável.
 //
 // ADITIVA: só cria estrutura nova; não altera nem remove nada existente.
 export const fiscalPagamentosEventos = pgTable(
