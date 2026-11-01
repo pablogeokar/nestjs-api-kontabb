@@ -1,14 +1,17 @@
 # Matriz de objetos candidatos do schema — 31/10/2026
 
 Esta matriz complementa `relatorio-saneamento.md`. Evidência: varredura de
-`api/src`, `web`, `extensao` e `backup-restore`; `pg_catalog`,
+`api/src`, `web`, `extensao`, `backup-drive` e `backup-restore`; `pg_catalog`,
 `information_schema` e contagens exatas de `kontabb-development` e do Neon
 implantado, sempre em transações `READ ONLY`. O banco configurado em
 `api/.env` aponta para `localhost/kontabb-development`; o alvo foi consultado
 em conexão separada, sem escrita, conforme a restrição do usuário.
 
-Em `web`, `extensao` e `backup-restore` não há referência textual direta aos
-nove nomes de tabela abaixo. A API pode expor seus dados **indiretamente** por
+Em `web` e `extensao` não há referência textual direta aos nove nomes de tabela
+abaixo. No código de produção de `backup-drive` e `backup-restore`, a opção de
+compatibilidade recebe nomes informados pelo operador, sem referência fixa às
+três tabelas candidatas; os nomes aparecem apenas em testes e exemplos do
+helper. A API pode expor seus dados **indiretamente** por
 serviços, como indicado na coluna de consumo. O usuário informou que não
 conhece consumidores externos das três tabelas sem uso encontrado e confirmou
 que não há uso planejado nem exigência de retenção. Isso não constitui
@@ -74,11 +77,14 @@ ausentes, com verificação do bloco `COPY` vazio; o Backup Drive expõe essa
 opção. Em novo clone de 54 tabelas, `dry-run` e restore real do mesmo arquivo
 passaram: 54 tabelas/13.389 registros, três blocos vazios ignorados, 98 FKs e
 boot do `AppModule`. Um bloco sintético com linha foi rejeitado e o rollback
-preservou os dados restaurados; sem a opção, o erro antigo permaneceu. O
-Os binários locais macOS e Windows foram recompilados; o app macOS com helper v1.2
-universal arm64/x86_64 foi compilado e validado localmente. O script de release
-Windows foi preparado, mas requer build e teste em host Windows. O pacote Mac
-segue ad hoc e sem notarização. O usuário pediu para pular a etapa de
-distribuição/homologação; por isso nenhuma migration `0004` foi gerada. A
-retirada das tabelas permanece suspensa, inclusive pela revisão de consumidores
-externos ainda pendente.
+preservou os dados restaurados; sem a opção, o erro antigo permaneceu. Os
+binários locais macOS e Windows do helper foram recompilados; o app macOS com
+helper v1.2 universal arm64/x86_64 foi compilado e validado localmente. Na
+retomada da entrega, o app passou a limpar cópias temporárias também em falhas,
+e o script macOS passou a comparar o helper embarcado byte a byte com o
+recém-compilado. O ZIP foi reconstruído e verificado após extração. O script de
+release Windows foi preparado, mas requer build e teste em host Windows, que o
+usuário ainda não tem disponível. O pacote Mac segue ad hoc e sem notarização;
+neste Mac só há identidade Apple Development. Nenhuma migration `0004` foi
+gerada. A retirada das tabelas permanece suspensa até a distribuição e
+homologação do helper e a revisão de consumidores externos.
