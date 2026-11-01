@@ -137,13 +137,20 @@ Escrituração de DF-e, motor de regras de CFOP, apuração multitributária e
 geração da EFD ICMS/IPI (SPED Fiscal). Endpoints de cliente em `/api/fiscal/*`
 (empresa resolvida pela sessão) e de staff em `/api/admin/fiscal/*`.
 
-| Área                                   | Rotas principais                                                        | Documento                                          |
-| -------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------- |
-| Documentos e escrituração              | `/api/fiscal/documentos*`, `/api/admin/fiscal/reprocessar-escrituracao` | `docs/fiscal-xml-import.md`, `docs/fiscal-sync.md` |
-| CT-e                                   | `/api/fiscal/relatorios/d100`, `d190`                                   | `docs/fiscal-cte-escrituracao.md`                  |
-| Motor de regras e CFOP                 | `/api/fiscal/cfops*`, `/api/fiscal/regras*`                             | `docs/fiscal-motor-de-regras-cfop.md`              |
-| Apuração (CIAP/DIFAL/PIS-COFINS/guias) | `/api/fiscal/apuracao/*`                                                | `docs/fiscal-apuracao-multitributaria.md`          |
-| SPED EFD ICMS/IPI                      | `/api/fiscal/sped/efd-icms-ipi/*`                                       | `docs/fiscal-sped-efd-icms-ipi.md`                 |
+| Área | Rotas principais | Documentação |
+| --- | --- | --- |
+| Documentos e escrituração | `/api/fiscal/documentos*`, `/api/admin/fiscal/reprocessar-escrituracao` | [Importação de XML](docs/fiscal-xml-import.md), [sync SEFAZ](docs/fiscal-sync.md), [escrituração inteligente](docs/fiscal-escrituracao-inteligente.md) |
+| CT-e | `/api/fiscal/relatorios/d100`, `d190` | [Escrituração de CT-e](docs/fiscal-cte-escrituracao.md) |
+| Motor de regras e CFOP | `/api/fiscal/cfops*`, `/api/fiscal/regras*` | [Regras e catálogo](docs/fiscal-motor-de-regras-cfop.md) |
+| Apuração (CIAP/DIFAL/PIS-COFINS/guias) | `/api/fiscal/apuracao/*` | [Apuração multitributária](docs/fiscal-apuracao-multitributaria.md) |
+| Simples Nacional | `/api/fiscal/simples/*` | [Revisão da receita e precisão](docs/simples-revisao-receita-2026.md) |
+| Entrega e conciliação | `/api/fiscal/entregas/*` | [Operação fiscal](docs/fiscal-entrega-conciliacao-operacao.md) |
+| SPED EFD ICMS/IPI | `/api/fiscal/sped/efd-icms-ipi/*` | [Guia da EFD](docs/fiscal-sped-efd-icms-ipi.md) |
+
+Documentação operacional: [recriação do banco](docs/database-rebuild.md),
+[datas e fusos](docs/database-timezones.md), [ciclo de vida do R2](docs/storage-lifecycle.md),
+[relatório de saneamento](docs/relatorio-saneamento.md) e
+[inventário de rotas](docs/rotas-consumidas.md).
 
 ## Autenticação
 

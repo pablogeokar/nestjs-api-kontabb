@@ -1,5 +1,10 @@
 # Recriação do banco e restore
 
+Este é o procedimento operacional de recuperação. A página administrativa do
+frontend ainda mostra apenas um aviso; ela não inicia restore PostgreSQL.
+Use o Backup Drive ou o helper `backup-restore` em um banco de destino
+separado e autorizado.
+
 O histórico começa em `drizzle/0000_baseline_kontabb.sql`, que cria o schema
 histórico de 57 tabelas em banco vazio. As migrations `0001`–`0004` vêm depois;
 a `0004` retira três tabelas vazias e deixa o schema atual com 54. Não edite a
