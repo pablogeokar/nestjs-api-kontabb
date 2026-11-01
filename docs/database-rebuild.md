@@ -21,9 +21,10 @@ restantes e os 13.389 registros, validando 98 FKs. Se houver qualquer linha no
 `COPY` de tabela ausente, aborta e reverte tudo. O Backup Drive também expõe
 essa lista opcional, mas precisa embarcar o helper v1.2. A `0004` já está no
 journal e foi ensaiada em clone; o banco local de testes está em `0004`.
-**Ela não foi aplicada no banco implantado, cuja alteração foi proibida pelo
-usuário.** A distribuição e a homologação do helper em máquinas de operador
-continuam pendentes antes de qualquer rollout futuro ali.
+Em 01/11/2026, o usuário informou que **ele próprio aplicou a `0004` no banco
+implantado e validou o backup/restore**. O agente não verificou o estado
+posterior desse banco nem executou escrita nele. A plataforma e a assinatura
+do pacote usado não foram informadas.
 
 ## Pré-requisitos
 

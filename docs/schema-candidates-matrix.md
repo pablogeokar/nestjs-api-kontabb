@@ -58,8 +58,8 @@ original tem os quatro hashes das migrations locais, os quatro diagnósticos
 históricos de pagamento retornaram zero e `preflight-migrations.sql` produziu
 22 conjuntos de **zero linhas de violação**. Consultas adicionais ao catálogo
 não encontraram views nem triggers nas três tabelas candidatas. A ausência de
-consumidores SQL externos não é demonstrável apenas pelo catálogo. A `0004`
-prepara os drops, mas não foi aplicada no banco implantado.
+consumidores SQL externos não é demonstrável apenas pelo catálogo. Naquela
+consulta de 31/10, a `0004` ainda não havia sido aplicada no banco implantado.
 
 O ensaio reversível em `../scripts/dry-run-unused-tables.sql` foi executado em
 clone local e no clone do backup identificado como implantado: `DROP ...
@@ -100,5 +100,11 @@ deixando 54 tabelas e cinco entradas no tracker; uma linha sintética e uma view
 dependente, em outro clone, fizeram a migration abortar sem remoção parcial.
 O backup antigo foi restaurado de novo sobre o clone **já migrado** com helper
 v1.2: 54 tabelas, 13.389 registros, três blocos vazios ignorados e 98 FKs.
-A aplicação no banco implantado permanece proibida; distribuição e
-homologação do helper e revisão de consumidores externos ainda são necessárias.
+Naquele momento, a aplicação no banco implantado permanecia proibida ao agente.
+
+**Atualização de 01/11/2026:** o usuário informou que aplicou a `0004` em
+produção e validou backup/restore com sucesso. As contagens do alvo nesta
+matriz são do preflight anterior ao rollout. O estado posterior do banco
+implantado não foi verificado independentemente pelo agente, que não executou
+DDL ou DML nele. A plataforma e a assinatura do pacote usado pelo usuário
+não foram informadas.

@@ -182,12 +182,20 @@ Uma nova busca no código de runtime de `api/src`, `web`, `extensao` e `backup-d
 
 O README do `backup-restore` foi alinhado ao journal atual: para recriação completa, aplicar `0000`–`0004`, não apenas a baseline, antes de restaurar; a opção de compatibilidade é necessária somente para backups de 57 tabelas. O script `scripts/dry-run-unused-tables.sql` foi identificado como ensaio histórico **anterior** à `0004` e agora declara que só funciona em clone com as três tabelas presentes.
 
+### Estado da sequência antes da confirmação do rollout
+
+Na revisão anterior à resposta seguinte, o prompt tinha cinco fases, sem uma fase 6. As fases 1–3 e 5 estavam encerradas no escopo documentado; a fase 4 tinha código e ensaios concluídos, restore validado pelo usuário e rollout ainda não confirmado. Como o usuário havia proibido alterações no banco implantado, foi solicitada uma definição de escopo. Nenhuma ação dependente dessa escolha foi executada pelo agente. `pnpm db:check` e `git diff --check` passaram nessa revisão.
+
+### Confirmação posterior do usuário — 01/11/2026
+
+O usuário esclareceu que **ele próprio já aplicou a migration `0004` no banco de produção** e validou backup/restore, informando que tudo funcionou corretamente. Essa é a evidência operacional relatada pelo usuário; **não houve verificação independente posterior** do schema ou tracker implantado nesta etapa. O agente não executou migration, DDL ou DML no banco implantado. A informação não autoriza novas alterações nesse banco pelo agente. A plataforma, assinatura/notarização e distribuição do pacote usado no teste não foram especificadas. No escopo de implementação deste prompt, as cinco fases estão percorridas; não existe fase seguinte definida.
+
 ## Decisões preservadas por risco
 
 - A escrituração fiscal continua baixando e interpretando XML, pois `EscrituracaoFiscalService.reprocessar` usa campos que não têm equivalência demonstrada com os itens persistidos. Sem comparação de EFD por bytes e de contadores de erro em amostra real, reduzir downloads poderia alterar resultado fiscal.
 - Pool de conexões, cache e índices não foram modificados sem medição de carga e plano de invalidação. O `EXPLAIN` local de rate limit não justifica índice adicional neste volume.
 - Não houve divisão de `schema.ts`, move de módulos nem mudança da senha inicial fixa. Essas alterações exigem migração de comportamento e testes de provisionamento/compatibilidade próprios.
-- Antes de qualquer DDL no banco implantado: refazer os preflights somente leitura, verificar integrações e consumidores SQL externos e confirmar a distribuição do helper v1.2 do Backup Drive. O usuário validou o restore; a migration `0004` foi preparada e ensaiada em clone, mas sua execução no banco implantado continua proibida nesta etapa.
+- Antes de qualquer **nova** alteração pelo agente no banco implantado: obter instrução explícita, refazer os preflights somente leitura e revisar integrações/consumidores SQL externos. O usuário informou que aplicou a `0004` e validou o restore por conta própria; o agente não executou escrita em produção.
 
 ## Validação final
 
@@ -210,6 +218,7 @@ O README do `backup-restore` foi alinhado ao journal atual: para recriação com
 | `go test ./...`; `flutter analyze` e `flutter test` | Passaram nos projetos `backup-restore` e `backup-drive`; 11 testes Flutter. |
 | Script macOS de release, `lipo`, `codesign --verify --deep --strict`, extração do ZIP | Passaram; app/helper universais arm64+x86_64, helper v1.2 idêntico ao recém-compilado e ZIP local gerado. Execução Intel pendente sem Rosetta. |
 | Runner Windows 2022: Go, Flutter, build, ZIP e manifesto | [Execução 41292437714](https://github.com/pablogeokar/Kontabb-backup-restore/actions/runs/41292437714) passou; ZIP x64 baixado e verificado por hash/integridade. Instalação/restauração em Windows pendente. |
+| Rollout da `0004` e restore no banco implantado | O usuário informou aplicação e validação bem-sucedidas. Estado posterior não verificado independentemente pelo agente; nenhuma escrita foi executada por ele em produção. |
 | `git diff --check` | Passou. |
 
-A `0004` foi criada e validada em clone local; `kontabb-development` também está no estado `0004`. A reconstrução completa em banco vazio com o backup antigo passou usando o helper v1.2, e o usuário confirmou seu próprio teste bem-sucedido do restore. A distribuição dos pacotes e a revisão de consumidores externos continuam pendentes para qualquer rollout. Nenhuma alteração foi feita no banco em produção.
+A `0004` foi criada e validada em clone local; `kontabb-development` também está no estado `0004`. A reconstrução completa em banco vazio com o backup antigo passou usando o helper v1.2. O usuário informou que aplicou a `0004` em produção e validou o backup/restore. O agente não verificou independentemente o estado posterior nem alterou o banco de produção. As cinco fases do prompt foram percorridas; qualquer trabalho seguinte requer novo escopo.
