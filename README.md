@@ -144,7 +144,7 @@ geração da EFD ICMS/IPI (SPED Fiscal). Endpoints de cliente em `/api/fiscal/*`
 | Motor de regras e CFOP | `/api/fiscal/cfops*`, `/api/fiscal/regras*` | [Regras e catálogo](docs/fiscal-motor-de-regras-cfop.md) |
 | Apuração (CIAP/DIFAL/PIS-COFINS/guias) | `/api/fiscal/apuracao/*` | [Apuração multitributária](docs/fiscal-apuracao-multitributaria.md) |
 | Simples Nacional | `/api/fiscal/simples/*` | [Revisão da receita e precisão](docs/simples-revisao-receita-2026.md) |
-| Entrega e conciliação | `/api/fiscal/entregas/*` | [Operação fiscal](docs/fiscal-entrega-conciliacao-operacao.md) |
+| Entrega e conciliação | `/api/fiscal/apuracao/entregas`, `/api/admin/fiscal/apuracao/entregas` | [Operação fiscal](docs/fiscal-entrega-conciliacao-operacao.md) |
 | SPED EFD ICMS/IPI | `/api/fiscal/sped/efd-icms-ipi/*` | [Guia da EFD](docs/fiscal-sped-efd-icms-ipi.md) |
 
 Documentação operacional: [recriação do banco](docs/database-rebuild.md),

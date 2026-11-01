@@ -2,7 +2,7 @@
 
 ## Escopo e limite da evidência
 
-Implementação do `PROMPT_REFATORACAO_E_OTIMIZACAO_API_CONSOLIDADO.md` em `api/`, com inspeção dos consumidores em `web/` e `extensao/`. A raiz `kontabb/` não é repositório Git. Os primeiros ensaios usaram bancos isolados no PostgreSQL local e consultaram `kontabb-development` em transações `READ ONLY`; ao final da etapa `0004`, o banco local de testes estava migrado para 54 tabelas e cinco entradas no tracker. O usuário identificou `backup-drive/documentos/kontabb-20261031-153521.sql.gz` como backup do banco implantado, e ele foi restaurado em clone isolado. Em seguida, o banco implantado foi consultado diretamente **somente em transações `READ ONLY`**; `SHOW transaction_read_only` retornou `on`. O usuário proibiu qualquer alteração nesse banco. Não houve DDL, migration, DML ou remoção de dados no ambiente implantado.
+Relatório da refatoração de `api/`, com inspeção dos consumidores em `web/` e `extensao/`. A raiz `kontabb/` não é repositório Git. Os primeiros ensaios usaram bancos isolados no PostgreSQL local e consultaram `kontabb-development` em transações `READ ONLY`; ao final da etapa `0004`, o banco local de testes estava migrado para 54 tabelas e cinco entradas no tracker. O usuário identificou `backup-drive/documentos/kontabb-20261031-153521.sql.gz` como backup do banco implantado, e ele foi restaurado em clone isolado. Em seguida, o banco implantado foi consultado diretamente **somente em transações `READ ONLY`**; `SHOW transaction_read_only` retornou `on`. O usuário proibiu qualquer alteração nesse banco. O agente não executou DDL, migration, DML ou remoção de dados no ambiente implantado; o rollout posterior informado pelo usuário está registrado ao final.
 
 ## Baseline e contratos
 
