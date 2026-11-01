@@ -1,10 +1,10 @@
--- Ensaio local de uma possível migration futura. Em sucesso termina em
+-- Ensaio histórico anterior à migration 0004. Só funciona em clone com as
+-- três tabelas ainda presentes (schema de 57 tabelas). Em sucesso termina em
 -- ROLLBACK; com ON_ERROR_STOP, uma falha encerra a sessão e reverte a transação.
 -- Execute SOMENTE em clone descartável, com psql -v ON_ERROR_STOP=1.
--- Não é uma migration Drizzle; não inclua no journal sem compatibilizar o
--- restore dos backups de 57 tabelas, revisar consumidores externos e a janela
--- de deploy. Nunca rode no banco implantado: o usuário proibiu alterações
--- nele, inclusive este ensaio DDL.
+-- Não é uma migration Drizzle; a 0004 versionada contém as guardas reais.
+-- Nunca rode no banco implantado: o usuário proibiu alterações nele,
+-- inclusive este ensaio DDL.
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';

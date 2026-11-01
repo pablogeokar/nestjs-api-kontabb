@@ -180,9 +180,11 @@ possui driver, ORM, schema, migrations, seeds ou credenciais de banco.
 
 Novos ambientes começam pela baseline `drizzle/0000_baseline_kontabb.sql` e
 recebem depois as migrations incrementais registradas em
-`drizzle/meta/_journal.json` (`0001`–`0003` nesta revisão). A baseline é
+`drizzle/meta/_journal.json` (`0001`–`0004` nesta revisão). A baseline é
 destinada a bancos vazios; não a aplique sobre o banco antigo. O procedimento
-de recriação, restore e validação está em `docs/database-rebuild.md`.
+de recriação, restore e validação está em `docs/database-rebuild.md`. A `0004`
+retira três tabelas vazias; backups anteriores a ela precisam do helper
+`backup-restore` v1.2 e da opção explícita documentada no procedimento.
 
 Para desenvolvimento local, suba o PostgreSQL e aplique as migrations:
 

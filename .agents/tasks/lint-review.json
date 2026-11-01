@@ -1,9 +1,0 @@
-{
-  "verdict": "APPROVED",
-  "findings": [
-    "Informational: the fix set spans HEAD commit 8d5e5ce plus uncommitted working-tree changes; `git diff` alone shows only 10 of the 25 fixed files. No action required — all 25 reported files were verified fixed by reading the current tree.",
-    "Non-blocking: the uncommitted spec files silence no-unsafe-assignment on jest asymmetric matchers with `as unknown` (expect.stringContaining/anything/stringMatching). Runtime-inert; a matcher-typed cast would be more precise but is optional.",
-    "Non-blocking: `delete rest.regraAprovada` in st-enquadramento.spec.ts type-checks only because regraAprovada is optional on the input type; holds per the recorded build pass, flagged as the one load-bearing type assumption."
-  ],
-  "reviewDoc": "/Users/pablo/dev/kontabb/api/.agents/tasks/lint-review.md"
-}

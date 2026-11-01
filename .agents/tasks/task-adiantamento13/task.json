@@ -1,7 +1,0 @@
-{
-  "task_id": "task-adiantamento13",
-  "task_description": "Teach the RH upload module to recognize and process a third document type, Adiantamento do 13º Salário (ADIANTAMENTO_13), exactly like it already handles FOLHA_MENSAL and FERIAS; and make the colaborador API expose each recibo's tipo (plus férias-specific fields) so the panel distinguishes the three types. Keep monthly-payroll and férias behavior byte-for-byte unchanged.",
-  "status": "completed",
-  "feature_order": ["FEAT-001", "FEAT-002"],
-  "blocked_reason": null
-}

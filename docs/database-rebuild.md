@@ -1,8 +1,9 @@
 # Recriação do banco e restore
 
-O histórico foi consolidado em uma única migration
-`drizzle/0000_baseline_kontabb.sql`, gerada de `src/database/schema.ts`. Ela é
-uma baseline para banco vazio e não deve ser executada sobre o banco antigo.
+O histórico começa em `drizzle/0000_baseline_kontabb.sql`, que cria o schema
+histórico de 57 tabelas em banco vazio. As migrations `0001`–`0004` vêm depois;
+a `0004` retira três tabelas vazias e deixa o schema atual com 54. Não edite a
+baseline nem a execute isoladamente sobre um banco existente.
 
 O backup data-only contém somente dados. O schema, constraints e índices sempre
 devem ser criados primeiro pelo Drizzle. Confirme quais tabelas o backup inclui:
@@ -12,16 +13,17 @@ vazia após o restore.
 
 O inverso exige cuidado: se um backup antigo contém `COPY` de uma tabela que
 foi removida do schema novo, o restore padrão aborta e faz rollback.
-O backup de 31/10/2026 contém 57 tabelas, inclusive três candidatas vazias;
+O backup de 31/10/2026 contém 57 tabelas, inclusive três tabelas vazias;
 um ensaio em clone com essas três removidas falhou em `fiscal_perfis_vigencia`
 (`42P01`). O helper `backup-restore` v1.2 acrescenta a opção explícita
 `-skip-missing-empty-tables`: no clone com 54 tabelas, restaurou as 54 tabelas
 restantes e os 13.389 registros, validando 98 FKs. Se houver qualquer linha no
 `COPY` de tabela ausente, aborta e reverte tudo. O Backup Drive também expõe
-essa lista opcional, mas precisa embarcar o helper v1.2. As três tabelas
-**continuam no schema atual**; nenhuma migration `0004` foi gerada ou aplicada.
-Antes de retirá-las, distribua o helper atualizado e repita o ensaio com os
-backups antigos, sem executar DDL no banco implantado.
+essa lista opcional, mas precisa embarcar o helper v1.2. A `0004` já está no
+journal e foi ensaiada em clone; o banco local de testes está em `0004`.
+**Ela não foi aplicada no banco implantado, cuja alteração foi proibida pelo
+usuário.** A distribuição e a homologação do helper em máquinas de operador
+continuam pendentes antes de qualquer rollout futuro ali.
 
 ## Pré-requisitos
 
@@ -37,7 +39,9 @@ backups antigos, sem executar DDL no banco implantado.
    `KONTABB_NEW_DATABASE_URL` com a URL **desse banco novo**, fora do `.env` da
    API em execução. Confirme host e nome do banco antes dos comandos seguintes.
 2. Mantenha a URL do banco antigo intacta para rollback.
-3. Crie o schema:
+3. Crie o schema. O comando aplica `0000`–`0004` no banco novo, inclusive os
+   drops guardados da `0004`; confira antes que a URL aponta para o banco
+   **novo e descartável**. `db:check` valida o journal local, não o banco.
 
 ```bash
 cd api
@@ -45,18 +49,27 @@ DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:migrate
 pnpm db:check
 ```
 
-4. Valide o restore de forma transacional, sem persistir alterações:
+4. Para um backup **anterior à `0004`** que ainda contém blocos `COPY` das
+   três tabelas retiradas, valide o restore de forma transacional, sem
+   persistir alterações. A opção só ignora blocos comprovadamente vazios.
+   Se o backup já foi feito com o schema de 54 tabelas, omita
+   `-skip-missing-empty-tables` nos passos 4 e 5.
 
 ```bash
 cd ../backup-restore
-DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -mode=restore -input=backup-kontabb.sql -database-url-from-env --dry-run
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . \
+  -database-url-from-env -mode=restore -input=backup-kontabb.sql.gz \
+  -skip-missing-empty-tables sped_contabilistas,fiscal_lancamentos,fiscal_perfis_vigencia \
+  -dry-run
 ```
 
 5. Se o dry-run reproduzir a contagem do backup usado e validar todas as FKs,
    execute o restore real no **mesmo banco novo**:
 
 ```bash
-DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -mode=restore -input=backup-kontabb.sql -database-url-from-env
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . \
+  -database-url-from-env -mode=restore -input=backup-kontabb.sql.gz \
+  -skip-missing-empty-tables sped_contabilistas,fiscal_lancamentos,fiscal_perfis_vigencia
 DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -validate -database-url-from-env
 ```
 
@@ -76,11 +89,16 @@ CFOPs, não execute `db:seed:admin` nem `db:seed:cfops` como parte do restore.
 ```bash
 cd ../api
 psql "$KONTABB_NEW_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
+psql "$KONTABB_NEW_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-schema-audit.sql
 ```
 
-Todas as consultas devem retornar zero linhas. Confirme também que o tracker
+As 22 consultas de violações do **primeiro** script devem retornar zero linhas.
+O segundo script é um inventário: confira que o tracker
 `drizzle.__drizzle_migrations` corresponde a todas as entradas de
-`drizzle/meta/_journal.json` (quatro, `0000`–`0003`, nesta revisão).
+`drizzle/meta/_journal.json` (cinco, `0000`–`0004`, nesta revisão). Ele mostra
+as três tabelas retiradas como ausentes, com contagem `NULL`, e as tabelas
+existentes vazias com contagem zero. Seus quatro diagnósticos de pagamentos
+devem retornar zero. Os dois scripts abrem transações `READ ONLY`.
 
 8. Faça smoke tests de login, listagem/download de guias, pagamento,
    upload e recibos de folha. Somente depois atualize a `DATABASE_URL` do deploy.

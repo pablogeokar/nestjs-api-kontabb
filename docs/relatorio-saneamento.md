@@ -162,12 +162,32 @@ Na verificação final, `kontabb-development`, banco local autorizado para teste
 
 **Rollout/retorno:** a `0004` está preparada, mas **não foi aplicada no banco implantado**. Antes de qualquer execução futura ali, refazer o preflight somente leitura, confirmar que as tabelas seguem vazias e sem dependências/consumidores externos, distribuir e homologar o helper v1.2 com restore em máquinas de operador e obter autorização explícita que substitua a proibição atual. Para retornar ao schema de 57 tabelas depois de uma aplicação autorizada, preparar migration compensatória com o DDL exato das três tabelas, índices, checks e FKs da baseline `0000`, ensaiar em clone e voltar a versão da API que as declara; a `0004` só prossegue se não houver linhas nessas tabelas. Restaurar snapshot completo do banco é alternativa operacional com janela de manutenção e avaliação das escritas posteriores. Não editar a baseline nem apagar o registro `0004` do tracker manualmente.
 
+### Continuação da fase 4 — 01/11/2026: reconstrução a partir de banco vazio
+
+O runbook `docs/database-rebuild.md` e o `README.md` da API ainda descreviam o journal até `0003`, afirmavam que a `0004` não existia e mandavam restaurar backups antigos sem a opção de compatibilidade. Foram atualizados para `0000`–`0004`, com o `-skip-missing-empty-tables` explícito **apenas** para backups anteriores à retirada das três tabelas. O README do Backup Drive agora fornece os nomes exatos para o campo de compatibilidade. O runbook mantém o banco antigo intacto e exige URL separada para o banco novo.
+
+O `scripts/preflight-schema-audit.sql` também referenciava as três tabelas removidas diretamente, portanto falhava após a `0004`. As contagens agora são geradas no `psql` com `\gexec` a partir de uma lista fixa de nove nomes: `NULL` indica tabela ausente e zero indica tabela existente vazia. A consulta de FKs usa `to_regclass` para tolerar tabelas retiradas. O script continua em transação `READ ONLY`. Passou no `kontabb-development` com 54 tabelas; em clone local com três tabelas sintéticas vazias, passou no caminho de 57 tabelas e mostrou zero para as três.
+
+Para ensaiar o runbook do início, foi criado `kontabb_rebuild_0004_trial_20261101` vazio no PostgreSQL local. `pnpm db:migrate` aplicou `0000`–`0004`. O helper v1.2 fez `dry-run` e restore real do backup informado como implantado, com três blocos `COPY` vazios ignorados: **54 tabelas, 13.389 registros e 98 FKs**. `db:seed:required` e `-validate` passaram. `scripts/preflight-migrations.sql` retornou **22 conjuntos de zero linhas de violação**; o preflight de schema passou e registrou as três tabelas como ausentes. O tracker tem cinco entradas, com 19 clientes, 8.124 itens fiscais e 48 linhas de aprendizado preservadas. O `AppModule` iniciou e encerrou nesse banco reconstruído. O banco de ensaio e seus logs temporários foram descartados após a validação. O ensaio usou somente o banco local; nenhum comando foi direcionado ao banco implantado. Instalação e restore pelo aplicativo em outros Macs/Windows continuam pendentes de homologação.
+
+O helper **extraído do ZIP macOS** `backup-drive-macos-helper-v1.2.zip` também executou o `dry-run` do backup antigo contra `kontabb-development`: 54 tabelas, 13.389 registros, três blocos vazios ignorados. Após o rollback, o banco manteve 54 tabelas, cinco migrations, 19 clientes, 8.124 itens fiscais e 48 linhas de aprendizado. Isso verifica o binário embarcado no pacote neste Mac; a interface do app e a instalação em outro Mac/Windows ainda não foram homologadas. A extração e o log temporários foram removidos.
+
+### Confirmação do usuário e sequência das fases — 01/11/2026
+
+O usuário informou que **testou o restore e que ele funcionou corretamente**. Essa é a homologação funcional do restore para este plano; a plataforma e o pacote usados no teste não foram informados. Não a confundir com assinatura/notarização, distribuição dos pacotes ou execução da migration no banco implantado. A restrição explícita de não alterar esse banco continua vigente.
+
+Nova consulta local a `security find-identity -p codesigning -v` encontrou apenas uma identidade **Apple Development**. A identidade **Developer ID Application** não está disponível neste Mac para assinar o pacote de distribuição; nenhuma assinatura/notarização nova foi iniciada.
+
+Uma nova busca no código de runtime de `api/src`, `web`, `extensao` e `backup-drive` não encontrou referências a `sped_contabilistas`, `fiscal_lancamentos` ou `fiscal_perfis_vigencia`; no helper Go, os nomes aparecem somente em testes. Isso confirma ausência de consumidores nesses repositórios na revisão atual, sem demonstrar ausência de SQL externo ao workspace. A fase 5 já havia sido avaliada: nenhum move de módulos tem ganho funcional comprovado, então nenhuma reorganização foi feita.
+
+O README do `backup-restore` foi alinhado ao journal atual: para recriação completa, aplicar `0000`–`0004`, não apenas a baseline, antes de restaurar; a opção de compatibilidade é necessária somente para backups de 57 tabelas. O script `scripts/dry-run-unused-tables.sql` foi identificado como ensaio histórico **anterior** à `0004` e agora declara que só funciona em clone com as três tabelas presentes.
+
 ## Decisões preservadas por risco
 
 - A escrituração fiscal continua baixando e interpretando XML, pois `EscrituracaoFiscalService.reprocessar` usa campos que não têm equivalência demonstrada com os itens persistidos. Sem comparação de EFD por bytes e de contadores de erro em amostra real, reduzir downloads poderia alterar resultado fiscal.
 - Pool de conexões, cache e índices não foram modificados sem medição de carga e plano de invalidação. O `EXPLAIN` local de rate limit não justifica índice adicional neste volume.
 - Não houve divisão de `schema.ts`, move de módulos nem mudança da senha inicial fixa. Essas alterações exigem migração de comportamento e testes de provisionamento/compatibilidade próprios.
-- Antes de qualquer DDL no banco implantado: refazer os preflights somente leitura, verificar integrações e consumidores SQL externos e distribuir/homologar o helper v1.2 do Backup Drive. A migration incremental `0004` foi preparada e ensaiada em clone; o usuário proibiu sua execução no banco implantado nesta etapa.
+- Antes de qualquer DDL no banco implantado: refazer os preflights somente leitura, verificar integrações e consumidores SQL externos e confirmar a distribuição do helper v1.2 do Backup Drive. O usuário validou o restore; a migration `0004` foi preparada e ensaiada em clone, mas sua execução no banco implantado continua proibida nesta etapa.
 
 ## Validação final
 
@@ -184,9 +204,12 @@ Na verificação final, `kontabb-development`, banco local autorizado para teste
 | Helper v1.2 em clone com 54 tabelas | `dry-run` e restore real passaram: 13.389 registros, 3 tabelas vazias ignoradas, 98 FKs e boot do `AppModule`. Linha sintética em tabela ausente abortou com rollback. |
 | `0004` no clone restaurado do backup | Passou: 57 → 54 tabelas, tracker 4 → 5; snapshot muda apenas as três tabelas previstas. Restore antigo com helper v1.2 em `dry-run` e real e boot do `AppModule` passaram após a migration. |
 | Guardas da `0004` em outro clone | Linha sintética e view dependente causaram falhas esperadas; em ambos os casos, 57 tabelas e quatro entradas do tracker permaneceram. |
+| Recriação em banco local vazio com `0000`–`0004` | Migrations, `dry-run`, restore real do backup antigo, seeds, validação de 98 FKs e 22 consultas de domínio passaram; 54 tabelas, 13.389 registros importados, cinco entradas no tracker. |
+| `preflight-schema-audit.sql` antes/depois da retirada | Passou com 54 tabelas reais e com três tabelas sintéticas vazias em clone; diferenciou `NULL` (ausente) de zero (vazia). |
+| Helper extraído do ZIP macOS | `dry-run` do backup antigo passou no banco local de testes; rollback preservou dados e tracker. Interface e instalação em outro computador pendentes. |
 | `go test ./...`; `flutter analyze` e `flutter test` | Passaram nos projetos `backup-restore` e `backup-drive`; 11 testes Flutter. |
 | Script macOS de release, `lipo`, `codesign --verify --deep --strict`, extração do ZIP | Passaram; app/helper universais arm64+x86_64, helper v1.2 idêntico ao recém-compilado e ZIP local gerado. Execução Intel pendente sem Rosetta. |
 | Runner Windows 2022: Go, Flutter, build, ZIP e manifesto | [Execução 41292437714](https://github.com/pablogeokar/Kontabb-backup-restore/actions/runs/41292437714) passou; ZIP x64 baixado e verificado por hash/integridade. Instalação/restauração em Windows pendente. |
 | `git diff --check` | Passou. |
 
-A `0004` foi criada e validada em clone local; `kontabb-development` também está no estado `0004`. O preflight read-only do schema/tracker implantado e a restauração do backup no schema atual passaram. O helper v1.2 restaurou o backup em clone migrado sem as três tabelas vazias. A distribuição/homologação do helper e a revisão de consumidores externos continuam pendentes para qualquer rollout. Nenhuma alteração foi feita no banco em produção.
+A `0004` foi criada e validada em clone local; `kontabb-development` também está no estado `0004`. A reconstrução completa em banco vazio com o backup antigo passou usando o helper v1.2, e o usuário confirmou seu próprio teste bem-sucedido do restore. A distribuição dos pacotes e a revisão de consumidores externos continuam pendentes para qualquer rollout. Nenhuma alteração foi feita no banco em produção.

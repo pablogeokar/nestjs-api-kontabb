@@ -1,4 +1,5 @@
 -- Diagnóstico somente leitura para uma cópia representativa do banco alvo.
+-- Funciona antes e depois da 0004 (57 ou 54 tabelas); requer psql por \gexec.
 -- Execute com: psql "$KONTABB_AUDIT_DATABASE_URL" -v ON_ERROR_STOP=1 \
 --   -f scripts/preflight-schema-audit.sql
 -- Não aplique migrations, DROP ou backfill com base apenas neste resultado.
@@ -29,15 +30,24 @@ LEFT JOIN pg_class p ON p.oid = to_regclass('public.' || c.tabela)
 ORDER BY c.tabela;
 
 -- Contagens exatas: revise custo/timeout no alvo antes de executar.
-SELECT 'sped_contabilistas' AS objeto, count(*) AS linhas FROM sped_contabilistas
-UNION ALL SELECT 'fiscal_lancamentos', count(*) FROM fiscal_lancamentos
-UNION ALL SELECT 'fiscal_perfis_vigencia', count(*) FROM fiscal_perfis_vigencia
-UNION ALL SELECT 'ciap_competencias_apropriadas', count(*) FROM ciap_competencias_apropriadas
-UNION ALL SELECT 'ciap_movimentos', count(*) FROM ciap_movimentos
-UNION ALL SELECT 'sped_arquivos_gerados', count(*) FROM sped_arquivos_gerados
-UNION ALL SELECT 'classificacao_destinacao_aprendizado', count(*) FROM classificacao_destinacao_aprendizado
-UNION ALL SELECT 'fiscal_regras_versoes', count(*) FROM fiscal_regras_versoes
-UNION ALL SELECT 'fiscal_decisoes_item', count(*) FROM fiscal_decisoes_item;
+-- Uma tabela retirada aparece com linhas NULL; zero significa tabela existente
+-- e vazia. A query gerada usa somente nomes fixos desta lista.
+WITH candidatas(tabela, ordem) AS (
+  VALUES ('sped_contabilistas', 1), ('fiscal_lancamentos', 2),
+         ('fiscal_perfis_vigencia', 3), ('ciap_competencias_apropriadas', 4),
+         ('ciap_movimentos', 5), ('sped_arquivos_gerados', 6),
+         ('classificacao_destinacao_aprendizado', 7),
+         ('fiscal_regras_versoes', 8), ('fiscal_decisoes_item', 9)
+)
+SELECT string_agg(
+  CASE WHEN to_regclass(format('public.%I', tabela)) IS NULL
+    THEN format('SELECT %L::text AS objeto, NULL::bigint AS linhas', tabela)
+    ELSE format('SELECT %L::text AS objeto, count(*)::bigint AS linhas FROM public.%I', tabela, tabela)
+  END,
+  E' UNION ALL\n' ORDER BY ordem
+)
+FROM candidatas
+\gexec
 
 -- FKs que apontam para candidatas, inclusive autorreferências.
 SELECT f.confrelid::regclass AS tabela_referenciada,
@@ -46,11 +56,15 @@ SELECT f.confrelid::regclass AS tabela_referenciada,
 FROM pg_constraint f
 WHERE f.contype = 'f'
   AND f.confrelid IN (
-    'sped_contabilistas'::regclass, 'fiscal_lancamentos'::regclass,
-    'fiscal_perfis_vigencia'::regclass, 'ciap_competencias_apropriadas'::regclass,
-    'ciap_movimentos'::regclass, 'sped_arquivos_gerados'::regclass,
-    'classificacao_destinacao_aprendizado'::regclass,
-    'fiscal_regras_versoes'::regclass, 'fiscal_decisoes_item'::regclass
+    to_regclass('public.sped_contabilistas'),
+    to_regclass('public.fiscal_lancamentos'),
+    to_regclass('public.fiscal_perfis_vigencia'),
+    to_regclass('public.ciap_competencias_apropriadas'),
+    to_regclass('public.ciap_movimentos'),
+    to_regclass('public.sped_arquivos_gerados'),
+    to_regclass('public.classificacao_destinacao_aprendizado'),
+    to_regclass('public.fiscal_regras_versoes'),
+    to_regclass('public.fiscal_decisoes_item')
   )
 ORDER BY 1, 2, 3;
 
