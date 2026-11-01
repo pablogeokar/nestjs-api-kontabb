@@ -134,6 +134,12 @@ Os parsers de folha mensal e adiantamento de 13º agora aceitam CNPJ com 12 posi
 
 Os testes substituem apenas o identificador em textos já extraídos de PDFs numéricos e comparam os objetos completos com os resultados anteriores: funcionários, rubricas, totais, datas e demais campos permanecem iguais. Isso demonstra equivalência nesses layouts e evita perder dados relacionados ao CNPJ. Ainda não há PDF real alfanumérico para homologar a leitura por `unpdf` e possíveis variações de layout. A extração de guias fiscais continua numérica. Não houve alteração de schema, dados ou contratos HTTP.
 
+### Retomada da fase 4: preparação do Backup Drive para entrega
+
+O usuário retomou a implementação do Backup Drive depois de pedir para pular sua distribuição. A cópia temporária de backup/restore agora fica em um diretório exclusivo da operação, removido também se a cópia de entrada, a inicialização do helper, a leitura do processo ou a cópia de saída falharem. Se a coleta de saída falhar, o processo é encerrado antes da limpeza. O teste de restauração confirma a remoção após sucesso; outro teste cobre falha ao iniciar o helper. O arquivo original selecionado continua intacto.
+
+O script macOS passou a comparar byte a byte o helper recém-compilado com o embarcado. `flutter analyze`, `flutter test` (11 testes), `go test ./...`, `bash -n` e `git diff --check` passaram. O pacote macOS universal foi reconstruído em `backup-drive/build/release/backup-drive-macos-helper-v1.2.zip` com SHA-256 `7ad9f0cec32be4259cd7424a3e8c5db7a76e6578c876b7b8af8febeffca8a152`. Após extrair o ZIP, passaram `codesign --verify --deep --strict`, `lipo -verify_arch` para arm64/x86_64 no app e no helper, e a verificação de versão/opção do helper. A assinatura continua **ad hoc**, sem notarização. O usuário informou dispor de identidade Apple, mas não de host Windows; neste Mac, `security find-identity -p codesigning -v` lista somente `Apple Development`, não `Developer ID Application`. A localização da identidade de distribuição e de eventual perfil `notarytool` foi solicitada sem pedir credenciais. O build e a execução do aplicativo em Windows e o teste de execução em Mac Intel ainda dependem de máquinas dessas plataformas. Nenhum pacote foi distribuído e nenhum banco de produção foi alterado.
+
 ## Decisões preservadas por risco
 
 - A escrituração fiscal continua baixando e interpretando XML, pois `EscrituracaoFiscalService.reprocessar` usa campos que não têm equivalência demonstrada com os itens persistidos. Sem comparação de EFD por bytes e de contadores de erro em amostra real, reduzir downloads poderia alterar resultado fiscal.
@@ -154,8 +160,8 @@ Os testes substituem apenas o identificador em textos já extraídos de PDFs num
 | Ensaio de `dry-run-unused-tables.sql` em clone do backup | Passou com `ROLLBACK`; abortou antes do `DROP` com linha sintética. |
 | Restore de backup antigo em clone com 54 tabelas | Falhou como esperado em `COPY fiscal_perfis_vigencia` (`42P01`) e reverteu; comprova incompatibilidade. |
 | Helper v1.2 em clone com 54 tabelas | `dry-run` e restore real passaram: 13.389 registros, 3 tabelas vazias ignoradas, 98 FKs e boot do `AppModule`. Linha sintética em tabela ausente abortou com rollback. |
-| `go test ./...`; `flutter analyze` e `flutter test test/database_backup_service_test.dart` | Passaram nos projetos `backup-restore` e `backup-drive`. |
-| Script macOS de release, `lipo`, `codesign --verify --deep --strict`, extração do ZIP | Passaram; app/helper universais arm64+x86_64, helper v1.2 embarcado e ZIP local gerado. Execução Intel pendente sem Rosetta. |
+| `go test ./...`; `flutter analyze` e `flutter test` | Passaram nos projetos `backup-restore` e `backup-drive`; 11 testes Flutter. |
+| Script macOS de release, `lipo`, `codesign --verify --deep --strict`, extração do ZIP | Passaram; app/helper universais arm64+x86_64, helper v1.2 idêntico ao recém-compilado e ZIP local gerado. Execução Intel pendente sem Rosetta. |
 | Build Go Windows x64 | Passou; PE gerado. Build/teste do app Windows dependem de host Windows. |
 | `git diff --check` | Passou. |
 
