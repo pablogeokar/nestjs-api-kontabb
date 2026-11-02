@@ -1,9 +1,17 @@
 # Importação manual de XML fiscal
 
 A interface do módulo fiscal permite selecionar todos os XMLs de uma única vez,
-inclusive centenas de arquivos. O navegador divide a seleção em lotes internos
-de até 20 arquivos e os envia sequencialmente, consolidando o progresso e o
-resultado sem exigir ação adicional do usuário. Cada XML possui limite de 10 MB.
+inclusive milhares de arquivos. Na hospedagem atual da API em Vercel Functions,
+o navegador divide a seleção em lotes internos de até 20 arquivos e até 3 MiB
+de conteúdo por requisição, deixando margem para o multipart sob o limite de
+4,5 MB da plataforma. Os lotes são enviados sequencialmente. Falhas de
+transporte são divididas em lotes menores e arquivos individuais recebem
+tentativas adicionais. Arquivos acima de 3 MiB são identificados e não enviados
+por esta tela; exigem um fluxo de upload direto ao R2. O serviço NestJS aceita
+XMLs de até 10 MB quando o transporte permite.
+
+Ao terminar, a interface mantém selecionados os XMLs com erro para uma nova
+tentativa na mesma aba. Os documentos já persistidos continuam idempotentes.
 
 Os lotes internos são enviados pelos endpoints autenticados:
 
@@ -15,7 +23,9 @@ Os lotes internos são enviados pelos endpoints autenticados:
 
 O corpo usa `multipart/form-data`, com os arquivos no campo `files`. O limite de
 20 itens existe somente por requisição para controlar memória e tempo de
-processamento da API; não é um limite da operação apresentada ao usuário.
+processamento da API; não é um limite da operação apresentada ao usuário. A
+operação ainda depende de a aba e o computador permanecerem ativos; não há fila
+persistente de importação em segundo plano.
 
 ## Classificação
 
