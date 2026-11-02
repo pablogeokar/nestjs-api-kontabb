@@ -15,6 +15,8 @@ import { resolve } from 'node:path';
 describe('ImportacaoXmlFiscalService', () => {
   const storage = {
     upload: jest.fn(),
+    uploadIfAbsent: jest.fn().mockResolvedValue(true),
+    download: jest.fn(),
     delete: jest.fn(),
   };
   const logger = {
@@ -44,6 +46,7 @@ describe('ImportacaoXmlFiscalService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    storage.uploadIfAbsent.mockResolvedValue(true);
     service = new ImportacaoXmlFiscalService(
       {} as never,
       storage as never,
@@ -390,13 +393,16 @@ describe('ImportacaoXmlFiscalService', () => {
       }),
     );
     const persistedValues = updateValues.mock.calls[0]?.[0];
+    expect(persistedValues?.xmlKey).toBe(
+      `clientes/03155128000112/fiscais/2026/09/nfse/${documento.chaveAcesso}.xml`,
+    );
     const nfseDados = persistedValues?.nfseDados as
       Record<string, unknown> | undefined;
     expect(nfseDados).toMatchObject({
       cancelada: true,
       nfseSubstituidora: '2026000000199',
     });
-    expect(storage.upload).toHaveBeenCalledTimes(1);
+    expect(storage.uploadIfAbsent).toHaveBeenCalledTimes(1);
     expect(storage.delete).toHaveBeenCalledWith('nfse-autorizada.xml');
   });
 
@@ -478,6 +484,12 @@ describe('ImportacaoXmlFiscalService', () => {
 
     expect(result.status).toBe('IMPORTADO');
     expect(transaction).toHaveBeenCalledTimes(1);
+    expect(storage.uploadIfAbsent).toHaveBeenCalledWith(
+      `clientes/98765432000110/fiscais/2024/08/nfe/${parsed.documento.chaveAcesso}.xml`,
+      expect.any(Buffer),
+      'application/xml',
+    );
+    expect(storage.delete).not.toHaveBeenCalled();
     // R1.6/R1.7: serializa reimportações concorrentes manual × DF-e por
     // cliente + chaveAcesso (NÃO por NSU), usando o mesmo formato de chave do
     // caminho de distribuição para convergir no mesmo documento lógico.

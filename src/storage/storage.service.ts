@@ -45,6 +45,37 @@ export class StorageService {
     );
   }
 
+  /** Cria o objeto somente se a chave ainda não existir no R2. */
+  async uploadIfAbsent(
+    key: string,
+    body: Buffer | Uint8Array,
+    contentType: string,
+  ): Promise<boolean> {
+    try {
+      await this.r2.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          ContentLength: body.length,
+          IfNoneMatch: '*',
+        }),
+      );
+      return true;
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        '$metadata' in error &&
+        (error.$metadata as { httpStatusCode?: number })?.httpStatusCode === 412
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   async delete(key: string): Promise<void> {
     await this.r2.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
