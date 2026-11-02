@@ -183,6 +183,7 @@ CREATE TABLE "clientes" (
 	"cnae_principal_descricao" text,
 	"cnaes_secundarios" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"regime_tributario" text,
+	"regime_competencia" boolean DEFAULT true NOT NULL,
 	"apura_icms" boolean DEFAULT false NOT NULL,
 	"inscricao_estadual" text,
 	"tipo_contribuinte_icms" text,
@@ -263,73 +264,6 @@ CREATE TABLE "controle_nsu" (
 	CONSTRAINT "chk_controle_nsu_ultimo" CHECK ("controle_nsu"."ultimo_nsu" >= 0),
 	CONSTRAINT "chk_controle_nsu_max" CHECK ("controle_nsu"."max_nsu" >= 0),
 	CONSTRAINT "chk_controle_nsu_sincronizacao_coerencia" CHECK (("controle_nsu"."sincronizacao_id" IS NULL AND "controle_nsu"."sincronizacao_iniciada_em" IS NULL) OR ("controle_nsu"."sincronizacao_id" IS NOT NULL AND "controle_nsu"."sincronizacao_iniciada_em" IS NOT NULL))
-);
---> statement-breakpoint
-CREATE TABLE "documentos_fiscais" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"cliente_id" uuid NOT NULL,
-	"chave_acesso" text NOT NULL,
-	"nsu" bigint NOT NULL,
-	"tipo_documento" text NOT NULL,
-	"modelo" text NOT NULL,
-	"serie" text,
-	"numero_documento" text NOT NULL,
-	"emitente_cnpj_cpf" text NOT NULL,
-	"emitente_razao_social" text,
-	"destinatario_cnpj_cpf" text NOT NULL,
-	"destinatario_razao_social" text,
-	"data_emissao" timestamp NOT NULL,
-	"data_emissao_fiscal" date,
-	"data_entrada_saida" timestamp,
-	"data_entrada_saida_fiscal" date,
-	"valor_total" numeric(14, 2) NOT NULL,
-	"valor_total_declarado_xml" numeric(15, 2),
-	"totais_declarados_xml" jsonb,
-	"quantidade_itens_declarada_xml" integer,
-	"integridade_conferida" boolean DEFAULT false NOT NULL,
-	"integridade_status" varchar(20) DEFAULT 'NAO_CONFERIDA' NOT NULL,
-	"integridade_detalhes" jsonb,
-	"cod_situacao_sped" varchar(2),
-	"modalidade_frete" varchar(1),
-	"informacoes_complementares" text,
-	"emitente_dados" jsonb,
-	"destinatario_dados" jsonb,
-	"codigo_verificacao" varchar(32),
-	"competencia_declarada" date,
-	"municipio_incidencia" varchar(7),
-	"regime_especial_tributacao" varchar(10),
-	"optante_simples_nacional_xml" boolean,
-	"nfse_dados" jsonb,
-	"documentos_referenciados" jsonb,
-	"situacao" text DEFAULT 'AUTORIZADA' NOT NULL,
-	"manifestacao_status" text DEFAULT 'SEM_MANIFESTACAO' NOT NULL,
-	"tipo_operacao_escriturada" varchar(10) DEFAULT 'ENTRADA' NOT NULL,
-	"tp_nf_xml" varchar(1),
-	"escriturado" boolean DEFAULT false NOT NULL,
-	"escrituracao_status" varchar(24) DEFAULT 'NAO_ESCRITURAVEL' NOT NULL,
-	"xml_key" text NOT NULL,
-	"danfe_key" text,
-	"criado_em" timestamp DEFAULT now() NOT NULL,
-	"atualizado_em" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "chk_docs_fiscais_chave" CHECK ((("documentos_fiscais"."tipo_documento" IN ('NFE', 'CTE', 'NFCE') AND length("documentos_fiscais"."chave_acesso") = 44) OR ("documentos_fiscais"."tipo_documento" = 'NFSE' AND length("documentos_fiscais"."chave_acesso") BETWEEN 14 AND 50))),
-	CONSTRAINT "chk_docs_fiscais_tipo" CHECK ("documentos_fiscais"."tipo_documento" IN ('NFE', 'CTE', 'NFCE', 'NFSE')),
-	CONSTRAINT "chk_docs_fiscais_modelo" CHECK ("documentos_fiscais"."modelo" IN ('55', '57', '65', 'NFSE')),
-	CONSTRAINT "chk_docs_fiscais_tipo_modelo" CHECK (("documentos_fiscais"."tipo_documento" = 'NFE' AND "documentos_fiscais"."modelo" = '55') OR ("documentos_fiscais"."tipo_documento" = 'CTE' AND "documentos_fiscais"."modelo" = '57') OR ("documentos_fiscais"."tipo_documento" = 'NFCE' AND "documentos_fiscais"."modelo" = '65') OR ("documentos_fiscais"."tipo_documento" = 'NFSE' AND "documentos_fiscais"."modelo" = 'NFSE')),
-	CONSTRAINT "chk_docs_fiscais_situacao" CHECK ("documentos_fiscais"."situacao" IN ('AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA')),
-	CONSTRAINT "chk_docs_fiscais_manifestacao" CHECK ("documentos_fiscais"."manifestacao_status" IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')),
-	CONSTRAINT "chk_docs_fiscais_operacao_escriturada" CHECK ("documentos_fiscais"."tipo_operacao_escriturada" IN ('ENTRADA', 'SAIDA')),
-	CONSTRAINT "chk_docs_fiscais_tp_nf_xml" CHECK ("documentos_fiscais"."tp_nf_xml" IS NULL OR "documentos_fiscais"."tp_nf_xml" IN ('0', '1')),
-	CONSTRAINT "chk_docs_fiscais_escrituracao_status" CHECK ("documentos_fiscais"."escrituracao_status" IN ('ESCRITURADO', 'NAO_ESCRITURAVEL', 'PENDENTE_REVISAO')),
-	CONSTRAINT "chk_docs_fiscais_escrituracao_coerencia" CHECK (("documentos_fiscais"."escriturado" = false AND "documentos_fiscais"."escrituracao_status" = 'NAO_ESCRITURAVEL') OR ("documentos_fiscais"."escriturado" = true AND "documentos_fiscais"."escrituracao_status" IN ('ESCRITURADO', 'PENDENTE_REVISAO'))),
-	CONSTRAINT "chk_docs_fiscais_valor" CHECK ("documentos_fiscais"."valor_total" >= 0),
-	CONSTRAINT "chk_docs_fiscais_valor_declarado" CHECK ("documentos_fiscais"."valor_total_declarado_xml" IS NULL OR "documentos_fiscais"."valor_total_declarado_xml" >= 0),
-	CONSTRAINT "chk_docs_fiscais_quantidade_itens_declarada" CHECK ("documentos_fiscais"."quantidade_itens_declarada_xml" IS NULL OR "documentos_fiscais"."quantidade_itens_declarada_xml" >= 0),
-	CONSTRAINT "chk_docs_fiscais_integridade_status" CHECK ("documentos_fiscais"."integridade_status" IN ('NAO_CONFERIDA', 'OK', 'DIVERGENTE')),
-	CONSTRAINT "chk_docs_fiscais_integridade_coerencia" CHECK (("documentos_fiscais"."integridade_conferida" = false AND "documentos_fiscais"."integridade_status" = 'NAO_CONFERIDA') OR ("documentos_fiscais"."integridade_conferida" = true AND "documentos_fiscais"."integridade_status" IN ('OK', 'DIVERGENTE'))),
-	CONSTRAINT "chk_docs_fiscais_cod_situacao_sped" CHECK ("documentos_fiscais"."cod_situacao_sped" IS NULL OR "documentos_fiscais"."cod_situacao_sped" ~ '^[0-9]{2}$'),
-	CONSTRAINT "chk_docs_fiscais_modalidade_frete" CHECK ("documentos_fiscais"."modalidade_frete" IS NULL OR "documentos_fiscais"."modalidade_frete" ~ '^[0-9]$'),
-	CONSTRAINT "chk_docs_fiscais_municipio_incidencia" CHECK ("documentos_fiscais"."municipio_incidencia" IS NULL OR "documentos_fiscais"."municipio_incidencia" ~ '^[0-9]{7}$'),
-	CONSTRAINT "chk_docs_fiscais_xml_key" CHECK (btrim("documentos_fiscais"."xml_key") <> '')
 );
 --> statement-breakpoint
 CREATE TABLE "documentos_fiscais_cte_escrituracao" (
@@ -517,6 +451,79 @@ CREATE TABLE "documentos_fiscais_itens" (
 	CONSTRAINT "chk_item_municipio_incidencia" CHECK ("documentos_fiscais_itens"."municipio_incidencia" IS NULL OR "documentos_fiscais_itens"."municipio_incidencia" ~ '^[0-9]{7}$')
 );
 --> statement-breakpoint
+CREATE TABLE "documentos_fiscais" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"cliente_id" uuid NOT NULL,
+	"chave_acesso" text NOT NULL,
+	"nsu" bigint NOT NULL,
+	"tipo_documento" text NOT NULL,
+	"modelo" text NOT NULL,
+	"serie" text,
+	"numero_documento" text NOT NULL,
+	"emitente_cnpj_cpf" text NOT NULL,
+	"emitente_razao_social" text,
+	"destinatario_cnpj_cpf" text NOT NULL,
+	"destinatario_razao_social" text,
+	"data_emissao" timestamp NOT NULL,
+	"data_emissao_fiscal" date,
+	"data_entrada_saida" timestamp,
+	"data_entrada_saida_fiscal" date,
+	"valor_total" numeric(14, 2) NOT NULL,
+	"valor_total_declarado_xml" numeric(15, 2),
+	"totais_declarados_xml" jsonb,
+	"quantidade_itens_declarada_xml" integer,
+	"integridade_conferida" boolean DEFAULT false NOT NULL,
+	"integridade_status" varchar(20) DEFAULT 'NAO_CONFERIDA' NOT NULL,
+	"integridade_detalhes" jsonb,
+	"cod_situacao_sped" varchar(2),
+	"modalidade_frete" varchar(1),
+	"informacoes_complementares" text,
+	"emitente_dados" jsonb,
+	"destinatario_dados" jsonb,
+	"codigo_verificacao" varchar(32),
+	"competencia_declarada" date,
+	"municipio_incidencia" varchar(7),
+	"regime_especial_tributacao" varchar(10),
+	"optante_simples_nacional_xml" boolean,
+	"nfse_dados" jsonb,
+	"documentos_referenciados" jsonb,
+	"situacao" text DEFAULT 'AUTORIZADA' NOT NULL,
+	"manifestacao_status" text DEFAULT 'SEM_MANIFESTACAO' NOT NULL,
+	"tipo_operacao_escriturada" varchar(10) DEFAULT 'ENTRADA' NOT NULL,
+	"tp_nf_xml" varchar(1),
+	"escriturado" boolean DEFAULT false NOT NULL,
+	"escrituracao_status" varchar(24) DEFAULT 'NAO_ESCRITURAVEL' NOT NULL,
+	"xml_key" text NOT NULL,
+	"danfe_key" text,
+	"ultima_tentativa_xml_em" timestamp with time zone,
+	"proxima_tentativa_xml_em" timestamp with time zone,
+	"tentativas_xml" integer DEFAULT 0 NOT NULL,
+	"ultima_tentativa_ciencia_em" timestamp with time zone,
+	"proxima_tentativa_ciencia_em" timestamp with time zone,
+	"tentativas_ciencia" integer DEFAULT 0 NOT NULL,
+	"criado_em" timestamp DEFAULT now() NOT NULL,
+	"atualizado_em" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "chk_docs_fiscais_chave" CHECK ((("documentos_fiscais"."tipo_documento" IN ('NFE', 'CTE', 'NFCE') AND length("documentos_fiscais"."chave_acesso") = 44) OR ("documentos_fiscais"."tipo_documento" = 'NFSE' AND length("documentos_fiscais"."chave_acesso") BETWEEN 14 AND 50))),
+	CONSTRAINT "chk_docs_fiscais_tipo" CHECK ("documentos_fiscais"."tipo_documento" IN ('NFE', 'CTE', 'NFCE', 'NFSE')),
+	CONSTRAINT "chk_docs_fiscais_modelo" CHECK ("documentos_fiscais"."modelo" IN ('55', '57', '65', 'NFSE')),
+	CONSTRAINT "chk_docs_fiscais_tipo_modelo" CHECK (("documentos_fiscais"."tipo_documento" = 'NFE' AND "documentos_fiscais"."modelo" = '55') OR ("documentos_fiscais"."tipo_documento" = 'CTE' AND "documentos_fiscais"."modelo" = '57') OR ("documentos_fiscais"."tipo_documento" = 'NFCE' AND "documentos_fiscais"."modelo" = '65') OR ("documentos_fiscais"."tipo_documento" = 'NFSE' AND "documentos_fiscais"."modelo" = 'NFSE')),
+	CONSTRAINT "chk_docs_fiscais_situacao" CHECK ("documentos_fiscais"."situacao" IN ('AUTORIZADA', 'CANCELADA', 'DENEGADA', 'RESUMIDA')),
+	CONSTRAINT "chk_docs_fiscais_manifestacao" CHECK ("documentos_fiscais"."manifestacao_status" IN ('SEM_MANIFESTACAO', 'CIENCIA', 'CONFIRMADA', 'DESCONHECIDA', 'NAO_REALIZADA')),
+	CONSTRAINT "chk_docs_fiscais_operacao_escriturada" CHECK ("documentos_fiscais"."tipo_operacao_escriturada" IN ('ENTRADA', 'SAIDA')),
+	CONSTRAINT "chk_docs_fiscais_tp_nf_xml" CHECK ("documentos_fiscais"."tp_nf_xml" IS NULL OR "documentos_fiscais"."tp_nf_xml" IN ('0', '1')),
+	CONSTRAINT "chk_docs_fiscais_escrituracao_status" CHECK ("documentos_fiscais"."escrituracao_status" IN ('ESCRITURADO', 'NAO_ESCRITURAVEL', 'PENDENTE_REVISAO')),
+	CONSTRAINT "chk_docs_fiscais_escrituracao_coerencia" CHECK (("documentos_fiscais"."escriturado" = false AND "documentos_fiscais"."escrituracao_status" = 'NAO_ESCRITURAVEL') OR ("documentos_fiscais"."escriturado" = true AND "documentos_fiscais"."escrituracao_status" IN ('ESCRITURADO', 'PENDENTE_REVISAO'))),
+	CONSTRAINT "chk_docs_fiscais_valor" CHECK ("documentos_fiscais"."valor_total" >= 0),
+	CONSTRAINT "chk_docs_fiscais_valor_declarado" CHECK ("documentos_fiscais"."valor_total_declarado_xml" IS NULL OR "documentos_fiscais"."valor_total_declarado_xml" >= 0),
+	CONSTRAINT "chk_docs_fiscais_quantidade_itens_declarada" CHECK ("documentos_fiscais"."quantidade_itens_declarada_xml" IS NULL OR "documentos_fiscais"."quantidade_itens_declarada_xml" >= 0),
+	CONSTRAINT "chk_docs_fiscais_integridade_status" CHECK ("documentos_fiscais"."integridade_status" IN ('NAO_CONFERIDA', 'OK', 'DIVERGENTE')),
+	CONSTRAINT "chk_docs_fiscais_integridade_coerencia" CHECK (("documentos_fiscais"."integridade_conferida" = false AND "documentos_fiscais"."integridade_status" = 'NAO_CONFERIDA') OR ("documentos_fiscais"."integridade_conferida" = true AND "documentos_fiscais"."integridade_status" IN ('OK', 'DIVERGENTE'))),
+	CONSTRAINT "chk_docs_fiscais_cod_situacao_sped" CHECK ("documentos_fiscais"."cod_situacao_sped" IS NULL OR "documentos_fiscais"."cod_situacao_sped" ~ '^[0-9]{2}$'),
+	CONSTRAINT "chk_docs_fiscais_modalidade_frete" CHECK ("documentos_fiscais"."modalidade_frete" IS NULL OR "documentos_fiscais"."modalidade_frete" ~ '^[0-9]$'),
+	CONSTRAINT "chk_docs_fiscais_municipio_incidencia" CHECK ("documentos_fiscais"."municipio_incidencia" IS NULL OR "documentos_fiscais"."municipio_incidencia" ~ '^[0-9]{7}$'),
+	CONSTRAINT "chk_docs_fiscais_xml_key" CHECK (btrim("documentos_fiscais"."xml_key") <> '')
+);
+--> statement-breakpoint
 CREATE TABLE "eventos_auditoria" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"ator_user_id" text,
@@ -689,36 +696,6 @@ CREATE TABLE "fiscal_fechamentos" (
 	CONSTRAINT "chk_fiscal_fechamento_fechado_em" CHECK (("fiscal_fechamentos"."estado" = 'FECHADO') = ("fiscal_fechamentos"."fechado_em" IS NOT NULL))
 );
 --> statement-breakpoint
-CREATE TABLE "fiscal_lancamentos" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"cliente_id" uuid NOT NULL,
-	"fechamento_versao" integer DEFAULT 1 NOT NULL,
-	"origem" varchar(20) NOT NULL,
-	"fato_chave" text NOT NULL,
-	"competencia" date NOT NULL,
-	"tributo" varchar(12) NOT NULL,
-	"natureza" varchar(7) NOT NULL,
-	"sinal" integer DEFAULT 1 NOT NULL,
-	"valor" numeric(15, 2) NOT NULL,
-	"base_calculo" numeric(15, 2),
-	"aliquota" numeric(9, 4),
-	"documento_fiscal_id" uuid,
-	"documento_fiscal_item_id" uuid,
-	"criado_em" timestamp with time zone DEFAULT now() NOT NULL,
-	"atualizado_em" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "chk_fiscal_lancamento_origem" CHECK ("fiscal_lancamentos"."origem" IN ('DOCUMENTO', 'CIAP', 'AJUSTE', 'SALDO_ANTERIOR', 'APURACAO')),
-	CONSTRAINT "chk_fiscal_lancamento_tributo" CHECK ("fiscal_lancamentos"."tributo" IN ('ICMS', 'ICMS_ST', 'IPI', 'PIS', 'COFINS', 'FCP', 'DIFAL')),
-	CONSTRAINT "chk_fiscal_lancamento_natureza" CHECK ("fiscal_lancamentos"."natureza" IN ('DEBITO', 'CREDITO')),
-	CONSTRAINT "chk_fiscal_lancamento_sinal" CHECK ("fiscal_lancamentos"."sinal" IN (-1, 1)),
-	CONSTRAINT "chk_fiscal_lancamento_versao" CHECK ("fiscal_lancamentos"."fechamento_versao" >= 1),
-	CONSTRAINT "chk_fiscal_lancamento_valor" CHECK ("fiscal_lancamentos"."valor" >= 0),
-	CONSTRAINT "chk_fiscal_lancamento_base" CHECK ("fiscal_lancamentos"."base_calculo" IS NULL OR "fiscal_lancamentos"."base_calculo" >= 0),
-	CONSTRAINT "chk_fiscal_lancamento_aliquota" CHECK ("fiscal_lancamentos"."aliquota" IS NULL OR "fiscal_lancamentos"."aliquota" >= 0),
-	CONSTRAINT "chk_fiscal_lancamento_competencia_dia1" CHECK (date_part('day', "fiscal_lancamentos"."competencia") = 1),
-	CONSTRAINT "chk_fiscal_lancamento_item_exige_documento" CHECK ("fiscal_lancamentos"."documento_fiscal_item_id" IS NULL OR "fiscal_lancamentos"."documento_fiscal_id" IS NOT NULL),
-	CONSTRAINT "chk_fiscal_lancamento_documento_origem" CHECK ("fiscal_lancamentos"."documento_fiscal_id" IS NULL OR "fiscal_lancamentos"."origem" = 'DOCUMENTO')
-);
---> statement-breakpoint
 CREATE TABLE "fiscal_pagamentos_eventos" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"cliente_id" uuid NOT NULL,
@@ -744,24 +721,6 @@ CREATE TABLE "fiscal_pagamentos_eventos" (
 	CONSTRAINT "chk_fiscal_pagamento_evento_estorno_ref" CHECK ("fiscal_pagamentos_eventos"."tipo" <> 'ESTORNO' OR "fiscal_pagamentos_eventos"."evento_estornado_id" IS NOT NULL),
 	CONSTRAINT "chk_fiscal_pagamento_evento_estorno_ref_tipo" CHECK ("fiscal_pagamentos_eventos"."tipo" = 'ESTORNO' OR "fiscal_pagamentos_eventos"."evento_estornado_id" IS NULL),
 	CONSTRAINT "chk_fiscal_pagamento_evento_evidencia" CHECK ("fiscal_pagamentos_eventos"."tipo" = 'ESTORNO' OR "fiscal_pagamentos_eventos"."comprovante_key" IS NOT NULL OR "fiscal_pagamentos_eventos"."declaracao_manual" = true)
-);
---> statement-breakpoint
-CREATE TABLE "fiscal_perfis_vigencia" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"cliente_id" uuid NOT NULL,
-	"uf" varchar(2) NOT NULL,
-	"regime" varchar(20) NOT NULL,
-	"obrigacao" varchar(20) NOT NULL,
-	"vigencia_inicio" date NOT NULL,
-	"vigencia_fim" date,
-	"fonte" varchar(60) NOT NULL,
-	"ativo" boolean DEFAULT true NOT NULL,
-	"criado_em" timestamp with time zone DEFAULT now() NOT NULL,
-	"atualizado_em" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "chk_fiscal_perfil_uf" CHECK ("fiscal_perfis_vigencia"."uf" ~ '^[A-Z]{2}$'),
-	CONSTRAINT "chk_fiscal_perfil_regime" CHECK ("fiscal_perfis_vigencia"."regime" IN ('SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL')),
-	CONSTRAINT "chk_fiscal_perfil_obrigacao" CHECK ("fiscal_perfis_vigencia"."obrigacao" IN ('EFD_ICMS_IPI', 'EFD_CONTRIBUICOES', 'GIA', 'DAS', 'DAPI')),
-	CONSTRAINT "chk_fiscal_perfil_vigencia" CHECK ("fiscal_perfis_vigencia"."vigencia_fim" IS NULL OR "fiscal_perfis_vigencia"."vigencia_fim" >= "fiscal_perfis_vigencia"."vigencia_inicio")
 );
 --> statement-breakpoint
 CREATE TABLE "fiscal_regras_versoes" (
@@ -1149,30 +1108,6 @@ CREATE TABLE "sped_configuracoes" (
 	CONSTRAINT "chk_sped_config_indicadores_1010" CHECK (jsonb_typeof("sped_configuracoes"."indicadores_1010") = 'object')
 );
 --> statement-breakpoint
-CREATE TABLE "sped_contabilistas" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"cliente_id" uuid NOT NULL,
-	"nome" text NOT NULL,
-	"cpf" varchar(11),
-	"crc" text NOT NULL,
-	"cnpj" varchar(14),
-	"cep" varchar(8),
-	"logradouro" text,
-	"numero" text,
-	"complemento" text,
-	"bairro" text,
-	"telefone" text,
-	"fax" text,
-	"email" text,
-	"codigo_municipio_ibge" varchar(7) NOT NULL,
-	"atualizado_por" text,
-	"criado_em" timestamp DEFAULT now() NOT NULL,
-	"atualizado_em" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "chk_sped_contabilista_documento" CHECK (("sped_contabilistas"."cpf" IS NOT NULL AND "sped_contabilistas"."cpf" ~ '^[0-9]{11}$') OR ("sped_contabilistas"."cnpj" IS NOT NULL AND "sped_contabilistas"."cnpj" ~ '^[0-9A-Z]{12}[0-9]{2}$')),
-	CONSTRAINT "chk_sped_contabilista_cep" CHECK ("sped_contabilistas"."cep" IS NULL OR "sped_contabilistas"."cep" ~ '^[0-9]{8}$'),
-	CONSTRAINT "chk_sped_contabilista_codigo_municipio" CHECK ("sped_contabilistas"."codigo_municipio_ibge" ~ '^[0-9]{7}$')
-);
---> statement-breakpoint
 CREATE TABLE "sped_inventario_itens" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"inventario_id" uuid NOT NULL,
@@ -1395,26 +1330,26 @@ ALTER TABLE "ciap_apropriacoes" ADD CONSTRAINT "ciap_apropriacoes_cliente_id_cli
 ALTER TABLE "ciap_apropriacoes" ADD CONSTRAINT "ciap_apropriacoes_bem_id_ciap_ativo_permanente_id_fk" FOREIGN KEY ("bem_id") REFERENCES "public"."ciap_ativo_permanente"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ciap_apropriacoes" ADD CONSTRAINT "ciap_apropriacoes_movimento_id_ciap_movimentos_id_fk" FOREIGN KEY ("movimento_id") REFERENCES "public"."ciap_movimentos"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ciap_ativo_permanente" ADD CONSTRAINT "ciap_ativo_permanente_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ciap_ativo_permanente" ADD CONSTRAINT "ciap_ativo_permanente_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ciap_ativo_permanente" ADD CONSTRAINT "ciap_ativo_permanente_documento_fiscal_item_id_documentos_fiscais_itens_id_fk" FOREIGN KEY ("documento_fiscal_item_id") REFERENCES "public"."documentos_fiscais_itens"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ciap_ativo_permanente" ADD CONSTRAINT "fk_ciap_ativo_documento" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ciap_ativo_permanente" ADD CONSTRAINT "fk_ciap_ativo_item" FOREIGN KEY ("documento_fiscal_item_id") REFERENCES "public"."documentos_fiscais_itens"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ciap_competencias_apropriadas" ADD CONSTRAINT "ciap_competencias_apropriadas_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ciap_competencias_apropriadas" ADD CONSTRAINT "ciap_competencias_apropriadas_bem_id_ciap_ativo_permanente_id_fk" FOREIGN KEY ("bem_id") REFERENCES "public"."ciap_ativo_permanente"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ciap_competencias_apropriadas" ADD CONSTRAINT "fk_ciap_competencia_bem" FOREIGN KEY ("bem_id") REFERENCES "public"."ciap_ativo_permanente"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ciap_movimentos" ADD CONSTRAINT "ciap_movimentos_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ciap_movimentos" ADD CONSTRAINT "ciap_movimentos_bem_id_ciap_ativo_permanente_id_fk" FOREIGN KEY ("bem_id") REFERENCES "public"."ciap_ativo_permanente"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ciap_movimentos" ADD CONSTRAINT "ciap_movimentos_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ciap_movimentos" ADD CONSTRAINT "ciap_movimentos_documento_fiscal_item_id_documentos_fiscais_itens_id_fk" FOREIGN KEY ("documento_fiscal_item_id") REFERENCES "public"."documentos_fiscais_itens"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ciap_movimentos" ADD CONSTRAINT "fk_ciap_movimento_item" FOREIGN KEY ("documento_fiscal_item_id") REFERENCES "public"."documentos_fiscais_itens"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ciap_movimentos" ADD CONSTRAINT "ciap_movimentos_movimento_anterior_id_fk" FOREIGN KEY ("movimento_anterior_id") REFERENCES "public"."ciap_movimentos"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classificacao_destinacao_aprendizado" ADD CONSTRAINT "classificacao_destinacao_aprendizado_item_id_documentos_fiscais_itens_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."documentos_fiscais_itens"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "classificacao_destinacao_aprendizado" ADD CONSTRAINT "classificacao_destinacao_aprendizado_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "classificacao_destinacao_aprendizado" ADD CONSTRAINT "fk_classif_destinacao_item" FOREIGN KEY ("item_id") REFERENCES "public"."documentos_fiscais_itens"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "clientes" ADD CONSTRAINT "clientes_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "clientes" ADD CONSTRAINT "clientes_contador_id_contadores_id_fk" FOREIGN KEY ("contador_id") REFERENCES "public"."contadores"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "contadores" ADD CONSTRAINT "contadores_atualizado_por_user_id_fk" FOREIGN KEY ("atualizado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "controle_nsu" ADD CONSTRAINT "controle_nsu_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "documentos_fiscais" ADD CONSTRAINT "documentos_fiscais_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "documentos_fiscais_cte_escrituracao" ADD CONSTRAINT "documentos_fiscais_cte_escrituracao_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "documentos_fiscais_cte_escrituracao" ADD CONSTRAINT "documentos_fiscais_cte_escrituracao_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documentos_fiscais_cte_escrituracao" ADD CONSTRAINT "fk_cte_escrituracao_documento" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "documentos_fiscais_itens" ADD CONSTRAINT "fk_df_itens_documento_fiscal" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "documentos_fiscais_itens" ADD CONSTRAINT "fk_df_itens_cliente" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documentos_fiscais" ADD CONSTRAINT "documentos_fiscais_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "eventos_auditoria" ADD CONSTRAINT "eventos_auditoria_ator_user_id_user_id_fk" FOREIGN KEY ("ator_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "eventos_fiscais" ADD CONSTRAINT "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_apuracoes_guias" ADD CONSTRAINT "fiscal_apuracoes_guias_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1428,18 +1363,14 @@ ALTER TABLE "fiscal_entregas" ADD CONSTRAINT "fiscal_entregas_fechamento_id_fisc
 ALTER TABLE "fiscal_entregas" ADD CONSTRAINT "fiscal_entregas_original_fk" FOREIGN KEY ("entrega_original_id") REFERENCES "public"."fiscal_entregas"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_fechamentos" ADD CONSTRAINT "fiscal_fechamentos_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_fechamentos" ADD CONSTRAINT "fiscal_fechamentos_aprovado_por_user_id_fk" FOREIGN KEY ("aprovado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "fiscal_lancamentos" ADD CONSTRAINT "fiscal_lancamentos_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "fiscal_lancamentos" ADD CONSTRAINT "fiscal_lancamentos_documento_fiscal_id_documentos_fiscais_id_fk" FOREIGN KEY ("documento_fiscal_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "fiscal_lancamentos" ADD CONSTRAINT "fiscal_lancamentos_documento_fiscal_item_id_documentos_fiscais_itens_id_fk" FOREIGN KEY ("documento_fiscal_item_id") REFERENCES "public"."documentos_fiscais_itens"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_pagamentos_eventos" ADD CONSTRAINT "fiscal_pagamentos_eventos_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_pagamentos_eventos" ADD CONSTRAINT "fiscal_pagamentos_eventos_guia_id_fiscal_apuracoes_guias_id_fk" FOREIGN KEY ("guia_id") REFERENCES "public"."fiscal_apuracoes_guias"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "fiscal_pagamentos_eventos" ADD CONSTRAINT "fiscal_pagamentos_eventos_fechamento_id_fiscal_fechamentos_id_fk" FOREIGN KEY ("fechamento_id") REFERENCES "public"."fiscal_fechamentos"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "fiscal_pagamentos_eventos" ADD CONSTRAINT "fk_fiscal_pagamento_fechamento" FOREIGN KEY ("fechamento_id") REFERENCES "public"."fiscal_fechamentos"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_pagamentos_eventos" ADD CONSTRAINT "fiscal_pagamentos_eventos_estornado_fk" FOREIGN KEY ("evento_estornado_id") REFERENCES "public"."fiscal_pagamentos_eventos"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "fiscal_perfis_vigencia" ADD CONSTRAINT "fiscal_perfis_vigencia_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "fiscal_regras_versoes" ADD CONSTRAINT "fiscal_regras_versoes_catalogo_versao_id_fiscal_catalogos_versoes_id_fk" FOREIGN KEY ("catalogo_versao_id") REFERENCES "public"."fiscal_catalogos_versoes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_regras_versoes" ADD CONSTRAINT "fiscal_regras_versoes_responsavel_por_user_id_fk" FOREIGN KEY ("responsavel_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "fiscal_regras_versoes" ADD CONSTRAINT "fk_fiscal_regra_catalogo" FOREIGN KEY ("catalogo_versao_id") REFERENCES "public"."fiscal_catalogos_versoes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_simples_anexos" ADD CONSTRAINT "fiscal_simples_anexos_tabela_id_fiscal_simples_tabelas_id_fk" FOREIGN KEY ("tabela_id") REFERENCES "public"."fiscal_simples_tabelas"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "fiscal_simples_apuracao_itens" ADD CONSTRAINT "fiscal_simples_apuracao_itens_apuracao_id_fiscal_simples_apuracoes_id_fk" FOREIGN KEY ("apuracao_id") REFERENCES "public"."fiscal_simples_apuracoes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "fiscal_simples_apuracao_itens" ADD CONSTRAINT "fk_simples_apuracao_item" FOREIGN KEY ("apuracao_id") REFERENCES "public"."fiscal_simples_apuracoes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_simples_apuracoes" ADD CONSTRAINT "fiscal_simples_apuracoes_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_simples_apuracoes" ADD CONSTRAINT "fiscal_simples_apuracoes_tabela_id_fiscal_simples_tabelas_id_fk" FOREIGN KEY ("tabela_id") REFERENCES "public"."fiscal_simples_tabelas"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "fiscal_simples_apuracoes" ADD CONSTRAINT "fiscal_simples_apuracoes_fechamento_id_fiscal_fechamentos_id_fk" FOREIGN KEY ("fechamento_id") REFERENCES "public"."fiscal_fechamentos"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1467,8 +1398,6 @@ ALTER TABLE "sped_arquivos_gerados" ADD CONSTRAINT "sped_arquivos_gerados_client
 ALTER TABLE "sped_arquivos_gerados" ADD CONSTRAINT "sped_arquivos_gerados_gerado_por_user_id_fk" FOREIGN KEY ("gerado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_configuracoes" ADD CONSTRAINT "sped_configuracoes_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_configuracoes" ADD CONSTRAINT "sped_configuracoes_atualizado_por_user_id_fk" FOREIGN KEY ("atualizado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sped_contabilistas" ADD CONSTRAINT "sped_contabilistas_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sped_contabilistas" ADD CONSTRAINT "sped_contabilistas_atualizado_por_user_id_fk" FOREIGN KEY ("atualizado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_inventario_itens" ADD CONSTRAINT "sped_inventario_itens_inventario_id_sped_inventarios_id_fk" FOREIGN KEY ("inventario_id") REFERENCES "public"."sped_inventarios"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_inventario_itens" ADD CONSTRAINT "sped_inventario_itens_sped_item_id_sped_itens_id_fk" FOREIGN KEY ("sped_item_id") REFERENCES "public"."sped_itens"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_inventario_itens" ADD CONSTRAINT "sped_inventario_itens_participante_id_sped_participantes_id_fk" FOREIGN KEY ("participante_id") REFERENCES "public"."sped_participantes"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -1480,7 +1409,7 @@ ALTER TABLE "sped_itens" ADD CONSTRAINT "sped_itens_unidade_id_sped_unidades_id_
 ALTER TABLE "sped_obrigacoes_recolhimento" ADD CONSTRAINT "sped_obrigacoes_recolhimento_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_obrigacoes_recolhimento" ADD CONSTRAINT "sped_obrigacoes_recolhimento_atualizado_por_user_id_fk" FOREIGN KEY ("atualizado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_participantes" ADD CONSTRAINT "sped_participantes_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sped_participantes" ADD CONSTRAINT "sped_participantes_fonte_ultimo_documento_id_documentos_fiscais_id_fk" FOREIGN KEY ("fonte_ultimo_documento_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sped_participantes" ADD CONSTRAINT "fk_sped_part_fonte_documento" FOREIGN KEY ("fonte_ultimo_documento_id") REFERENCES "public"."documentos_fiscais"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_responsabilidades_tributarias" ADD CONSTRAINT "sped_responsabilidades_tributarias_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_saldos_apuracao" ADD CONSTRAINT "sped_saldos_apuracao_cliente_id_clientes_id_fk" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sped_saldos_apuracao" ADD CONSTRAINT "sped_saldos_apuracao_atualizado_por_user_id_fk" FOREIGN KEY ("atualizado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1524,15 +1453,6 @@ CREATE UNIQUE INDEX "uidx_contadores_cnpj_crc" ON "contadores" USING btree ("cnp
 CREATE INDEX "idx_contadores_nome" ON "contadores" USING btree ("nome");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_controle_nsu_cliente_tipo" ON "controle_nsu" USING btree ("cliente_id","tipo_documento");--> statement-breakpoint
 CREATE INDEX "idx_controle_nsu_cliente_id" ON "controle_nsu" USING btree ("cliente_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "uidx_docs_fiscais_cliente_chave" ON "documentos_fiscais" USING btree ("cliente_id","chave_acesso");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_cliente_id" ON "documentos_fiscais" USING btree ("cliente_id");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_tipo" ON "documentos_fiscais" USING btree ("tipo_documento");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_data_emissao" ON "documentos_fiscais" USING btree ("data_emissao");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_cliente_competencia" ON "documentos_fiscais" USING btree ("cliente_id","data_emissao_fiscal","id");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_cliente_competencia_nfse" ON "documentos_fiscais" USING btree ("cliente_id","competencia_declarada","id");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_nsu" ON "documentos_fiscais" USING btree ("nsu");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_destinatario" ON "documentos_fiscais" USING btree ("destinatario_cnpj_cpf");--> statement-breakpoint
-CREATE INDEX "idx_docs_fiscais_emitente" ON "documentos_fiscais" USING btree ("emitente_cnpj_cpf");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_cte_escrituracao_documento" ON "documentos_fiscais_cte_escrituracao" USING btree ("documento_fiscal_id");--> statement-breakpoint
 CREATE INDEX "idx_cte_escrituracao_cliente" ON "documentos_fiscais_cte_escrituracao" USING btree ("cliente_id");--> statement-breakpoint
 CREATE INDEX "idx_cte_escrituracao_cfop" ON "documentos_fiscais_cte_escrituracao" USING btree ("cfop");--> statement-breakpoint
@@ -1550,6 +1470,15 @@ CREATE INDEX "idx_item_cst_cofins" ON "documentos_fiscais_itens" USING btree ("c
 CREATE INDEX "idx_item_ncm" ON "documentos_fiscais_itens" USING btree ("ncm");--> statement-breakpoint
 CREATE INDEX "idx_item_servico_lc116" ON "documentos_fiscais_itens" USING btree ("item_lista_servico");--> statement-breakpoint
 CREATE INDEX "idx_item_cnae" ON "documentos_fiscais_itens" USING btree ("cnae");--> statement-breakpoint
+CREATE UNIQUE INDEX "uidx_docs_fiscais_cliente_chave" ON "documentos_fiscais" USING btree ("cliente_id","chave_acesso");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_cliente_id" ON "documentos_fiscais" USING btree ("cliente_id");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_tipo" ON "documentos_fiscais" USING btree ("tipo_documento");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_data_emissao" ON "documentos_fiscais" USING btree ("data_emissao");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_cliente_competencia" ON "documentos_fiscais" USING btree ("cliente_id","data_emissao_fiscal","id");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_cliente_competencia_nfse" ON "documentos_fiscais" USING btree ("cliente_id","competencia_declarada","id");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_nsu" ON "documentos_fiscais" USING btree ("nsu");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_destinatario" ON "documentos_fiscais" USING btree ("destinatario_cnpj_cpf");--> statement-breakpoint
+CREATE INDEX "idx_docs_fiscais_emitente" ON "documentos_fiscais" USING btree ("emitente_cnpj_cpf");--> statement-breakpoint
 CREATE INDEX "idx_eventos_auditoria_entidade" ON "eventos_auditoria" USING btree ("entidade_tipo","entidade_id","criado_em");--> statement-breakpoint
 CREATE INDEX "idx_eventos_auditoria_ator" ON "eventos_auditoria" USING btree ("ator_user_id","criado_em");--> statement-breakpoint
 CREATE INDEX "idx_eventos_fiscais_doc" ON "eventos_fiscais" USING btree ("documento_fiscal_id");--> statement-breakpoint
@@ -1569,14 +1498,9 @@ CREATE INDEX "idx_fiscal_entrega_original" ON "fiscal_entregas" USING btree ("en
 CREATE UNIQUE INDEX "uidx_fiscal_fechamento_versao" ON "fiscal_fechamentos" USING btree ("cliente_id","obrigacao","competencia","versao");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_fiscal_fechamento_corrente" ON "fiscal_fechamentos" USING btree ("cliente_id","obrigacao","competencia") WHERE "fiscal_fechamentos"."corrente" = true;--> statement-breakpoint
 CREATE INDEX "idx_fiscal_fechamento_competencia" ON "fiscal_fechamentos" USING btree ("cliente_id","competencia","obrigacao");--> statement-breakpoint
-CREATE UNIQUE INDEX "uidx_fiscal_lancamento_fato_versao" ON "fiscal_lancamentos" USING btree ("cliente_id","origem","fato_chave","fechamento_versao","tributo","natureza");--> statement-breakpoint
-CREATE INDEX "idx_fiscal_lancamento_competencia" ON "fiscal_lancamentos" USING btree ("cliente_id","competencia","fechamento_versao");--> statement-breakpoint
-CREATE INDEX "idx_fiscal_lancamento_documento" ON "fiscal_lancamentos" USING btree ("documento_fiscal_id");--> statement-breakpoint
 CREATE INDEX "idx_fiscal_pagamento_evento_guia" ON "fiscal_pagamentos_eventos" USING btree ("guia_id","data_evento");--> statement-breakpoint
 CREATE INDEX "idx_fiscal_pagamento_evento_fechamento" ON "fiscal_pagamentos_eventos" USING btree ("fechamento_id");--> statement-breakpoint
 CREATE INDEX "idx_fiscal_pagamento_evento_cliente" ON "fiscal_pagamentos_eventos" USING btree ("cliente_id","data_evento");--> statement-breakpoint
-CREATE UNIQUE INDEX "uidx_fiscal_perfil_vigencia" ON "fiscal_perfis_vigencia" USING btree ("cliente_id","uf","obrigacao","vigencia_inicio");--> statement-breakpoint
-CREATE INDEX "idx_fiscal_perfil_lookup" ON "fiscal_perfis_vigencia" USING btree ("cliente_id","uf","obrigacao","vigencia_inicio");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_fiscal_regra_revisao" ON "fiscal_regras_versoes" USING btree ("catalogo_versao_id","chave","revisao");--> statement-breakpoint
 CREATE INDEX "idx_fiscal_regra_lookup" ON "fiscal_regras_versoes" USING btree ("catalogo_versao_id","chave","vigencia_inicio");--> statement-breakpoint
 CREATE INDEX "idx_simples_anexos_tabela" ON "fiscal_simples_anexos" USING btree ("tabela_id");--> statement-breakpoint
@@ -1608,7 +1532,6 @@ CREATE INDEX "idx_sped_ajuste_cliente_competencia" ON "sped_ajustes_apuracao" US
 CREATE INDEX "idx_sped_arquivo_cliente_competencia" ON "sped_arquivos_gerados" USING btree ("cliente_id","competencia","criado_em");--> statement-breakpoint
 CREATE INDEX "idx_sped_arquivo_status" ON "sped_arquivos_gerados" USING btree ("status");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_sped_config_cliente" ON "sped_configuracoes" USING btree ("cliente_id");--> statement-breakpoint
-CREATE INDEX "idx_sped_contabilista_cliente" ON "sped_contabilistas" USING btree ("cliente_id");--> statement-breakpoint
 CREATE INDEX "idx_sped_inventario_item_inventario" ON "sped_inventario_itens" USING btree ("inventario_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "uidx_sped_inventario_cliente_data_motivo" ON "sped_inventarios" USING btree ("cliente_id","data_inventario","motivo");--> statement-breakpoint
 CREATE INDEX "idx_sped_inventario_cliente_data" ON "sped_inventarios" USING btree ("cliente_id","data_inventario");--> statement-breakpoint

@@ -180,18 +180,25 @@ de PostgreSQL, R2 e Mailtrap não são retornados.
 A API é a fonte absoluta de verdade para persistência. O frontend `../web` não
 possui driver, ORM, schema, migrations, seeds ou credenciais de banco.
 
-- schema: `src/database/schema.ts`;
+- tabelas: `src/database/schemas/<nome_sql>.ts` (um arquivo por tabela);
+- importações da API: `src/database/schema.ts` (reexporta todas as tabelas);
 - migrations versionadas: `drizzle/`;
 - configuração de migration: `drizzle.config.ts`;
 - preflight e backfill operacionais: `scripts/`.
 
-Novos ambientes começam pela baseline `drizzle/0000_baseline_kontabb.sql` e
-recebem depois as migrations incrementais registradas em
-`drizzle/meta/_journal.json` (`0001`–`0004` nesta revisão). A baseline é
-destinada a bancos vazios; não a aplique sobre o banco antigo. O procedimento
-de recriação, restore e validação está em `docs/database-rebuild.md`. A `0004`
-retira três tabelas vazias; backups anteriores a ela precisam do helper
-`backup-restore` v1.2 e da opção explícita documentada no procedimento.
+Ao criar uma tabela, adicione seu arquivo em `src/database/schemas/` e seu
+`export *` em `src/database/schema.ts`. O `drizzle-kit` lê todos os arquivos da
+pasta pelo padrão `schemas/*.ts`; depois de alterar uma definição, execute
+`pnpm db:generate` e revise o SQL e o snapshot gerados antes de aplicar a
+migration. Esse comando valida os arquivos e exports, gera a migration e
+verifica o histórico com `drizzle-kit check`.
+
+Novos ambientes começam pela baseline `drizzle/0000_silent_warbird.sql`,
+registrada em `drizzle/meta/_journal.json`. Ela cria diretamente as 54 tabelas
+atuais e só pode ser aplicada a um banco vazio. O procedimento de recriação,
+restore e validação está em `docs/database-rebuild.md`. Backups históricos com
+as três tabelas removidas precisam do helper `backup-restore` v1.2 e da opção
+explícita documentada no procedimento.
 
 Para desenvolvimento local, suba o PostgreSQL e aplique as migrations:
 
@@ -204,9 +211,8 @@ pnpm db:check
 
 ### Regime de apuração do Simples Nacional
 
-A migration `0003_clientes_regime_competencia` adiciona `clientes.regime_competencia`
-(`true` para cadastros novos e clientes existentes). Aplique-a antes de publicar
-a API e o frontend que exibem o campo.
+`clientes.regime_competencia` está incluída na nova baseline, com default
+`true` para novos cadastros.
 
 Nas apurações até dezembro de 2026, `false` usa a data de emissão da NFS-e como
 referência operacional da base mensal, conforme a configuração adotada neste

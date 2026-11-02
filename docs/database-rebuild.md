@@ -5,10 +5,10 @@ frontend ainda mostra apenas um aviso; ela não inicia restore PostgreSQL.
 Use o Backup Drive ou o helper `backup-restore` em um banco de destino
 separado e autorizado.
 
-O histórico começa em `drizzle/0000_baseline_kontabb.sql`, que cria o schema
-histórico de 57 tabelas em banco vazio. As migrations `0001`–`0004` vêm depois;
-a `0004` retira três tabelas vazias e deixa o schema atual com 54. Não edite a
-baseline nem a execute isoladamente sobre um banco existente.
+O histórico atual começa em `drizzle/0000_silent_warbird.sql`, que cria
+diretamente as 54 tabelas atuais em banco vazio. O histórico antigo `0000`–`0004`
+foi substituído; não aplique a nova baseline sobre um banco existente. O nome
+das foreign keys longas agora é explícito para evitar truncamento no PostgreSQL.
 
 O backup data-only contém somente dados. O schema, constraints e índices sempre
 devem ser criados primeiro pelo Drizzle. Confirme quais tabelas o backup inclui:
@@ -24,8 +24,8 @@ um ensaio em clone com essas três removidas falhou em `fiscal_perfis_vigencia`
 `-skip-missing-empty-tables`: no clone com 54 tabelas, restaurou as 54 tabelas
 restantes e os 13.389 registros, validando 98 FKs. Se houver qualquer linha no
 `COPY` de tabela ausente, aborta e reverte tudo. O Backup Drive também expõe
-essa lista opcional, mas precisa embarcar o helper v1.2. A `0004` já está no
-journal e foi ensaiada em clone; o banco local de testes está em `0004`.
+essa lista opcional, mas precisa embarcar o helper v1.2. A antiga `0004` foi
+ensaiada em clone; ela não pertence ao novo journal.
 Em 01/11/2026, o usuário informou que **ele próprio aplicou a `0004` no banco
 implantado e validou o backup/restore**. O agente não verificou o estado
 posterior desse banco nem executou escrita nele. A plataforma e a assinatura
@@ -45,8 +45,8 @@ do pacote usado não foram informadas.
    `KONTABB_NEW_DATABASE_URL` com a URL **desse banco novo**, fora do `.env` da
    API em execução. Confirme host e nome do banco antes dos comandos seguintes.
 2. Mantenha a URL do banco antigo intacta para rollback.
-3. Crie o schema. O comando aplica `0000`–`0004` no banco novo, inclusive os
-   drops guardados da `0004`; confira antes que a URL aponta para o banco
+3. Crie o schema. O comando aplica a nova baseline no banco vazio; confira
+   antes que a URL aponta para o banco
    **novo e descartável**. `db:check` valida o journal local, não o banco.
 
 ```bash
@@ -55,7 +55,7 @@ DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:migrate
 pnpm db:check
 ```
 
-4. Para um backup **anterior à `0004`** que ainda contém blocos `COPY` das
+4. Para um backup **anterior à antiga `0004`** que ainda contém blocos `COPY` das
    três tabelas retiradas, valide o restore de forma transacional, sem
    persistir alterações. A opção só ignora blocos comprovadamente vazios.
    Se o backup já foi feito com o schema de 54 tabelas, omita
@@ -101,7 +101,7 @@ psql "$KONTABB_NEW_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-schema-
 As 22 consultas de violações do **primeiro** script devem retornar zero linhas.
 O segundo script é um inventário: confira que o tracker
 `drizzle.__drizzle_migrations` corresponde a todas as entradas de
-`drizzle/meta/_journal.json` (cinco, `0000`–`0004`, nesta revisão). Ele mostra
+`drizzle/meta/_journal.json` (uma entrada `0000` nesta revisão). Ele mostra
 as três tabelas retiradas como ausentes, com contagem `NULL`, e as tabelas
 existentes vazias com contagem zero. Seus quatro diagnósticos de pagamentos
 devem retornar zero. Os dois scripts abrem transações `READ ONLY`.

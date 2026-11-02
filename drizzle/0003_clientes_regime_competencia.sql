@@ -1,1 +1,0 @@
-ALTER TABLE "clientes" ADD COLUMN "regime_competencia" boolean DEFAULT true NOT NULL;

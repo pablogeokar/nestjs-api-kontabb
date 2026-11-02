@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1792166524025,
-      "tag": "0000_baseline_kontabb",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1792253292867,
-      "tag": "0001_fiscal_xml_retry",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1792253468652,
-      "tag": "0002_fiscal_auto_ciencia",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1793017993106,
-      "tag": "0003_clientes_regime_competencia",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1793525667862,
-      "tag": "0004_remove_unused_tables",
+      "when": 1793624802614,
+      "tag": "0000_silent_warbird",
       "breakpoints": true
     }
   ]
