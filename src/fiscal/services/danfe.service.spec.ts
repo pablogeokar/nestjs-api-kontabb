@@ -1,63 +1,77 @@
-import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { DanfeService } from './danfe.service';
 
+function harness(
+  tipoDocumento: string,
+  modelo: string,
+  situacao = 'AUTORIZADA',
+) {
+  const row = {
+    id: 'documento',
+    xmlKey: 'clientes/cliente/documento.xml',
+    chaveAcesso: 'chave',
+    tipoDocumento,
+    modelo,
+    situacao,
+  };
+  const limit = jest.fn().mockResolvedValue([row]);
+  const database = {
+    db: { select: () => ({ from: () => ({ where: () => ({ limit }) }) }) },
+  };
+  const storage = {
+    download: jest.fn().mockResolvedValue(Buffer.from('<documento/>')),
+  };
+  const pdf = Buffer.from('%PDF-1.7\n%%EOF');
+  const dacte = { generatePdf: jest.fn().mockResolvedValue(pdf) };
+  const nfse = { generatePdf: jest.fn().mockResolvedValue(pdf) };
+  const nfe = { generatePdf: jest.fn().mockResolvedValue(pdf) };
+  const service = new DanfeService(
+    database as never,
+    storage as never,
+    dacte as never,
+    nfse,
+    nfe as never,
+  );
+  return { service, storage, dacte, nfse, nfe, pdf };
+}
+
 describe('DanfeService', () => {
-  it('encaminha NFS-e ao gerador de espelho em PDF', async () => {
-    const row = {
-      id: 'doc-nfse',
-      xmlKey: 'clientes/cliente/nfse.xml',
-      chaveAcesso: 'nfse-key',
-      tipoDocumento: 'NFSE',
-      situacao: 'AUTORIZADA',
-    };
-    const limit = jest.fn().mockResolvedValue([row]);
-    const database = {
-      db: { select: () => ({ from: () => ({ where: () => ({ limit }) }) }) },
-    };
-    const storage = {
-      download: jest.fn().mockResolvedValue(Buffer.from('<CompNfse/>')),
-    };
-    const nfsePdf = {
-      generatePdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-nfse%%EOF')),
-    };
-    const dacte = { generatePdf: jest.fn() };
-    const service = new DanfeService(
-      database as never,
-      storage as never,
-      dacte as never,
-      nfsePdf,
+  it.each([
+    ['NFE', '55', 'nfe'],
+    ['NFCE', '65', 'nfe'],
+    ['NFE', '65', 'nfe'],
+    ['CTE', '57', 'dacte'],
+    ['NFSE', 'NFSE', 'nfse'],
+  ])('roteia %s modelo %s para %s em memória', async (type, model, target) => {
+    const context = harness(type, model);
+    const result = await context.service.getDanfePdf('documento');
+    expect(result).toEqual({
+      buffer: context.pdf,
+      contentType: 'application/pdf',
+    });
+    expect(context.storage.download).toHaveBeenCalledWith(
+      'clientes/cliente/documento.xml',
     );
-
-    const result = await service.getDanfePdf(row.id);
-
-    expect(nfsePdf.generatePdf).toHaveBeenCalledWith('<CompNfse/>');
-    expect(dacte.generatePdf).not.toHaveBeenCalled();
-    expect(result.contentType).toBe('application/pdf');
+    for (const name of ['nfe', 'dacte', 'nfse'] as const) {
+      expect(context[name].generatePdf).toHaveBeenCalledTimes(
+        name === target ? 1 : 0,
+      );
+    }
   });
 
-  it('aguarda o stream terminar antes de ler o PDF', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'kontabb-danfe-test-'));
-    const filePath = join(directory, 'danfe.pdf');
-    const service = Object.create(DanfeService.prototype) as DanfeService;
-    const internals = service as unknown as {
-      waitForCompletePdf(path: string): Promise<Buffer>;
-    };
+  it('não gera PDF para documento resumido', async () => {
+    const context = harness('NFE', '55', 'RESUMIDA');
+    await expect(
+      context.service.getDanfePdf('documento'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(context.storage.download).not.toHaveBeenCalled();
+  });
 
-    try {
-      const pendingPdf = internals.waitForCompletePdf(filePath);
-      await writeFile(filePath, '%PDF-1.3\nconteudo parcial');
-      await delay(40);
-      await appendFile(filePath, '\n%%EOF\n');
-
-      const pdf = await pendingPdf;
-
-      expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
-      expect(pdf.subarray(-7).toString('ascii')).toContain('%%EOF');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
+  it('converte falha do gerador em indisponibilidade', async () => {
+    const context = harness('NFE', '55');
+    context.nfe.generatePdf.mockRejectedValue(new Error('XML inválido'));
+    await expect(
+      context.service.getDanfePdf('documento'),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

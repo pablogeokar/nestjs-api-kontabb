@@ -780,11 +780,11 @@ export class ClienteFiscalController {
 
     // Validar justificativa para eventos que exigem
     if (
-      (body.tipoEvento === '210220' || body.tipoEvento === '210240') &&
+      body.tipoEvento === '210240' &&
       (!body.justificativa || body.justificativa.length < 15)
     ) {
       throw new BadRequestException(
-        'Justificativa é obrigatória (mín. 15 caracteres) para Desconhecimento e Operação não Realizada.',
+        'Justificativa é obrigatória (mín. 15 caracteres) para Operação não Realizada.',
       );
     }
 

@@ -17,6 +17,7 @@ import { DistribuicaoDfeService } from './services/distribuicao-dfe.service';
 import { DanfeService } from './services/danfe.service';
 import { FiscalCronService } from './services/fiscal-cron.service';
 import { DacteService } from './services/dacte.service';
+import { DanfeNfeService } from './services/danfe-nfe.pdf';
 import { NfsePdfService } from './services/nfse-pdf.service';
 import { ImportacaoXmlFiscalService } from './services/importacao-xml-fiscal.service';
 import { FiscalItensService } from './services/fiscal-itens.service';
@@ -91,6 +92,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     SefazConsultaControlService,
     DistribuicaoDfeService,
     DacteService,
+    DanfeNfeService,
     NfsePdfService,
     DanfeService,
     FiscalCronService,

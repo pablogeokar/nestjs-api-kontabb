@@ -8,15 +8,9 @@ import { eq, and, type SQL } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
 import { documentosFiscais } from '../../database/schema';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { DacteService } from './dacte.service';
 import { NfsePdfService } from './nfse-pdf.service';
-
-const PDF_WRITE_TIMEOUT_MS = 10_000;
-const PDF_POLL_INTERVAL_MS = 25;
+import { DanfeNfeService } from './danfe-nfe.pdf';
 
 /**
  * Gera e serve DANFE, DACTE e espelho de NFS-e a partir do XML fiscal.
@@ -30,6 +24,7 @@ export class DanfeService {
     private readonly storage: StorageService,
     private readonly dacteService: DacteService,
     private readonly nfsePdfService: NfsePdfService,
+    private readonly danfeNfeService: DanfeNfeService,
   ) {}
 
   /**
@@ -53,6 +48,7 @@ export class DanfeService {
         xmlKey: documentosFiscais.xmlKey,
         chaveAcesso: documentosFiscais.chaveAcesso,
         tipoDocumento: documentosFiscais.tipoDocumento,
+        modelo: documentosFiscais.modelo,
         situacao: documentosFiscais.situacao,
       })
       .from(documentosFiscais)
@@ -74,16 +70,20 @@ export class DanfeService {
       const xmlBuffer = await this.storage.download(doc[0].xmlKey);
       const xmlContent = xmlBuffer.toString('utf-8');
 
-      const pdfBuffer =
-        doc[0].tipoDocumento === 'NFSE'
-          ? await this.nfsePdfService.generatePdf(xmlContent)
-          : doc[0].tipoDocumento === 'CTE'
-            ? await this.dacteService.generatePdf(xmlContent)
-            : await this.generateDanfePdf(
-                xmlContent,
-                doc[0].chaveAcesso,
-                doc[0].tipoDocumento,
-              );
+      let pdfBuffer: Buffer;
+      if (doc[0].tipoDocumento === 'NFSE') {
+        pdfBuffer = await this.nfsePdfService.generatePdf(xmlContent);
+      } else if (doc[0].tipoDocumento === 'CTE') {
+        pdfBuffer = await this.dacteService.generatePdf(xmlContent);
+      } else if (
+        doc[0].tipoDocumento === 'NFE' ||
+        doc[0].tipoDocumento === 'NFCE' ||
+        doc[0].modelo === '65'
+      ) {
+        pdfBuffer = await this.danfeNfeService.generatePdf(xmlContent);
+      } else {
+        throw new Error('Tipo de documento fiscal sem gerador de PDF.');
+      }
 
       return { buffer: pdfBuffer, contentType: 'application/pdf' };
     } catch (error: unknown) {
@@ -97,76 +97,5 @@ export class DanfeService {
         'Não foi possível gerar o PDF do documento fiscal. Tente novamente.',
       );
     }
-  }
-
-  private async generateDanfePdf(
-    xmlContent: string,
-    chaveAcesso: string,
-    tipoDocumento: string,
-  ): Promise<Buffer> {
-    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'kontabb-danfe-'));
-    const temporaryFile = join(temporaryDirectory, 'documento.pdf');
-
-    try {
-      const { NFCE_GerarDanfe, NFE_GerarDanfe } =
-        await import('@nfewizard/danfe');
-      const gerarDanfe =
-        tipoDocumento === 'NFCE' ? NFCE_GerarDanfe : NFE_GerarDanfe;
-
-      const result = await gerarDanfe({
-        data: xmlContent,
-        chave: chaveAcesso,
-        outputPath: temporaryFile,
-      });
-
-      if (!result.success) {
-        throw new Error(result.message || 'Falha na geração do PDF da DANFE');
-      }
-
-      // A versao atual da biblioteca resolve antes de o stream do PDFKit
-      // terminar. Aguardamos o cabecalho e o marcador final do PDF.
-      return await this.waitForCompletePdf(temporaryFile);
-    } finally {
-      try {
-        await rm(temporaryDirectory, { recursive: true, force: true });
-      } catch (cleanupError: unknown) {
-        const message =
-          cleanupError instanceof Error
-            ? cleanupError.message
-            : 'erro desconhecido';
-        this.logger.warn(
-          `Diretorio temporario da DANFE nao removido: ${message}`,
-        );
-      }
-    }
-  }
-
-  private async waitForCompletePdf(filePath: string): Promise<Buffer> {
-    const deadline = Date.now() + PDF_WRITE_TIMEOUT_MS;
-
-    while (Date.now() < deadline) {
-      try {
-        const pdf = await readFile(filePath);
-        if (this.isCompletePdf(pdf)) return pdf;
-      } catch (error: unknown) {
-        const errorCode =
-          error && typeof error === 'object' && 'code' in error
-            ? error.code
-            : undefined;
-        if (errorCode !== 'ENOENT') {
-          throw error;
-        }
-      }
-      await delay(PDF_POLL_INTERVAL_MS);
-    }
-
-    throw new Error('A geração do PDF excedeu o tempo limite.');
-  }
-
-  private isCompletePdf(pdf: Buffer) {
-    if (pdf.length < 8 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
-      return false;
-    }
-    return pdf.subarray(Math.max(0, pdf.length - 1_024)).includes('%%EOF');
   }
 }
