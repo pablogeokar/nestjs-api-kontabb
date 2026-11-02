@@ -39,6 +39,7 @@ import {
 } from '../common/pdf-extraction-ferias';
 import { sanitizeFileName } from '../common/file-validation';
 import type { CurrentUser as CurrentUserType } from '../common/types';
+import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
 
 interface RhFileResult {
   fileName: string;
@@ -191,8 +192,8 @@ export class RhUploadController {
     }
 
     // Find client by CNPJ
-    const cnpjDigits = dados.cnpj.replace(/\D/g, '');
-    const client = await this.clientesService.findClientForUpload(cnpjDigits);
+    const cnpj = normalizeCnpjIdentifier(dados.cnpj);
+    const client = await this.clientesService.findClientForUpload(cnpj);
     if (!client) {
       return {
         fileName: file.originalname,
@@ -222,7 +223,7 @@ export class RhUploadController {
     // Upload to R2
     const folhaUuid = crypto.randomUUID();
     const [month, year] = dados.competencia.split('/');
-    const r2Key = `rh/${cnpjDigits}/${year}/${month}/folha-${folhaUuid}.pdf`;
+    const r2Key = `rh/${cnpj}/${year}/${month}/folha-${folhaUuid}.pdf`;
 
     try {
       await this.storage.upload(
@@ -316,8 +317,8 @@ export class RhUploadController {
     }
 
     // Find client by CNPJ
-    const cnpjDigits = dados.cnpj.replace(/\D/g, '');
-    const client = await this.clientesService.findClientForUpload(cnpjDigits);
+    const cnpj = normalizeCnpjIdentifier(dados.cnpj);
+    const client = await this.clientesService.findClientForUpload(cnpj);
     if (!client) {
       return {
         fileName: file.originalname,
@@ -347,7 +348,7 @@ export class RhUploadController {
     // Upload to R2
     const folhaUuid = crypto.randomUUID();
     const [month, year] = dados.competencia.split('/');
-    const r2Key = `rh/${cnpjDigits}/${year}/${month}/adiantamento13-${folhaUuid}.pdf`;
+    const r2Key = `rh/${cnpj}/${year}/${month}/adiantamento13-${folhaUuid}.pdf`;
 
     try {
       await this.storage.upload(
@@ -443,8 +444,8 @@ export class RhUploadController {
       };
     }
 
-    const cnpjDigits = dados.cnpj.replace(/\D/g, '');
-    const client = await this.clientesService.findClientForUpload(cnpjDigits);
+    const cnpj = normalizeCnpjIdentifier(dados.cnpj);
+    const client = await this.clientesService.findClientForUpload(cnpj);
     if (!client) {
       return {
         fileName: file.originalname,
@@ -475,7 +476,7 @@ export class RhUploadController {
 
     const feriasUuid = crypto.randomUUID();
     const [month, year] = dados.competencia.split('/');
-    const r2Key = `rh/${cnpjDigits}/${year}/${month}/ferias-${dados.funcionario.codigoFuncionario}-${feriasUuid}.pdf`;
+    const r2Key = `rh/${cnpj}/${year}/${month}/ferias-${dados.funcionario.codigoFuncionario}-${feriasUuid}.pdf`;
 
     try {
       await this.storage.upload(

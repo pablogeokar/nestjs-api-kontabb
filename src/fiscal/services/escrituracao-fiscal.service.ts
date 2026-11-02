@@ -43,6 +43,8 @@ interface DocumentoReprocessado {
   xmlKey: string;
 }
 
+const XML_PARSE_BATCH_SIZE = 4;
+
 @Injectable()
 export class EscrituracaoFiscalService {
   constructor(
@@ -163,9 +165,29 @@ export class EscrituracaoFiscalService {
     }> = [];
     let ctesComFalha = 0;
 
-    for (const documento of documentos) {
+    // O parse não modifica o banco. Lotes pequenos limitam downloads simultâneos
+    // do R2; Promise.all preserva a posição original de cada documento.
+    const parsedDocumentos: Array<ParsedDocumentoFiscal | null> = [];
+    for (
+      let inicio = 0;
+      inicio < documentos.length;
+      inicio += XML_PARSE_BATCH_SIZE
+    ) {
+      const lote = documentos.slice(inicio, inicio + XML_PARSE_BATCH_SIZE);
+      parsedDocumentos.push(
+        ...(await Promise.all(
+          lote.map((documento) =>
+            documento.modelo === '57'
+              ? this.parseStoredCte(documento)
+              : this.parseStoredDocument(documento),
+          ),
+        )),
+      );
+    }
+
+    for (const [indice, documento] of documentos.entries()) {
+      const parsed = parsedDocumentos[indice] ?? null;
       if (documento.modelo === '57') {
-        const parsed = await this.parseStoredCte(documento);
         if (!parsed?.cteEscrituracao) {
           ctesComFalha += 1;
           continue;
@@ -187,7 +209,6 @@ export class EscrituracaoFiscalService {
         });
         continue;
       }
-      const parsed = await this.parseStoredDocument(documento);
       const tpNfXml = isTpNf(documento.tpNfXml)
         ? documento.tpNfXml
         : (parsed?.tpNfXml ?? '1');

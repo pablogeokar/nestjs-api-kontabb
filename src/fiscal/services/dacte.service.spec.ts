@@ -19,6 +19,8 @@ describe('DACTE', () => {
       valorReceber: 'R$ 145,00',
     });
     expect(data.emitente.documento).toBe('12.345.678/0001-95');
+    expect(data.expedidor.nome).toBe('EXPEDIDOR TESTE LTDA');
+    expect(data.recebedor.nome).toBe('RECEBEDOR TESTE LTDA');
     expect(data.documentosOriginarios).toHaveLength(1);
     expect(data.modalInfo).toContainEqual({
       label: 'RNTRC',
@@ -35,6 +37,36 @@ describe('DACTE', () => {
     expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
     expect(pdf.subarray(-1_024).includes('%%EOF')).toBe(true);
     expect(pageObjects).toHaveLength(1);
+  });
+
+  it('repete a identificação do CT-e nas folhas adicionais', async () => {
+    const original = `<infNFe><chave>${'3'.repeat(44)}</chave></infNFe>`;
+    const xml = buildCteXml().replace(original, original.repeat(80));
+    const pdf = await new DacteService().generatePdf(xml);
+    expect(
+      (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length,
+    ).toBeGreaterThan(1);
+  });
+
+  it('não inventa QR Code quando o CT-e não o fornece', async () => {
+    const xml = buildCteXml().replace(/<infCTeSupl>[\s\S]*?<\/infCTeSupl>/, '');
+    expect(parseDacteXml(xml).qrCode).toBe('');
+    const pdf = await new DacteService().generatePdf(xml);
+    expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+  });
+
+  it('inclui campos do modal aéreo no quadro específico', async () => {
+    const xml = buildCteXml()
+      .replace('<modal>01</modal>', '<modal>02</modal>')
+      .replace(
+        '<rodo><RNTRC>12345678</RNTRC></rodo>',
+        '<aereo><nOCA>ABC123</nOCA><cTar>TAR1</cTar><vTar>1.23</vTar></aereo>',
+      );
+    const data = parseDacteXml(xml);
+    expect(data.modal).toBe('AÉREO');
+    expect(data.modalInfo).toContainEqual({ label: 'Nº OCA', value: 'ABC123' });
+    const pdf = await new DacteService().generatePdf(xml);
+    expect(pdf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
   });
 
   it('rejeita XML que não seja CT-e modelo 57', () => {
@@ -67,6 +99,14 @@ function buildCteXml() {
           <CNPJ>98765432000110</CNPJ><IE>987654321</IE><xNome>REMETENTE TESTE LTDA</xNome>
           <enderReme><xLgr>Av. Origem</xLgr><nro>10</nro><xBairro>Comércio</xBairro><xMun>Salvador</xMun><UF>BA</UF><CEP>40010000</CEP></enderReme>
         </rem>
+        <exped>
+          <CNPJ>22222222000191</CNPJ><xNome>EXPEDIDOR TESTE LTDA</xNome>
+          <enderExped><xLgr>Rua do Expedidor</xLgr><nro>5</nro><xMun>Salvador</xMun><UF>BA</UF></enderExped>
+        </exped>
+        <receb>
+          <CNPJ>33333333000191</CNPJ><xNome>RECEBEDOR TESTE LTDA</xNome>
+          <enderReceb><xLgr>Rua do Recebedor</xLgr><nro>8</nro><xMun>Feira de Santana</xMun><UF>BA</UF></enderReceb>
+        </receb>
         <dest>
           <CNPJ>11222333000181</CNPJ><IE>112223330</IE><xNome>DESTINATARIO TESTE LTDA</xNome>
           <enderDest><xLgr>Av. Destino</xLgr><nro>20</nro><xBairro>Centro</xBairro><xMun>Feira de Santana</xMun><UF>BA</UF><CEP>44000000</CEP></enderDest>

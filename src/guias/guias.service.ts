@@ -30,6 +30,7 @@ import { AppLogger } from '../common/logger.service';
 import { resultRows } from '../common/db-result';
 import { deriveDocumentStatus, getBahiaDate } from '../common/document-status';
 import { sanitizeFileName } from '../common/file-validation';
+import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
 import type { PaginationParams } from '../common/types';
 import {
   simplesNacionalSemApuracaoIcms,
@@ -199,13 +200,16 @@ export class GuiasService {
       const searchConditions: SQL[] = [
         ilike(clientes.razaoSocial, `%${input.search}%`),
       ];
-      const cnpjDigits = input.search.replace(/\D/g, '');
-      if (cnpjDigits) {
-        searchConditions.push(
-          ilike(clientes.cnpj, `%${cnpjDigits}%`),
-          ilike(clientes.cpf, `%${cnpjDigits}%`),
-        );
-      }
+      const cnpjSearch = /\d/.test(input.search)
+        ? normalizeCnpjIdentifier(input.search)
+        : '';
+      if (cnpjSearch)
+        searchConditions.push(ilike(clientes.cnpj, `%${cnpjSearch}%`));
+      const fullAlphaCnpj =
+        /[A-Z]/.test(cnpjSearch) && /^[0-9A-Z]{12}[0-9]{2}$/.test(cnpjSearch);
+      const cpfDigits = fullAlphaCnpj ? '' : input.search.replace(/\D/g, '');
+      if (cpfDigits)
+        searchConditions.push(ilike(clientes.cpf, `%${cpfDigits}%`));
       conditions.push(or(...searchConditions)!);
     }
     const where = conditions.length ? and(...conditions) : undefined;

@@ -149,16 +149,10 @@ export class FiscalItensService {
     // documento (R5.3), redução só com percentual efetivo (R5.1) — a cargo do
     // agregador, para que livro e arquivo coincidam por construção.
     //
-    // Fonte da projeção (R5.4, design "C190 alinhado"): o modelo-alvo é a
-    // tabela comum `fiscal_lancamentos` (migração aditiva 0016). Nesta fase,
-    // porém, nenhum escritor ainda popula os lançamentos — o fechamento
-    // versionado (tarefas 3.x) é quem passa a gravá-los. Até lá, projetamos a
-    // partir de `documentosFiscaisItens`, que são os MESMOS valores documentais
-    // já persistidos que o builder EFD consome. Como UI e TXT atravessam o
-    // ÚNICO agregador comum, há um só caminho de cálculo e a decomposição
-    // coincide por construção; migrar a origem para `fiscal_lancamentos`
-    // (quando houver escritor) não reintroduz um segundo cálculo — apenas troca
-    // a tabela de leitura por uma projeção equivalente dos mesmos fatos.
+    // Fonte da projeção (R5.4, design "C190 alinhado"):
+    // `documentosFiscaisItens` contém os mesmos valores documentais persistidos
+    // que o builder EFD consome. UI e TXT atravessam o único agregador comum,
+    // mantendo um só caminho de cálculo e a mesma decomposição.
     const itens = await this.database.db
       .select({
         documento_fiscal_id: documentosFiscaisItens.documentoFiscalId,

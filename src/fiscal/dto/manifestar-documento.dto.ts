@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
@@ -19,14 +20,16 @@ export class ManifestarDocumentoDto {
   tipoEvento: '210210' | '210200' | '210220' | '210240';
 
   @ApiPropertyOptional({
-    description:
-      'Justificativa (obrigatória para Desconhecimento e Operação não Realizada)',
+    description: 'Justificativa (obrigatória para Operação não Realizada)',
     example: 'Não reconheço esta operação',
   })
   @IsOptional()
   @IsString()
   @MinLength(15, {
     message: 'A justificativa deve ter no mínimo 15 caracteres',
+  })
+  @MaxLength(255, {
+    message: 'A justificativa deve ter no máximo 255 caracteres',
   })
   justificativa?: string;
 }

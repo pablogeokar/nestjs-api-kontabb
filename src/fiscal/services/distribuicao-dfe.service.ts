@@ -40,6 +40,7 @@ import { CfopService } from './cfop.service';
 import { FiscalCteService } from './fiscal-cte.service';
 import { reconciliarItensDocumento } from './fiscal-item-reconciliation';
 import type { RegimeTributario } from '../../clientes/clientes.types';
+import { fiscalXmlObjectKey } from '../fiscal-xml-object-key';
 import {
   buildDocumentoFiscalSpedMetadata,
   documentoNfePrecisaRevisao,
@@ -1538,17 +1539,25 @@ export class DistribuicaoDfeService {
     }
 
     // Upload XML ao R2
-    const dataEmissao = parsed.dataEmissao;
-    const ano = dataEmissao.getFullYear().toString();
-    const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, '0');
-    const tipoDir = parsed.tipoDocumento.toLowerCase();
-    const xmlKey = `clientes/${cnpj}/fiscais/${ano}/${mes}/${tipoDir}/${parsed.chaveAcesso}.xml`;
+    const xmlKey = fiscalXmlObjectKey({
+      cnpj,
+      dataEmissao: parsed.dataEmissao,
+      tipoDocumento: parsed.tipoDocumento,
+      chaveAcesso: parsed.chaveAcesso,
+    });
 
-    await this.storage.upload(
+    const xmlBody = Buffer.from(parsed.xmlContent, 'utf-8');
+    const created = await this.storage.uploadIfAbsent(
       xmlKey,
-      Buffer.from(parsed.xmlContent, 'utf-8'),
+      xmlBody,
       'application/xml',
     );
+    if (!created) {
+      const current = await this.storage.download(xmlKey);
+      if (!current.equals(xmlBody)) {
+        throw new Error(`Chave XML já ocupada por outro conteúdo: ${xmlKey}`);
+      }
+    }
 
     const values = {
       clienteId,
@@ -1576,88 +1585,70 @@ export class DistribuicaoDfeService {
       xmlKey,
     };
 
-    try {
-      await this.database.db.transaction(async (tx) => {
-        // F01/R1.6/R1.7: serializa reimportações concorrentes do mesmo
-        // documento (manual × DF-e) por cliente + chave, evitando corrida na
-        // reconciliação também no caminho de substituição (`onConflictDoUpdate`).
-        // A chave do lock DEVE ser cliente + chaveAcesso (NÃO o NSU) para que os
-        // dois canais convirjam para o mesmo documento lógico.
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${clienteId}:${parsed.chaveAcesso}`}, 0))`,
-        );
-        const persisted = await tx
-          .insert(documentosFiscais)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [
-              documentosFiscais.clienteId,
-              documentosFiscais.chaveAcesso,
-            ],
-            set: {
-              nsu: parsed.nsu,
-              tipoDocumento: parsed.tipoDocumento,
-              modelo: parsed.modelo,
-              serie: parsed.serie,
-              numeroDocumento: parsed.numeroDocumento,
-              emitenteCnpjCpf: parsed.emitenteCnpjCpf,
-              emitenteRazaoSocial: parsed.emitenteRazaoSocial,
-              destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
-              destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
-              dataEmissao: parsed.dataEmissao,
-              valorTotal: parsed.valorTotal,
-              ...spedMetadata,
-              situacao: parsed.situacao,
-              tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
-              tpNfXml: parsed.tpNfXml,
-              escriturado: nfeEscriturado,
-              escrituracaoStatus:
-                parsed.tipoDocumento === 'CTE'
-                  ? ('NAO_ESCRITURAVEL' as const)
-                  : nfeEscrituracaoStatus,
-              xmlKey,
-              danfeKey: null,
-              proximaTentativaXmlEm: null,
-              atualizadoEm: new Date(),
-            },
-          })
-          .returning({ id: documentosFiscais.id });
-        const documentoFiscalId = persisted[0].id;
+    await this.database.db.transaction(async (tx) => {
+      // F01/R1.6/R1.7: serializa reimportações concorrentes do mesmo
+      // documento (manual × DF-e) por cliente + chave, evitando corrida na
+      // reconciliação também no caminho de substituição (`onConflictDoUpdate`).
+      // A chave do lock DEVE ser cliente + chaveAcesso (NÃO o NSU) para que os
+      // dois canais convirjam para o mesmo documento lógico.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`fiscal-doc:${clienteId}:${parsed.chaveAcesso}`}, 0))`,
+      );
+      const persisted = await tx
+        .insert(documentosFiscais)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [documentosFiscais.clienteId, documentosFiscais.chaveAcesso],
+          set: {
+            nsu: parsed.nsu,
+            tipoDocumento: parsed.tipoDocumento,
+            modelo: parsed.modelo,
+            serie: parsed.serie,
+            numeroDocumento: parsed.numeroDocumento,
+            emitenteCnpjCpf: parsed.emitenteCnpjCpf,
+            emitenteRazaoSocial: parsed.emitenteRazaoSocial,
+            destinatarioCnpjCpf: parsed.destinatarioCnpjCpf,
+            destinatarioRazaoSocial: parsed.destinatarioRazaoSocial,
+            dataEmissao: parsed.dataEmissao,
+            valorTotal: parsed.valorTotal,
+            ...spedMetadata,
+            situacao: parsed.situacao,
+            tipoOperacaoEscriturada: escrituracao.tipoOperacaoEscriturada,
+            tpNfXml: parsed.tpNfXml,
+            escriturado: nfeEscriturado,
+            escrituracaoStatus:
+              parsed.tipoDocumento === 'CTE'
+                ? ('NAO_ESCRITURAVEL' as const)
+                : nfeEscrituracaoStatus,
+            xmlKey,
+            danfeKey: null,
+            proximaTentativaXmlEm: null,
+            atualizadoEm: new Date(),
+          },
+        })
+        .returning({ id: documentosFiscais.id });
+      const documentoFiscalId = persisted[0].id;
 
-        // F01: reconciliação idempotente por numeroItem — preserva ids dos
-        // itens e as decisões humanas (cfop manual, destinação) mesmo no
-        // caminho de substituição (`onConflictDoUpdate`), em que o documento
-        // pode já existir com itens. Não deleta em massa, portanto não aciona
-        // o cascade sobre o aprendizado de classificação nem quebra o vínculo
-        // com o CIAP.
-        await reconciliarItensDocumento(tx, {
+      // F01: reconciliação idempotente por numeroItem — preserva ids dos
+      // itens e as decisões humanas (cfop manual, destinação) mesmo no
+      // caminho de substituição (`onConflictDoUpdate`), em que o documento
+      // pode já existir com itens. Não deleta em massa, portanto não aciona
+      // o cascade sobre o aprendizado de classificação nem quebra o vínculo
+      // com o CIAP.
+      await reconciliarItensDocumento(tx, {
+        documentoFiscalId,
+        clienteId,
+        itens: escrituracao.itens,
+      });
+      if (ctePreparada) {
+        await this.fiscalCteService.persistirEscrituracao(tx, {
           documentoFiscalId,
           clienteId,
-          itens: escrituracao.itens,
+          chaveAcesso: parsed.chaveAcesso,
+          preparada: ctePreparada,
         });
-        if (ctePreparada) {
-          await this.fiscalCteService.persistirEscrituracao(tx, {
-            documentoFiscalId,
-            clienteId,
-            chaveAcesso: parsed.chaveAcesso,
-            preparada: ctePreparada,
-          });
-        }
-      });
-    } catch (error: unknown) {
-      // O upload externo nao participa da transacao do banco. Se o registro
-      // ainda nao existia, removemos o objeto para nao deixar XML orfao.
-      if (!existing[0]) {
-        try {
-          await this.storage.delete(xmlKey);
-        } catch (cleanupError: unknown) {
-          this.logger.warn(
-            `XML fiscal orfao nao removido (${xmlKey}): ${this.getRootCauseMessage(cleanupError)}`,
-          );
-        }
       }
-      throw error;
-    }
+    });
 
     if (existing[0]?.xmlKey && existing[0].xmlKey !== xmlKey) {
       try {

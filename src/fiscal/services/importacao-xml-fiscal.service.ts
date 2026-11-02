@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { AppLogger } from '../../common/logger.service';
 import { DatabaseService } from '../../database/database.service';
@@ -26,6 +25,7 @@ import {
   documentoNfePrecisaRevisao,
 } from './documento-fiscal-sped-metadata';
 import type { CfopItemRevisao } from './cfop.service';
+import { fiscalXmlObjectKey } from '../fiscal-xml-object-key';
 
 const MAX_XML_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_XML_MIMES = new Set([
@@ -483,27 +483,32 @@ export class ImportacaoXmlFiscalService {
       return { status: 'DUPLICADO', revisoes };
     }
 
-    const year = String(documento.dataEmissao.getUTCFullYear());
-    const month = String(documento.dataEmissao.getUTCMonth() + 1).padStart(
-      2,
-      '0',
-    );
-    const xmlKey = [
-      'clientes',
-      target.cnpj,
-      'fiscais',
-      year,
-      month,
-      documento.tipoDocumento.toLowerCase(),
-      documento.chaveAcesso,
-      `${randomUUID()}.xml`,
-    ].join('/');
-
-    await this.storage.upload(
-      xmlKey,
-      Buffer.from(documento.xmlContent, 'utf8'),
-      'application/xml',
-    );
+    const xmlKey = fiscalXmlObjectKey({
+      cnpj: target.cnpj,
+      dataEmissao: documento.dataEmissao,
+      tipoDocumento: documento.tipoDocumento,
+      chaveAcesso: documento.chaveAcesso,
+    });
+    const xmlBody = Buffer.from(documento.xmlContent, 'utf8');
+    // Se o registro já aponta para a chave final, preserve o conteúdo anterior
+    // para restaurá-lo caso a transação falhe (ex.: XML de cancelamento).
+    const previousXml =
+      existing?.xmlKey === xmlKey ? await this.storage.download(xmlKey) : null;
+    if (previousXml) {
+      await this.storage.upload(xmlKey, xmlBody, 'application/xml');
+    } else {
+      const created = await this.storage.uploadIfAbsent(
+        xmlKey,
+        xmlBody,
+        'application/xml',
+      );
+      if (!created) {
+        const current = await this.storage.download(xmlKey);
+        if (!current.equals(xmlBody)) {
+          throw new Error(`Chave XML já ocupada por outro conteúdo: ${xmlKey}`);
+        }
+      }
+    }
 
     const values = {
       clienteId: target.id,
@@ -655,7 +660,9 @@ export class ImportacaoXmlFiscalService {
       );
 
       if (persisted.length === 0) {
-        await this.deleteUploadedXml(xmlKey, input);
+        if (previousXml) {
+          await this.storage.upload(xmlKey, previousXml, 'application/xml');
+        }
         return { status: 'DUPLICADO', revisoes };
       }
 
@@ -681,7 +688,9 @@ export class ImportacaoXmlFiscalService {
       }
       return { status: 'IMPORTADO', revisoes };
     } catch (error: unknown) {
-      await this.deleteUploadedXml(xmlKey, input);
+      if (previousXml) {
+        await this.storage.upload(xmlKey, previousXml, 'application/xml');
+      }
       throw error;
     }
   }
@@ -754,17 +763,6 @@ export class ImportacaoXmlFiscalService {
         operation: 'registrar_auditoria_importacao_xml',
       });
     }
-  }
-
-  private async deleteUploadedXml(
-    xmlKey: string,
-    context: {
-      actorUserId: string;
-      requestId: string;
-      documento: ParsedDocumentoFiscal;
-    },
-  ) {
-    await this.deletePreviousObjects([xmlKey], context);
   }
 
   private async deletePreviousObjects(

@@ -1,5 +1,45 @@
 # Sincronização fiscal com a SEFAZ
 
+## Transporte e documentos auxiliares
+
+As consultas NF-e e CT-e usam SOAP 1.2 sobre HTTPS com autenticação mútua pelo
+certificado A1 do cliente. O provider mantém o nome público
+`NfeWizardService` por compatibilidade com os consumidores, mas não carrega
+pacotes NFeWizard. O serviço extrai chave e cadeia do PFX em memória, preserva a
+validação TLS do servidor e devolve `docZip` comprimido ao parser fiscal
+existente. O ambiente é selecionado por `SEFAZ_AMBIENTE` (`PRODUCAO` ou
+homologação).
+
+A Ciência e as demais manifestações geram `envEvento` 1.00 e assinam
+`infEvento` com XMLDSig RSA-SHA1 e C14N 1.0, conforme o leiaute da NF-e.
+O sucesso é o `cStat` do evento (`135` ou `136`), não o `cStat` do lote.
+O XML da NF-e importada não é assinado novamente. DANFE (modelo 55), cupom
+NFC-e (modelo 65), DACTE e espelho de NFS-e são gerados em memória; o QR Code
+da NFC-e é renderizado com o conteúdo de `infNFeSupl/qrCode` do XML.
+
+Os leiautes usam como referência o
+[MOC NF-e 7.0, Anexo II](https://www.confaz.fazenda.gov.br/legislacao/arquivo-manuais/moc7-anexo-ii-manual-especificacoes-tecnicas-danfe-codigo-barras.pdf),
+o [MOC CT-e 4.00, Anexo II](https://www.cte.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=yIxPYTwmPQM%3D)
+e o [manual DANFE NFC-e 6.0](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=k%2FIuuaW4YiY%3D).
+DANFE e DACTE repetem identificação, chave, código de barras e foliação nas
+folhas adicionais. O DANFE inclui os quadros de destinatário, tributos,
+transporte, itens, ISSQN quando houver, informações complementares e reservado
+ao fisco. O DACTE inclui expedidor/recebedor quando constarem do XML,
+componentes da prestação, impostos, dados disponíveis do modal, documentos
+originários, observações e áreas reservadas. O cupom NFC-e mostra itens,
+totais, pagamentos, chave e QR Code. O
+QR Code do CT-e só é impresso quando presente no XML.
+
+Os PDFs foram renderizados e inspecionados com fixtures sintéticas de uma e
+várias páginas, inclusive com observações longas. Antes de tratar o resultado
+como validado para documentos reais, conferir exemplos autorizados de cada
+modal e situação fiscal usados pelos clientes.
+
+Antes de habilitar chamadas reais após mudanças no transporte, executar uma
+consulta NF-e e CT-e e uma manifestação com A1 autorizado em homologação.
+Os testes locais verificam contratos SOAP, PFX e assinatura, mas não substituem
+essa validação de integração.
+
 ## Contrato operacional
 
 `POST /api/admin/fiscal/sincronizar` executa a distribuição de NF-e e CT-e. A
@@ -104,7 +144,7 @@ Não há servidor local, automação do portal ou migration. Consulte
   atômicas com advisory lock transacional e compartilhadas entre importações,
   recuperações pós-manifestação, processos e reinícios. Não há migration nova.
   Uma tentativa enviada ocupa o slot mesmo se a resposta falhar, por precaução.
-- O retorno 656 (objeto ou exceção da biblioteca) persiste uma suspensão de uma
+- O retorno 656 (resposta SOAP da SEFAZ) persiste uma suspensão de uma
   hora para consultas NF-e por chave e por distribuição. Recusas locais não
   prorrogam essa suspensão. Bloqueios legados de `controle_nsu` também são lidos.
   Outros aplicativos que consultem o mesmo CNPJ podem consumir a cota ou renovar

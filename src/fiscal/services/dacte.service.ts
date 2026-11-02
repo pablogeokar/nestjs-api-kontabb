@@ -20,6 +20,14 @@ const BOTTOM_LIMIT = PAGE_HEIGHT - 28;
 
 @Injectable()
 export class DacteService {
+  private readonly pageAssets = new WeakMap<
+    PdfDocument,
+    {
+      barcode: Buffer;
+      qrCode: Buffer | null;
+    }
+  >();
+
   async generatePdf(xml: string): Promise<Buffer> {
     const data = parseDacteXml(xml);
     const [barcode, qrCode] = await Promise.all([
@@ -30,12 +38,14 @@ export class DacteService {
         height: 8,
         includetext: false,
       }),
-      QRCode.toBuffer(data.qrCode, {
-        type: 'png',
-        width: 150,
-        margin: 0,
-        errorCorrectionLevel: 'M',
-      }),
+      data.qrCode
+        ? QRCode.toBuffer(data.qrCode, {
+            type: 'png',
+            width: 150,
+            margin: 4,
+            errorCorrectionLevel: 'M',
+          })
+        : Promise.resolve(null),
     ]);
 
     const document = new PDFDocument({
@@ -50,6 +60,7 @@ export class DacteService {
       },
     });
     const chunks: Buffer[] = [];
+    this.pageAssets.set(document, { barcode, qrCode });
     document.on('data', (chunk: Buffer) => chunks.push(chunk));
     const completed = new Promise<Buffer>((resolve, reject) => {
       document.once('end', () => resolve(Buffer.concat(chunks)));
@@ -71,7 +82,7 @@ export class DacteService {
     document: PdfDocument,
     data: DacteData,
     barcode: Buffer,
-    qrCode: Buffer,
+    qrCode: Buffer | null,
   ) {
     this.drawWatermark(document, data);
     let y = this.drawReceipt(document, data, MARGIN);
@@ -89,7 +100,8 @@ export class DacteService {
       y + 3,
     );
     y = this.drawDocuments(document, data, y + 3);
-    this.drawObservations(document, data, y + 3);
+    y = this.drawObservations(document, data, y + 3);
+    this.drawReservedAreas(document, data, y + 3);
   }
 
   private drawReceipt(document: PdfDocument, data: DacteData, y: number) {
@@ -111,11 +123,17 @@ export class DacteService {
     document
       .moveTo(MARGIN, y + 17)
       .lineTo(MARGIN + CONTENT_WIDTH - 120, y + 17)
+      .moveTo(MARGIN + 145, y + 17)
+      .lineTo(MARGIN + 145, y + height)
+      .moveTo(MARGIN + 300, y + 17)
+      .lineTo(MARGIN + 300, y + height)
       .stroke();
     document
       .font('Helvetica')
       .fontSize(5)
-      .text('NOME / RG / ASSINATURA', MARGIN + 4, y + 21);
+      .text('NOME / RG DO RECEBEDOR', MARGIN + 4, y + 21)
+      .text('ASSINATURA DO RECEBEDOR', MARGIN + 149, y + 21)
+      .text('DATA / HORA DO RECEBIMENTO', MARGIN + 304, y + 21);
     document
       .font('Helvetica-Bold')
       .fontSize(11)
@@ -141,7 +159,7 @@ export class DacteService {
     document: PdfDocument,
     data: DacteData,
     barcode: Buffer,
-    qrCode: Buffer,
+    qrCode: Buffer | null,
     y: number,
   ) {
     const height = 138;
@@ -247,7 +265,9 @@ export class DacteService {
       });
 
     const qrX = centerX + centerWidth;
-    document.image(qrCode, qrX + 9, y + 12, { width: qrWidth - 18 });
+    if (qrCode) {
+      document.image(qrCode, qrX + 9, y + 12, { width: qrWidth - 18 });
+    }
     document
       .font('Helvetica-Bold')
       .fontSize(5.5)
@@ -281,7 +301,7 @@ export class DacteService {
 
   private drawGeneralData(document: PdfDocument, data: DacteData, y: number) {
     const rowHeight = 31;
-    const widths = [120, 150, CONTENT_WIDTH - 270];
+    const widths = [105, 130, CONTENT_WIDTH - 355, 120];
     let x = MARGIN;
     const rowOne = [
       ['TIPO DO CT-e', data.tipoCte],
@@ -290,6 +310,7 @@ export class DacteService {
         'CFOP / NATUREZA DA OPERAÇÃO',
         `${data.cfop} · ${data.naturezaOperacao}`,
       ],
+      ['DATA E HORA DE EMISSÃO', data.emissao],
     ];
     rowOne.forEach(([label, value], index) => {
       this.drawField(
@@ -328,7 +349,7 @@ export class DacteService {
   }
 
   private drawParties(document: PdfDocument, data: DacteData, y: number) {
-    const height = 53;
+    const height = 56;
     const half = CONTENT_WIDTH / 2;
     this.drawParty(
       document,
@@ -348,68 +369,163 @@ export class DacteService {
       'DESTINATÁRIO',
       data.destinatario,
     );
+    y += height;
+    if (data.expedidor.nome || data.recebedor.nome) {
+      this.drawParty(
+        document,
+        MARGIN,
+        y,
+        half,
+        height,
+        'EXPEDIDOR',
+        data.expedidor,
+      );
+      this.drawParty(
+        document,
+        MARGIN + half,
+        y,
+        half,
+        height,
+        'RECEBEDOR',
+        data.recebedor,
+      );
+      y += height;
+    }
     this.drawParty(
       document,
       MARGIN,
-      y + height,
+      y,
       CONTENT_WIDTH,
-      46,
+      39,
       'TOMADOR DO SERVIÇO',
       data.tomador,
     );
-    return y + height + 46;
+    return y + 39;
   }
 
   private drawCargo(document: PdfDocument, data: DacteData, y: number) {
-    const height = 39;
+    const height = 32;
     const columns: Array<[string, string, number]> = [
-      ['PRODUTO PREDOMINANTE', data.produtoPredominante, 190],
-      ['OUTRAS CARACTERÍSTICAS', data.outrasCaracteristicas, 150],
-      ['VALOR TOTAL DA CARGA', data.valorCarga, 105],
+      ['PRODUTO PREDOMINANTE', data.produtoPredominante, CONTENT_WIDTH * 0.42],
       [
-        'QUANTIDADE / MEDIDA',
-        data.quantidades
-          .map((item) => `${item.label}: ${item.value}`)
-          .join(' · '),
-        CONTENT_WIDTH - 445,
+        'OUTRAS CARACTERÍSTICAS',
+        data.outrasCaracteristicas,
+        CONTENT_WIDTH * 0.33,
       ],
+      ['VALOR TOTAL DA CARGA', data.valorCarga, CONTENT_WIDTH * 0.25],
     ];
     let x = MARGIN;
     for (const [label, value, width] of columns) {
       this.drawField(document, x, y, width, height, label, value, 6.2);
       x += width;
     }
-    return y + height;
+    const measures = data.quantidades.length
+      ? data.quantidades
+      : [{ label: 'QUANTIDADE / MEDIDA', value: '-' }];
+    const measureWidth = CONTENT_WIDTH / Math.max(measures.length, 4);
+    measures.forEach((item, index) =>
+      this.drawField(
+        document,
+        MARGIN + index * measureWidth,
+        y + height,
+        measureWidth,
+        25,
+        item.label.toUpperCase(),
+        item.value,
+        7,
+      ),
+    );
+    for (let index = measures.length; index < 4; index++) {
+      document
+        .rect(MARGIN + index * measureWidth, y + height, measureWidth, 25)
+        .stroke();
+    }
+    return y + height + 25;
   }
 
   private drawFinancialData(document: PdfDocument, data: DacteData, y: number) {
-    const leftWidth = CONTENT_WIDTH / 2;
-    const items = [
-      ...data.componentes.slice(0, 4),
-      { label: 'VALOR TOTAL DO SERVIÇO', value: data.valorTotalServico },
-      { label: 'VALOR A RECEBER', value: data.valorReceber },
-    ];
-    const maxRows = Math.max(items.length, data.impostos.length, 2);
-    const height = 17 + maxRows * 13;
-    this.drawItemTable(
+    y = this.ensureSpace(document, data, y, 110);
+    this.drawSectionTitle(
       document,
       MARGIN,
       y,
-      leftWidth,
-      height,
-      'COMPONENTES DO VALOR DA PRESTAÇÃO',
-      items,
+      CONTENT_WIDTH,
+      'COMPONENTES DO VALOR DA PRESTAÇÃO DE SERVIÇO',
     );
-    this.drawItemTable(
+    y += 16;
+    const components = data.componentes.length
+      ? data.componentes
+      : [{ label: 'COMPONENTE', value: '-' }];
+    for (let index = 0; index < components.length; index += 4) {
+      y = this.ensureSpace(document, data, y, 28);
+      const row = components.slice(index, index + 4);
+      row.forEach((item, column) => {
+        this.drawField(
+          document,
+          MARGIN + (column * CONTENT_WIDTH) / 4,
+          y,
+          CONTENT_WIDTH / 4,
+          28,
+          item.label.toUpperCase(),
+          item.value,
+          7,
+        );
+      });
+      for (let column = row.length; column < 4; column++) {
+        document
+          .rect(MARGIN + (column * CONTENT_WIDTH) / 4, y, CONTENT_WIDTH / 4, 28)
+          .stroke();
+      }
+      y += 28;
+    }
+    y = this.ensureSpace(document, data, y, 28);
+    this.drawField(
       document,
-      MARGIN + leftWidth,
+      MARGIN,
       y,
-      leftWidth,
-      height,
-      'INFORMAÇÕES RELATIVAS AO IMPOSTO',
-      data.impostos,
+      CONTENT_WIDTH / 2,
+      28,
+      'VALOR TOTAL DO SERVIÇO',
+      data.valorTotalServico,
+      8,
     );
-    return y + height;
+    this.drawField(
+      document,
+      MARGIN + CONTENT_WIDTH / 2,
+      y,
+      CONTENT_WIDTH / 2,
+      28,
+      'VALOR A RECEBER',
+      data.valorReceber,
+      8,
+    );
+    y += 31;
+    y = this.ensureSpace(document, data, y, 48);
+    this.drawSectionTitle(
+      document,
+      MARGIN,
+      y,
+      CONTENT_WIDTH,
+      'INFORMAÇÕES RELATIVAS AO IMPOSTO',
+    );
+    y += 16;
+    const taxes = data.impostos.length
+      ? data.impostos
+      : [{ label: 'TRIBUTAÇÃO', value: '-' }];
+    const width = CONTENT_WIDTH / Math.max(taxes.length, 5);
+    taxes.forEach((item, index) =>
+      this.drawField(
+        document,
+        MARGIN + index * width,
+        y,
+        width,
+        29,
+        item.label.toUpperCase(),
+        item.value,
+        7,
+      ),
+    );
+    return y + 29;
   }
 
   private drawValueItems(
@@ -420,19 +536,38 @@ export class DacteService {
     y: number,
   ) {
     if (items.length === 0) return y - 3;
-    y = this.ensureSpace(document, data, y, 44);
-    const height = 36;
-    this.drawItemTable(
+    y = this.ensureSpace(document, data, y, 45);
+    this.drawSectionTitle(
       document,
       MARGIN,
       y,
       CONTENT_WIDTH,
-      height,
-      title,
-      items,
-      true,
+      `${title} - ${data.modal}`,
     );
-    return y + height;
+    y += 16;
+    for (let index = 0; index < items.length; index += 4) {
+      y = this.ensureSpace(document, data, y, 29);
+      const row = items.slice(index, index + 4);
+      row.forEach((item, column) =>
+        this.drawField(
+          document,
+          MARGIN + (column * CONTENT_WIDTH) / 4,
+          y,
+          CONTENT_WIDTH / 4,
+          29,
+          item.label.toUpperCase(),
+          item.value,
+          7,
+        ),
+      );
+      for (let column = row.length; column < 4; column++) {
+        document
+          .rect(MARGIN + (column * CONTENT_WIDTH) / 4, y, CONTENT_WIDTH / 4, 29)
+          .stroke();
+      }
+      y += 29;
+    }
+    return y;
   }
 
   private drawDocuments(document: PdfDocument, data: DacteData, y: number) {
@@ -484,31 +619,71 @@ export class DacteService {
   }
 
   private drawObservations(document: PdfDocument, data: DacteData, y: number) {
-    const content =
-      data.observacoes.join('\n') || 'SEM INFORMAÇÕES ADICIONAIS.';
-    document.font('Helvetica').fontSize(5.8);
-    const contentHeight = Math.max(
-      28,
-      document.heightOfString(content, { width: CONTENT_WIDTH - 8 }) + 8,
-    );
-    y = this.ensureSpace(document, data, y, Math.min(contentHeight + 16, 180));
-    const availableHeight = Math.min(contentHeight, BOTTOM_LIMIT - y - 16);
-    document.rect(MARGIN, y, CONTENT_WIDTH, availableHeight + 16).stroke();
+    const words = data.observacoes.join(' ').split(/\s+/).filter(Boolean);
+    let cursor = 0;
+    do {
+      y = this.ensureSpace(document, data, y, 54);
+      const available = BOTTOM_LIMIT - y - 17;
+      document.font('Helvetica').fontSize(6.2);
+      let part = '';
+      while (cursor < words.length) {
+        const candidate = part ? `${part} ${words[cursor]}` : words[cursor];
+        if (
+          part &&
+          document.heightOfString(candidate, { width: CONTENT_WIDTH - 8 }) >
+            available - 8
+        )
+          break;
+        part = candidate;
+        cursor++;
+      }
+      const height = Math.max(
+        38,
+        Math.min(
+          available + 16,
+          document.heightOfString(part, { width: CONTENT_WIDTH - 8 }) + 24,
+        ),
+      );
+      document.rect(MARGIN, y, CONTENT_WIDTH, height).stroke();
+      this.drawSectionTitle(
+        document,
+        MARGIN,
+        y,
+        CONTENT_WIDTH,
+        'OBSERVAÇÕES / INFORMAÇÕES COMPLEMENTARES',
+      );
+      document
+        .font('Helvetica')
+        .fontSize(6.2)
+        .text(part, MARGIN + 4, y + 19, {
+          width: CONTENT_WIDTH - 8,
+          height: height - 22,
+        });
+      y += height + 3;
+    } while (cursor < words.length);
+    return y;
+  }
+
+  private drawReservedAreas(document: PdfDocument, data: DacteData, y: number) {
+    y = this.ensureSpace(document, data, y, 43);
+    const left = CONTENT_WIDTH * 0.65;
+    const right = CONTENT_WIDTH - left;
+    document.rect(MARGIN, y, left, 43).stroke();
+    document.rect(MARGIN + left, y, right, 43).stroke();
     this.drawSectionTitle(
       document,
       MARGIN,
       y,
-      CONTENT_WIDTH,
-      'OBSERVAÇÕES / INFORMAÇÕES COMPLEMENTARES',
+      left,
+      'USO EXCLUSIVO DO EMISSOR DO CT-e',
     );
-    document
-      .font('Helvetica')
-      .fontSize(5.8)
-      .text(content, MARGIN + 4, y + 19, {
-        width: CONTENT_WIDTH - 8,
-        height: availableHeight - 4,
-        ellipsis: true,
-      });
+    this.drawSectionTitle(
+      document,
+      MARGIN + left,
+      y,
+      right,
+      'RESERVADO AO FISCO',
+    );
   }
 
   private drawParty(
@@ -524,84 +699,20 @@ export class DacteService {
     this.drawSectionTitle(document, x, y, width, title);
     document
       .font('Helvetica-Bold')
-      .fontSize(6.5)
+      .fontSize(7.2)
       .text(party.nome || '-', x + 4, y + 18, {
         width: width - 8,
-        height: 9,
+        height: 10,
         ellipsis: true,
       });
     document
       .font('Helvetica')
-      .fontSize(5.4)
+      .fontSize(6)
       .text(this.partyText(party), x + 4, y + 29, {
         width: width - 8,
-        height: height - 32,
+        height: height - 31,
         ellipsis: true,
       });
-  }
-
-  private drawItemTable(
-    document: PdfDocument,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    title: string,
-    items: DacteValueItem[],
-    horizontal = false,
-  ) {
-    document.rect(x, y, width, height).stroke();
-    this.drawSectionTitle(document, x, y, width, title);
-    if (items.length === 0) {
-      document
-        .font('Helvetica')
-        .fontSize(6)
-        .text('-', x + 4, y + 20);
-      return;
-    }
-    if (horizontal) {
-      const cellWidth = width / items.length;
-      items.forEach((item, index) => {
-        const cellX = x + index * cellWidth;
-        if (index > 0) {
-          document
-            .moveTo(cellX, y + 16)
-            .lineTo(cellX, y + height)
-            .stroke();
-        }
-        document
-          .font('Helvetica')
-          .fontSize(4.8)
-          .text(item.label, cellX + 3, y + 19, {
-            width: cellWidth - 6,
-            align: 'center',
-          });
-        document
-          .font('Helvetica-Bold')
-          .fontSize(6)
-          .text(item.value || '-', cellX + 3, y + 28, {
-            width: cellWidth - 6,
-            align: 'center',
-            ellipsis: true,
-          });
-      });
-      return;
-    }
-    items.forEach((item, index) => {
-      const rowY = y + 18 + index * 13;
-      document
-        .font('Helvetica')
-        .fontSize(5.2)
-        .text(item.label, x + 4, rowY, { width: width * 0.62 });
-      document
-        .font('Helvetica-Bold')
-        .fontSize(5.8)
-        .text(item.value || '-', x + width * 0.62, rowY, {
-          width: width * 0.35 - 4,
-          align: 'right',
-          ellipsis: true,
-        });
-    });
   }
 
   private drawField(
@@ -657,26 +768,17 @@ export class DacteService {
     if (y + requiredHeight <= BOTTOM_LIMIT) return y;
     document.addPage({ size: 'A4', margin: MARGIN });
     this.drawWatermark(document, data);
-    document
-      .font('Helvetica-Bold')
-      .fontSize(9)
-      .text(
-        `DACTE · CT-e ${data.numero} · SÉRIE ${data.serie}`,
-        MARGIN,
-        MARGIN,
-        {
-          width: CONTENT_WIDTH,
-          align: 'center',
-        },
-      );
-    document
-      .font('Courier')
-      .fontSize(6)
-      .text(formatAccessKey(data.chaveAcesso), MARGIN, MARGIN + 14, {
-        width: CONTENT_WIDTH,
-        align: 'center',
-      });
-    return MARGIN + 32;
+    const assets = this.pageAssets.get(document);
+    if (!assets) throw new Error('Recursos do DACTE indisponíveis.');
+    let nextY = this.drawHeader(
+      document,
+      data,
+      assets.barcode,
+      assets.qrCode,
+      MARGIN + 13,
+    );
+    nextY = this.drawProtocol(document, data, nextY + 3);
+    return this.drawGeneralData(document, data, nextY + 3) + 4;
   }
 
   private drawWatermark(document: PdfDocument, data: DacteData) {
@@ -700,10 +802,19 @@ export class DacteService {
     for (let index = 0; index < range.count; index += 1) {
       document.switchToPage(range.start + index);
       document
+        .font('Helvetica-Bold')
+        .fontSize(6)
+        .text(
+          `FOLHA ${index + 1}/${range.count}`,
+          MARGIN + CONTENT_WIDTH - 116,
+          index === 0 ? MARGIN + 38 : MARGIN,
+          { width: 112, align: 'center' },
+        );
+      document
         .font('Helvetica')
         .fontSize(5)
         .text(
-          `Página ${index + 1} de ${range.count} · XML fiscal é o documento oficial`,
+          `Página ${index + 1} de ${range.count}`,
           MARGIN,
           PAGE_HEIGHT - MARGIN - 8,
           {

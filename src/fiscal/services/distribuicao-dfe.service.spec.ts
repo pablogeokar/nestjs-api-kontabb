@@ -492,7 +492,7 @@ describe('DistribuicaoDfeService', () => {
       (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
     );
     const storage = {
-      upload: jest.fn().mockResolvedValue(undefined),
+      uploadIfAbsent: jest.fn().mockResolvedValue(true),
       delete: jest.fn().mockResolvedValue(undefined),
     };
     const service = new DistribuicaoDfeService(
@@ -516,6 +516,11 @@ describe('DistribuicaoDfeService', () => {
 
     expect(result).toBe(true);
     expect(transaction).toHaveBeenCalledTimes(1);
+    expect(storage.uploadIfAbsent).toHaveBeenCalledWith(
+      `clientes/98765432000110/fiscais/2024/08/nfe/${documento.chaveAcesso}.xml`,
+      expect.any(Buffer),
+      'application/xml',
+    );
     // R1.6/R1.7: o caminho de substituição (`onConflictDoUpdate`) adquire o
     // advisory lock por cliente + chaveAcesso (NÃO por NSU), serializando
     // reimportações concorrentes manual × DF-e.

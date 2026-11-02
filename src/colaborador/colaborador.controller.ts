@@ -29,6 +29,7 @@ import { ClientesService } from '../clientes/clientes.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import { AppLogger } from '../common/logger.service';
 import { parsePaginationParams } from '../common/pagination';
+import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
 
 @ApiTags('Colaborador')
 @Controller('colaborador')
@@ -52,9 +53,13 @@ export class ColaboradorController {
     @Body() body: { cnpj: string; codigoFuncionario: string; senha: string },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const cnpj = body.cnpj?.replace(/\D/g, '').trim();
-    const codigoFuncionario = body.codigoFuncionario?.trim();
-    const senha = body.senha;
+    const cnpj =
+      typeof body?.cnpj === 'string' ? normalizeCnpjIdentifier(body.cnpj) : '';
+    const codigoFuncionario =
+      typeof body?.codigoFuncionario === 'string'
+        ? body.codigoFuncionario.trim()
+        : '';
+    const senha = typeof body?.senha === 'string' ? body.senha : '';
 
     if (!cnpj || !codigoFuncionario || !senha) {
       throw new BadRequestException(
@@ -62,7 +67,7 @@ export class ColaboradorController {
       );
     }
 
-    if (cnpj.length !== 14) {
+    if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(cnpj)) {
       throw new BadRequestException('CNPJ inválido.');
     }
 

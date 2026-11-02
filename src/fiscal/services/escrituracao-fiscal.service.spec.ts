@@ -102,6 +102,95 @@ describe('EscrituracaoFiscalService', () => {
     });
     expect(storage.download).toHaveBeenCalledWith('documento.xml');
   });
+
+  it('limita os downloads de XML e preserva a ordem de processamento', async () => {
+    const documentos = Array.from({ length: 5 }, (_, indice) => ({
+      id: `doc-${indice}`,
+      emitenteCnpjCpf: `emitente-${indice}`,
+      modelo: '55',
+      situacao: 'AUTORIZADA',
+      tpNfXml: '1',
+      xmlKey: `xml-${indice}`,
+    }));
+    const queryResults = [
+      [{ id: 'cliente-1', cnpj: '12345678000195' }],
+      documentos,
+      [],
+    ];
+    let queryIndex = 0;
+    const select = jest.fn(() => ({
+      from: () => ({
+        where: () => {
+          const result = queryResults[queryIndex++] ?? [];
+          return queryIndex === 1
+            ? { limit: () => Promise.resolve(result) }
+            : Promise.resolve(result);
+        },
+      }),
+    }));
+    let liberarPrimeiro!: () => void;
+    const primeiroPendente = new Promise<void>((resolve) => {
+      liberarPrimeiro = resolve;
+    });
+    const download = jest.fn(async (key: string) => {
+      if (key === 'xml-0') await primeiroPendente;
+      return Buffer.from('XML inválido');
+    });
+    const ordemDeProcessamento: string[] = [];
+    const determinarTipoOperacaoEscriturada = jest.fn(
+      (_cliente: string, emitente: string) => {
+        ordemDeProcessamento.push(emitente);
+        return 'ENTRADA';
+      },
+    );
+    const update = jest.fn(() => ({
+      set: () => ({ where: () => Promise.resolve([]) }),
+    }));
+    const tx = { update };
+    const service = new EscrituracaoFiscalService(
+      {
+        db: {
+          select,
+          transaction: (
+            callback: (transaction: typeof tx) => Promise<unknown>,
+          ) => callback(tx),
+        },
+      } as never,
+      { download } as never,
+      { determinarTipoOperacaoEscriturada } as never,
+      {} as never,
+    );
+
+    const processamento = service.reprocessar({ clienteId: 'cliente-1' });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const chamadasAntesDaLiberacao = download.mock.calls.map(([key]) => key);
+    const updatesAntesDaLiberacao = update.mock.calls.length;
+    liberarPrimeiro();
+    const resultado = await processamento;
+
+    expect(chamadasAntesDaLiberacao).toEqual([
+      'xml-0',
+      'xml-1',
+      'xml-2',
+      'xml-3',
+    ]);
+    expect(updatesAntesDaLiberacao).toBe(0);
+    expect(download).toHaveBeenCalledTimes(5);
+    expect(ordemDeProcessamento).toEqual(
+      documentos.map((documento) => documento.emitenteCnpjCpf),
+    );
+    expect(update).toHaveBeenCalledTimes(5);
+    expect(resultado).toEqual({
+      documentosProcessados: 5,
+      itensAtualizados: 0,
+      itensParaRevisao: 0,
+      documentosComTpNfInferido: 0,
+      documentosComFalhaIntegridade: 5,
+      ctesAtualizados: 0,
+      ctesComFalha: 0,
+      sucesso: true,
+    });
+  });
 });
 
 describe('preservação de decisões no reprocessamento', () => {

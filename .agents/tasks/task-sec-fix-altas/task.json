@@ -1,7 +1,0 @@
-{
-  "task_id": "task-sec-fix-altas",
-  "task_description": "Corrigir as 3 vulnerabilidades de severidade ALTA da varredura de segurança da API Kontabb: (2) ausência de rate limiting global via @nestjs/throttler; (3) endpoints administrativos (usuarios + auth) sem DTO class-validator permitindo role arbitrário; (4) sessão de colaborador stateless/não revogável. Todo o trabalho no worktree /Users/pablo/dev/kontabb/api/.worktrees/sec-fix-altas.",
-  "status": "pending",
-  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
-  "blocked_reason": null
-}

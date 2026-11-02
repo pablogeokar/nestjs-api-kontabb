@@ -42,6 +42,8 @@ export interface DacteData {
   qrCode: string;
   emitente: DacteParty;
   remetente: DacteParty;
+  expedidor: DacteParty;
+  recebedor: DacteParty;
   destinatario: DacteParty;
   tomador: DacteParty;
   produtoPredominante: string;
@@ -163,9 +165,11 @@ export function parseDacteXml(xml: string): DacteData {
       text(protocolo.cStat) === '100'
         ? 'AUTORIZADO'
         : text(protocolo.xMotivo) || 'SEM PROTOCOLO',
-    qrCode: text(supl.qrCodCTe) || text(supl.urlChave) || chaveAcesso,
+    qrCode: text(supl.qrCodCTe) || text(supl.urlChave),
     emitente,
     remetente: readParty(infCte.rem, 'enderReme'),
+    expedidor: readParty(infCte.exped, 'enderExped'),
+    recebedor: readParty(infCte.receb, 'enderReceb'),
     destinatario: readParty(infCte.dest, 'enderDest'),
     tomador: readTomador(infCte, ide).party,
     produtoPredominante: text(carga.proPred) || '-',
@@ -415,12 +419,57 @@ function readDocumentosOriginarios(value: unknown) {
 function readModalInfo(value: unknown): DacteValueItem[] {
   const modal = asRecord(value);
   const rodo = asRecord(modal.rodo);
-  if (Object.keys(rodo).length === 0) return [];
-  return [
-    { label: 'RNTRC', value: text(rodo.RNTRC) },
-    { label: 'PREVISÃO DE ENTREGA', value: formatDate(text(rodo.dPrev)) },
-    { label: 'LOTAÇÃO', value: text(rodo.lota) === '1' ? 'SIM' : 'NÃO' },
-  ].filter((item) => item.value);
+  if (Object.keys(rodo).length > 0) {
+    return [
+      { label: 'RNTRC', value: text(rodo.RNTRC) },
+      { label: 'PREVISÃO DE ENTREGA', value: formatDate(text(rodo.dPrev)) },
+      {
+        label: 'LOTAÇÃO',
+        value: text(rodo.lota) ? (text(rodo.lota) === '1' ? 'SIM' : 'NÃO') : '',
+      },
+    ].filter((item) => item.value);
+  }
+
+  const labels: Record<string, string> = {
+    nOCA: 'Nº OCA',
+    nMinu: 'MINUTA',
+    cTar: 'CÓDIGO DA TARIFA',
+    vTar: 'VALOR DA TARIFA',
+    xNavio: 'NAVIO',
+    nViag: 'VIAGEM',
+    prtEmb: 'PORTO DE EMBARQUE',
+    prtDest: 'PORTO DE DESTINO',
+    tpTraf: 'TIPO DE TRÁFEGO',
+    fluxo: 'FLUXO',
+    idTrem: 'TREM',
+    vFrete: 'VALOR DO FRETE',
+    COTM: 'COTM',
+    vAFRMM: 'AFRMM',
+  };
+  const details: DacteValueItem[] = [];
+  const visit = (node: unknown, depth: number) => {
+    if (depth > 5) return;
+    for (const entry of toArray(node)) {
+      const current = asRecord(entry);
+      for (const [key, raw] of Object.entries(current)) {
+        if (key.startsWith('@_') || key === '#text') continue;
+        if (Array.isArray(raw) || (raw && typeof raw === 'object')) {
+          visit(raw, depth + 1);
+        } else {
+          const value = text(raw);
+          if (value)
+            details.push({
+              label:
+                labels[key] ||
+                key.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase(),
+              value,
+            });
+        }
+      }
+    }
+  };
+  visit(modal, 0);
+  return details;
 }
 
 function readObservacoes(value: unknown) {
