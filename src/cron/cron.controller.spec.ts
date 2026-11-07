@@ -16,6 +16,7 @@ describe('CronController.runStorageCleanup', () => {
     { get: jest.fn().mockReturnValue('secret') } as never,
     logger as never,
     { cleanupExpired } as never,
+    {} as never,
   );
 
   beforeEach(() => {

@@ -13,6 +13,8 @@ import { StorageCleanupService } from '../storage/storage-cleanup.service';
 import { FiscalCronService } from '../fiscal/services/fiscal-cron.service';
 import { AppLogger } from '../common/logger.service';
 import { RateLimitService } from '../common/rate-limit.service';
+import { CrmService } from '../crm/crm.service';
+import { getBahiaDate } from '../common/document-status';
 
 @ApiTags('Cron')
 @Controller('cron')
@@ -23,6 +25,7 @@ export class CronController {
     private readonly configService: ConfigService,
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
+    private readonly crmService: CrmService,
   ) {}
 
   @Get('storage-cleanup')
@@ -120,5 +123,50 @@ export class CronController {
     this.logger.info('fiscal_cron_triggered', { operation: 'fiscal_sync' });
     const resultado = await this.fiscalCron.executarSincronizacao();
     return resultado;
+  }
+
+  @Get('crm-overdue-notices')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Aviso mensal de obrigações vencidas (cron)',
+    description:
+      'Executado no dia 1 de cada mês. Envia a cada cliente ativo com obrigações vencidas o e-mail orientando a informar os pagamentos.',
+  })
+  @ApiHeader({
+    name: 'authorization',
+    required: true,
+    description: 'Bearer <CRON_SECRET>',
+  })
+  @ApiResponse({ status: 200, description: 'Varredura executada.' })
+  @ApiResponse({ status: 401, description: 'Token inválido ou ausente.' })
+  async runCrmOverdueNotices(@Headers('authorization') authHeader: string) {
+    const secret = this.configService.get<string>('CRON_SECRET');
+    if (!secret) {
+      this.logger.warn('cron_not_configured', {
+        operation: 'crm_overdue_monthly',
+      });
+      return {
+        code: 'CRON_NOT_CONFIGURED',
+        message: 'Rotina não configurada.',
+      };
+    }
+
+    if (!this.hasValidAuthorization(authHeader, secret)) {
+      throw new UnauthorizedException('Não autorizado.');
+    }
+
+    // Uma única execução por mês civil (fuso de Bahia): a chave inclui o mês
+    // (AAAA-MM). Chamadas repetidas no mesmo mês, por retry ou uso indevido do
+    // segredo, recebem 429 e não reenviam e-mails.
+    await this.rateLimit.consume({
+      key: `cron:crm-overdue-notices:${getBahiaDate().slice(0, 7)}`,
+      limit: 1,
+      windowMs: 35 * 24 * 60 * 60 * 1000,
+    });
+
+    const summary = await this.crmService.enviarAvisosMensaisObrigacoesVencidas(
+      { requestId: this.logger.generateRequestId() },
+    );
+    return { success: true, ...summary };
   }
 }

@@ -119,6 +119,24 @@ export class SalvarSimplesTabelaDto {
   anexos!: SimplesAnexoDto[];
 }
 
+export class SalvarSublimiteSimplesDto {
+  @IsString()
+  @Matches(/^[A-Z]{2}$/)
+  uf!: string;
+
+  @IsInt()
+  @Min(2018)
+  @Max(2100)
+  anoVigencia!: number;
+
+  @IsString()
+  @Matches(MONEY)
+  valorSublimite!: string;
+
+  @IsBoolean()
+  ativo!: boolean;
+}
+
 export class HistoricoSimplesQueryDto {
   @IsUUID('4')
   clienteId!: string;

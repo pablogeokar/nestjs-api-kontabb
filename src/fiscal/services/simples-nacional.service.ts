@@ -12,6 +12,7 @@ import {
   documentosFiscais,
   documentosFiscaisCteEscrituracao,
   documentosFiscaisItens,
+  eventosAuditoria,
   fiscalSimplesAnexos,
   fiscalSimplesApuracaoItens,
   fiscalSimplesApuracoes,
@@ -40,12 +41,19 @@ import {
   regimeCompetenciaParaApuracao,
   valorReceitaSimples,
 } from './simples-receita';
+import { resolverSublimite } from './simples-sublimite';
 import type {
   SalvarHistoricoSimplesDto,
   SalvarSimplesTabelaDto,
+  SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@6';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@8';
+const UFS_SIMPLES = new Set(
+  'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
+    ' ',
+  ),
+);
 
 interface ReceitaAgrupada {
   anexo: SimplesAnexo;
@@ -89,6 +97,69 @@ export class SimplesNacionalService {
 
   async editarTabela(tabelaId: string, input: SalvarSimplesTabelaDto) {
     return this.salvarTabela(tabelaId, input);
+  }
+
+  async listarSublimites() {
+    return this.database.db
+      .select()
+      .from(fiscalSimplesSublimites)
+      .orderBy(
+        desc(fiscalSimplesSublimites.anoVigencia),
+        asc(fiscalSimplesSublimites.uf),
+      );
+  }
+
+  async salvarSublimite(input: SalvarSublimiteSimplesDto, actorUserId: string) {
+    if (toScaledInteger(input.valorSublimite) <= 0n) {
+      throw new BadRequestException('O sublimite deve ser maior que zero.');
+    }
+    if (!UFS_SIMPLES.has(input.uf)) {
+      throw new BadRequestException('UF inválida.');
+    }
+    return this.database.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`sublimite:${input.uf}:${input.anoVigencia}`}, 0))`,
+      );
+      const [anterior] = await tx
+        .select()
+        .from(fiscalSimplesSublimites)
+        .where(
+          and(
+            eq(fiscalSimplesSublimites.uf, input.uf),
+            eq(fiscalSimplesSublimites.anoVigencia, input.anoVigencia),
+          ),
+        )
+        .limit(1);
+      const [row] = await tx
+        .insert(fiscalSimplesSublimites)
+        .values(input)
+        .onConflictDoUpdate({
+          target: [
+            fiscalSimplesSublimites.uf,
+            fiscalSimplesSublimites.anoVigencia,
+          ],
+          set: {
+            valorSublimite: input.valorSublimite,
+            ativo: input.ativo,
+          },
+        })
+        .returning();
+      await tx.insert(eventosAuditoria).values({
+        atorUserId: actorUserId,
+        acao: 'SIMPLES_SUBLIMITE_SALVO',
+        entidadeTipo: 'FISCAL_SIMPLES_SUBLIMITE',
+        entidadeId: row.id,
+        dados: {
+          uf: input.uf,
+          anoVigencia: input.anoVigencia,
+          valorAnterior: anterior?.valorSublimite ?? null,
+          valorAtual: input.valorSublimite,
+          ativoAnterior: anterior?.ativo ?? null,
+          ativoAtual: input.ativo,
+        },
+      });
+      return row;
+    });
   }
 
   async listarHistorico(input: {
@@ -296,12 +367,6 @@ export class SimplesNacionalService {
               tributosPartilhados: item.tributos_partilhados,
             })),
           );
-        }
-        if (calculo.excedeu_sublimite) {
-          await tx
-            .update(clientes)
-            .set({ apuraIcms: true })
-            .where(eq(clientes.id, input.clienteId));
         }
         return this.carregarResposta(apuracao);
       },
@@ -539,13 +604,18 @@ export class SimplesNacionalService {
       ? receitaMesCompetencia
       : (receitasMesApuracao?.find((row) => row.mes === competencia)?.valor ??
         '0.00');
-    const anteriores = receitasMensais.rows
-      .filter((row) => row.mes < competencia)
-      .map((row) => row.receita);
+    const receitasPorMes = new Map(
+      receitasMensais.rows.map((row) => [row.mes, row.receita]),
+    );
+    const anteriores = mesesAnteriores(competencia, 12).map(
+      (mes) => receitasPorMes.get(mes) ?? '0.00',
+    );
     const quantidadeMesesAnteriores = Math.max(
       0,
       monthsBetweenCompetencias(
-        primeiraCompetencia ?? competencia,
+        cliente.dataAberturaCnpj?.slice(0, 7) ??
+          primeiraCompetencia ??
+          competencia,
         competencia,
       ),
     );
@@ -568,8 +638,31 @@ export class SimplesNacionalService {
             : undefined,
         )
       : null;
-    const excedeuSublimite =
-      toScaledInteger(rbt.rbt12) > toScaledInteger(sublimite.valor);
+    const anoAtual = competencia.slice(0, 4);
+    const anoAnterior = String(Number(anoAtual) - 1);
+    const somarAno = (ano: string, ate: string) =>
+      fromScaledInteger(
+        receitasMensais.rows
+          .filter((row) => row.mes.startsWith(ano) && row.mes <= ate)
+          .reduce((sum, row) => sum + toScaledInteger(row.receita), 0n),
+      );
+    const rbaAnterior = somarAno(anoAnterior, `${anoAnterior}-12`);
+    const rbaAntesPa = somarAno(anoAtual, mesesAnteriores(competencia, 1)[0]);
+    const rbaAtePa = somarAno(anoAtual, competencia);
+    const sublimiteAnoAnterior =
+      toScaledInteger(rbaAnterior) > 0n
+        ? await this.carregarSublimite(cliente.uf, anoAnterior)
+        : null;
+    const situacaoSublimite = resolverSublimite({
+      competencia,
+      dataAberturaCnpj: cliente.dataAberturaCnpj ?? null,
+      sublimiteAnual: sublimite.valor,
+      sublimiteAnoAnterior: sublimiteAnoAnterior?.valor,
+      receitaAnoAnterior: rbaAnterior,
+      receitaAnoCorrenteAntesPa: rbaAntesPa,
+      receitaAnoCorrenteAtePa: rbaAtePa,
+    });
+    const excedeuSublimite = situacaoSublimite.impedido;
     const calculados: SimplesItemCalculoResult[] = [];
     for (const receita of receitasAtividade.grupos) {
       const anexo =
@@ -620,6 +713,15 @@ export class SimplesNacionalService {
       ...auditoriaReceitas.pendencias,
     ];
     if (
+      !cliente.dataAberturaCnpj &&
+      (toScaledInteger(rbaAnterior) > 30_000_000n ||
+        toScaledInteger(rbaAtePa) > 30_000_000n)
+    ) {
+      pendencias.push(
+        'Informe a data de abertura do CNPJ para conferir o sublimite proporcional do ICMS/ISS.',
+      );
+    }
+    if (
       toScaledInteger(receitaClassificada) !==
       toScaledInteger(receitaMesDocumentos)
     ) {
@@ -642,7 +744,7 @@ export class SimplesNacionalService {
       fator_r: fatorR,
       valor_total_das: valorTotalDas,
       excedeu_sublimite: excedeuSublimite,
-      sublimite_estadual: sublimite.valor,
+      sublimite_estadual: situacaoSublimite.sublimiteAplicavel,
       fechamento_id: null,
       guia_id: null,
       origens: {
@@ -651,7 +753,7 @@ export class SimplesNacionalService {
           ? 'ITENS_DE_VENDA_SERVICO_E_CTE_POR_COMPETENCIA'
           : 'ITENS_DE_VENDA_SERVICO_E_CTE_NFSE_POR_EMISSAO',
         folha: folha.origem,
-        sublimite: sublimite.origem,
+        sublimite: `${sublimite.origem}:${situacaoSublimite.motivo}`,
         classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R_TRANSPORTE_CTE',
       },
       memoria_calculo: {
@@ -667,7 +769,13 @@ export class SimplesNacionalService {
         bonificacoesExcluidas: auditoriaReceitas.bonificacoesExcluidas,
         operacoesSemReceitaExcluidas:
           auditoriaReceitas.operacoesSemReceitaExcluidas,
-        sublimiteEstadual: sublimite.valor,
+        sublimiteEstadual: situacaoSublimite.sublimiteAplicavel,
+        sublimiteAnual: situacaoSublimite.sublimiteAnual,
+        sublimiteSituacao: situacaoSublimite.motivo,
+        impedidoIcmsIss: situacaoSublimite.impedido,
+        receitaAnoAnterior: rbaAnterior,
+        receitaAnoCorrente: rbaAtePa,
+        dataAberturaCnpj: cliente.dataAberturaCnpj ?? null,
         receitaIssOutroMunicipio: fromScaledInteger(
           receitasAtividade.grupos
             .filter((item) => item.issOutroMunicipio)
@@ -833,6 +941,7 @@ export class SimplesNacionalService {
         id: clientes.id,
         regimeTributario: clientes.regimeTributario,
         regimeCompetencia: clientes.regimeCompetencia,
+        dataAberturaCnpj: clientes.dataAberturaCnpj,
         uf: clientes.uf,
       })
       .from(clientes)
@@ -876,7 +985,7 @@ export class SimplesNacionalService {
     clienteId: string,
     competencia: string,
   ) {
-    const inicio = `${mesesAnteriores(competencia.slice(0, 7), 12)[0]}-01`;
+    const inicio = `${Number(competencia.slice(0, 4)) - 1}-01-01`;
     const automaticas = await this.carregarReceitasAutomaticasPeriodo(
       clienteId,
       inicio,
@@ -891,7 +1000,7 @@ export class SimplesNacionalService {
       .where(
         and(
           eq(fiscalSimplesHistoricosMensais.clienteId, clienteId),
-          sql`${fiscalSimplesHistoricosMensais.competencia} >= (${competencia}::date - interval '12 months')`,
+          sql`${fiscalSimplesHistoricosMensais.competencia} >= ${inicio}::date`,
           sql`${fiscalSimplesHistoricosMensais.competencia} < ${competencia}::date`,
           sql`${fiscalSimplesHistoricosMensais.receitaBruta} IS NOT NULL`,
         ),
@@ -1496,7 +1605,10 @@ export class SimplesNacionalService {
 
   private async carregarSublimite(uf: string | null, ano: string) {
     if (!uf)
-      return { valor: '3600000.00', origem: 'SIMPLES_SUBLIMITE_PADRAO_SEM_UF' };
+      throw new UnprocessableEntityException({
+        code: 'SIMPLES_UF_NAO_INFORMADA',
+        message: 'Informe a UF da empresa para apurar o ICMS/ISS no DAS.',
+      });
     const [row] = await this.database.db
       .select({ valor: fiscalSimplesSublimites.valorSublimite })
       .from(fiscalSimplesSublimites)
@@ -1508,9 +1620,12 @@ export class SimplesNacionalService {
         ),
       )
       .limit(1);
-    return row
-      ? { valor: row.valor, origem: 'TABELA_SUBLIMITE_UF_ANO' }
-      : { valor: '3600000.00', origem: 'SIMPLES_SUBLIMITE_PADRAO' };
+    if (!row)
+      throw new UnprocessableEntityException({
+        code: 'SIMPLES_SUBLIMITE_NAO_CONFIGURADO',
+        message: `Configure o sublimite do Simples para ${uf}/${ano}.`,
+      });
+    return { valor: row.valor, origem: 'TABELA_SUBLIMITE_UF_ANO' };
   }
 
   private async carregarAnexosCalculo(tabelaId: string) {
@@ -1633,7 +1748,9 @@ export class SimplesNacionalService {
       fator_r: apuracao.fatorR,
       valor_total_das: apuracao.valorTotalDas,
       excedeu_sublimite:
-        toScaledInteger(apuracao.rbt12) > toScaledInteger(sublimite),
+        typeof apuracao.memoriaCalculo.impedidoIcmsIss === 'boolean'
+          ? apuracao.memoriaCalculo.impedidoIcmsIss
+          : toScaledInteger(apuracao.rbt12) > toScaledInteger(sublimite),
       sublimite_estadual: sublimite,
       fechamento_id: apuracao.fechamentoId,
       guia_id: apuracao.guiaId,

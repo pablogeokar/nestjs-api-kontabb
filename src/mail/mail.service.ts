@@ -14,6 +14,13 @@ interface SendEmailParams {
   parcela?: string | null;
 }
 
+export interface OverdueObligationItem {
+  tipo: string;
+  periodo: string;
+  vencimento: string | null;
+  valor?: string | null;
+}
+
 @Injectable()
 export class MailService {
   private readonly apiToken?: string;
@@ -314,6 +321,62 @@ export class MailService {
     return this.sendEmail(payload, 'welcome_email');
   }
 
+  /**
+   * Aviso de obrigações com status VENCIDO, orientando o cliente a informar
+   * os pagamentos pelo painel.
+   */
+  async sendOverdueObligationsEmail(params: {
+    to: string | string[];
+    clientName: string;
+    obligations: OverdueObligationItem[];
+    panelUrl?: string;
+  }): Promise<boolean> {
+    const { clientName, obligations } = params;
+
+    if (!this.apiToken) {
+      this.logger.warn('mailtrap_not_configured', {
+        operation: 'overdue_obligations_email',
+        result: 'skipped',
+      });
+      return false;
+    }
+
+    const recipients = (Array.isArray(params.to) ? params.to : [params.to])
+      .map((email) => email.trim())
+      .filter(Boolean)
+      .map((email) => ({ email }));
+    if (!recipients.length || !obligations.length) {
+      this.logger.warn('overdue_obligations_email_without_data', {
+        operation: 'overdue_obligations_email',
+        result: 'skipped',
+      });
+      return false;
+    }
+
+    const panelUrl =
+      params.panelUrl ?? `${this.portalUrl.replace(/\/+$/, '')}/cliente`;
+    const listText = obligations
+      .map(
+        (item) =>
+          `• ${OBLIGATION_TYPE_LABELS[item.tipo as ObligationType] || item.tipo} · Competência ${item.periodo} · Vencimento ${this.formatDueDate(item.vencimento)}${item.valor ? ` · R$ ${this.formatCurrency(item.valor)}` : ''}`,
+      )
+      .join('\n');
+
+    const payload = {
+      from: { email: this.senderEmail, name: this.senderName },
+      to: recipients,
+      subject: 'Obrigações vencidas no sistema · Informe seus pagamentos',
+      text: `Olá, ${clientName}\n\nConstam no sistema informações de obrigações vencidas. Isso não significa, necessariamente, que o pagamento não foi realizado: significa que o pagamento não foi informado através do sistema.\n\nObrigações vencidas:\n${listText}\n\nÉ importante que você informe à contabilidade, em tempo hábil, que o pagamento foi realizado. Assim, a baixa nos lançamentos contábeis é mais ágil e você ainda ajuda o seu controle interno de obrigações pendentes.\n\nEventualmente, o contador poderá consultar sites governamentais e realizar algumas baixas para agilizar o processo, mas essa não é a recomendação.\n\nAcesse o painel: ${panelUrl}\n\n—\nKontabb · Contabilidade Borges`,
+      html: this.buildOverdueObligationsHtml({
+        clientName,
+        obligations,
+        panelUrl,
+      }),
+    };
+
+    return this.sendEmail(payload, 'overdue_obligations_email');
+  }
+
   // ──────────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────────
@@ -504,6 +567,108 @@ export class MailService {
         <a href="${esc(panelUrl)}" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar o painel</a>
       </p>
       <p style="margin:0;color:#5F6B7A;line-height:1.6;">Se precisar de ajuda, conte com a nossa equipe. Estamos à disposição para apoiar você no uso do painel.</p>
+    `;
+
+    return this.layout.wrap(bodyContent);
+  }
+
+  private buildOverdueObligationsHtml(params: {
+    clientName: string;
+    obligations: OverdueObligationItem[];
+    panelUrl: string;
+  }): string {
+    const { clientName, obligations, panelUrl } = params;
+    const esc = (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const rows = obligations
+      .map((item) => {
+        const label =
+          OBLIGATION_TYPE_LABELS[item.tipo as ObligationType] || item.tipo;
+        const valor = item.valor
+          ? `R$ ${this.formatCurrency(item.valor)}`
+          : '—';
+        return `<tr>
+          <td style="padding:10px 12px;border-top:1px solid #e8ecf2;font-size:14px;font-weight:600;color:#0B1F3A;">${esc(label)}</td>
+          <td style="padding:10px 12px;border-top:1px solid #e8ecf2;font-size:14px;color:#5F6B7A;">${esc(item.periodo)}</td>
+          <td style="padding:10px 12px;border-top:1px solid #e8ecf2;font-size:14px;color:#B42318;font-weight:600;">${esc(this.formatDueDate(item.vencimento))}</td>
+          <td style="padding:10px 12px;border-top:1px solid #e8ecf2;font-size:14px;color:#5F6B7A;text-align:right;">${esc(valor)}</td>
+        </tr>`;
+      })
+      .join('');
+
+    const feature = (p: {
+      title: string;
+      description: string;
+      image: string;
+      alt: string;
+    }) => `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0 0;">
+        <tr>
+          <td style="padding:0;">
+            <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:#0B1F3A;">${p.title}</p>
+            <p style="margin:0 0 14px;color:#5F6B7A;line-height:1.6;">${p.description}</p>
+            <img src="${esc(this.emailAssetUrl(p.image))}" alt="${p.alt}" width="508" style="display:block;max-width:100%;height:auto;border:0;" />
+          </td>
+        </tr>
+      </table>`;
+
+    const bodyContent = `
+      <p style="margin:0 0 16px;font-size:20px;font-weight:700;color:#0B1F3A;">Olá, ${esc(clientName)}</p>
+      <p style="margin:0 0 16px;color:#5F6B7A;line-height:1.6;">Constam no sistema informações de <strong>obrigações vencidas</strong>. Isso não significa, necessariamente, que o pagamento não foi realizado, e sim que o pagamento <strong>não foi informado através do sistema</strong>.</p>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;">
+        <tr>
+          <td style="padding:20px 12px 8px;">
+            <p style="margin:0 0 8px 12px;font-size:16px;font-weight:700;color:#0B1F3A;">Obrigações vencidas</p>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Obrigação</td>
+                <td style="padding:6px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Competência</td>
+                <td style="padding:6px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Vencimento</td>
+                <td style="padding:6px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;text-align:right;">Valor</td>
+              </tr>
+              ${rows}
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 4px;background:#fff7e6;border:1px solid #f2d59c;border-radius:10px;">
+        <tr>
+          <td style="padding:16px 18px;color:#5F6B7A;line-height:1.6;">
+            <strong style="color:#0B1F3A;">Por que informar o pagamento?</strong> Ao enviar à contabilidade a informação de que o pagamento foi realizado, você agiliza a baixa nos lançamentos contábeis e, ao mesmo tempo, ajuda no seu controle interno de obrigações pendentes.
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin:20px 0 0;color:#5F6B7A;line-height:1.6;">De forma esporádica, o contador poderá consultar sites governamentais e realizar algumas baixas para agilizar o processo. Essa, porém, não é a recomendação: é importante que você envie à contabilidade, em tempo hábil, as informações relativas aos pagamentos.</p>
+
+      <p style="margin:28px 0 0;font-size:18px;font-weight:700;color:#0B1F3A;">Como informar o pagamento</p>
+      ${feature({
+        title: 'Localize a obrigação no painel',
+        description:
+          'Na listagem de obrigações do seu painel, identifique as que estão com status vencido.',
+        image: 'painel_do_cliente_listagem_obrigacoes.jpg',
+        alt: 'Listagem de obrigações no painel do cliente Kontabb',
+      })}
+      ${feature({
+        title: 'Informe a quitação',
+        description:
+          'Use a opção de quitar para registrar que o pagamento foi realizado.',
+        image: 'modal_quitar_pagamento.jpg',
+        alt: 'Modal para informar a quitação de uma obrigação no Kontabb',
+      })}
+
+      <p style="margin:32px 0;text-align:center;">
+        <a href="${esc(panelUrl)}" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar o painel</a>
+      </p>
+      <p style="margin:0;color:#5F6B7A;line-height:1.6;">Se precisar de ajuda, conte com a nossa equipe.</p>
     `;
 
     return this.layout.wrap(bodyContent);

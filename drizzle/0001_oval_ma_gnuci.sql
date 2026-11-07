@@ -1,0 +1,1 @@
+ALTER TABLE "clientes" ADD COLUMN "data_abertura_cnpj" date;

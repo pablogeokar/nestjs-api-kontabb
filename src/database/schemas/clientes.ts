@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  date,
   index,
   jsonb,
   pgTable,
@@ -37,6 +38,7 @@ export const clientes = pgTable(
       .default([]),
     regimeTributario: text('regime_tributario'),
     regimeCompetencia: boolean('regime_competencia').notNull().default(true),
+    dataAberturaCnpj: date('data_abertura_cnpj'),
     apuraIcms: boolean('apura_icms').notNull().default(false),
     inscricaoEstadual: text('inscricao_estadual'),
     tipoContribuinteIcms: text('tipo_contribuinte_icms'),

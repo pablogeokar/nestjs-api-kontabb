@@ -125,9 +125,20 @@ export function renderSimplesNacionalPdf(input: {
     ['RBT12', money(apuracao.rbt12)],
     ['Folha dos últimos 12 meses', money(apuracao.folha_salarios_12m)],
     ['Fator R', apuracao.fator_r ? percent(apuracao.fator_r) : 'Não aplicável'],
-    ['Sublimite estadual', money(apuracao.sublimite_estadual)],
+    ['Sublimite estadual aplicável', money(apuracao.sublimite_estadual)],
     ['Total do DAS', money(apuracao.valor_total_das)],
   ]);
+
+  if (
+    typeof apuracao.memoria_calculo.sublimiteAnual === 'string' &&
+    apuracao.memoria_calculo.sublimiteAnual !== apuracao.sublimite_estadual
+  ) {
+    infoBox(
+      document,
+      'Sublimite proporcional no ano de abertura',
+      `Valor anual: ${money(apuracao.memoria_calculo.sublimiteAnual)}. Valor aplicável: ${money(apuracao.sublimite_estadual)}. Data de abertura do CNPJ: ${typeof apuracao.memoria_calculo.dataAberturaCnpj === 'string' ? apuracao.memoria_calculo.dataAberturaCnpj : 'não informada'}.`,
+    );
+  }
 
   if (apuracao.memoria_calculo.regimeCompetencia === false) {
     const receitaCompetencia = apuracao.memoria_calculo.receitaMesCompetencia;
@@ -153,7 +164,7 @@ export function renderSimplesNacionalPdf(input: {
     infoBox(
       document,
       'Sublimite estadual excedido',
-      `O RBT12 ultrapassou ${money(apuracao.sublimite_estadual)}. A parcela de ICMS foi retirada do DAS e deve ser conferida na apuração estadual.`,
+      `Impedimento de ICMS/ISS no DAS conforme receita acumulada e sublimite de ${money(apuracao.sublimite_estadual)}. Confira os tributos fora do DAS.`,
       true,
     );
   }
