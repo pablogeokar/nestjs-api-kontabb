@@ -8,11 +8,12 @@ import { FiscalClosingService } from './fiscal-closing.service';
 import { FiscalPeriodSelectionService } from './fiscal-period-selection.service';
 
 describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
-  const storage = { delete: jest.fn() };
+  const storage = { deleteMany: jest.fn() };
   const logger = { info: jest.fn(), error: jest.fn() };
 
   function setup(options: {
     fechado?: boolean;
+    preservadosSefaz?: number;
     removidos?: Array<{
       id: string;
       xmlKey: string;
@@ -23,8 +24,11 @@ describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
     const deleteWhere = jest.fn().mockReturnValue({
       returning: jest.fn().mockResolvedValue(options.removidos ?? []),
     });
-    const tx = {
-      select: jest.fn().mockReturnValue({
+    // 1ª consulta: fechamento corrente (com limit); 2ª: contagem dos
+    // documentos DF-e preservados (aguardada direto do where).
+    const select = jest
+      .fn()
+      .mockReturnValueOnce({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest
@@ -34,7 +38,16 @@ describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
               ),
           }),
         }),
-      }),
+      })
+      .mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          where: jest
+            .fn()
+            .mockResolvedValue([{ total: options.preservadosSefaz ?? 0 }]),
+        }),
+      });
+    const tx = {
+      select,
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       execute: jest.fn().mockResolvedValue(undefined),
     };
@@ -78,11 +91,12 @@ describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    storage.delete.mockResolvedValue(undefined);
+    storage.deleteMany.mockResolvedValue({ failedKeys: [] });
   });
 
-  it('exclui os documentos do mês, remove os arquivos e audita', async () => {
+  it('exclui os documentos manuais do mês, remove os arquivos em lote e audita', async () => {
     const { service, tx, closing, auditValues } = setup({
+      preservadosSefaz: 4,
       removidos: [
         {
           id: 'd1',
@@ -108,7 +122,8 @@ describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
     );
     expect(tx.execute).toHaveBeenCalledTimes(1); // advisory lock do escopo
     expect(tx.delete).toHaveBeenCalledTimes(1);
-    expect(storage.delete.mock.calls.map(([key]) => key)).toEqual([
+    expect(storage.deleteMany).toHaveBeenCalledTimes(1);
+    expect(storage.deleteMany).toHaveBeenCalledWith([
       'k1.xml',
       'k1.pdf',
       'k2.xml',
@@ -125,6 +140,7 @@ describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
       competencia: '2026-09',
       documentos_excluidos: 3,
       por_tipo: { NFE: 2, CTE: 1 },
+      documentos_preservados_sefaz: 4,
       objetos_nao_removidos: 0,
     });
   });
@@ -136,11 +152,11 @@ describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
       ConflictException,
     );
     expect(tx.delete).not.toHaveBeenCalled();
-    expect(storage.delete).not.toHaveBeenCalled();
+    expect(storage.deleteMany).not.toHaveBeenCalled();
   });
 
   it('não falha a operação quando a limpeza do storage falha', async () => {
-    storage.delete.mockRejectedValueOnce(new Error('R2 indisponível'));
+    storage.deleteMany.mockResolvedValueOnce({ failedKeys: ['k1.xml'] });
     const { service } = setup({
       removidos: [
         { id: 'd1', xmlKey: 'k1.xml', danfeKey: null, tipoDocumento: 'NFE' },
@@ -154,12 +170,13 @@ describe('ImportacaoXmlFiscalService.excluirMovimentacaoMes', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 
-  it('não audita quando não há movimentação no mês', async () => {
-    const { service, db } = setup({ removidos: [] });
+  it('não audita quando não há movimentação manual no mês', async () => {
+    const { service, db } = setup({ removidos: [], preservadosSefaz: 2 });
 
     const result = await service.excluirMovimentacaoMes(baseInput);
 
     expect(result.documentos_excluidos).toBe(0);
+    expect(result.documentos_preservados_sefaz).toBe(2);
     expect(db.insert).not.toHaveBeenCalled();
   });
 

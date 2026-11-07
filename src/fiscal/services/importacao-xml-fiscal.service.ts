@@ -153,6 +153,8 @@ export interface ExclusaoMovimentacaoMesResult {
   competencia: string;
   documentos_excluidos: number;
   por_tipo: Record<string, number>;
+  /** Documentos do mês vindos da distribuição DF-e, mantidos de propósito. */
+  documentos_preservados_sefaz: number;
   objetos_nao_removidos: number;
 }
 
@@ -252,7 +254,6 @@ export class ImportacaoXmlFiscalService {
     // regra de escopo do fechamento na importação).
     const doMes = and(
       eq(documentosFiscais.clienteId, cliente.id),
-      eq(documentosFiscais.nsu, 0),
       or(
         and(
           ne(documentosFiscais.tipoDocumento, 'NFSE'),
@@ -273,6 +274,7 @@ export class ImportacaoXmlFiscalService {
       ),
     );
 
+    let preservadosSefaz = 0;
     const removidos = await this.database.db.transaction(
       async (tx) => {
         await this.closing.withEscopoLock(tx, escopoFechamento, async () => {
@@ -295,12 +297,23 @@ export class ImportacaoXmlFiscalService {
           }
         });
 
-        return tx.delete(documentosFiscais).where(doMes).returning({
-          id: documentosFiscais.id,
-          xmlKey: documentosFiscais.xmlKey,
-          danfeKey: documentosFiscais.danfeKey,
-          tipoDocumento: documentosFiscais.tipoDocumento,
-        });
+        const deleted = await tx
+          .delete(documentosFiscais)
+          .where(and(doMes, eq(documentosFiscais.nsu, 0)))
+          .returning({
+            id: documentosFiscais.id,
+            xmlKey: documentosFiscais.xmlKey,
+            danfeKey: documentosFiscais.danfeKey,
+            tipoDocumento: documentosFiscais.tipoDocumento,
+          });
+        // Documentos da distribuição DF-e (nsu > 0) permanecem; informa a
+        // quantidade para o usuário entender por que ainda aparecem na lista.
+        const [preservados] = await tx
+          .select({ total: sql<number>`count(*)::int` })
+          .from(documentosFiscais)
+          .where(and(doMes, ne(documentosFiscais.nsu, 0)));
+        preservadosSefaz = Number(preservados?.total ?? 0);
+        return deleted;
       },
       { isolationLevel: 'repeatable read' },
     );
@@ -343,20 +356,22 @@ export class ImportacaoXmlFiscalService {
       if (doc.xmlKey) keys.add(doc.xmlKey);
       if (doc.danfeKey) keys.add(doc.danfeKey);
     }
-    let objetosNaoRemovidos = 0;
-    for (const key of keys) {
-      try {
-        await this.storage.delete(key);
-      } catch (error: unknown) {
-        objetosNaoRemovidos += 1;
-        this.logger.error('fiscal_month_delete_cleanup_failed', error, {
+    // Exclusão em lote (DeleteObjects): uma chamada ao R2 por 1000 arquivos,
+    // para a resposta não exceder o timeout do proxy em meses volumosos.
+    const { failedKeys } = await this.storage.deleteMany(Array.from(keys));
+    if (failedKeys.length > 0) {
+      this.logger.error(
+        'fiscal_month_delete_cleanup_failed',
+        new Error(`${failedKeys.length} objeto(s) não removido(s) do R2`),
+        {
           requestId: input.requestId,
           userId: input.actorUserId,
           entityType: 'CLIENTE',
           entityId: cliente.id,
           operation: 'excluir_movimentacao_mes',
-        });
-      }
+          failedKeys: failedKeys.slice(0, 50).join(','),
+        },
+      );
     }
 
     return {
@@ -364,7 +379,8 @@ export class ImportacaoXmlFiscalService {
       competencia: input.competencia,
       documentos_excluidos: removidos.length,
       por_tipo: porTipo,
-      objetos_nao_removidos: objetosNaoRemovidos,
+      documentos_preservados_sefaz: preservadosSefaz,
+      objetos_nao_removidos: failedKeys.length,
     };
   }
 

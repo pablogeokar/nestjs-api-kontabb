@@ -2,6 +2,7 @@ import {
   DistribuicaoDfeService,
   FISCAL_SYNC_LOCK_TTL_MS,
   isFiscalSyncLockActive,
+  nfePertenceAoCliente,
 } from './distribuicao-dfe.service';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { gzipSync } from 'node:zlib';
@@ -202,6 +203,74 @@ describe('DistribuicaoDfeService', () => {
         expect.objectContaining({ ultimoNsu: 2 }),
       ]),
     );
+  });
+
+  it('ignora NF-e entregue ao transportador e avança o NSU sem gravá-la como entrada', async () => {
+    const xml = parseDocumentWithItem().xmlContent.replace(
+      '</infNFe>',
+      '<transp><transporta><CNPJ>69537189000152</CNPJ></transporta></transp></infNFe>',
+    );
+    const parsed = parseManualFiscalXml(xml);
+    if (parsed.status !== 'DOCUMENTO') throw new Error('Fixture inválida');
+    expect(parsed.documento.participantesCnpjCpf).toEqual([
+      '12345678000195',
+      '98765432000110',
+    ]);
+    expect(nfePertenceAoCliente('69537189000152', parsed.documento)).toBe(
+      false,
+    );
+    expect(nfePertenceAoCliente('98765432000110', parsed.documento)).toBe(true);
+
+    const { service, atualizacoes } = createSyncHarness(
+      [dfeResponse(1, 1, 'procNFe_v4.00.xsd', xml)],
+      '69537189000152',
+    );
+    jest
+      .spyOn(service as never, 'manifestarResumosPendentes')
+      .mockResolvedValue(undefined as never);
+    jest
+      .spyOn(service as never, 'recuperarUmResumoManifestado')
+      .mockResolvedValue(false as never);
+    const salvar = jest.spyOn(service as never, 'salvarDocumento');
+
+    const resultado = await service.sincronizarCliente('client-1', 'NFE');
+
+    expect(resultado).toMatchObject({
+      status: 'OK',
+      ultimoNsu: 1,
+      documentosProcessados: 0,
+      documentosIgnorados: 1,
+      documentosComFalha: 0,
+    });
+    expect(salvar).not.toHaveBeenCalled();
+    expect(atualizacoes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ ultimoNsu: 1 })]),
+    );
+  });
+
+  it('recusa vínculo fiscal inválido antes de consultar banco ou gravar XML', async () => {
+    const documento = parseDocumentWithItem();
+    const database = { db: { select: jest.fn() } };
+    const storage = { uploadIfAbsent: jest.fn() };
+    const service = new DistribuicaoDfeService(
+      database as never,
+      storage as never,
+      {} as never,
+      createCfopServiceMock() as never,
+      {} as never,
+    );
+
+    const salvo = await service.salvarDocumentoConsultado({
+      clienteId: 'cliente-transportador',
+      cnpj: '69537189000152',
+      documento,
+      regimeTributario: null,
+      apuraIcms: false,
+    });
+
+    expect(salvo).toBe(false);
+    expect(database.db.select).not.toHaveBeenCalled();
+    expect(storage.uploadIfAbsent).not.toHaveBeenCalled();
   });
 
   it('preserva o NSU diante de um docZip fiscal desconhecido', async () => {
@@ -776,13 +845,13 @@ function expectAdvisoryLockAcquired(
   expect(acquired).toBe(true);
 }
 
-function createSyncHarness(responses: unknown[]) {
+function createSyncHarness(responses: unknown[], cnpj = '98765432000110') {
   const limit = jest
     .fn()
     .mockResolvedValueOnce([
       {
         id: 'client-1',
-        cnpj: '98765432000110',
+        cnpj,
         uf: 'BA',
         regimeTributario: null,
         apuraIcms: false,
