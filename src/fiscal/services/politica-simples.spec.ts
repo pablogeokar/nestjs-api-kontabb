@@ -133,12 +133,18 @@ describe('resolverPoliticaSimples — política única de Simples por vigência 
       });
     });
 
-    it('RBT12 dentro do sublimite → DENTRO (origem da comparação)', () => {
+    it('receita anual dentro do sublimite → DENTRO', () => {
       const r = resolverPoliticaSimples(
         {
           regimeTributario: 'SIMPLES_NACIONAL',
           vigencias: [
-            { inicio: '2026-01', rbt12: '3000000.00', sublimite: '3600000.00' },
+            {
+              inicio: '2026-01',
+              sublimite: '3600000.00',
+              receitaAnoAnterior: '3000000.00',
+              receitaAnoCorrenteAntesPa: '100000.00',
+              receitaAnoCorrenteAtePa: '200000.00',
+            },
           ],
         },
         '2026-03',
@@ -150,29 +156,41 @@ describe('resolverPoliticaSimples — política única de Simples por vigência 
       });
     });
 
-    it('RBT12 acima do sublimite → EXCEDIDO e recolhe ICMS fora do DAS', () => {
+    it('excesso do ano anterior → EXCEDIDO e recolhe ICMS fora do DAS', () => {
       const r = resolverPoliticaSimples(
         {
           regimeTributario: 'SIMPLES_NACIONAL',
           vigencias: [
-            { inicio: '2026-01', rbt12: '3600000.01', sublimite: '3600000.00' },
+            {
+              inicio: '2026-01',
+              sublimite: '3600000.00',
+              receitaAnoAnterior: '3600000.01',
+              receitaAnoCorrenteAntesPa: '0.00',
+              receitaAnoCorrenteAtePa: '0.00',
+            },
           ],
         },
         '2026-03',
       );
       expect(r.sublimite).toEqual({
         situacao: 'EXCEDIDO',
-        origem: 'SUBLIMITE_EXCEDIDO_RBT12',
+        origem: 'SUBLIMITE_IMPEDIMENTO_RBA',
         recolheIcmsForaDoDas: true,
       });
     });
 
-    it('RBT12 exatamente igual ao sublimite → DENTRO (limite não é excesso)', () => {
+    it('receita anterior exatamente igual ao sublimite → DENTRO', () => {
       const r = resolverPoliticaSimples(
         {
           regimeTributario: 'SIMPLES_NACIONAL',
           vigencias: [
-            { inicio: '2026-01', rbt12: '3600000.00', sublimite: '3600000.00' },
+            {
+              inicio: '2026-01',
+              sublimite: '3600000.00',
+              receitaAnoAnterior: '3600000.00',
+              receitaAnoCorrenteAntesPa: '0.00',
+              receitaAnoCorrenteAtePa: '0.00',
+            },
           ],
         },
         '2026-03',
@@ -181,8 +199,7 @@ describe('resolverPoliticaSimples — política única de Simples por vigência 
       expect(r.sublimite.recolheIcmsForaDoDas).toBe(false);
     });
 
-    it('compara limiares com precisão de centavos (sem Number)', () => {
-      // Diferença de 1 centavo deve ser detectada como excesso.
+    it('não infere impedimento a partir do RBT12', () => {
       const r = resolverPoliticaSimples(
         {
           regimeTributario: 'SIMPLES_NACIONAL',
@@ -190,13 +207,14 @@ describe('resolverPoliticaSimples — política única de Simples por vigência 
             {
               inicio: '2026-01',
               rbt12: '18000000.01',
-              sublimite: '18000000.00',
+              sublimite: '3600000.00',
             },
           ],
         },
         '2026-03',
       );
-      expect(r.sublimite.situacao).toBe('EXCEDIDO');
+      expect(r.sublimite.origem).toBe('SEM_PARAMETRO');
+      expect(r.sublimite.recolheIcmsForaDoDas).toBe(false);
     });
 
     it('impedimento declarado vence qualquer comparação de valor', () => {
@@ -231,7 +249,13 @@ describe('resolverPoliticaSimples — política única de Simples por vigência 
         {
           regimeTributario: 'SIMPLES_NACIONAL',
           vigencias: [
-            { inicio: '2026-01', rbt12: '4000000.00', sublimite: '3600000.00' },
+            {
+              inicio: '2026-01',
+              sublimite: '3600000.00',
+              receitaAnoAnterior: '4000000.00',
+              receitaAnoCorrenteAntesPa: '0.00',
+              receitaAnoCorrenteAtePa: '0.00',
+            },
           ],
         },
         '2026-03',
@@ -330,9 +354,21 @@ describe('resolverPoliticaSimples — política única de Simples por vigência 
       regimeTributario: 'SIMPLES_NACIONAL',
       vigencias: [
         // Até junho: dentro do sublimite.
-        { inicio: '2026-01', rbt12: '3000000.00', sublimite: '3600000.00' },
-        // A partir de julho: excedeu o sublimite.
-        { inicio: '2026-07', rbt12: '3800000.00', sublimite: '3600000.00' },
+        {
+          inicio: '2026-01',
+          sublimite: '3600000.00',
+          receitaAnoAnterior: '3000000.00',
+          receitaAnoCorrenteAntesPa: '300000.00',
+          receitaAnoCorrenteAtePa: '350000.00',
+        },
+        // A partir de julho: o excesso de mais de 20% já ocorreu em junho.
+        {
+          inicio: '2026-07',
+          sublimite: '3600000.00',
+          receitaAnoAnterior: '3000000.00',
+          receitaAnoCorrenteAntesPa: '4320000.01',
+          receitaAnoCorrenteAtePa: '4400000.00',
+        },
       ],
     };
 
@@ -417,8 +453,10 @@ describe('resolverPoliticaSimples — política única de Simples por vigência 
             inicio: '2026-09',
             obrigadoEfd: true,
             obrigacoesForaDoDas: ['ST'],
-            rbt12: '4000000.00',
             sublimite: '3600000.00',
+            receitaAnoAnterior: '3000000.00',
+            receitaAnoCorrenteAntesPa: '4320000.01',
+            receitaAnoCorrenteAtePa: '4400000.00',
           },
         ],
       };
@@ -514,7 +552,13 @@ describe('MATRIZ_FISCAL_SIMPLES — matriz aprovada pelo fiscal (R6.3)', () => {
       {
         regimeTributario: 'SIMPLES_NACIONAL',
         vigencias: [
-          { inicio: '2026-01', rbt12: '4000000.00', sublimite: '3600000.00' },
+          {
+            inicio: '2026-01',
+            sublimite: '3600000.00',
+            receitaAnoAnterior: '4000000.00',
+            receitaAnoCorrenteAntesPa: '0.00',
+            receitaAnoCorrenteAtePa: '0.00',
+          },
         ],
       },
       '2026-03',

@@ -1,4 +1,4 @@
-# Revisão da receita do Simples Nacional (motor 3)
+# Revisão da receita do Simples Nacional
 
 O motor usa os itens de NF-e/NFS-e de saída autorizada para formar a receita do mês e o histórico automático do RBT12. O valor fiscal total do documento não é distribuído entre itens. O valor líquido elegível de cada item considera produto/serviço, frete, seguro e outras despesas, menos o desconto informado no item.
 
@@ -8,7 +8,7 @@ O cálculo audita notas de saída sem itens, CFOPs sem classificação segura, v
 
 A base automática da folha para o Fator R passou a usar remuneração bruta e FGTS. O valor de INSS extraído da folha pode ser retenção do empregado e não é somado outra vez. Contribuição patronal efetivamente recolhida no DAS, pró-labore ausente das folhas e o critério de pagamento em caixa precisam ser completados por valores manuais no histórico quando aplicável. O sistema não dispõe de dados suficientes para inferir essas parcelas com segurança.
 
-A primeira competência de atividade ainda é inferida da primeira receita disponível, pois não há data de início de atividade fiscal no cadastro. Para empresas migradas com documentos incompletos, preencha o histórico manual dos 12 meses anteriores antes de usar a alíquota proporcional e o Fator R.
+A primeira competência de atividade usa a data de abertura do CNPJ cadastrada; sem essa data, é inferida da primeira receita disponível. Para empresas migradas com documentos incompletos, cadastre a data de abertura e preencha o histórico manual dos 12 meses anteriores antes de usar a alíquota proporcional e o Fator R.
 
 Rascunhos do motor anterior precisam ser recalculados antes do fechamento. Apurações fechadas permanecem imutáveis e devem ser revisadas e retificadas pelo fluxo fiscal quando afetadas. O valor mostrado pelo sistema é uma memória de apoio; o PGDAS-D continua sendo o meio oficial de declaração e geração do DAS.
 
@@ -22,8 +22,13 @@ No PA 10/2026 da MINAS BAHIA CARGO LTDA, a receita de R$ 47.827,27 e o RBT12 pro
 
 A declaração oficial também mostra sublimite proporcional de R$ 900.000,00 no ano de abertura (outubro a dezembro de 2026), enquanto o relatório auxiliar anterior exibia o valor anual de R$ 3.600.000,00. O motor 8 passa a ler a data de abertura do CNPJ e o sublimite anual cadastrado por UF/ano, aplica a proporção no ano inicial, compara a receita acumulada no ano e considera o efeito temporal do excesso de 20%. A tabela de sublimites pode ser mantida na área administrativa. Um ano/UF sem valor ativo bloqueia a apuração em vez de usar um valor presumido. Quando a data de abertura não estiver cadastrada e a receita anual superar R$ 300.000,00, o rascunho recebe pendência para conferência. Receitas de exportação e hipóteses de tributação estadual fora do DAS continuam exigindo análise fiscal própria.
 
+O motor 9 guarda na memória da apuração a receita de CT-e por município e UF de início da prestação, conforme o detalhamento solicitado no PGDAS-D. A ausência do município de origem gera pendência para impedir o fechamento sem essa informação. A política de ICMS próprio usa a mesma regra de receita anual do DAS; RBT12 continua servindo ao enquadramento nas faixas, mas não caracteriza sozinho o impedimento de ICMS/ISS.
+
+Para implantar, aplique a migração de banco, execute `pnpm db:seed:simples` no ambiente de destino e recalcule os rascunhos anteriores ao motor 9. Confira a data de abertura do CNPJ e o histórico de receitas antes do fechamento. Tabelas normativas de anos futuros devem ser cadastradas depois da publicação oficial do CGSN; o seed cadastra 2025 e 2026 sem substituir ajustes administrativos.
+
 ## Referências oficiais
 
 - [Perguntas e Respostas do Simples Nacional, item 3.15](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoSN.pdf)
 - [Resolução CGSN nº 140/2018, arts. 2º, 17 e 26](https://normas.receita.fazenda.gov.br/sijut2consulta/link.action?idAto=92278)
 - [Manual do PGDAS-D](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/MANUAL_PGDAS-D_2018_V4.pdf)
+- [Sublimite de 2026 publicado pelo CGSN](https://www8.receita.fazenda.gov.br/simplesnacional/Noticias/NoticiaCompleta.aspx?id=94c10cc2-7eb5-4ef0-bfb2-5479e72caff8)

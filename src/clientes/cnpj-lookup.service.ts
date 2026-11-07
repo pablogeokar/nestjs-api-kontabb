@@ -29,6 +29,11 @@ export interface CnpjLookupResult {
    * `null` quando o provedor não informa esse dado de forma confiável.
    */
   simples_nacional: boolean | null;
+  /**
+   * Data de abertura do CNPJ no formato ISO (YYYY-MM-DD).
+   * `null` quando o provedor não informa ou retorna data inválida.
+   */
+  data_abertura_cnpj: string | null;
   source: FonteConsultaCnpj;
 }
 
@@ -59,7 +64,7 @@ const LOOKUP_TIMEOUT_MS = 8_000;
 
 @Injectable()
 export class CnpjLookupService {
-  constructor(private readonly logger: AppLogger) {}
+  constructor(private readonly logger: AppLogger) { }
 
   async lookup(cnpj: string, context: { requestId?: string; userId: string }) {
     let notFound = false;
@@ -208,6 +213,8 @@ function normalizeOpenCnpj(
         : null,
     secondary_activities: deduplicateCnaes(secondary),
     simples_nacional: simplesNacional,
+    // OpenCNPJ: "data_inicio_atividade" no formato YYYY-MM-DD
+    data_abertura_cnpj: parseDataAbertura(payload.data_inicio_atividade),
     source: 'OPEN_CNPJ',
   };
 }
@@ -249,6 +256,8 @@ function normalizeReceitaWs(
     primary_activity: primary ?? null,
     secondary_activities: deduplicateCnaes(secondary),
     simples_nacional: simplesNacional,
+    // ReceitaWS: "abertura" no formato DD/MM/YYYY
+    data_abertura_cnpj: parseDataAbertura(payload.abertura),
     source: 'RECEITA_WS',
   };
 }
@@ -290,6 +299,35 @@ function extractSimplesNacionalReceitaWs(
   if (raw === 'true') return true;
   if (raw === 'false') return false;
   return null;
+}
+
+/**
+ * Converte datas dos provedores (YYYY-MM-DD, DD/MM/YYYY ou ISO com horário)
+ * para YYYY-MM-DD. Retorna `null` se ausente ou inválida.
+ */
+function parseDataAbertura(value: unknown): string | null {
+  const text = cleanText(value);
+  if (!text) return null;
+
+  let year: string;
+  let month: string;
+  let day: string;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/.exec(text);
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (iso) {
+    [, year, month, day] = iso;
+  } else if (br) {
+    [, day, month, year] = br;
+  } else {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  const valid =
+    date.getUTCFullYear() === Number(year) &&
+    date.getUTCMonth() === Number(month) - 1 &&
+    date.getUTCDate() === Number(day);
+  return valid ? `${year}-${month}-${day}` : null;
 }
 
 function makeAddress(
