@@ -79,10 +79,12 @@ NF-e/NFC-e.
 ## Exclusão da movimentação do mês
 
 Para refazer a importação de uma competência, a movimentação importada pode ser
-excluída pelos endpoints:
+excluída somente pela equipe interna (staff), pelo endpoint:
 
-- `DELETE /api/admin/fiscal/documentos/movimentacao?clienteId={uuid}&competencia=AAAA-MM`;
-- `DELETE /api/fiscal/documentos/movimentacao?competencia=AAAA-MM` (empresa logada).
+- `DELETE /api/admin/fiscal/documentos/movimentacao?clienteId={uuid}&competencia=AAAA-MM`.
+
+O perfil CLIENTE não pode excluir a movimentação: não há endpoint equivalente
+em `/api/fiscal`.
 
 São removidos somente os documentos importados manualmente (`nsu = 0`) do mês:
 NF-e, NFC-e e CT-e pela data de emissão e NFS-e pela competência declarada

@@ -52,7 +52,6 @@ import {
 } from '../services/nfewizard.service';
 import { UploadCertificadoClienteDto } from '../dto/upload-certificado.dto';
 import { ManifestarDocumentoDto } from '../dto/manifestar-documento.dto';
-import { ExcluirMovimentacaoMesDto } from '../dto/excluir-movimentacao-mes.dto';
 import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
 import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
 import { QueryCteFiscalDto } from '../dto/query-cte-fiscal.dto';
@@ -88,7 +87,7 @@ export class ClienteFiscalController {
     private readonly fiscalCteService: FiscalCteService,
     private readonly importacaoChavesService: ImportacaoChavesFiscalService,
     private readonly fiscalIssLivroService: FiscalIssLivroService,
-  ) {}
+  ) { }
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
 
@@ -279,48 +278,6 @@ export class ClienteFiscalController {
         (result.erros > 0 || result.pendentes_revisao > 0),
       data: result,
     };
-  }
-
-  @Delete('documentos/movimentacao')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Excluir a movimentação fiscal importada de um mês',
-    description:
-      'Remove os documentos importados manualmente (XML) da empresa logada na competência informada, com itens, escrituração de CT-e e arquivos, para permitir nova importação. Documentos da distribuição SEFAZ são preservados. Recusado se houver fechamento fiscal fechado no mês.',
-  })
-  @ApiResponse({ status: 200, description: 'Movimentação excluída.' })
-  @ApiResponse({ status: 409, description: 'Competência com fechamento.' })
-  async excluirMovimentacaoMes(
-    @Query() query: ExcluirMovimentacaoMesDto,
-    @CurrentUser() user: CurrentUserType,
-  ) {
-    await this.rateLimit.consume({
-      key: `fiscal-month-delete:${user.id}`,
-      limit: 10,
-      windowMs: 60 * 60_000,
-    });
-    const cliente = await this.clientesService.getClientForUser(user.id);
-    if (!cliente) {
-      throw new NotFoundException(
-        'Empresa não encontrada para o usuário logado.',
-      );
-    }
-    const requestId = this.logger.generateRequestId();
-    const data = await this.importacaoXmlService.excluirMovimentacaoMes({
-      clienteId: cliente.id,
-      competencia: query.competencia,
-      actorUserId: user.id,
-      requestId,
-    });
-    this.logger.info('fiscal_month_delete_completed', {
-      requestId,
-      userId: user.id,
-      clienteId: cliente.id,
-      operation: 'excluir_movimentacao_mes',
-      competencia: query.competencia,
-      documentosExcluidos: data.documentos_excluidos,
-    });
-    return { success: true, data };
   }
 
   @Post('documentos/importar-chaves/preview')
