@@ -1,11 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import {
+  parseCompetenciaMensal,
+  type CompetenciaRange,
+} from '../fiscal-date.util';
 import { AppLogger } from '../../common/logger.service';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   documentosFiscais,
   eventosAuditoria,
+  fiscalFechamentos,
 } from '../../database/schema';
 import { StorageService } from '../../storage/storage.service';
 import {
@@ -138,6 +148,16 @@ export interface FiscalXmlImportResult {
   resultados: FiscalXmlFileResult[];
 }
 
+export interface ExclusaoMovimentacaoMesResult {
+  cliente_id: string;
+  competencia: string;
+  documentos_excluidos: number;
+  por_tipo: Record<string, number>;
+  /** Documentos do mês vindos da distribuição DF-e, mantidos de propósito. */
+  documentos_preservados_sefaz: number;
+  objetos_nao_removidos: number;
+}
+
 interface PersistDocumentResult {
   status: 'IMPORTADO' | 'DUPLICADO';
   revisoes: FiscalXmlReviewIssue[];
@@ -191,6 +211,176 @@ export class ImportacaoXmlFiscalService {
         0,
       ),
       resultados,
+    };
+  }
+
+  /**
+   * Exclui a movimentação fiscal IMPORTADA MANUALMENTE (nsu = 0) de um mês para
+   * que o usuário possa reimportar os XMLs. Documentos obtidos pela distribuição
+   * da SEFAZ (nsu > 0) são preservados, pois não seriam recuperáveis pelo
+   * controle de NSU. Itens, escrituração de CT-e, eventos e decisões saem em
+   * cascata; vínculos do CIAP são anulados (`set null`).
+   *
+   * Recusa a operação (409) quando alguma obrigação do mês possui fechamento
+   * FECHADO corrente, para não invalidar uma entrega congelada.
+   */
+  async excluirMovimentacaoMes(input: {
+    clienteId: string;
+    competencia: string;
+    actorUserId: string;
+    requestId: string;
+  }): Promise<ExclusaoMovimentacaoMesResult> {
+    let range: CompetenciaRange;
+    try {
+      range = parseCompetenciaMensal(input.competencia);
+    } catch (error: unknown) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Competência inválida.',
+      );
+    }
+
+    const cliente = await this.findClienteById(input.clienteId);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+
+    // O escopo do fechamento recebe 'AAAA-MM' (o serviço normaliza para dia 1);
+    // `range.competencia` ('AAAA-MM-01') é usado só na coluna date.
+    const escopoFechamento = {
+      clienteId: cliente.id,
+      obrigacao: 'EFD_ICMS_IPI' as const,
+      competencia: input.competencia,
+    };
+
+    // NFS-e usa a competência declarada; os demais, o mês de emissão (mesma
+    // regra de escopo do fechamento na importação).
+    const doMes = and(
+      eq(documentosFiscais.clienteId, cliente.id),
+      or(
+        and(
+          ne(documentosFiscais.tipoDocumento, 'NFSE'),
+          gte(documentosFiscais.dataEmissao, range.inicio),
+          lte(documentosFiscais.dataEmissao, range.fim),
+        ),
+        and(
+          eq(documentosFiscais.tipoDocumento, 'NFSE'),
+          or(
+            eq(documentosFiscais.competenciaDeclarada, range.competencia),
+            and(
+              isNull(documentosFiscais.competenciaDeclarada),
+              gte(documentosFiscais.dataEmissao, range.inicio),
+              lte(documentosFiscais.dataEmissao, range.fim),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    let preservadosSefaz = 0;
+    const removidos = await this.database.db.transaction(
+      async (tx) => {
+        await this.closing.withEscopoLock(tx, escopoFechamento, async () => {
+          const [fechado] = await tx
+            .select({ obrigacao: fiscalFechamentos.obrigacao })
+            .from(fiscalFechamentos)
+            .where(
+              and(
+                eq(fiscalFechamentos.clienteId, cliente.id),
+                eq(fiscalFechamentos.competencia, range.competencia),
+                eq(fiscalFechamentos.estado, 'FECHADO'),
+                eq(fiscalFechamentos.corrente, true),
+              ),
+            )
+            .limit(1);
+          if (fechado) {
+            throw new ConflictException(
+              `A competência ${input.competencia} possui fechamento fiscal (${fechado.obrigacao}) já fechado. Reabra o fechamento antes de excluir a movimentação.`,
+            );
+          }
+        });
+
+        const deleted = await tx
+          .delete(documentosFiscais)
+          .where(and(doMes, eq(documentosFiscais.nsu, 0)))
+          .returning({
+            id: documentosFiscais.id,
+            xmlKey: documentosFiscais.xmlKey,
+            danfeKey: documentosFiscais.danfeKey,
+            tipoDocumento: documentosFiscais.tipoDocumento,
+          });
+        // Documentos da distribuição DF-e (nsu > 0) permanecem; informa a
+        // quantidade para o usuário entender por que ainda aparecem na lista.
+        const [preservados] = await tx
+          .select({ total: sql<number>`count(*)::int` })
+          .from(documentosFiscais)
+          .where(and(doMes, ne(documentosFiscais.nsu, 0)));
+        preservadosSefaz = Number(preservados?.total ?? 0);
+        return deleted;
+      },
+      { isolationLevel: 'repeatable read' },
+    );
+
+    const porTipo: Record<string, number> = {};
+    for (const doc of removidos) {
+      porTipo[doc.tipoDocumento] = (porTipo[doc.tipoDocumento] ?? 0) + 1;
+    }
+
+    if (removidos.length > 0) {
+      await this.database.db
+        .insert(eventosAuditoria)
+        .values({
+          atorUserId: input.actorUserId,
+          acao: 'MOVIMENTACAO_FISCAL_MES_EXCLUIDA',
+          entidadeTipo: 'CLIENTE',
+          entidadeId: cliente.id,
+          dados: {
+            competencia: input.competencia,
+            totalDocumentos: removidos.length,
+            porTipo,
+            requestId: input.requestId,
+          },
+        })
+        .catch((error: unknown) => {
+          this.logger.error('fiscal_month_delete_audit_failed', error, {
+            requestId: input.requestId,
+            userId: input.actorUserId,
+            entityType: 'CLIENTE',
+            entityId: cliente.id,
+            operation: 'excluir_movimentacao_mes',
+          });
+        });
+    }
+
+    // Limpeza do storage após o commit: falha aqui não desfaz a exclusão
+    // (objeto órfão é preferível a registro sem XML) e fica registrada em log.
+    const keys = new Set<string>();
+    for (const doc of removidos) {
+      if (doc.xmlKey) keys.add(doc.xmlKey);
+      if (doc.danfeKey) keys.add(doc.danfeKey);
+    }
+    // Exclusão em lote (DeleteObjects): uma chamada ao R2 por 1000 arquivos,
+    // para a resposta não exceder o timeout do proxy em meses volumosos.
+    const { failedKeys } = await this.storage.deleteMany(Array.from(keys));
+    if (failedKeys.length > 0) {
+      this.logger.error(
+        'fiscal_month_delete_cleanup_failed',
+        new Error(`${failedKeys.length} objeto(s) não removido(s) do R2`),
+        {
+          requestId: input.requestId,
+          userId: input.actorUserId,
+          entityType: 'CLIENTE',
+          entityId: cliente.id,
+          operation: 'excluir_movimentacao_mes',
+          failedKeys: failedKeys.slice(0, 50).join(','),
+        },
+      );
+    }
+
+    return {
+      cliente_id: cliente.id,
+      competencia: input.competencia,
+      documentos_excluidos: removidos.length,
+      por_tipo: porTipo,
+      documentos_preservados_sefaz: preservadosSefaz,
+      objetos_nao_removidos: failedKeys.length,
     };
   }
 

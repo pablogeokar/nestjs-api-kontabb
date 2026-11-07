@@ -61,6 +61,20 @@ pela evolução do status, NSU ou total de documentos.
 
 ## Resumos e manifestação de NF-e
 
+O serviço de distribuição também entrega `procNFe` ao transportador indicado
+na NF-e e a terceiros autorizados a acessar o XML. Esses papéis dão acesso ao
+arquivo, mas não transformam a nota em entrada ou saída da empresa. Antes de
+gravar uma NF-e completa, a API exige que o CNPJ/CPF do cliente seja o do
+emitente ou do destinatário. Documentos recebidos apenas como transportador
+ou terceiro são contados como ignorados; o NSU avança normalmente. A importação
+por chave aplica a mesma regra e responde `NAO_SUPORTADO` com o motivo. Os
+resumos `resNFe` continuam no fluxo do destinatário, pois não identificam o
+destinatário dentro do próprio resumo; a validação é repetida quando o XML
+completo fica disponível. Referência: [Nota Técnica 2014.002 da NF-e](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=0rPhVp1wRqc%3D).
+
+Para remover NF-e de transportador gravadas antes dessa validação, use o
+[procedimento de limpeza do banco e do R2](limpeza-nfe-transportador-r2.md).
+
 Quando o Ambiente Nacional entrega `resNFe`, o sistema preserva o resumo como
 NF-e `RESUMIDA`, com escrituração bloqueada e sem oferecer DANFE ou download do
 XML completo. A sincronização envia automaticamente Ciência da Operação para

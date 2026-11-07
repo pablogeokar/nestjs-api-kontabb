@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -54,6 +55,7 @@ import { QueryDocumentosFiscaisDto } from '../dto/query-documentos-fiscais.dto';
 import { QueryItensFiscaisDto } from '../dto/query-itens-fiscais.dto';
 import { QueryCteFiscalDto } from '../dto/query-cte-fiscal.dto';
 import { EditarCfopDto } from '../dto/editar-cfop.dto';
+import { AdminExcluirMovimentacaoMesDto } from '../dto/excluir-movimentacao-mes.dto';
 import { SincronizarFiscalDto } from '../dto/sincronizar-fiscal.dto';
 import { parseFiscalEndDate, parseFiscalStartDate } from '../fiscal-date.util';
 import {
@@ -329,6 +331,42 @@ export class AdminFiscalController {
         (result.erros > 0 || result.pendentes_revisao > 0),
       data: result,
     };
+  }
+
+  @Delete('documentos/movimentacao')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Excluir a movimentação fiscal importada de um mês',
+    description:
+      'Remove os documentos importados manualmente (XML) da empresa na competência informada, com itens, escrituração de CT-e e arquivos, para permitir nova importação. Documentos da distribuição SEFAZ são preservados. Recusado se houver fechamento fiscal fechado no mês.',
+  })
+  @ApiResponse({ status: 200, description: 'Movimentação excluída.' })
+  @ApiResponse({ status: 409, description: 'Competência com fechamento.' })
+  async excluirMovimentacaoMes(
+    @Query() query: AdminExcluirMovimentacaoMesDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    await this.rateLimit.consume({
+      key: `fiscal-month-delete:${user.id}`,
+      limit: 10,
+      windowMs: 60 * 60_000,
+    });
+    const requestId = this.logger.generateRequestId();
+    const data = await this.importacaoXmlService.excluirMovimentacaoMes({
+      clienteId: query.clienteId,
+      competencia: query.competencia,
+      actorUserId: user.id,
+      requestId,
+    });
+    this.logger.info('fiscal_month_delete_completed', {
+      requestId,
+      userId: user.id,
+      clienteId: query.clienteId,
+      operation: 'excluir_movimentacao_mes',
+      competencia: query.competencia,
+      documentosExcluidos: data.documentos_excluidos,
+    });
+    return { success: true, data };
   }
 
   @Post('documentos/importar-chaves/preview')

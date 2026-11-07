@@ -29,6 +29,16 @@ describe('receita documental do Simples Nacional', () => {
     expect(classificarOperacaoSimples('NFE', null)).toBe('REVISAR');
   });
 
+  it.each(['5351', '5353', '5360', '6352', '6357', '6360'])(
+    'reconhece a prestação de transporte %s como receita do CT-e',
+    (cfop) => expect(classificarOperacaoSimples('CTE', cfop)).toBe('RECEITA'),
+  );
+
+  it.each(['1352', '5206', '5358', '7358', '5949'])(
+    'exige revisão para CT-e com CFOP %s sem segregação segura',
+    (cfop) => expect(classificarOperacaoSimples('CTE', cfop)).toBe('REVISAR'),
+  );
+
   it('apura uma nota mista apenas pelo item vendido, após desconto incondicional', () => {
     const venda = valorReceitaSimples({
       bruto: '1000.00',

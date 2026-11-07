@@ -72,6 +72,49 @@ describe('ImportacaoChavesFiscalService', () => {
     },
   );
 
+  it('não importa pela chave a NF-e que só menciona o cliente como transportador', async () => {
+    const chave = buildAccessKey('55');
+    const xml = `<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><NFe><infNFe Id="NFe${chave}" versao="4.00"><ide><mod>55</mod><serie>1</serie><nNF>123</nNF><tpNF>1</tpNF><dhEmi>2024-08-15T10:45:00-03:00</dhEmi></ide><emit><CNPJ>12345678000195</CNPJ><xNome>Emitente</xNome></emit><dest><CNPJ>98765432000110</CNPJ><xNome>Destinatário</xNome></dest><transp><transporta><CNPJ>69537189000152</CNPJ></transporta></transp><total><ICMSTot><vNF>150.75</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>${chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>`;
+    const response = {
+      cStat: 138,
+      data: {
+        retDistDFeInt: {
+          loteDistDFeInt: {
+            docZip: [
+              {
+                $: { NSU: '000000000000123', schema: 'procNFe_v4.00.xsd' },
+                _: gzipSync(Buffer.from(xml)).toString('base64'),
+              },
+            ],
+          },
+        },
+      },
+    };
+    const database = databaseWithResponses([
+      [{ ...cliente, cnpj: '69537189000152' }],
+      [{ id: 'cert-1', validadeFim: futureDate() }],
+      [],
+    ]);
+    const service = makeService(database, nfeWizardMock(response));
+
+    const result = await service.executar({
+      clienteId: cliente.id,
+      chaves: [chave],
+      actorUserId,
+      requestId: 'req-transportador',
+    });
+
+    expect(result.itens[0]).toMatchObject({
+      status: 'NAO_SUPORTADO',
+      documento_id: null,
+    });
+    expect(result.itens[0].mensagem).toContain(
+      'não é emitente nem destinatária',
+    );
+    expect(result.resumo.importados).toBe(0);
+    expect(database.db.select).toHaveBeenCalledTimes(3);
+  });
+
   it('não consulta notas antigas, mesmo com reimportação forçada', async () => {
     jest.setSystemTime(new Date('2026-10-19T12:00:00Z'));
     const nfeWizard = nfeWizardMock();

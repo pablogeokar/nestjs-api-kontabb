@@ -51,6 +51,25 @@ o inventário lista versões entregues, competências abertas e operações afet
 incluindo CIAP, CT-e de saída, créditos de ICMS vedados e PIS/COFINS misto. Ver
 `fiscal-entrega-conciliacao-operacao.md`.
 
+## Receita no Simples Nacional
+
+O CT-e modelo 57 autorizado, escriturável e de **saída** compõe a receita do
+prestador pelo `vTPrest` da linha de escrituração. A leitura usa o CFOP original
+do XML e aceita prestações 5351–5357, 5360 e equivalentes interestaduais
+6351–6357, 6360. O documento entra na receita mensal, no histórico de RBT12 e
+na simulação do DAS sem criar itens artificiais de NF-e. CT-e de entrada,
+cancelado, denegado ou substituído não gera receita. Anulações com CFOP de
+prestação reconhecido usam o valor negativo da escrituração; outros CFOPs ou
+referência fora da competência exigem revisão fiscal.
+
+O transporte intermunicipal ou interestadual de carga usa o Anexo III sem a
+parcela de ISS e com a parcela de ICMS do Anexo I. A segregação explícita de
+ICMS-ST retira essa parcela do DAS. CFOP de exportação, CFOP não mapeado e
+modalidades especiais permanecem pendentes de revisão antes do fechamento.
+Rascunhos calculados pelo motor anterior devem ser recalculados. Para CT-e
+importados antes da criação da linha de escrituração, execute o reprocessamento
+administrativo citado acima.
+
 ## Relatórios e endpoints
 
 Cliente autenticado:

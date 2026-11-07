@@ -45,6 +45,7 @@ import {
   buildDocumentoFiscalSpedMetadata,
   documentoNfePrecisaRevisao,
 } from './documento-fiscal-sped-metadata';
+import { normalizeFiscalTaxId } from './fiscal-identifier';
 
 export interface FiscalSyncResult {
   status:
@@ -75,6 +76,22 @@ const INTERVALO_SEFAZ_MS = 60 * 60 * 1000;
 function isEventoNfe(schema: string) {
   const fileName = schema.trim().split(/[\\/]/).pop() ?? '';
   return /^(?:procEventoNFe|resEvento)_v[\d.]+\.xsd$/i.test(fileName);
+}
+
+/** Acesso ao XML pela SEFAZ não equivale a entrada ou saída fiscal da NF-e. */
+export function nfePertenceAoCliente(
+  cnpjCpfCliente: string,
+  documento: Pick<
+    ParsedDocumentoFiscal,
+    'emitenteCnpjCpf' | 'destinatarioCnpjCpf'
+  >,
+): boolean {
+  const cliente = normalizeFiscalTaxId(cnpjCpfCliente);
+  return Boolean(
+    cliente &&
+    (cliente === normalizeFiscalTaxId(documento.emitenteCnpjCpf) ||
+      cliente === normalizeFiscalTaxId(documento.destinatarioCnpjCpf)),
+  );
 }
 
 export function isFiscalSyncLockActive(
@@ -370,6 +387,15 @@ export class DistribuicaoDfeService {
               throw new Error(
                 `docZip não interpretado: NSU=${docZip.nsu}, schema=${docZip.schema || 'desconhecido'}`,
               );
+            }
+
+            if (
+              tipoDocumento === 'NFE' &&
+              !nfePertenceAoCliente(cnpj, parsed)
+            ) {
+              documentosIgnorados += 1;
+              ultimoNsuSeguro = Math.max(ultimoNsuSeguro, docZip.nsu);
+              continue;
             }
 
             if (
@@ -1054,6 +1080,7 @@ export class DistribuicaoDfeService {
       .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
       .find((documento) => documento?.chaveAcesso === input.chaveAcesso);
     if (!completo) return 'PENDENTE';
+    if (!nfePertenceAoCliente(input.cnpj, completo)) return 'PENDENTE';
 
     const cliente = await this.database.db
       .select({
@@ -1411,6 +1438,7 @@ export class DistribuicaoDfeService {
       .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
       .find((documento) => documento?.chaveAcesso === chaveAcesso);
     if (!completo) return false;
+    if (!nfePertenceAoCliente(cnpj, completo)) return false;
     await this.salvarDocumento(clienteId, cnpj, completo, fiscalConfig);
     return true;
   }
@@ -1424,6 +1452,12 @@ export class DistribuicaoDfeService {
       apuraIcms: boolean;
     } = { regimeTributario: null, apuraIcms: false },
   ): Promise<boolean> {
+    if (
+      (parsed.tipoDocumento === 'NFE' || parsed.tipoDocumento === 'NFCE') &&
+      !nfePertenceAoCliente(cnpj, parsed)
+    ) {
+      return false;
+    }
     const ctePreparada = parsed.cteEscrituracao
       ? await this.fiscalCteService.prepararEscrituracao({
           clienteId,

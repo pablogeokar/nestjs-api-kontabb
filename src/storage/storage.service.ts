@@ -4,6 +4,7 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -80,6 +81,37 @@ export class StorageService {
     await this.r2.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
     );
+  }
+
+  /**
+   * Remove vários objetos com `DeleteObjects` (até 1000 chaves por chamada),
+   * evitando uma requisição ao R2 por arquivo. Retorna as chaves que o R2
+   * informou não ter removido; erro de transporte de um lote marca todas as
+   * chaves daquele lote como não removidas.
+   */
+  async deleteMany(keys: string[]): Promise<{ failedKeys: string[] }> {
+    const unique = Array.from(new Set(keys.filter(Boolean)));
+    const failedKeys: string[] = [];
+    for (let start = 0; start < unique.length; start += 1000) {
+      const chunk = unique.slice(start, start + 1000);
+      try {
+        const result = await this.r2.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucket,
+            Delete: {
+              Objects: chunk.map((Key) => ({ Key })),
+              Quiet: true,
+            },
+          }),
+        );
+        for (const error of result.Errors ?? []) {
+          if (error.Key) failedKeys.push(error.Key);
+        }
+      } catch {
+        failedKeys.push(...chunk);
+      }
+    }
+    return { failedKeys };
   }
 
   async getSignedUrl(key: string, expiresIn = 900): Promise<string> {

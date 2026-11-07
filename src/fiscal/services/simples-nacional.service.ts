@@ -5,11 +5,12 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   documentosFiscais,
+  documentosFiscaisCteEscrituracao,
   documentosFiscaisItens,
   fiscalSimplesAnexos,
   fiscalSimplesApuracaoItens,
@@ -37,7 +38,6 @@ import { FiscalGuiasService } from './fiscal-guias.service';
 import {
   classificarOperacaoSimples,
   regimeCompetenciaParaApuracao,
-  somarReceitaSimples,
   valorReceitaSimples,
 } from './simples-receita';
 import type {
@@ -45,7 +45,7 @@ import type {
   SalvarSimplesTabelaDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@5';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@6';
 
 interface ReceitaAgrupada {
   anexo: SimplesAnexo;
@@ -53,6 +53,7 @@ interface ReceitaAgrupada {
   deducoes: Array<'ICMS' | 'ISS' | 'PIS' | 'COFINS'>;
   receita: bigint;
   issOutroMunicipio: boolean;
+  transporteCte: boolean;
 }
 
 @Injectable()
@@ -581,6 +582,17 @@ export class SimplesNacionalService {
           `Tabela do ${anexo} não encontrada.`,
         );
       const faixa = this.calculador.selecionarFaixa(rbt.rbt12, faixas);
+      const faixasIcmsTransporte = receita.transporteCte
+        ? anexos.get('ANEXO_I')
+        : undefined;
+      if (receita.transporteCte && !faixasIcmsTransporte) {
+        throw new UnprocessableEntityException(
+          'Tabela do Anexo I necessária para o ICMS do transporte não encontrada.',
+        );
+      }
+      const faixaIcmsTransporte = faixasIcmsTransporte
+        ? this.calculador.selecionarFaixa(rbt.rbt12, faixasIcmsTransporte)
+        : undefined;
       calculados.push(
         this.calculador.calcularItem({
           anexo,
@@ -590,6 +602,7 @@ export class SimplesNacionalService {
           rbt12: rbt.rbt12,
           excedeuSublimite,
           deducoesAdicionais: receita.deducoes,
+          faixaIcmsTransporte,
         }),
       );
     }
@@ -611,7 +624,7 @@ export class SimplesNacionalService {
       toScaledInteger(receitaMesDocumentos)
     ) {
       pendencias.push(
-        'O total classificado por itens difere do faturamento documental do mês. Revise documentos sem itens, fretes, descontos e outras parcelas antes do fechamento.',
+        'O total classificado por itens e CT-e difere do faturamento documental do mês. Revise documentos, fretes, descontos e outras parcelas antes do fechamento.',
       );
     }
     return {
@@ -635,11 +648,11 @@ export class SimplesNacionalService {
       origens: {
         rbt12: `${rbt.origem}:${receitasMensais.origem}`,
         receita: regimeCompetencia
-          ? 'ITENS_DE_VENDA_E_SERVICO_POR_COMPETENCIA'
-          : 'ITENS_DE_VENDA_E_SERVICO_NFSE_POR_EMISSAO',
+          ? 'ITENS_DE_VENDA_SERVICO_E_CTE_POR_COMPETENCIA'
+          : 'ITENS_DE_VENDA_SERVICO_E_CTE_NFSE_POR_EMISSAO',
         folha: folha.origem,
         sublimite: sublimite.origem,
-        classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R',
+        classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R_TRANSPORTE_CTE',
       },
       memoria_calculo: {
         motorVersao: SIMPLES_MOTOR_VERSAO,
@@ -899,7 +912,7 @@ export class SimplesNacionalService {
   }
 
   private async carregarPrimeiraCompetenciaReceita(clienteId: string) {
-    const [documento, manual] = await Promise.all([
+    const [documento, cte, manual] = await Promise.all([
       this.database.db
         .select({
           mes: sql<
@@ -914,10 +927,39 @@ export class SimplesNacionalService {
         .where(
           and(
             eq(documentosFiscais.clienteId, clienteId),
+            ne(documentosFiscais.tipoDocumento, 'CTE'),
             eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
             eq(documentosFiscais.situacao, 'AUTORIZADA'),
             eq(documentosFiscaisItens.indTotal, '1'),
             sql`(${documentosFiscais.tipoDocumento} = 'NFSE' OR coalesce(${documentosFiscaisItens.cfopXml}, ${documentosFiscaisItens.cfop}) ~ '^[567](10[1-9]|11[0-9]|12[0-5]|35[1-9]|360|40[1-5]|65[1-6])$')`,
+          ),
+        ),
+      this.database.db
+        .select({
+          mes: sql<
+            string | null
+          >`to_char(min(coalesce(${documentosFiscais.competenciaDeclarada}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date)), 'YYYY-MM')`,
+        })
+        .from(documentosFiscaisCteEscrituracao)
+        .innerJoin(
+          documentosFiscais,
+          eq(
+            documentosFiscais.id,
+            documentosFiscaisCteEscrituracao.documentoFiscalId,
+          ),
+        )
+        .where(
+          and(
+            eq(documentosFiscais.clienteId, clienteId),
+            eq(documentosFiscais.tipoDocumento, 'CTE'),
+            eq(documentosFiscais.situacao, 'AUTORIZADA'),
+            eq(documentosFiscaisCteEscrituracao.escrituravel, true),
+            eq(
+              documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
+              'SAIDA',
+            ),
+            sql`${documentosFiscaisCteEscrituracao.cfopXml} ~ '^[56](35[1-7]|360)$'`,
+            sql`${documentosFiscaisCteEscrituracao.tpCte} <> '2'`,
           ),
         ),
       this.database.db
@@ -935,7 +977,7 @@ export class SimplesNacionalService {
         ),
     ]);
     return (
-      [documento[0]?.mes, manual[0]?.mes]
+      [documento[0]?.mes, cte[0]?.mes, manual[0]?.mes]
         .filter((value): value is string => Boolean(value))
         .sort()[0] ?? null
     );
@@ -947,7 +989,7 @@ export class SimplesNacionalService {
     fim: Date,
     regimeCompetencia = true,
   ) {
-    const rows = await this.carregarItensReceitaPeriodo(
+    const rows = await this.carregarLinhasReceitaPeriodo(
       clienteId,
       inicio.toISOString().slice(0, 10),
       fim.toISOString().slice(0, 10),
@@ -962,12 +1004,17 @@ export class SimplesNacionalService {
       if (classificacao === 'NAO_RECEITA') continue;
       if (classificacao === 'REVISAR') {
         pendencias.add(
-          `CFOP ${cfop ?? 'ausente'} sem classificação segura no Simples. Revise a operação antes de fechar.`,
+          `CFOP ${cfop ?? 'ausente'} do documento ${row.numeroDocumento} sem classificação segura no Simples. Revise a operação antes de fechar.`,
         );
         continue;
       }
+      if (row.tipoDocumento === 'CTE' && row.revisaoNecessaria) {
+        pendencias.add(
+          `CT-e ${row.numeroDocumento} exige revisão da escrituração antes do fechamento.`,
+        );
+      }
       const receita = valorReceitaSimples(row);
-      if (receita < 0n) {
+      if (receita < 0n && row.tipoDocumento !== 'CTE') {
         pendencias.add(
           `Item com valor líquido negativo na nota ${row.numeroDocumento}. Revise os descontos.`,
         );
@@ -977,8 +1024,14 @@ export class SimplesNacionalService {
       const anexo =
         row.tipoDocumento === 'NFSE'
           ? anexoPorServico(row.itemListaServico, row.cnae)
-          : anexoPorCfop(cfop);
-      const st = ['5405', '6405'].includes(cfop) || row.csosn === '500';
+          : row.tipoDocumento === 'CTE'
+            ? 'ANEXO_III'
+            : anexoPorCfop(cfop);
+      const st =
+        ['5405', '6405'].includes(cfop) ||
+        row.csosn === '500' ||
+        (row.tipoDocumento === 'CTE' &&
+          ['060', '60'].includes(row.cstIcms ?? ''));
       const monofasico = row.cstPis === '04' || row.cstCofins === '04';
       const segregacao: SimplesSegregacao = row.issRetido
         ? 'ISS_RETIDO'
@@ -998,16 +1051,26 @@ export class SimplesNacionalService {
         row.municipioPrestador &&
         row.municipioIncidencia !== row.municipioPrestador,
       );
-      const key = `${anexo}:${segregacao}:${issOutroMunicipio ? 'OUTRO_MUNICIPIO' : 'LOCAL'}:${deducoes.join('+') || 'INTEGRAL'}`;
+      const transporteCte = row.tipoDocumento === 'CTE';
+      const key = `${anexo}:${segregacao}:${issOutroMunicipio ? 'OUTRO_MUNICIPIO' : 'LOCAL'}:${deducoes.join('+') || 'INTEGRAL'}:${transporteCte ? 'CTE' : 'GERAL'}`;
       const atual = grupos.get(key) ?? {
         anexo,
         segregacao,
         deducoes: [...deducoes],
         receita: 0n,
         issOutroMunicipio,
+        transporteCte,
       };
       atual.receita += receita;
       grupos.set(key, atual);
+    }
+    for (const [key, grupo] of grupos) {
+      if (grupo.receita < 0n) {
+        pendencias.add(
+          'As anulações de CT-e superam as prestações da competência. Revise as referências e informe o ajuste fiscal antes de fechar.',
+        );
+        grupos.delete(key);
+      }
     }
     return { grupos: [...grupos.values()], pendencias: [...pendencias] };
   }
@@ -1026,6 +1089,8 @@ export class SimplesNacionalService {
         mes: sql<string>`to_char(${dataReceita}, 'YYYY-MM')`,
         documentoTotal: documentosFiscais.valorTotal,
         tipoDocumento: documentosFiscais.tipoDocumento,
+        chaveAcesso: documentosFiscais.chaveAcesso,
+        chaveCteReferenciado: sql<string | null>`null`,
         municipioPrestador: sql<
           string | null
         >`NULLIF(${documentosFiscais.emitenteDados} ->> 'codMun', '')`,
@@ -1036,8 +1101,11 @@ export class SimplesNacionalService {
         issRetido: documentosFiscaisItens.issRetido,
         municipioIncidencia: documentosFiscaisItens.municipioIncidencia,
         csosn: documentosFiscaisItens.csosnIcms,
+        cstIcms: documentosFiscaisItens.cstIcms,
         cstPis: documentosFiscaisItens.cstPis,
         cstCofins: documentosFiscaisItens.cstCofins,
+        revisaoNecessaria: sql<boolean>`false`,
+        tpCte: sql<string | null>`null`,
         indTotal: documentosFiscaisItens.indTotal,
         bruto: documentosFiscaisItens.valorBrutoProduto,
         frete: documentosFiscaisItens.valorFrete,
@@ -1053,6 +1121,7 @@ export class SimplesNacionalService {
       .where(
         and(
           eq(documentosFiscaisItens.clienteId, clienteId),
+          ne(documentosFiscais.tipoDocumento, 'CTE'),
           eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
@@ -1060,6 +1129,81 @@ export class SimplesNacionalService {
           sql`${dataReceita} <= ${fim}::date`,
         ),
       );
+  }
+
+  private async carregarLinhasReceitaPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+    regimeCompetencia = true,
+  ) {
+    const dataReceita = this.dataReceitaDocumento(regimeCompetencia);
+    const [itens, ctes] = await Promise.all([
+      this.carregarItensReceitaPeriodo(
+        clienteId,
+        inicio,
+        fim,
+        regimeCompetencia,
+      ),
+      this.database.db
+        .select({
+          documentoId: documentosFiscais.id,
+          numeroDocumento: documentosFiscais.numeroDocumento,
+          mes: sql<string>`to_char(${dataReceita}, 'YYYY-MM')`,
+          documentoTotal: documentosFiscais.valorTotal,
+          tipoDocumento: documentosFiscais.tipoDocumento,
+          chaveAcesso: documentosFiscais.chaveAcesso,
+          chaveCteReferenciado:
+            documentosFiscaisCteEscrituracao.chaveCteReferenciado,
+          cfop: documentosFiscaisCteEscrituracao.cfop,
+          cfopXml: documentosFiscaisCteEscrituracao.cfopXml,
+          revisaoNecessaria: documentosFiscaisCteEscrituracao.revisaoNecessaria,
+          tpCte: documentosFiscaisCteEscrituracao.tpCte,
+          bruto: documentosFiscaisCteEscrituracao.valorTotalServico,
+          csosn: documentosFiscaisCteEscrituracao.csosnIcms,
+          cstIcms: documentosFiscaisCteEscrituracao.cstIcms,
+        })
+        .from(documentosFiscaisCteEscrituracao)
+        .innerJoin(
+          documentosFiscais,
+          eq(
+            documentosFiscais.id,
+            documentosFiscaisCteEscrituracao.documentoFiscalId,
+          ),
+        )
+        .where(
+          and(
+            eq(documentosFiscais.clienteId, clienteId),
+            eq(documentosFiscais.tipoDocumento, 'CTE'),
+            eq(documentosFiscais.situacao, 'AUTORIZADA'),
+            eq(documentosFiscaisCteEscrituracao.escrituravel, true),
+            eq(
+              documentosFiscaisCteEscrituracao.tipoOperacaoEscriturada,
+              'SAIDA',
+            ),
+            sql`${dataReceita} >= ${inicio}::date`,
+            sql`${dataReceita} <= ${fim}::date`,
+          ),
+        ),
+    ]);
+    return [
+      ...itens,
+      ...ctes.map((cte) => ({
+        ...cte,
+        municipioPrestador: null,
+        itemListaServico: null,
+        cnae: null,
+        issRetido: false,
+        municipioIncidencia: null,
+        cstPis: null,
+        cstCofins: null,
+        indTotal: '1',
+        frete: null,
+        seguro: null,
+        desconto: null,
+        outras: null,
+      })),
+    ];
   }
 
   private dataReceitaDocumento(regimeCompetencia: boolean) {
@@ -1083,20 +1227,38 @@ export class SimplesNacionalService {
         .select({
           id: documentosFiscais.id,
           numero: documentosFiscais.numeroDocumento,
+          tipoDocumento: documentosFiscais.tipoDocumento,
+          chaveAcesso: documentosFiscais.chaveAcesso,
+          cteEscrituracaoId: documentosFiscaisCteEscrituracao.id,
+          cteEscrituravel: documentosFiscaisCteEscrituracao.escrituravel,
           mes: sql<string>`to_char(${dataReceita}, 'YYYY-MM')`,
           total: documentosFiscais.valorTotal,
         })
         .from(documentosFiscais)
+        .innerJoin(clientes, eq(clientes.id, documentosFiscais.clienteId))
+        .leftJoin(
+          documentosFiscaisCteEscrituracao,
+          eq(
+            documentosFiscaisCteEscrituracao.documentoFiscalId,
+            documentosFiscais.id,
+          ),
+        )
         .where(
           and(
             eq(documentosFiscais.clienteId, clienteId),
-            eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
+            or(
+              eq(documentosFiscais.tipoOperacaoEscriturada, 'SAIDA'),
+              and(
+                eq(documentosFiscais.tipoDocumento, 'CTE'),
+                eq(documentosFiscais.emitenteCnpjCpf, clientes.cnpj),
+              ),
+            ),
             eq(documentosFiscais.situacao, 'AUTORIZADA'),
             sql`${dataReceita} >= ${inicio}::date`,
             sql`${dataReceita} <= ${fim}::date`,
           ),
         ),
-      this.carregarItensReceitaPeriodo(
+      this.carregarLinhasReceitaPeriodo(
         clienteId,
         inicio,
         fim,
@@ -1125,6 +1287,11 @@ export class SimplesNacionalService {
       grupo.push(item);
       porDocumento.set(item.documentoId, grupo);
     }
+    const ctesPorChave = new Map(
+      itens
+        .filter((item) => item.tipoDocumento === 'CTE')
+        .map((item) => [item.chaveAcesso, item] as const),
+    );
     const pendencias: string[] = [];
     let bonificacoes = 0n;
     let demais = 0n;
@@ -1137,6 +1304,18 @@ export class SimplesNacionalService {
         continue;
       const linhas = porDocumento.get(documento.id) ?? [];
       if (linhas.length === 0) {
+        if (documento.tipoDocumento === 'CTE') {
+          if (!documento.cteEscrituracaoId) {
+            pendencias.push(
+              `CT-e ${documento.numero} (${documento.mes}) sem linha de escrituração. Reprocesse o XML antes de apurar o Simples.`,
+            );
+          } else if (documento.cteEscrituravel) {
+            pendencias.push(
+              `CT-e ${documento.numero} (${documento.mes}) não entrou na receita. Revise o sentido da escrituração e o CFOP.`,
+            );
+          }
+          continue;
+        }
         pendencias.push(
           `Nota ${documento.numero} (${documento.mes}) sem itens fiscais para avaliar a receita.`,
         );
@@ -1145,6 +1324,21 @@ export class SimplesNacionalService {
       let totalElegivel = 0n;
       let somenteReceita = true;
       for (const linha of linhas) {
+        if (linha.tipoDocumento === 'CTE' && linha.tpCte === '2') {
+          const referenciado = linha.chaveCteReferenciado
+            ? ctesPorChave.get(linha.chaveCteReferenciado)
+            : null;
+          if (!referenciado || referenciado.mes !== linha.mes) {
+            pendencias.push(
+              `CT-e ${documento.numero} (${documento.mes}): a anulação referencia prestação fora da competência. Revise o ajuste de receita.`,
+            );
+          }
+        }
+        if (linha.tipoDocumento === 'CTE' && linha.revisaoNecessaria) {
+          pendencias.push(
+            `CT-e ${documento.numero} (${documento.mes}) requer revisão fiscal.`,
+          );
+        }
         if (linha.indTotal !== '1') {
           somenteReceita = false;
           continue;
@@ -1157,7 +1351,9 @@ export class SimplesNacionalService {
         const valor = valorReceitaSimples(linha);
         if (
           classificacao === 'REVISAR' ||
-          (classificacao === 'RECEITA' && valor < 0n)
+          (classificacao === 'RECEITA' &&
+            valor < 0n &&
+            linha.tipoDocumento !== 'CTE')
         ) {
           pendencias.push(
             `Nota ${documento.numero} (${documento.mes}): CFOP ${cfop ?? 'ausente'} ou valor líquido requer conferência.`,
@@ -1175,7 +1371,9 @@ export class SimplesNacionalService {
       }
       if (
         somenteReceita &&
-        totalElegivel !== toScaledInteger(documento.total)
+        (documento.tipoDocumento === 'CTE' && linhas[0]?.tpCte === '2'
+          ? -totalElegivel !== toScaledInteger(documento.total)
+          : totalElegivel !== toScaledInteger(documento.total))
       ) {
         pendencias.push(
           `Nota ${documento.numero} (${documento.mes}): itens de receita (${fromScaledInteger(totalElegivel)}) divergem do total da nota (${documento.total}). Confira tributos e parcelas antes de fechar.`,
@@ -1244,13 +1442,13 @@ export class SimplesNacionalService {
     const ultimoDia = new Date(`${fim.slice(0, 7)}-01T00:00:00.000Z`);
     ultimoDia.setUTCMonth(ultimoDia.getUTCMonth() + 1);
     ultimoDia.setUTCDate(0);
-    const rows = await this.carregarItensReceitaPeriodo(
+    const rows = await this.carregarLinhasReceitaPeriodo(
       clienteId,
       inicio,
       ultimoDia.toISOString().slice(0, 10),
       regimeCompetencia,
     );
-    const porMes = new Map<string, bigint[]>();
+    const porMes = new Map<string, { demais: bigint; cte: bigint }>();
     for (const row of rows) {
       if (row.indTotal !== '1') continue;
       if (
@@ -1261,15 +1459,16 @@ export class SimplesNacionalService {
       )
         continue;
       const valor = valorReceitaSimples(row);
-      if (valor < 0n) continue;
-      const valores = porMes.get(row.mes) ?? [];
-      valores.push(valor);
+      if (valor < 0n && row.tipoDocumento !== 'CTE') continue;
+      const valores = porMes.get(row.mes) ?? { demais: 0n, cte: 0n };
+      if (row.tipoDocumento === 'CTE') valores.cte += valor;
+      else valores.demais += valor;
       porMes.set(row.mes, valores);
     }
-    return [...porMes.entries()].map(([mes, valores]) => ({
-      mes,
-      valor: somarReceitaSimples(valores),
-    }));
+    return [...porMes.entries()].map(([mes, valores]) => {
+      const cte = valores.cte < 0n ? 0n : valores.cte;
+      return { mes, valor: fromScaledInteger(valores.demais + cte) };
+    });
   }
 
   private async carregarFolhasAutomaticasPeriodo(

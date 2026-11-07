@@ -14,6 +14,11 @@ export function classificarOperacaoSimples(
 ): 'RECEITA' | 'NAO_RECEITA' | 'REVISAR' {
   if (tipoDocumento === 'NFSE') return 'RECEITA';
   if (!cfop || !/^[567]\d{3}$/.test(cfop)) return 'REVISAR';
+  // CT-e de prestação tem CFOP próprio; a regra de venda de mercadorias não
+  // alcança 5/6351-357 e 5/6360. Exportação exige segregação específica.
+  if (tipoDocumento === 'CTE') {
+    return /^[56]35[1-7]$|^[56]360$/.test(cfop) ? 'RECEITA' : 'REVISAR';
+  }
   const operacao = cfop.slice(1);
   if (/^(10[1-9]|11\d|12[0-5]|35[1-9]|360|40[1-5]|65[1-6])$/.test(operacao))
     return 'RECEITA';

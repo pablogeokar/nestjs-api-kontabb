@@ -13,7 +13,10 @@ import {
 } from '../../database/schema';
 import { AppLogger } from '../../common/logger.service';
 import type { RegimeTributario } from '../../clientes/clientes.types';
-import { DistribuicaoDfeService } from './distribuicao-dfe.service';
+import {
+  DistribuicaoDfeService,
+  nfePertenceAoCliente,
+} from './distribuicao-dfe.service';
 import {
   extractDfeDocZips,
   extractDfeResponseMetadata,
@@ -354,6 +357,16 @@ export class ImportacaoChavesFiscalService {
           .map((docZip) => parseDfeDocZip(docZip, 'NFE'))
           .find((candidate) => candidate?.chaveAcesso === item.chaveAcesso);
         if (documento) {
+          if (!nfePertenceAoCliente(cliente.cnpj, documento)) {
+            resultados.push(
+              this.result(
+                item,
+                'NAO_SUPORTADO',
+                'O XML pertence a terceiros: esta empresa não é emitente nem destinatária da NF-e.',
+              ),
+            );
+            continue;
+          }
           etapa = 'GRAVACAO_XML';
           await this.distribuicao.salvarDocumentoConsultado({
             clienteId: input.clienteId,

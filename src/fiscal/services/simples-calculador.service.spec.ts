@@ -161,6 +161,52 @@ describe('SimplesCalculadorService', () => {
     expect(result.tributosPartilhados.icms).toBe('0.00');
   });
 
+  it('apura transporte pelo Anexo III sem ISS e com ICMS do Anexo I', () => {
+    const faixaTransporte: SimplesFaixaCalculo = {
+      faixa: 1,
+      rbt12De: '0.00',
+      rbt12Ate: '180000.00',
+      aliquotaNominal: '0.0600',
+      parcelaDeduzir: '0.00',
+      partilha: {
+        irpj: '0.0400',
+        csll: '0.0350',
+        cofins: '0.1282',
+        pis: '0.0278',
+        cpp: '0.4340',
+        ipi: '0.0000',
+        icms: '0.0000',
+        iss: '0.3350',
+      },
+    };
+    const faixaIcms: SimplesFaixaCalculo = {
+      faixa: 1,
+      rbt12De: '0.00',
+      rbt12Ate: '180000.00',
+      aliquotaNominal: '0.0400',
+      parcelaDeduzir: '0.00',
+      partilha,
+    };
+    const input = {
+      anexo: 'ANEXO_III' as const,
+      receita: '1000.00',
+      segregacao: 'TRIBUTACAO_INTEGRAL' as const,
+      faixa: faixaTransporte,
+      faixaIcmsTransporte: faixaIcms,
+      rbt12: '120000.00',
+      excedeuSublimite: false,
+    };
+    const resultado = service.calcularItem(input);
+    expect(resultado.tributosPartilhados.iss).toBe('0.00');
+    expect(resultado.tributosPartilhados.icms).toBe('13.60');
+    expect(resultado.valorDevido).toBe('53.50');
+    expect(resultado.aliquotaEfetivaAposDeducoes).toBe('0.0535');
+
+    const st = service.calcularItem({ ...input, segregacao: 'ICMS_ST' });
+    expect(st.tributosPartilhados.icms).toBe('0.00');
+    expect(st.valorDevido).toBe('39.90');
+  });
+
   it('rejeita faturamento acima do limite do Simples', () => {
     expect(() => service.selecionarFaixa('4800000.01', [faixa])).toThrow(
       BadRequestException,
