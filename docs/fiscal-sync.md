@@ -72,6 +72,9 @@ resumos `resNFe` continuam no fluxo do destinatário, pois não identificam o
 destinatário dentro do próprio resumo; a validação é repetida quando o XML
 completo fica disponível. Referência: [Nota Técnica 2014.002 da NF-e](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=0rPhVp1wRqc%3D).
 
+Para remover NF-e de transportador gravadas antes dessa validação, use o
+[procedimento de limpeza do banco e do R2](limpeza-nfe-transportador-r2.md).
+
 Quando o Ambiente Nacional entrega `resNFe`, o sistema preserva o resumo como
 NF-e `RESUMIDA`, com escrituração bloqueada e sem oferecer DANFE ou download do
 XML completo. A sincronização envia automaticamente Ciência da Operação para
