@@ -25,6 +25,7 @@ import {
   HistoricoSimplesQueryDto,
   SalvarHistoricoSimplesDto,
   SalvarSimplesTabelaDto,
+  SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 import { SimplesNacionalService } from '../services/simples-nacional.service';
 import { SimplesNacionalRelatorioService } from '../services/simples-nacional-relatorio.service';
@@ -110,6 +111,23 @@ export class AdminSimplesNacionalController {
   })
   async listarTabelas() {
     return { data: await this.service.listarTabelas() };
+  }
+
+  @Get('sublimites')
+  @AdminOnly()
+  @ApiOperation({ summary: 'Lista sublimites anuais por UF' })
+  async listarSublimites() {
+    return { data: await this.service.listarSublimites() };
+  }
+
+  @Put('sublimites')
+  @AdminOnly()
+  @ApiOperation({ summary: 'Cadastra ou atualiza sublimite anual por UF' })
+  async salvarSublimite(
+    @Body() body: SalvarSublimiteSimplesDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return { data: await this.service.salvarSublimite(body, user.id) };
   }
 
   @Post('tabelas')

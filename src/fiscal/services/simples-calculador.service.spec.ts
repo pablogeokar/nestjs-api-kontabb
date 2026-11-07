@@ -3,6 +3,7 @@ import {
   SimplesCalculadorService,
   type SimplesFaixaCalculo,
 } from './simples-calculador.service';
+import { SIMPLES_ANEXOS_SEED } from '../../database/seeds/simples-nacional.seed';
 
 const partilha = {
   irpj: '0.0550',
@@ -161,6 +162,29 @@ describe('SimplesCalculadorService', () => {
     expect(result.tributosPartilhados.icms).toBe('0.00');
   });
 
+  it('exclui também ISS do DAS quando há impedimento pelo sublimite', () => {
+    const anexoIII = SIMPLES_ANEXOS_SEED.find(
+      (item) => item.anexo === 'ANEXO_III',
+    )!;
+    const result = service.calcularItem({
+      anexo: 'ANEXO_III',
+      receita: '1000.00',
+      segregacao: 'TRIBUTACAO_INTEGRAL',
+      faixa: {
+        faixa: 1,
+        rbt12De: '0.00',
+        rbt12Ate: '180000.00',
+        aliquotaNominal: anexoIII.faixas[0].aliquota,
+        parcelaDeduzir: anexoIII.faixas[0].deducao,
+        partilha: anexoIII.faixas[0].partilha,
+      },
+      rbt12: '120000.00',
+      excedeuSublimite: true,
+    });
+    expect(result.tributosPartilhados.iss).toBe('0.00');
+    expect(result.valorDevido).toBe('39.90');
+  });
+
   it('apura transporte pelo Anexo III sem ISS e com ICMS do Anexo I', () => {
     const faixaTransporte: SimplesFaixaCalculo = {
       faixa: 1,
@@ -205,6 +229,65 @@ describe('SimplesCalculadorService', () => {
     const st = service.calcularItem({ ...input, segregacao: 'ICMS_ST' });
     expect(st.tributosPartilhados.icms).toBe('0.00');
     expect(st.valorDevido).toBe('39.90');
+  });
+
+  it('reproduz a partilha oficial do transporte de cargas em outubro/2026', () => {
+    const anexoIII = SIMPLES_ANEXOS_SEED.find(
+      (item) => item.anexo === 'ANEXO_III',
+    )!;
+    const anexoI = SIMPLES_ANEXOS_SEED.find(
+      (item) => item.anexo === 'ANEXO_I',
+    )!;
+    const faixaCalculo = (anexo: typeof anexoIII): SimplesFaixaCalculo => ({
+      faixa: 3,
+      rbt12De: '360000.01',
+      rbt12Ate: '720000.00',
+      aliquotaNominal: anexo.faixas[2].aliquota,
+      parcelaDeduzir: anexo.faixas[2].deducao,
+      partilha: anexo.faixas[2].partilha,
+    });
+    const resultado = service.calcularItem({
+      anexo: 'ANEXO_III',
+      receita: '47827.27',
+      segregacao: 'TRIBUTACAO_INTEGRAL',
+      faixa: faixaCalculo(anexoIII),
+      faixaIcmsTransporte: faixaCalculo(anexoI),
+      rbt12: '573927.24',
+      excedeuSublimite: false,
+    });
+
+    expect(resultado.tributosPartilhados).toEqual({
+      irpj: '199.47',
+      csll: '174.53',
+      cofins: '680.18',
+      pis: '147.61',
+      cpp: '2164.22',
+      ipi: '0.00',
+      icms: '1135.18',
+      iss: '0.00',
+    });
+    expect(resultado.valorDevido).toBe('4501.19');
+  });
+
+  it('mantém a partilha legal distinta por faixa no Anexo III', () => {
+    const faixas = SIMPLES_ANEXOS_SEED.find(
+      (item) => item.anexo === 'ANEXO_III',
+    )!.faixas;
+    expect(
+      faixas
+        .slice(0, 5)
+        .map((faixa) => [
+          faixa.partilha.cofins,
+          faixa.partilha.pis,
+          faixa.partilha.iss,
+        ]),
+    ).toEqual([
+      ['0.1282', '0.0278', '0.3350'],
+      ['0.1405', '0.0305', '0.3200'],
+      ['0.1364', '0.0296', '0.3250'],
+      ['0.1364', '0.0296', '0.3250'],
+      ['0.1282', '0.0278', '0.3350'],
+    ]);
   });
 
   it('rejeita faturamento acima do limite do Simples', () => {

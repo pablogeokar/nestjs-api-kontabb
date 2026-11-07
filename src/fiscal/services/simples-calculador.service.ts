@@ -195,7 +195,10 @@ export class SimplesCalculadorService {
     );
     const removidos = new Set<keyof SimplesPartilha>();
     if (input.faixaIcmsTransporte) removidos.add('iss');
-    if (input.excedeuSublimite) removidos.add('icms');
+    if (input.excedeuSublimite) {
+      removidos.add('icms');
+      removidos.add('iss');
+    }
     if (input.segregacao === 'ICMS_ST' || input.segregacao === 'ICMS_ISENTO')
       removidos.add('icms');
     if (input.segregacao === 'ISS_RETIDO') removidos.add('iss');

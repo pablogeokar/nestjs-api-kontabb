@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEmail,
   IsIn,
   IsOptional,
@@ -81,6 +82,12 @@ export class LookupCnpjParamsDto {
 }
 
 export class CreateClientDto {
+  @ApiPropertyOptional({ description: 'Data de abertura do CNPJ (AAAA-MM-DD)' })
+  @IsOptional()
+  @IsString()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/)
+  data_abertura_cnpj?: string | null;
   @ApiPropertyOptional({
     description: 'Apuração do Simples por competência (true) ou caixa (false)',
     type: Boolean,
@@ -191,6 +198,12 @@ export class CreateClientDto {
 }
 
 export class UpdateClientDto {
+  @ApiPropertyOptional({ description: 'Data de abertura do CNPJ (AAAA-MM-DD)' })
+  @IsOptional()
+  @IsString()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/)
+  data_abertura_cnpj?: string | null;
   @ApiPropertyOptional({
     description: 'Apuração do Simples por competência (true) ou caixa (false)',
     type: Boolean,

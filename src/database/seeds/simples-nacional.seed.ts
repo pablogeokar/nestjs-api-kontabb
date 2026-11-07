@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import {
   fiscalSimplesAnexos,
@@ -8,7 +8,9 @@ import {
   fiscalSimplesTabelas,
 } from '../schema';
 
-export const SIMPLES_TABELA_VERSAO = 'LC_155_2016_VIGENTE';
+// Nova versão preserva a tabela antiga para apurações já registradas.
+export const SIMPLES_TABELA_VERSAO = 'LC_155_2016_REV_2026_11';
+const SIMPLES_TABELA_VERSAO_ANTERIOR = 'LC_155_2016_VIGENTE';
 
 type Anexo = 'ANEXO_I' | 'ANEXO_II' | 'ANEXO_III' | 'ANEXO_IV' | 'ANEXO_V';
 type Tributo =
@@ -152,12 +154,12 @@ export const SIMPLES_ANEXOS_SEED: AnexoSeed[] = [
           partilha: p(
             '0.0400',
             '0.0350',
-            '0.1282',
-            '0.0278',
+            ['0.1282', '0.1405', '0.1364', '0.1364', '0.1282'][index],
+            ['0.0278', '0.0305', '0.0296', '0.0296', '0.0278'][index],
             '0.4340',
             zero,
             zero,
-            '0.3350',
+            ['0.3350', '0.3200', '0.3250', '0.3250', '0.3350'][index],
           ),
         }),
       ),
@@ -404,14 +406,21 @@ const UFS = [
   'TO',
 ] as const;
 
+// Valores de 2025 e 2026 publicados pelo CGSN para todas as UFs.
 export async function seedSimplesNacional(
   databaseUrl: string,
-  ano = new Date().getFullYear(),
+  anos: readonly number[] = [2025, 2026],
 ) {
   const client = postgres(databaseUrl, { max: 1 });
   const database = drizzle(client);
   try {
     await database.transaction(async (tx) => {
+      // A versão anterior tinha a partilha da 1ª faixa repetida nas faixas
+      // 2ª a 4ª. Desativá-la mantém intactas as apurações que a referenciam.
+      await tx
+        .update(fiscalSimplesTabelas)
+        .set({ ativo: false })
+        .where(eq(fiscalSimplesTabelas.versao, SIMPLES_TABELA_VERSAO_ANTERIOR));
       const [tabela] = await tx
         .insert(fiscalSimplesTabelas)
         .values({
@@ -493,29 +502,22 @@ export async function seedSimplesNacional(
         }
       }
 
-      for (const uf of UFS) {
-        const existente = await tx
-          .select({ id: fiscalSimplesSublimites.id })
-          .from(fiscalSimplesSublimites)
-          .where(
-            and(
-              eq(fiscalSimplesSublimites.uf, uf),
-              eq(fiscalSimplesSublimites.anoVigencia, ano),
-            ),
-          )
-          .limit(1);
-        if (existente.length) {
+      for (const ano of anos) {
+        for (const uf of UFS) {
           await tx
-            .update(fiscalSimplesSublimites)
-            .set({ valorSublimite: '3600000.00', ativo: true })
-            .where(eq(fiscalSimplesSublimites.id, existente[0].id));
-        } else {
-          await tx.insert(fiscalSimplesSublimites).values({
-            uf,
-            anoVigencia: ano,
-            valorSublimite: '3600000.00',
-            ativo: true,
-          });
+            .insert(fiscalSimplesSublimites)
+            .values({
+              uf,
+              anoVigencia: ano,
+              valorSublimite: '3600000.00',
+              ativo: true,
+            })
+            .onConflictDoNothing({
+              target: [
+                fiscalSimplesSublimites.uf,
+                fiscalSimplesSublimites.anoVigencia,
+              ],
+            });
         }
       }
     });
@@ -530,7 +532,7 @@ if (require.main === module) {
   void seedSimplesNacional(databaseUrl)
     .then(() =>
       process.stdout.write(
-        'Seed do Simples Nacional concluído: 5 anexos, 30 faixas e 27 UFs.\n',
+        'Seed do Simples Nacional concluído: 5 anexos, 30 faixas e sublimites de 2025/2026 para 27 UFs.\n',
       ),
     )
     .catch((error: unknown) => {

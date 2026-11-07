@@ -16,6 +16,12 @@ Rascunhos do motor anterior precisam ser recalculados antes do fechamento. Apura
 
 No PA 09/2026 de referência, a receita de R$ 58.837,00 e o RBT12 de R$ 741.731,29 coincidiam com o PGDAS-D, mas o motor 3 arredondava a alíquota efetiva para 8,17% antes da tributação. Isso gerava R$ 4.806,98 em vez dos R$ 4.804,95 declarados. O motor 4 mantém a fração exata da fórmula no cálculo de cada tributo, arredonda cada parcela a centavos e soma as parcelas para obter o DAS. A alíquota mostrada em tela/PDF continua resumida para leitura e não é reutilizada como entrada do cálculo.
 
+## Partilha do Anexo III para transporte (motor 7)
+
+No PA 10/2026 da MINAS BAHIA CARGO LTDA, a receita de R$ 47.827,27 e o RBT12 proporcional de R$ 573.927,24 já coincidiam com o PGDAS-D. A versão anterior da tabela normativa, porém, repetia a partilha da 1ª faixa do Anexo III nas faixas 2ª a 4ª. Na 3ª faixa, aplicava COFINS de 12,82% e PIS/Pasep de 2,78% da alíquota efetiva, em lugar de 13,64% e 2,96%. O erro reduzia o DAS em R$ 49,87. A versão `LC_155_2016_REV_2026_11` contém os percentuais legais de cada faixa; o seed desativa a versão anterior e a preserva para apurações históricas. Execute `pnpm db:seed:simples` no ambiente de destino e recalcule as apurações em rascunho geradas pelo motor anterior. Apurações fechadas exigem revisão pelo fluxo de retificação.
+
+A declaração oficial também mostra sublimite proporcional de R$ 900.000,00 no ano de abertura (outubro a dezembro de 2026), enquanto o relatório auxiliar anterior exibia o valor anual de R$ 3.600.000,00. O motor 8 passa a ler a data de abertura do CNPJ e o sublimite anual cadastrado por UF/ano, aplica a proporção no ano inicial, compara a receita acumulada no ano e considera o efeito temporal do excesso de 20%. A tabela de sublimites pode ser mantida na área administrativa. Um ano/UF sem valor ativo bloqueia a apuração em vez de usar um valor presumido. Quando a data de abertura não estiver cadastrada e a receita anual superar R$ 300.000,00, o rascunho recebe pendência para conferência. Receitas de exportação e hipóteses de tributação estadual fora do DAS continuam exigindo análise fiscal própria.
+
 ## Referências oficiais
 
 - [Perguntas e Respostas do Simples Nacional, item 3.15](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoSN.pdf)

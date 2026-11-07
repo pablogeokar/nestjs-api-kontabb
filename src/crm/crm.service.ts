@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, lt } from 'drizzle-orm';
 import { AppLogger } from '../common/logger.service';
+import { getBahiaDate } from '../common/document-status';
 import { DatabaseService } from '../database/database.service';
-import { clientes } from '../database/schema';
+import { clientes, guias } from '../database/schema';
 import { MailService } from '../mail/mail.service';
 
 export const CLIENT_PROVISIONAL_PASSWORD = '123456';
@@ -12,6 +13,20 @@ type WelcomeEmailFailureCode =
 
 export type WelcomeEmailResult =
   { ok: true } | { ok: false; code: WelcomeEmailFailureCode };
+
+export type OverdueEmailResult =
+  | { ok: true; total: number }
+  | {
+      ok: false;
+      code: WelcomeEmailFailureCode | 'SEM_OBRIGACOES_VENCIDAS';
+    };
+
+export interface OverdueBatchSummary {
+  candidatos: number;
+  enviados: number;
+  ignorados: number;
+  falhas: number;
+}
 
 export interface WelcomeEmailClientData {
   clienteId: string;
@@ -89,6 +104,157 @@ export class CrmService {
       });
       return { ok: false, code: 'ENVIO_FALHOU' };
     }
+  }
+
+  /**
+   * Varre as guias vencidas do cliente (pendentes com vencimento anterior a
+   * hoje, mesmo critério do status VENCIDO) e envia o aviso por e-mail.
+   */
+  async enviarEmailObrigacoesVencidas(input: {
+    clienteId: string;
+    requestId?: string;
+    actorUserId?: string;
+  }): Promise<OverdueEmailResult> {
+    const logContext = {
+      requestId: input.requestId,
+      userId: input.actorUserId,
+      entityType: 'CLIENTE',
+      entityId: input.clienteId,
+      operation: 'crm_overdue_obligations_email',
+    };
+
+    try {
+      const rows = await this.database.db
+        .select({
+          clientName: clientes.razaoSocial,
+          emails: clientes.emails,
+          suspenso: clientes.suspenso,
+        })
+        .from(clientes)
+        .where(eq(clientes.id, input.clienteId))
+        .limit(1);
+      const cliente = rows[0];
+
+      if (!cliente) {
+        this.logger.warn('crm_overdue_email_skipped', {
+          ...logContext,
+          result: 'client_not_found',
+        });
+        return { ok: false, code: 'CLIENTE_NAO_ENCONTRADO' };
+      }
+
+      const emails = cliente.emails.map((e) => e.trim()).filter(Boolean);
+      if (!emails.length || cliente.suspenso) {
+        this.logger.warn('crm_overdue_email_skipped', {
+          ...logContext,
+          result: cliente.suspenso ? 'client_suspended' : 'missing_recipient',
+        });
+        return { ok: false, code: 'SEM_EMAIL' };
+      }
+
+      const vencidas = await this.database.db
+        .select({
+          tipo: guias.tipo,
+          periodo: guias.periodo,
+          vencimento: guias.vencimento,
+          valor: guias.valor,
+        })
+        .from(guias)
+        .where(
+          and(
+            eq(guias.clienteId, input.clienteId),
+            eq(guias.status, 'PENDENTE'),
+            lt(guias.vencimento, getBahiaDate()),
+          ),
+        )
+        .orderBy(asc(guias.vencimento));
+
+      if (!vencidas.length) {
+        this.logger.info('crm_overdue_email_skipped', {
+          ...logContext,
+          result: 'no_overdue_obligations',
+        });
+        return { ok: false, code: 'SEM_OBRIGACOES_VENCIDAS' };
+      }
+
+      const sent = await this.mailService.sendOverdueObligationsEmail({
+        to: emails,
+        clientName: cliente.clientName,
+        obligations: vencidas,
+      });
+      if (!sent) {
+        this.logger.warn('crm_overdue_email_failed', {
+          ...logContext,
+          result: 'delivery_failed',
+        });
+        return { ok: false, code: 'ENVIO_FALHOU' };
+      }
+
+      this.logger.info('crm_overdue_email_completed', {
+        ...logContext,
+        result: 'success',
+      });
+      return { ok: true, total: vencidas.length };
+    } catch (error) {
+      this.logger.error('crm_overdue_email_failed', error, {
+        ...logContext,
+        result: 'failed',
+      });
+      return { ok: false, code: 'ENVIO_FALHOU' };
+    }
+  }
+
+  /**
+   * Varredura mensal (cron): envia o aviso de obrigações vencidas a cada
+   * cliente ativo que possua guias vencidas. Falhas individuais não
+   * interrompem o lote.
+   */
+  async enviarAvisosMensaisObrigacoesVencidas(input?: {
+    requestId?: string;
+  }): Promise<OverdueBatchSummary> {
+    const rows = await this.database.db
+      .selectDistinct({ clienteId: guias.clienteId })
+      .from(guias)
+      .innerJoin(clientes, eq(clientes.id, guias.clienteId))
+      .where(
+        and(
+          eq(clientes.suspenso, false),
+          eq(guias.status, 'PENDENTE'),
+          lt(guias.vencimento, getBahiaDate()),
+        ),
+      );
+
+    const summary: OverdueBatchSummary = {
+      candidatos: rows.length,
+      enviados: 0,
+      ignorados: 0,
+      falhas: 0,
+    };
+
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const results = await Promise.all(
+        rows.slice(i, i + BATCH_SIZE).map(({ clienteId }) =>
+          this.enviarEmailObrigacoesVencidas({
+            clienteId,
+            requestId: input?.requestId,
+          }),
+        ),
+      );
+      for (const result of results) {
+        if (result.ok) summary.enviados += 1;
+        else if (result.code === 'ENVIO_FALHOU') summary.falhas += 1;
+        else summary.ignorados += 1;
+      }
+    }
+
+    this.logger.info('crm_overdue_monthly_completed', {
+      requestId: input?.requestId,
+      operation: 'crm_overdue_monthly',
+      result: 'success',
+      ...summary,
+    });
+    return summary;
   }
 
   /**
