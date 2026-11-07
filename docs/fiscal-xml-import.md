@@ -76,6 +76,27 @@ fiscal é idempotente por documento e vive em
 `documentos_fiscais_cte_escrituracao`, separada dos itens de mercadoria de
 NF-e/NFC-e.
 
+## Exclusão da movimentação do mês
+
+Para refazer a importação de uma competência, a movimentação importada pode ser
+excluída pelos endpoints:
+
+- `DELETE /api/admin/fiscal/documentos/movimentacao?clienteId={uuid}&competencia=AAAA-MM`;
+- `DELETE /api/fiscal/documentos/movimentacao?competencia=AAAA-MM` (empresa logada).
+
+São removidos somente os documentos importados manualmente (`nsu = 0`) do mês:
+NF-e, NFC-e e CT-e pela data de emissão e NFS-e pela competência declarada
+(ou data de emissão, se ausente). Documentos da distribuição automática da
+SEFAZ são preservados, pois não seriam recuperados pelo controle de NSU. Itens,
+escrituração de CT-e, eventos fiscais e decisões de crédito saem em cascata;
+vínculos do CIAP ficam com o documento anulado.
+
+A operação usa o mesmo lock de escopo do fechamento EFD e retorna `409` se
+houver fechamento `FECHADO` corrente na competência. Os XMLs/PDFs são apagados
+do R2 após o commit; falhas nessa limpeza são registradas em log e contadas em
+`objetos_nao_removidos`, sem desfazer a exclusão. É gerado o evento de
+auditoria `MOVIMENTACAO_FISCAL_MES_EXCLUIDA`.
+
 ## Resposta
 
 A resposta informa totais de registros importados e duplicados, arquivos

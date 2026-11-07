@@ -39,6 +39,8 @@ export interface SimplesItemCalculoInput {
   rbt12: string;
   excedeuSublimite: boolean;
   deducoesAdicionais?: Array<'ICMS' | 'ISS' | 'PIS' | 'COFINS'>;
+  /** CT-e de transporte intermunicipal/interestadual: ICMS do Anexo I substitui ISS do III. */
+  faixaIcmsTransporte?: SimplesFaixaCalculo;
 }
 
 export interface SimplesItemCalculoResult {
@@ -192,6 +194,7 @@ export class SimplesCalculadorService {
       denominador,
     );
     const removidos = new Set<keyof SimplesPartilha>();
+    if (input.faixaIcmsTransporte) removidos.add('iss');
     if (input.excedeuSublimite) removidos.add('icms');
     if (input.segregacao === 'ICMS_ST' || input.segregacao === 'ICMS_ISENTO')
       removidos.add('icms');
@@ -207,12 +210,13 @@ export class SimplesCalculadorService {
     const percentualRemovido = TRIBUTOS.reduce(
       (sum, tributo) =>
         sum +
-        (removidos.has(tributo)
+        (removidos.has(tributo) ||
+        (tributo === 'icms' && input.faixaIcmsTransporte)
           ? this.rate(input.faixa.partilha[tributo], `partilha ${tributo}`)
           : 0n),
       0n,
     );
-    const aliquotaAposDeducoes = this.divideRound(
+    let aliquotaAposDeducoes = this.divideRound(
       numerador * (RATE_FACTOR - percentualRemovido),
       denominador,
     );
@@ -224,7 +228,8 @@ export class SimplesCalculadorService {
         );
         return [
           tributo,
-          removidos.has(tributo)
+          removidos.has(tributo) ||
+          (tributo === 'icms' && input.faixaIcmsTransporte)
             ? 0n
             : this.divideRound(
                 receita * numerador * percentual,
@@ -233,6 +238,26 @@ export class SimplesCalculadorService {
         ];
       }),
     ) as Record<keyof SimplesPartilha, bigint>;
+    if (input.faixaIcmsTransporte && !removidos.has('icms')) {
+      const faixaI = input.faixaIcmsTransporte;
+      const aliquotaI = this.aliquotaRacional(
+        rbt12,
+        this.rate(faixaI.aliquotaNominal, 'alíquota nominal do Anexo I'),
+        this.money(faixaI.parcelaDeduzir, 'parcela a deduzir do Anexo I'),
+      );
+      const percentualIcms = this.rate(
+        faixaI.partilha.icms,
+        'partilha ICMS do Anexo I',
+      );
+      partilhaCentavos.icms = this.divideRound(
+        receita * aliquotaI.numerador * percentualIcms,
+        aliquotaI.denominador * RATE_FACTOR,
+      );
+      aliquotaAposDeducoes += this.divideRound(
+        aliquotaI.numerador * percentualIcms,
+        aliquotaI.denominador,
+      );
+    }
     // O PGDAS-D soma os débitos apurados por tributo após arredondá-los a
     // centavos. A alíquota mostrada na interface é apenas a versão resumida.
     const valorDevido = TRIBUTOS.reduce(
