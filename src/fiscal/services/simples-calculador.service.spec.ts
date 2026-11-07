@@ -269,6 +269,33 @@ describe('SimplesCalculadorService', () => {
     expect(resultado.valorDevido).toBe('4501.19');
   });
 
+  it('mantém ISS e não acrescenta ICMS ao serviço comum do Anexo III na terceira faixa', () => {
+    const anexoIII = SIMPLES_ANEXOS_SEED.find(
+      (item) => item.anexo === 'ANEXO_III',
+    )!;
+    const faixa = anexoIII.faixas[2];
+    const resultado = service.calcularItem({
+      anexo: 'ANEXO_III',
+      receita: '47827.27',
+      segregacao: 'TRIBUTACAO_INTEGRAL',
+      faixa: {
+        faixa: 3,
+        rbt12De: '360000.01',
+        rbt12Ate: '720000.00',
+        aliquotaNominal: faixa.aliquota,
+        parcelaDeduzir: faixa.deducao,
+        partilha: faixa.partilha,
+      },
+      rbt12: '573927.24',
+      excedeuSublimite: false,
+    });
+    expect(resultado.tributosPartilhados).toMatchObject({
+      icms: '0.00',
+      iss: '1620.67',
+    });
+    expect(resultado.valorDevido).toBe('4986.68');
+  });
+
   it('mantém a partilha legal distinta por faixa no Anexo III', () => {
     const faixas = SIMPLES_ANEXOS_SEED.find(
       (item) => item.anexo === 'ANEXO_III',

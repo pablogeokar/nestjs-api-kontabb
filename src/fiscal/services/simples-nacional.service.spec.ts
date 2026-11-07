@@ -56,6 +56,38 @@ describe('utilitários do SimplesNacionalService', () => {
 });
 
 describe('integração da receita do Simples entre atividade e RBT12', () => {
+  it('informa o motor vigente também ao carregar rascunho salvo', async () => {
+    const service = new SimplesNacionalService(null!, null!, null!, null!);
+    Object.defineProperty(service, 'carregarItens', {
+      value: jest.fn().mockResolvedValue([]),
+    });
+    const resposta = await service['carregarResposta']({
+      id: 'apuracao',
+      status: 'RASCUNHO',
+      rbt12: '573927.24',
+      memoriaCalculo: {
+        motorVersao: 'simples-nacional@9',
+        impedidoIcmsIss: false,
+      },
+    } as never);
+    expect(resposta.motor_versao_atual).toBe(
+      resposta.memoria_calculo.motorVersao,
+    );
+  });
+
+  it('não apura período anterior à abertura do CNPJ', async () => {
+    const service = new SimplesNacionalService(null!, null!, null!, null!);
+    Object.defineProperty(service, 'buscarClienteSimples', {
+      value: jest.fn().mockResolvedValue({ dataAberturaCnpj: '2026-10-08' }),
+    });
+    Object.defineProperty(service, 'buscarTabelaVigente', {
+      value: jest.fn().mockResolvedValue({ id: 'tabela' }),
+    });
+    await expect(service['calcular']('cliente', '2026-09')).rejects.toThrow(
+      'anterior à abertura do CNPJ',
+    );
+  });
+
   it('mantém a receita de competência no RBT12 e usa a emissão como base mensal no caixa', async () => {
     const calcularRbt12 = jest.fn().mockReturnValue({
       rbt12: '100.00',
@@ -108,6 +140,9 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       false,
     );
     expect(apuracao.memoria_calculo.receitaMesCompetencia).toBe('100.00');
+    expect(apuracao.motor_versao_atual).toBe(
+      apuracao.memoria_calculo.motorVersao,
+    );
     expect(apuracao.memoria_calculo.receitaMesDocumentos).toBe('0.00');
     expect(apuracao.receita_bruta_mes).toBe('0.00');
   });
@@ -182,6 +217,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       tipoDocumento: 'CTE',
       cfop: '5353',
       cfopXml: '5353',
+      codigoMunicipioOrigem: '3106200',
       revisaoNecessaria: false,
       tpCte: '0',
       bruto: '1500.00',
@@ -216,6 +252,13 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     );
 
     expect(atividade.pendencias).toEqual([]);
+    expect(atividade.receitasTransportePorMunicipio).toEqual([
+      {
+        codigoMunicipioOrigem: '3106200',
+        codigoUfOrigem: '31',
+        receita: '1500.00',
+      },
+    ]);
     expect(atividade.grupos).toEqual([
       expect.objectContaining({
         anexo: 'ANEXO_III',
@@ -224,6 +267,66 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       }),
     ]);
     expect(mensal).toEqual([{ mes: '2026-04', valor: '1500.00' }]);
+  });
+
+  it('mantém NFS-e comum e CT-e em grupos distintos do Anexo III', async () => {
+    const service = new SimplesNacionalService(null!, null!, null!, null!);
+    const base = {
+      numeroDocumento: '1',
+      indTotal: '1',
+      bruto: '1000.00',
+      frete: null,
+      seguro: null,
+      desconto: null,
+      outras: null,
+      issRetido: false,
+      municipioIncidencia: null,
+      municipioPrestador: null,
+      csosn: null,
+      cstIcms: null,
+      cstPis: null,
+      cstCofins: null,
+    };
+    Object.defineProperty(service, 'carregarLinhasReceitaPeriodo', {
+      value: jest.fn().mockResolvedValue([
+        {
+          ...base,
+          tipoDocumento: 'NFSE',
+          cfop: null,
+          cfopXml: null,
+          itemListaServico: '1401',
+          cnae: '4520001',
+        },
+        {
+          ...base,
+          numeroDocumento: '2',
+          tipoDocumento: 'CTE',
+          cfop: '5353',
+          cfopXml: '5353',
+          codigoMunicipioOrigem: '3106200',
+          revisaoNecessaria: false,
+          tpCte: '0',
+        },
+      ]),
+    });
+    const atividade = await service['carregarReceitasAtividade'](
+      'cliente',
+      new Date('2026-04-01'),
+      new Date('2026-04-30'),
+    );
+    expect(atividade.grupos).toEqual([
+      expect.objectContaining({
+        anexo: 'ANEXO_III',
+        transporteCte: false,
+        receita: 100000n,
+      }),
+      expect.objectContaining({
+        anexo: 'ANEXO_III',
+        transporteCte: true,
+        receita: 100000n,
+      }),
+    ]);
+    expect(atividade.pendencias).toEqual([]);
   });
 
   it('compensa anulação na mesma competência e exige revisão de CT-e especial', async () => {
@@ -236,6 +339,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       tipoDocumento: 'CTE',
       cfop: '5353',
       cfopXml: '5353',
+      codigoMunicipioOrigem: '3106200',
       revisaoNecessaria: false,
       tpCte: '0',
       bruto: '1500.00',
@@ -277,10 +381,38 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       '2026-04-01',
     );
     expect(atividade.grupos[0].receita).toBe(110000n);
+    expect(atividade.receitasTransportePorMunicipio[0].receita).toBe('1100.00');
     expect(atividade.pendencias).toEqual([
       expect.stringContaining('exige revisão'),
     ]);
     expect(mensal).toEqual([{ mes: '2026-04', valor: '1100.00' }]);
+  });
+
+  it('pede revisão quando falta o município de início do CT-e', async () => {
+    const service = new SimplesNacionalService(null!, null!, null!, null!);
+    Object.defineProperty(service, 'carregarLinhasReceitaPeriodo', {
+      value: jest.fn().mockResolvedValue([
+        {
+          numeroDocumento: '321',
+          tipoDocumento: 'CTE',
+          cfop: '5353',
+          cfopXml: '5353',
+          codigoMunicipioOrigem: null,
+          tpCte: '0',
+          revisaoNecessaria: false,
+          bruto: '100.00',
+          indTotal: '1',
+        },
+      ]),
+    });
+    const atividade = await service['carregarReceitasAtividade'](
+      'cliente',
+      new Date('2026-04-01'),
+      new Date('2026-04-30'),
+    );
+    expect(atividade.pendencias).toEqual([
+      expect.stringContaining('sem município de início'),
+    ]);
   });
 
   it('consulta apenas CT-e autorizado, escriturável e de saída', async () => {
@@ -322,7 +454,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     );
   });
 
-  it('simula DAS da transportadora com a partilha de ICMS correta', async () => {
+  it('apura serviço comum com ISS e transporte com ICMS na mesma competência', async () => {
     const service = new SimplesNacionalService(
       null!,
       new SimplesCalculadorService(),
@@ -336,12 +468,20 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     mock('buscarClienteSimples', { uf: 'BA', regimeCompetencia: true });
     mock('buscarTabelaVigente', { id: 'tabela' });
     mock('carregarReceitasMensais', {
-      rows: [{ mes: '2026-04', receita: '1500.00' }],
+      rows: [{ mes: '2026-04', receita: '2500.00' }],
       origem: 'DOCUMENTOS_FISCAIS',
     });
     mock('carregarPrimeiraCompetenciaReceita', '2026-04');
     mock('carregarReceitasAtividade', {
       grupos: [
+        {
+          anexo: 'ANEXO_III',
+          segregacao: 'TRIBUTACAO_INTEGRAL',
+          deducoes: [],
+          receita: 100000n,
+          issOutroMunicipio: false,
+          transporteCte: false,
+        },
         {
           anexo: 'ANEXO_III',
           segregacao: 'TRIBUTACAO_INTEGRAL',
@@ -412,10 +552,14 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     mock('carregarFolhasAutomaticasPeriodo', []);
 
     const apuracao = await service['calcular']('cliente', '2026-04');
-    expect(apuracao.receita_bruta_mes).toBe('1500.00');
-    expect(apuracao.rbt12).toBe('18000.00');
-    expect(apuracao.valor_total_das).toBe('80.25');
+    expect(apuracao.receita_bruta_mes).toBe('2500.00');
+    expect(apuracao.rbt12).toBe('30000.00');
+    expect(apuracao.valor_total_das).toBe('140.25');
     expect(apuracao.itens[0].tributos_partilhados).toMatchObject({
+      icms: '0.00',
+      iss: '20.10',
+    });
+    expect(apuracao.itens[1].tributos_partilhados).toMatchObject({
       icms: '20.40',
       iss: '0.00',
     });

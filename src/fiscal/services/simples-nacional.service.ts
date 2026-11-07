@@ -48,7 +48,7 @@ import type {
   SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@8';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@9';
 const UFS_SIMPLES = new Set(
   'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
     ' ',
@@ -554,6 +554,14 @@ export class SimplesNacionalService {
       this.buscarClienteSimples(clienteId),
       this.buscarTabelaVigente(competenciaDate),
     ]);
+    if (
+      cliente.dataAberturaCnpj &&
+      cliente.dataAberturaCnpj.slice(0, 7) > competencia
+    ) {
+      throw new BadRequestException(
+        'A competência é anterior à abertura do CNPJ.',
+      );
+    }
     // O regime de caixa deixa de compor a base mensal a partir de 2027.
     const regimeCompetencia = regimeCompetenciaParaApuracao(
       competencia,
@@ -736,6 +744,7 @@ export class SimplesNacionalService {
       competencia: competenciaDate,
       versao: null,
       status: 'PREVIEW' as const,
+      motor_versao_atual: SIMPLES_MOTOR_VERSAO,
       corrente: false,
       rbt12: rbt.rbt12,
       rbt12_proporcional: rbt.proporcional,
@@ -781,6 +790,8 @@ export class SimplesNacionalService {
             .filter((item) => item.issOutroMunicipio)
             .reduce((sum, item) => sum + item.receita, 0n),
         ),
+        receitasTransportePorMunicipioOrigem:
+          receitasAtividade.receitasTransportePorMunicipio,
         pendencias,
       },
       itens: calculados.map(toItemResponse),
@@ -1106,6 +1117,7 @@ export class SimplesNacionalService {
     );
     const grupos = new Map<string, ReceitaAgrupada>();
     const pendencias = new Set<string>();
+    const receitasTransportePorMunicipio = new Map<string, bigint>();
     for (const row of rows) {
       if (row.indTotal !== '1') continue;
       const cfop = row.cfopXml ?? row.cfop;
@@ -1130,6 +1142,19 @@ export class SimplesNacionalService {
         continue;
       }
       if (receita === 0n) continue;
+      if (row.tipoDocumento === 'CTE') {
+        if (!row.codigoMunicipioOrigem) {
+          pendencias.add(
+            `CT-e ${row.numeroDocumento} sem município de início da prestação. Informe a origem antes do fechamento do PGDAS-D.`,
+          );
+        } else {
+          receitasTransportePorMunicipio.set(
+            row.codigoMunicipioOrigem,
+            (receitasTransportePorMunicipio.get(row.codigoMunicipioOrigem) ??
+              0n) + receita,
+          );
+        }
+      }
       const anexo =
         row.tipoDocumento === 'NFSE'
           ? anexoPorServico(row.itemListaServico, row.cnae)
@@ -1181,7 +1206,18 @@ export class SimplesNacionalService {
         grupos.delete(key);
       }
     }
-    return { grupos: [...grupos.values()], pendencias: [...pendencias] };
+    return {
+      grupos: [...grupos.values()],
+      pendencias: [...pendencias],
+      receitasTransportePorMunicipio: [...receitasTransportePorMunicipio]
+        .filter(([, valor]) => valor !== 0n)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([codigoMunicipioOrigem, valor]) => ({
+          codigoMunicipioOrigem,
+          codigoUfOrigem: codigoMunicipioOrigem.slice(0, 2),
+          receita: fromScaledInteger(valor),
+        })),
+    };
   }
 
   private async carregarItensReceitaPeriodo(
@@ -1205,6 +1241,7 @@ export class SimplesNacionalService {
         >`NULLIF(${documentosFiscais.emitenteDados} ->> 'codMun', '')`,
         cfop: documentosFiscaisItens.cfop,
         cfopXml: documentosFiscaisItens.cfopXml,
+        codigoMunicipioOrigem: sql<string | null>`null`,
         itemListaServico: documentosFiscaisItens.itemListaServico,
         cnae: documentosFiscaisItens.cnae,
         issRetido: documentosFiscaisItens.issRetido,
@@ -1266,6 +1303,8 @@ export class SimplesNacionalService {
             documentosFiscaisCteEscrituracao.chaveCteReferenciado,
           cfop: documentosFiscaisCteEscrituracao.cfop,
           cfopXml: documentosFiscaisCteEscrituracao.cfopXml,
+          codigoMunicipioOrigem:
+            documentosFiscaisCteEscrituracao.codigoMunicipioOrigem,
           revisaoNecessaria: documentosFiscaisCteEscrituracao.revisaoNecessaria,
           tpCte: documentosFiscaisCteEscrituracao.tpCte,
           bruto: documentosFiscaisCteEscrituracao.valorTotalServico,
@@ -1740,6 +1779,7 @@ export class SimplesNacionalService {
       competencia: apuracao.competencia,
       versao: apuracao.versao,
       status: apuracao.status,
+      motor_versao_atual: SIMPLES_MOTOR_VERSAO,
       corrente: apuracao.corrente,
       rbt12: apuracao.rbt12,
       rbt12_proporcional: apuracao.rbt12Proporcional,

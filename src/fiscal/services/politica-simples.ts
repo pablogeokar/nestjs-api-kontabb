@@ -37,7 +37,7 @@
  * efetivo-datado, mais o resolvedor e os testes.
  */
 import { monthsBetweenCompetencias } from '../fiscal-date.util';
-import { toScaledInteger } from '../sped/sped-decimal';
+import { resolverSublimite as resolverSublimiteAnual } from './simples-sublimite';
 import {
   resolveApuraIcms,
   type RegimeTributario,
@@ -115,7 +115,7 @@ export interface ApuracaoIcmsPropriaResolucao {
 /**
  * Situação do estabelecimento perante o sublimite estadual do Simples.
  *  - `DENTRO`: dentro do sublimite — recolhe ICMS no DAS normalmente.
- *  - `EXCEDIDO`: ultrapassou o sublimite estadual (RBT12 > sublimite) — ICMS
+ *  - `EXCEDIDO`: impedimento por receita bruta anual e efeito temporal — ICMS
  *    recolhido FORA do DAS; passa a apurar ICMS próprio.
  *  - `IMPEDIDO`: impedido de recolher ICMS no DAS por decisão estadual
  *    (independe de valor) — mesmo efeito: ICMS fora do DAS, apura próprio.
@@ -133,16 +133,16 @@ export type SituacaoSublimite = (typeof SITUACOES_SUBLIMITE)[number];
 /**
  * Origem auditável da situação de sublimite/impedimento.
  *  - `IMPEDIMENTO_INFORMADO`: impedimento declarado explicitamente para a vigência.
- *  - `SUBLIMITE_EXCEDIDO_RBT12`: derivado da comparação RBT12 × sublimite (ambos
- *    decimais em string, comparados por inteiros escalados).
- *  - `DENTRO_DO_SUBLIMITE`: RBT12 dentro do sublimite declarado.
- *  - `SEM_PARAMETRO`: Simples sem RBT12/sublimite informados — assume `DENTRO`
+ *  - `SUBLIMITE_IMPEDIMENTO_RBA`: derivado da receita bruta anual e da vigência
+ *    do impedimento, pela mesma regra usada no cálculo do DAS.
+ *  - `DENTRO_DO_SUBLIMITE`: receita anual sem impedimento na competência.
+ *  - `SEM_PARAMETRO`: Simples sem histórico anual/sublimite — assume `DENTRO`
  *    (não há como afirmar excesso sem o parâmetro), origem explícita.
  *  - `NAO_SIMPLES`: regime não-Simples — conceito não aplicável.
  */
 export const SUBLIMITE_ORIGENS = [
   'IMPEDIMENTO_INFORMADO',
-  'SUBLIMITE_EXCEDIDO_RBT12',
+  'SUBLIMITE_IMPEDIMENTO_RBA',
   'DENTRO_DO_SUBLIMITE',
   'SEM_PARAMETRO',
   'NAO_SIMPLES',
@@ -214,10 +214,15 @@ export interface VigenciaSimples {
 
   /** Dimensão 3 — impedimento estadual explícito de recolher ICMS no DAS. */
   impedidoDas?: boolean;
-  /** Dimensão 3 — receita bruta dos últimos 12 meses (RBT12), decimal em string. */
+  /** Legado: RBT12 define faixa/alíquota, mas não determina o impedimento. */
   rbt12?: string;
-  /** Dimensão 3 — sublimite estadual aplicável, decimal em string. */
+  /** Dimensão 3 — sublimite anual da UF no ano da competência. */
   sublimite?: string;
+  sublimiteAnoAnterior?: string;
+  dataAberturaCnpj?: string | null;
+  receitaAnoAnterior?: string;
+  receitaAnoCorrenteAntesPa?: string;
+  receitaAnoCorrenteAtePa?: string;
 
   /** Dimensão 4 — obrigações fora do DAS vigentes (ST/DIFAL/antecipação). */
   obrigacoesForaDoDas?: ObrigacaoForaDoDas[];
@@ -289,6 +294,7 @@ function ehLucroNormal(regime: RegimeTributario | null): boolean {
 function resolverSublimite(
   regime: RegimeTributario | null,
   vigencia: VigenciaSimples | null,
+  competencia: Competencia,
 ): SublimiteResolucao {
   if (regime !== 'SIMPLES_NACIONAL') {
     return {
@@ -307,17 +313,27 @@ function resolverSublimite(
     };
   }
 
-  const rbt12 = vigencia?.rbt12;
   const sublimite = vigencia?.sublimite;
-  if (rbt12 !== undefined && sublimite !== undefined) {
-    // Comparação por inteiros escalados — nunca Number — para preservar
-    // precisão decimal dos limiares monetários.
-    const rbt12Escalado = toScaledInteger(rbt12);
-    const sublimiteEscalado = toScaledInteger(sublimite);
-    if (rbt12Escalado > sublimiteEscalado) {
+  if (
+    vigencia &&
+    sublimite !== undefined &&
+    vigencia.receitaAnoAnterior !== undefined &&
+    vigencia.receitaAnoCorrenteAntesPa !== undefined &&
+    vigencia.receitaAnoCorrenteAtePa !== undefined
+  ) {
+    const situacao = resolverSublimiteAnual({
+      competencia,
+      dataAberturaCnpj: vigencia.dataAberturaCnpj ?? null,
+      sublimiteAnual: sublimite,
+      sublimiteAnoAnterior: vigencia.sublimiteAnoAnterior,
+      receitaAnoAnterior: vigencia.receitaAnoAnterior,
+      receitaAnoCorrenteAntesPa: vigencia.receitaAnoCorrenteAntesPa,
+      receitaAnoCorrenteAtePa: vigencia.receitaAnoCorrenteAtePa,
+    });
+    if (situacao.impedido) {
       return {
         situacao: 'EXCEDIDO',
-        origem: 'SUBLIMITE_EXCEDIDO_RBT12',
+        origem: 'SUBLIMITE_IMPEDIMENTO_RBA',
         recolheIcmsForaDoDas: true,
       };
     }
@@ -328,8 +344,7 @@ function resolverSublimite(
     };
   }
 
-  // Simples sem parâmetros de sublimite: assume DENTRO (não há como afirmar
-  // excesso sem RBT12/sublimite). Origem explícita, não silenciosa.
+  // Sem histórico anual não se pode inferir impedimento pelo RBT12.
   return {
     situacao: 'DENTRO',
     origem: 'SEM_PARAMETRO',
@@ -412,7 +427,7 @@ export function resolverPoliticaSimples(
   const vigencias = input.vigencias ?? [];
   const vigencia = selecionarVigencia(vigencias, competencia);
 
-  const sublimite = resolverSublimite(regime, vigencia);
+  const sublimite = resolverSublimite(regime, vigencia, competencia);
 
   return {
     competencia,
