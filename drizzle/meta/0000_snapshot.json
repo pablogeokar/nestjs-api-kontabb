@@ -1,5 +1,5 @@
 {
-  "id": "d43f9d73-baa9-4a6b-8253-7a11f0974ca5",
+  "id": "9c14a308-3b5e-4938-a31e-e7a2af0e349d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1856,6 +1856,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "data_abertura_cnpj": {
+          "name": "data_abertura_cnpj",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
         },
         "apura_icms": {
           "name": "apura_icms",

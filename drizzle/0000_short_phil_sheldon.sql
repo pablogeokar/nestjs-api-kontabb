@@ -184,6 +184,7 @@ CREATE TABLE "clientes" (
 	"cnaes_secundarios" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"regime_tributario" text,
 	"regime_competencia" boolean DEFAULT true NOT NULL,
+	"data_abertura_cnpj" date,
 	"apura_icms" boolean DEFAULT false NOT NULL,
 	"inscricao_estadual" text,
 	"tipo_contribuinte_icms" text,
