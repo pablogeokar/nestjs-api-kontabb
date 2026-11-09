@@ -66,7 +66,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       status: 'RASCUNHO',
       rbt12: '573927.24',
       memoriaCalculo: {
-        motorVersao: 'simples-nacional@9',
+        motorVersao: 'simples-nacional@10',
         impedidoIcmsIss: false,
       },
     } as never);
@@ -107,8 +107,20 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     mock('buscarClienteSimples', { uf: 'SP', regimeCompetencia: false });
     mock('buscarTabelaVigente', { id: 'tabela' });
     mock('carregarReceitasMensais', {
+      mesesManuais: new Set(),
       rows: [{ mes: '2026-04', receita: '100.00' }],
       origem: 'DOCUMENTOS_FISCAIS',
+    });
+    mock('carregarDevolucoesAte', {
+      porMes: new Map([
+        [
+          '2026-04',
+          { abatimentos: new Map([['ANEXO_I:false:false', 2500n]]), saldo: 0n },
+        ],
+      ]),
+      ocorrencias: new Map([
+        ['2026-04', { valor: 2500n, pendencias: new Set() }],
+      ]),
     });
     mock('carregarPrimeiraCompetenciaReceita', '2026-04');
     mock('carregarReceitasAtividade', { grupos: [], pendencias: [] });
@@ -132,6 +144,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       expect.any(Date),
       expect.any(Date),
       false,
+      undefined,
     );
     expect(service['carregarReceitasAutomaticasPeriodo']).toHaveBeenCalledWith(
       'cliente',
@@ -144,6 +157,10 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       apuracao.memoria_calculo.motorVersao,
     );
     expect(apuracao.memoria_calculo.receitaMesDocumentos).toBe('0.00');
+    expect(apuracao.memoria_calculo.devolucoesAbatidas).toBe('0.00');
+    expect(apuracao.memoria_calculo.pendencias).toEqual([
+      expect.stringContaining('valor efetivamente restituído'),
+    ]);
     expect(apuracao.receita_bruta_mes).toBe('0.00');
   });
 
@@ -205,6 +222,135 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     );
     expect(atividade.grupos.map((grupo) => grupo.receita)).toEqual([93000n]);
     expect(mensal).toEqual([{ mes: '2026-04', valor: '930.00' }]);
+  });
+
+  it('abate a devolução da receita histórica e apenas da segregação de venda correspondente no DAS', async () => {
+    const service = new SimplesNacionalService(null!, null!, null!, null!);
+    const item = {
+      tipoDocumento: 'NFE',
+      mes: '2026-10',
+      bruto: '902.00',
+      indTotal: '1',
+      cfop: '5102',
+      cfopXml: '5102',
+      csosn: '102',
+    };
+    Object.defineProperty(service, 'carregarLinhasReceitaPeriodo', {
+      value: jest.fn().mockResolvedValue([
+        { ...item, bruto: '23932.00' },
+        { ...item, cfop: '5405', cfopXml: '5405', csosn: '500' },
+        { ...item, cfop: '5202', cfopXml: '5202' },
+        { ...item, cfop: '5910', cfopXml: '5910' },
+      ]),
+    });
+    const abatimentos = new Map([['ANEXO_I:false:false', 90200n]]);
+
+    const atividade = await service['carregarReceitasAtividade'](
+      'cliente',
+      new Date('2026-10-01'),
+      new Date('2026-10-31'),
+      true,
+      abatimentos,
+    );
+    const mensal = await service['carregarReceitasAutomaticasPeriodo'](
+      'cliente',
+      '2026-10-01',
+      '2026-10-01',
+      true,
+      new Map([['2026-10', { abatimentos }]]),
+    );
+
+    expect(atividade.grupos).toEqual([
+      expect.objectContaining({
+        segregacao: 'TRIBUTACAO_INTEGRAL',
+        receita: 2303000n,
+      }),
+      expect.objectContaining({ segregacao: 'ICMS_ST', receita: 90200n }),
+    ]);
+    expect(mensal).toEqual([{ mes: '2026-10', valor: '23932.00' }]);
+  });
+
+  it('localiza devoluções pelo CFOP escriturado e usa a segregação da venda referenciada', async () => {
+    const mercadoria = {
+      bruto: '100.00',
+      tipoDocumento: 'NFE',
+      indTotal: '1',
+      csosn: '102',
+      cstPis: '49',
+      cstCofins: '49',
+    };
+    const entrada = {
+      ...mercadoria,
+      mes: '2026-10',
+      numero: '1699',
+      cfop: '2411',
+      emitente: 'comprador',
+      cnpjCliente: 'empresa',
+      codigoProduto: 'produto-do-comprador',
+      escrituracaoStatus: 'ESCRITURADO',
+      referencias: [{ tipo: 'NFE', chaveAcesso: 'venda' }],
+    };
+    const where = jest.fn().mockReturnValue({
+      orderBy: jest
+        .fn()
+        .mockResolvedValue([
+          entrada,
+          { ...entrada, numero: '1700', referencias: [] },
+        ]),
+    });
+    const consulta = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where,
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce(consulta)
+      .mockReturnValueOnce({ from: () => ({ where: () => [] }) });
+    const service = new SimplesNacionalService(
+      { db: { select } } as never,
+      null!,
+      null!,
+      null!,
+    );
+    const venda = {
+      ...mercadoria,
+      chave: 'venda',
+      operacao: 'SAIDA',
+      situacao: 'AUTORIZADA',
+      cfop: '6405',
+      csosn: '500',
+      codigoProduto: 'produto-da-empresa',
+    };
+    Object.defineProperty(service, 'carregarVendasReferenciadas', {
+      value: jest.fn().mockResolvedValue([venda]),
+    });
+    Object.defineProperty(service, 'carregarItensReceitaPeriodo', {
+      value: jest
+        .fn()
+        .mockResolvedValue([{ ...venda, mes: '2026-10', bruto: '300.00' }]),
+    });
+
+    const ajustes = await service['carregarDevolucoesAte'](
+      'empresa',
+      '2026-10-31',
+    );
+
+    expect(ajustes.porMes.get('2026-10')?.abatimentos).toEqual(
+      new Map([['ANEXO_I:true:false', 10000n]]),
+    );
+    expect([...ajustes.ocorrencias.get('2026-10')!.pendencias]).toEqual([
+      expect.stringContaining('NF-e 1700'),
+    ]);
+    const filtro = new PgDialect().sqlToQuery(where.mock.calls[0][0] as SQL);
+    expect(filtro.sql).toContain('"documentos_fiscais_itens"."cfop" in');
+    expect(filtro.sql).toContain(
+      '"documentos_fiscais"."data_entrada_saida_fiscal"',
+    );
+    expect(filtro.params).toEqual(
+      expect.arrayContaining(['AUTORIZADA', 'ENTRADA', '1202', '2411']),
+    );
+    expect(filtro.params).not.toContain('5202');
   });
 
   it('inclui o CT-e emitido na receita mensal e no Anexo III de transporte', async () => {
@@ -467,7 +613,12 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       });
     mock('buscarClienteSimples', { uf: 'BA', regimeCompetencia: true });
     mock('buscarTabelaVigente', { id: 'tabela' });
+    mock('carregarDevolucoesAte', {
+      porMes: new Map(),
+      ocorrencias: new Map(),
+    });
     mock('carregarReceitasMensais', {
+      mesesManuais: new Set(),
       rows: [{ mes: '2026-04', receita: '2500.00' }],
       origem: 'DOCUMENTOS_FISCAIS',
     });

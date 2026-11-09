@@ -1,5 +1,7 @@
 import {
+  CFOPS_DEVOLUCAO_VENDA,
   classificarOperacaoSimples,
+  distribuirDevolucoesSimples,
   regimeCompetenciaParaApuracao,
   somarReceitaSimples,
   valorReceitaSimples,
@@ -27,6 +29,46 @@ describe('receita documental do Simples Nacional', () => {
     expect(classificarOperacaoSimples('NFE', '5949')).toBe('REVISAR');
     expect(classificarOperacaoSimples('NFE', '5301')).toBe('REVISAR');
     expect(classificarOperacaoSimples('NFE', null)).toBe('REVISAR');
+  });
+
+  it('distingue entradas por devolução de venda de retornos de transferência e devoluções ao fornecedor', () => {
+    expect(CFOPS_DEVOLUCAO_VENDA).toEqual(
+      expect.arrayContaining(['1202', '2202', '1411', '2411']),
+    );
+    for (const cfop of ['1102', '1208', '1553', '5202', '6202', '5411']) {
+      expect(CFOPS_DEVOLUCAO_VENDA).not.toContain(cfop);
+    }
+  });
+
+  it('transporta o excedente de devolução entre competências sem descontar de outra segregação', () => {
+    const normal = 'ANEXO_I:false:false';
+    const st = 'ANEXO_I:true:false';
+    const porMes = distribuirDevolucoesSimples(
+      [
+        { mes: '2026-11', grupo: normal, valor: 20000n },
+        { mes: '2026-11', grupo: st, valor: 50000n },
+        { mes: '2027-01', grupo: st, valor: 4000n },
+        { mes: '2027-02', grupo: normal, valor: 50000n },
+      ],
+      [{ mes: '2026-11', grupo: normal, valor: 40000n }],
+      new Set(['2026-12']),
+      '2027-03',
+    );
+    expect(porMes.get('2026-11')).toMatchObject({
+      abatimentos: new Map([[normal, 20000n]]),
+      saldo: 20000n,
+    });
+    expect(porMes.get('2027-01')).toMatchObject({
+      abatimentos: new Map(),
+      saldo: 20000n,
+      saldoComHistoricoManual: true,
+    });
+    expect(porMes.get('2027-02')).toMatchObject({
+      abatimentos: new Map([[normal, 20000n]]),
+      saldo: 0n,
+      saldoComHistoricoManual: true,
+    });
+    expect(porMes.get('2027-03')?.saldoComHistoricoManual).toBe(false);
   });
 
   it.each(['5351', '5353', '5360', '6352', '6357', '6360'])(

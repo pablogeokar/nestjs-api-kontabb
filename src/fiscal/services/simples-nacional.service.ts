@@ -37,8 +37,12 @@ import {
 import { FiscalClosingService } from './fiscal-closing.service';
 import { FiscalGuiasService } from './fiscal-guias.service';
 import {
+  CFOPS_DEVOLUCAO_VENDA,
+  chaveMercadoriaSimples,
   classificarOperacaoSimples,
+  distribuirDevolucoesSimples,
   regimeCompetenciaParaApuracao,
+  segregacaoMercadoriaSimples,
   valorReceitaSimples,
 } from './simples-receita';
 import { resolverSublimite } from './simples-sublimite';
@@ -48,7 +52,7 @@ import type {
   SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@9';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@10';
 const UFS_SIMPLES = new Set(
   'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
     ' ',
@@ -63,6 +67,8 @@ interface ReceitaAgrupada {
   issOutroMunicipio: boolean;
   transporteCte: boolean;
 }
+
+type AbatimentosPorMes = Map<string, { abatimentos: Map<string, bigint> }>;
 
 @Injectable()
 export class SimplesNacionalService {
@@ -170,8 +176,20 @@ export class SimplesNacionalService {
     const meses = mesesAnteriores(input.competenciaFinal, 12);
     const inicio = `${meses[0]}-01`;
     const fim = `${meses[meses.length - 1]}-01`;
+    const devolucoes = await this.carregarDevolucoesAte(
+      input.clienteId,
+      this.competenciaRange(meses[meses.length - 1])
+        .fim.toISOString()
+        .slice(0, 10),
+    );
     const [receitas, folhas, manuais] = await Promise.all([
-      this.carregarReceitasAutomaticasPeriodo(input.clienteId, inicio, fim),
+      this.carregarReceitasAutomaticasPeriodo(
+        input.clienteId,
+        inicio,
+        fim,
+        true,
+        devolucoes.porMes,
+      ),
       this.carregarFolhasAutomaticasPeriodo(input.clienteId, inicio, fim),
       this.database.db
         .select()
@@ -567,6 +585,16 @@ export class SimplesNacionalService {
       competencia,
       cliente.regimeCompetencia,
     );
+    const fimIso = fim.toISOString().slice(0, 10);
+    const devolucoes = await this.carregarDevolucoesAte(clienteId, fimIso);
+    const devolucoesMes = devolucoes.porMes.get(competencia);
+    const abatimentosMes = regimeCompetencia
+      ? devolucoesMes?.abatimentos
+      : undefined;
+    const devolucoesAbatidas = [...(abatimentosMes?.values() ?? [])].reduce(
+      (total, valor) => total + valor,
+      0n,
+    );
     const [
       receitasMensais,
       primeiraCompetencia,
@@ -578,9 +606,19 @@ export class SimplesNacionalService {
       auditoriaReceitas,
       folhaMes,
     ] = await Promise.all([
-      this.carregarReceitasMensais(clienteId, competenciaDate),
+      this.carregarReceitasMensais(
+        clienteId,
+        competenciaDate,
+        devolucoes.porMes,
+      ),
       this.carregarPrimeiraCompetenciaReceita(clienteId),
-      this.carregarReceitasAtividade(clienteId, inicio, fim, regimeCompetencia),
+      this.carregarReceitasAtividade(
+        clienteId,
+        inicio,
+        fim,
+        regimeCompetencia,
+        abatimentosMes,
+      ),
       regimeCompetencia
         ? Promise.resolve(null)
         : this.carregarReceitasAutomaticasPeriodo(
@@ -720,6 +758,35 @@ export class SimplesNacionalService {
       ...receitasAtividade.pendencias,
       ...auditoriaReceitas.pendencias,
     ];
+    const inicioAuditoria = `${anoAnterior}-01`;
+    for (const [mes, ocorrencia] of devolucoes.ocorrencias) {
+      if (mes >= inicioAuditoria && !receitasMensais.mesesManuais.has(mes)) {
+        pendencias.push(...ocorrencia.pendencias);
+      }
+    }
+    const historicoComSaldoAConferir = [...devolucoes.porMes].some(
+      ([mes, ajuste]) =>
+        mes >= inicioAuditoria &&
+        mes < competencia &&
+        !receitasMensais.mesesManuais.has(mes) &&
+        ajuste.saldoComHistoricoManual &&
+        ajuste.abatimentos.size > 0,
+    );
+    if (devolucoesMes?.saldoComHistoricoManual || historicoComSaldoAConferir) {
+      pendencias.push(
+        'Confira o saldo de devoluções por atividade nas competências com receita manual antes do fechamento.',
+      );
+    }
+    if (
+      !regimeCompetencia &&
+      (devolucoes.ocorrencias.has(competencia) ||
+        (devolucoesMes?.saldo ?? 0n) > 0n ||
+        (devolucoesMes?.abatimentos.size ?? 0) > 0)
+    ) {
+      pendencias.push(
+        'No regime de caixa, confira o valor efetivamente restituído ao comprador e o saldo de devoluções antes do fechamento.',
+      );
+    }
     if (
       !cliente.dataAberturaCnpj &&
       (toScaledInteger(rbaAnterior) > 30_000_000n ||
@@ -771,6 +838,13 @@ export class SimplesNacionalService {
         receitaMesCompetencia,
         receitaMesDocumentos,
         receitaClassificada,
+        devolucoesDoMes: fromScaledInteger(
+          devolucoes.ocorrencias.get(competencia)?.valor ?? 0n,
+        ),
+        devolucoesAbatidas: fromScaledInteger(devolucoesAbatidas),
+        saldoDevolucoesCompetencia: fromScaledInteger(
+          devolucoesMes?.saldo ?? 0n,
+        ),
         folhaMesPrimeiroPeriodo:
           fatorR !== null && quantidadeMesesAnteriores === 0
             ? (folhaMes[0]?.valor ?? '0.00')
@@ -995,12 +1069,15 @@ export class SimplesNacionalService {
   private async carregarReceitasMensais(
     clienteId: string,
     competencia: string,
+    abatimentosPorMes: AbatimentosPorMes,
   ) {
     const inicio = `${Number(competencia.slice(0, 4)) - 1}-01-01`;
     const automaticas = await this.carregarReceitasAutomaticasPeriodo(
       clienteId,
       inicio,
       competencia,
+      true,
+      abatimentosPorMes,
     );
     const manuais = await this.database.db
       .select({
@@ -1021,6 +1098,7 @@ export class SimplesNacionalService {
       if (manual.receita != null) porMes.set(manual.mes, manual.receita);
     }
     return {
+      mesesManuais: new Set(manuais.map((row) => row.mes)),
       rows: [...porMes.entries()]
         .map(([mes, receita]) => ({ mes, receita }))
         .sort((a, b) => a.mes.localeCompare(b.mes)),
@@ -1103,11 +1181,219 @@ export class SimplesNacionalService {
     );
   }
 
+  private async carregarDevolucoesAte(clienteId: string, fim: string) {
+    const dataDevolucao = sql`coalesce(
+      ${documentosFiscais.competenciaDeclarada},
+      ${documentosFiscais.dataEntradaSaidaFiscal},
+      ${documentosFiscais.dataEmissaoFiscal},
+      ${documentosFiscais.dataEmissao}::date
+    )`;
+    const entradas = await this.database.db
+      .select({
+        mes: sql<string>`to_char(${dataDevolucao}, 'YYYY-MM')`,
+        numero: documentosFiscais.numeroDocumento,
+        emitente: documentosFiscais.emitenteCnpjCpf,
+        cnpjCliente: clientes.cnpj,
+        referencias: documentosFiscais.documentosReferenciados,
+        escrituracaoStatus: documentosFiscais.escrituracaoStatus,
+        codigoProduto: documentosFiscaisItens.codigoProduto,
+        cfop: documentosFiscaisItens.cfop,
+        csosn: documentosFiscaisItens.csosnIcms,
+        cstPis: documentosFiscaisItens.cstPis,
+        cstCofins: documentosFiscaisItens.cstCofins,
+        bruto: documentosFiscaisItens.valorBrutoProduto,
+        frete: documentosFiscaisItens.valorFrete,
+        seguro: documentosFiscaisItens.valorSeguro,
+        desconto: documentosFiscaisItens.valorDesconto,
+        outras: documentosFiscaisItens.valorOutrasDespesas,
+      })
+      .from(documentosFiscaisItens)
+      .innerJoin(
+        documentosFiscais,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
+      .innerJoin(clientes, eq(clientes.id, documentosFiscais.clienteId))
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          eq(documentosFiscaisItens.clienteId, clienteId),
+          eq(documentosFiscais.tipoDocumento, 'NFE'),
+          eq(documentosFiscais.situacao, 'AUTORIZADA'),
+          eq(documentosFiscais.tipoOperacaoEscriturada, 'ENTRADA'),
+          eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'ENTRADA'),
+          eq(documentosFiscaisItens.indTotal, '1'),
+          inArray(documentosFiscaisItens.cfop, CFOPS_DEVOLUCAO_VENDA),
+          sql`${dataDevolucao} <= ${fim}::date`,
+        ),
+      )
+      .orderBy(asc(dataDevolucao));
+
+    const ocorrencias = new Map<
+      string,
+      { valor: bigint; pendencias: Set<string> }
+    >();
+    if (!entradas.length) {
+      const porMes: ReturnType<typeof distribuirDevolucoesSimples> = new Map();
+      return { porMes, ocorrencias };
+    }
+
+    const chavesPorEntrada = entradas.map((entrada) => [
+      ...new Set(
+        (entrada.referencias ?? []).flatMap(({ tipo, chaveAcesso }) =>
+          tipo === 'NFE' && chaveAcesso ? [chaveAcesso] : [],
+        ),
+      ),
+    ]);
+    const chaves = [...new Set(chavesPorEntrada.flat())];
+    const inicio = `${entradas[0].mes}-01`;
+    const [vendas, originais, historicos] = await Promise.all([
+      this.carregarItensReceitaPeriodo(clienteId, inicio, fim),
+      this.carregarVendasReferenciadas(clienteId, chaves),
+      this.database.db
+        .select({
+          mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
+        })
+        .from(fiscalSimplesHistoricosMensais)
+        .where(
+          and(
+            eq(fiscalSimplesHistoricosMensais.clienteId, clienteId),
+            sql`${fiscalSimplesHistoricosMensais.competencia} >= ${inicio}::date`,
+            sql`${fiscalSimplesHistoricosMensais.competencia} < ${`${fim.slice(0, 7)}-01`}::date`,
+            sql`${fiscalSimplesHistoricosMensais.receitaBruta} IS NOT NULL`,
+          ),
+        ),
+    ]);
+    const originaisPorChave = new Map<string, typeof originais>();
+    for (const original of originais) {
+      const itens = originaisPorChave.get(original.chave) ?? [];
+      itens.push(original);
+      originaisPorChave.set(original.chave, itens);
+    }
+    const devolucoes = entradas.flatMap((entrada, indice) => {
+      const valor = valorReceitaSimples(entrada);
+      if (valor === 0n) return [];
+      const { mes, numero, cfop } = entrada;
+      const ocorrencia = ocorrencias.get(mes) ?? {
+        valor: 0n,
+        pendencias: new Set<string>(),
+      };
+      ocorrencias.set(mes, ocorrencia);
+      if (valor > 0n) ocorrencia.valor += valor;
+      const referencia = chavesPorEntrada[indice];
+      const itensVenda = referencia.flatMap(
+        (chave) => originaisPorChave.get(chave) ?? [],
+      );
+      const anexo = /^[12](201|410)$/.test(cfop) ? 'ANEXO_II' : 'ANEXO_I';
+      let grupo: string | null = null;
+      if (
+        itensVenda.length &&
+        referencia.every((chave) => originaisPorChave.has(chave))
+      ) {
+        const mesmoProduto =
+          entrada.emitente === entrada.cnpjCliente
+            ? itensVenda.filter(
+                (item) => item.codigoProduto === entrada.codigoProduto,
+              )
+            : [];
+        const itens = mesmoProduto.length ? mesmoProduto : itensVenda;
+        const grupos = new Set(
+          itens.map((item) =>
+            item.situacao === 'AUTORIZADA' &&
+            item.operacao === 'SAIDA' &&
+            item.indTotal === '1'
+              ? chaveVendaDevolvida(item.tipoDocumento, item.cfop, item)
+              : null,
+          ),
+        );
+        if (grupos.size === 1) grupo = [...grupos][0];
+      } else if (
+        !itensVenda.length &&
+        entrada.emitente === entrada.cnpjCliente &&
+        referencia.every(
+          (chave) => chave.slice(6, 20) === entrada.cnpjCliente,
+        ) &&
+        /^[12](201|202|410|411)$/.test(cfop) &&
+        (!/^[12]41[01]$/.test(cfop) || entrada.csosn === '500') &&
+        ['101', '102', '103', '201', '202', '203', '500'].includes(
+          entrada.csosn ?? '',
+        )
+      ) {
+        // A NF-e própria pode trazer a tributação mesmo quando a venda antiga
+        // ainda não está no acervo. A NF-e do cliente usa códigos dele.
+        const { st, monofasico } = segregacaoMercadoriaSimples(cfop, entrada);
+        grupo = chaveMercadoriaSimples(anexo, st, monofasico);
+      }
+      if (
+        valor < 0n ||
+        entrada.escrituracaoStatus !== 'ESCRITURADO' ||
+        !/^[12](201|202|410|411|66[0-2])$/.test(cfop) ||
+        !grupo
+      ) {
+        ocorrencia.pendencias.add(
+          `Devolução NF-e ${numero} (${mes}, CFOP ${cfop}): confira o valor e a segregação da venda referenciada antes do fechamento.`,
+        );
+        return [];
+      }
+      return [{ mes, grupo, valor }];
+    });
+    const vendasSegregadas = vendas.flatMap((item) => {
+      if (item.indTotal !== '1') return [];
+      const grupo = chaveVendaDevolvida(
+        item.tipoDocumento,
+        item.cfopXml ?? item.cfop,
+        item,
+      );
+      const valor = valorReceitaSimples(item);
+      return grupo && valor > 0n ? [{ mes: item.mes, grupo, valor }] : [];
+    });
+    const porMes = distribuirDevolucoesSimples(
+      vendasSegregadas,
+      devolucoes,
+      new Set(historicos.map(({ mes }) => mes)),
+      fim.slice(0, 7),
+    );
+    return { porMes, ocorrencias };
+  }
+
+  private async carregarVendasReferenciadas(
+    clienteId: string,
+    chaves: string[],
+  ) {
+    if (!chaves.length) return [];
+    return this.database.db
+      .select({
+        chave: documentosFiscais.chaveAcesso,
+        tipoDocumento: documentosFiscais.tipoDocumento,
+        situacao: documentosFiscais.situacao,
+        operacao: documentosFiscais.tipoOperacaoEscriturada,
+        codigoProduto: documentosFiscaisItens.codigoProduto,
+        indTotal: documentosFiscaisItens.indTotal,
+        cfop: sql<
+          string | null
+        >`coalesce(${documentosFiscaisItens.cfopXml}, ${documentosFiscaisItens.cfop})`,
+        csosn: documentosFiscaisItens.csosnIcms,
+        cstPis: documentosFiscaisItens.cstPis,
+        cstCofins: documentosFiscaisItens.cstCofins,
+      })
+      .from(documentosFiscais)
+      .leftJoin(
+        documentosFiscaisItens,
+        eq(documentosFiscais.id, documentosFiscaisItens.documentoFiscalId),
+      )
+      .where(
+        and(
+          eq(documentosFiscais.clienteId, clienteId),
+          sql`${documentosFiscais.chaveAcesso} = any(${sql.param(chaves)}::text[])`,
+        ),
+      );
+  }
+
   private async carregarReceitasAtividade(
     clienteId: string,
     inicio: Date,
     fim: Date,
     regimeCompetencia = true,
+    abatimentos?: Map<string, bigint>,
   ) {
     const rows = await this.carregarLinhasReceitaPeriodo(
       clienteId,
@@ -1161,12 +1447,12 @@ export class SimplesNacionalService {
           : row.tipoDocumento === 'CTE'
             ? 'ANEXO_III'
             : anexoPorCfop(cfop);
+      const mercadoria = segregacaoMercadoriaSimples(cfop, row);
       const st =
-        ['5405', '6405'].includes(cfop) ||
-        row.csosn === '500' ||
+        mercadoria.st ||
         (row.tipoDocumento === 'CTE' &&
           ['060', '60'].includes(row.cstIcms ?? ''));
-      const monofasico = row.cstPis === '04' || row.cstCofins === '04';
+      const monofasico = mercadoria.monofasico;
       const segregacao: SimplesSegregacao = row.issRetido
         ? 'ISS_RETIDO'
         : st
@@ -1204,6 +1490,27 @@ export class SimplesNacionalService {
           'As anulações de CT-e superam as prestações da competência. Revise as referências e informe o ajuste fiscal antes de fechar.',
         );
         grupos.delete(key);
+      }
+      if (
+        abatimentos &&
+        (grupo.anexo === 'ANEXO_I' || grupo.anexo === 'ANEXO_II')
+      ) {
+        const chave = chaveMercadoriaSimples(
+          grupo.anexo,
+          grupo.deducoes.includes('ICMS'),
+          grupo.deducoes.includes('PIS'),
+        );
+        const abatimento = abatimentos.get(chave);
+        if (abatimento) {
+          if (abatimento > grupo.receita) {
+            pendencias.add(
+              'A receita da atividade mudou durante a apuração. Recalcule para conferir o abatimento das devoluções.',
+            );
+            continue;
+          }
+          grupo.receita -= abatimento;
+          if (grupo.receita === 0n) grupos.delete(key);
+        }
       }
     }
     return {
@@ -1586,6 +1893,7 @@ export class SimplesNacionalService {
     inicio: string,
     fim: string,
     regimeCompetencia = true,
+    abatimentosPorMes?: AbatimentosPorMes,
   ) {
     const ultimoDia = new Date(`${fim.slice(0, 7)}-01T00:00:00.000Z`);
     ultimoDia.setUTCMonth(ultimoDia.getUTCMonth() + 1);
@@ -1615,7 +1923,12 @@ export class SimplesNacionalService {
     }
     return [...porMes.entries()].map(([mes, valores]) => {
       const cte = valores.cte < 0n ? 0n : valores.cte;
-      return { mes, valor: fromScaledInteger(valores.demais + cte) };
+      const abatimentos = abatimentosPorMes?.get(mes)?.abatimentos;
+      const abatido = [...(abatimentos?.values() ?? [])].reduce(
+        (total, valor) => total + valor,
+        0n,
+      );
+      return { mes, valor: fromScaledInteger(valores.demais + cte - abatido) };
     });
   }
 
@@ -1849,6 +2162,24 @@ export function anexoPorCfop(cfop: string): SimplesAnexo {
   if (/^(351|352|353|354|355|356|357|358|359|360)$/.test(operacao))
     return 'ANEXO_III';
   return 'ANEXO_I';
+}
+
+function chaveVendaDevolvida(
+  tipoDocumento: string,
+  cfop: string | null,
+  item: Parameters<typeof segregacaoMercadoriaSimples>[1],
+): string | null {
+  if (
+    (tipoDocumento !== 'NFE' && tipoDocumento !== 'NFCE') ||
+    !cfop ||
+    !/^[56]/.test(cfop) ||
+    classificarOperacaoSimples(tipoDocumento, cfop) !== 'RECEITA'
+  )
+    return null;
+  const anexo = anexoPorCfop(cfop);
+  if (anexo !== 'ANEXO_I' && anexo !== 'ANEXO_II') return null;
+  const { st, monofasico } = segregacaoMercadoriaSimples(cfop, item);
+  return chaveMercadoriaSimples(anexo, st, monofasico);
 }
 
 /**
