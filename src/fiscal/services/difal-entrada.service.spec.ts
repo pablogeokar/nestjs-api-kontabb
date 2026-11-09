@@ -1,9 +1,12 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { DifalEntradaService } from './difal-entrada.service';
 import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
 
 // DB falso: getCliente resolve por .limit; a busca de itens resolve por .where.
 function createDb(uf: string, itens: unknown[]) {
+  const whereItens = jest.fn().mockResolvedValue(itens);
   return {
+    whereItens,
     db: {
       select: jest
         .fn()
@@ -20,7 +23,7 @@ function createDb(uf: string, itens: unknown[]) {
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockResolvedValue(itens),
+                where: whereItens,
               }),
             }),
           };
@@ -67,6 +70,19 @@ function regraAprovada(
 }
 
 describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catálogo)', () => {
+  it('seleciona pelo período de entrada e delimita os CFOPs interestaduais', async () => {
+    const database = createDb('SP', []);
+    const service = new DifalEntradaService(database as never, createCatalogo(null) as never);
+
+    await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-09' });
+
+    const query = new PgDialect().sqlToQuery(database.whereItens.mock.calls[0][0]);
+    expect(query.sql).toContain('"documentos_fiscais"."data_entrada_saida_fiscal"');
+    expect(query.sql).toContain('"documentos_fiscais_itens"."cfop" in (');
+    expect(query.sql).toContain('IS DISTINCT FROM');
+    expect(query.params).toEqual(expect.arrayContaining(['c1', 'SP', '2551', '2556', '2406', '2407']));
+  });
+
   it('calcula DIFAL com a alíquota interna vinda do CATÁLOGO, não da tabela fixa', async () => {
     // Regra do catálogo: interna 18%. Item 2556, base 1.000, interestadual 12%.
     // DIFAL = 1000 * (18 - 12)/100 = 60,00. A tabela modal fixa não é usada.
@@ -155,6 +171,7 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
 
     expect(result.itens[0].valor_difal).toBe('60.00');
     expect(result.itens[0].valor_fcp).toBe('20.00');
+    expect(result.total_fcp_recolher).toBe('20.00');
     expect(result.itens[0].aliquota_fcp).toBe('2.0000');
   });
 
@@ -267,6 +284,27 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     expect(result.total_difal_recolher).toBe('0.00');
   });
 
+  it('mantém em pendência quando o catálogo contém alíquota inválida', async () => {
+    const service = new DifalEntradaService(
+      createDb('SP', [{
+        cfop: '2556',
+        valorBcIcms: '1000.00',
+        aliquotaIcms: '12.0000',
+      }]) as never,
+      createCatalogo(regraAprovada({ aliquota_interna: '18', aliquota_fcp: 'inválida' })) as never,
+    );
+
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+
+    expect(result.itens[0].status_calculo).toBe('PENDENTE');
+    expect(result.itens[0].memoria_calculo).toContain('parâmetros inválidos');
+    expect(result.total_difal_recolher).toBe('0.00');
+    expect(result.total_fcp_recolher).toBe('0.00');
+  });
+
   it('rejeita competência inválida', async () => {
     const service = new DifalEntradaService(
       createDb('SP', []) as never,
@@ -308,14 +346,14 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
   });
 
   it('aplica redução de base do item e documenta na memória de arredondamento', async () => {
-    // Redução 30% sobre 1000 → base 700. DIFAL = 700 * (18 - 12)/100 = 42,00.
+    // Sem base destacada, redução de 30% sobre 1000 resulta em base 700.
     const service = new DifalEntradaService(
       createDb('SP', [
         {
           documentoFiscalId: 'd1',
           itemId: 'i1',
           cfop: '2556',
-          valorBcIcms: '1000.00',
+          valorBcIcms: null,
           valorBrutoProduto: '1000.00',
           aliquotaIcms: '12.0000',
           percentualReducaoBcIcms: '30.0000',
@@ -332,6 +370,46 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     expect(result.itens[0].valor_difal).toBe('42.00');
     expect(result.itens[0].memoria_arredondamento).toContain('reducao_base');
     expect(result.itens[0].memoria_arredondamento).toContain('arredondado');
+  });
+
+  it.each([
+    ['70.00', null, '1120.48', '120.48', '0.00', 'CALCULADO'],
+    ['70.00', '2.0000', '1148.15', '125.19', '22.96', 'CALCULADO'],
+    [null, null, '1000.00', '0.00', '0.00', 'PENDENTE'],
+  ])('apura base dupla com ICMS de origem %s e FCP %s', async (valorIcms, aliquotaFcp, base, difal, fcp, status) => {
+    const service = new DifalEntradaService(
+      createDb('MT', [
+        {
+          documentoFiscalId: 'd1',
+          itemId: 'i1',
+          cfop: '2551',
+          valorBcIcms: '1000.00',
+          valorBrutoProduto: '980.00',
+          valorIpi: '20.00',
+          valorIcms,
+          aliquotaIcms: '7.0000',
+        },
+      ]) as never,
+      createCatalogo(regraAprovada({
+        aliquota_interna: '17.0000',
+        base_dupla: true,
+        aliquota_fcp: aliquotaFcp,
+        fcp_na_base_por_dentro: aliquotaFcp != null,
+      })) as never,
+    );
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+    expect(result.itens[0]).toMatchObject({
+      base_calculo: base,
+      icms_origem: valorIcms,
+      valor_difal: difal,
+      valor_fcp: fcp,
+      status_calculo: status,
+    });
+    expect(result.total_difal_recolher).toBe(difal);
+    expect(result.total_fcp_recolher).toBe(fcp);
   });
 
   it('faz o gross-up (base por dentro) quando a regra exige', async () => {
@@ -520,7 +598,7 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
           itemId: 'i1',
           cfop: '2556',
           emitenteUf: 'MG',
-          valorBcIcms: '1000.00',
+          valorBcIcms: null,
           valorBrutoProduto: '1000.00',
           aliquotaIcms: '12.0000',
           percentualReducaoBcIcms: '10.0000',

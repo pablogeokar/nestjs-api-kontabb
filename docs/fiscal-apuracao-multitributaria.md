@@ -31,13 +31,36 @@ período).
 
 ## DIFAL de entrada
 
-Base legal: CF/88 art. 155, §2º, VII. Compras interestaduais de uso/consumo
-(`2556`) ou ativo (`2551`) exigem o diferencial de alíquota para a UF de destino.
+A apuração de entrada cobre compras interestaduais para uso ou consumo (CFOP 2556)
+e ativo imobilizado (CFOP 2551). A competência segue a data fiscal de entrada,
+com fallback para a emissão. Operações sob ST (incluindo CFOPs 2406 e 2407)
+aparecem separadas e ficam fora do total de recolhimento próprio.
 
-`DifalEntradaService.apurarCompetencia` calcula, por item:
-`DIFAL = base × (alíquota interna da UF do adquirente − alíquota interestadual)`.
-A alíquota interna usa uma tabela por UF (fallback 18%); a interestadual vem do
-item (fallback 12%). O DIFAL é somado por competência.
+O catálogo versionado usa o tipo `DIFAL`, a UF de destino, a competência e a
+chave `DIFAL_ENTRADA_CONTRIBUINTE`. Configure os percentuais como strings no
+conteúdo da regra, incluindo `aliquota_interna` e, quando aplicável,
+`aliquota_fcp`, `percentual_reducao` e `percentual_beneficio`. A alíquota
+interestadual vem da regra ou do item, conforme a operação.
+
+- **Base única.** Multiplica a base pela diferença entre as alíquotas. Usa a
+  base do XML quando disponível e evita reaplicar a redução já refletida nela.
+- **Base dupla.** Com `base_dupla: true`, parte do valor da operação, incluindo
+  IPI, deduz o ICMS da origem e recompõe a base por dentro pela alíquota interna.
+  O DIFAL é o ICMS calculado no destino menos o ICMS da origem. A ausência do
+  ICMS de origem deixa o item pendente.
+- **FCP.** Calcula e totaliza o adicional separadamente. Use
+  `fcp_na_base_por_dentro: true` quando a norma exigir a inclusão do adicional
+  na alíquota usada para recompor a base. Os valores por item são arredondados
+  a centavos.
+
+Somente resultados de regras homologadas entram nos totais a recolher.
+Parâmetros inválidos ou ausentes aparecem como pendência e regras vigentes
+aguardando homologação aparecem como simulação. O painel de apuração do
+Simples Nacional exibe o DIFAL de entrada separado do DAS.
+
+Referências: [LC 87/1996, art. 13](https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp87.htm),
+[exemplo oficial de base dupla da SEFAZ-MT](https://app1.sefaz.mt.gov.br/04256E4C004D9CE4/A846E70F044285D7042572F9004EEAA2/1FD72E1EFECC8B3A04258ABD0063EB97)
+e [LC 123/2006, art. 13](https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp123.htm).
 
 ## PIS/COFINS
 

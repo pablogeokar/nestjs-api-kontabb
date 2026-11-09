@@ -184,7 +184,7 @@ describe('DIFAL — matriz de risco (Fase 4 / tarefa 2.7 — R1.6, N09–N12)', 
     // base 1000 → redução 10% (900) → benefício 20% (720).
     const r = await apurar(
       { uf: 'SP' },
-      [item({ percentualReducaoBcIcms: '10.0000' })],
+      [item({ valorBcIcms: null, percentualReducaoBcIcms: '10.0000' })],
       { aliquota_interna: '18.0000', percentual_beneficio: '20.0000' },
     );
     const d = r.itens[0];

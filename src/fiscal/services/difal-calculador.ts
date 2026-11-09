@@ -48,6 +48,7 @@ import type { DifalBaseComposta } from './difal-base';
 const ESCALA_ALIQUOTA = 4;
 // Escala monetária (centavos), padrão das colunas `numeric(_,2)` do fiscal.
 const ESCALA_VALOR = 2;
+const CEM = 100n * 10n ** BigInt(ESCALA_ALIQUOTA);
 
 /**
  * Estado do resultado quanto à existência de regra homologada (R1.2):
@@ -231,7 +232,23 @@ export function calcularDifalHipotese(
     };
   }
 
-  const baseScaled = toScaledInteger(input.baseCalculo, ESCALA_VALOR);
+  const icmsOrigem = input.baseComposta?.icmsOrigem;
+  if (icmsOrigem === null) {
+    return {
+      ...base,
+      status: 'PENDENTE',
+      aliquotaInterna: regra.aliquotaInterna,
+      aliquotaInterestadual: aliquotaInterestadualStr,
+      aliquotaFcp: naoVazio(regra.aliquotaFcp),
+      diferencialAliquota: null,
+      valorDifal: '0.00',
+      valorFcp: '0.00',
+      pendente: true,
+      memoria: 'Base dupla exige o valor do ICMS da origem no item.',
+    };
+  }
+
+  const baseScaled = toScaledInteger(base.baseCalculo, ESCALA_VALOR);
   const internaScaled = toScaledInteger(regra.aliquotaInterna, ESCALA_ALIQUOTA);
   const interScaled = toScaledInteger(
     aliquotaInterestadualStr,
@@ -241,9 +258,11 @@ export function calcularDifalHipotese(
   // negativo quando a interestadual >= interna (não há DIFAL a recolher).
   const difScaled = positive(internaScaled - interScaled);
 
-  // DIFAL = base(centavos) * dif(pontos * 1e4) / (100 * 1e4).
+  const icmsDestino = aplicarAliquota(baseScaled, internaScaled);
   const difalScaled =
-    (baseScaled * difScaled) / (100n * 10n ** BigInt(ESCALA_ALIQUOTA));
+    icmsOrigem === undefined
+      ? aplicarAliquota(baseScaled, difScaled)
+      : positive(icmsDestino - toScaledInteger(icmsOrigem, ESCALA_VALOR));
 
   // FCP (quando a regra o institui) = base_fcp * aliquota_fcp / 100. Entra
   // separado do DIFAL. A BASE DO FCP vem da composição (tarefa 2.4) quando o
@@ -257,8 +276,7 @@ export function calcularDifalHipotese(
   const fcpScaled =
     fcpStr == null
       ? 0n
-      : (baseFcpScaled * toScaledInteger(fcpStr, ESCALA_ALIQUOTA)) /
-        (100n * 10n ** BigInt(ESCALA_ALIQUOTA));
+      : aplicarAliquota(baseFcpScaled, toScaledInteger(fcpStr, ESCALA_ALIQUOTA));
 
   const status: DifalCalculoStatus = opcoes.aprovada
     ? 'CALCULADO'
@@ -266,6 +284,11 @@ export function calcularDifalHipotese(
   const diferencialStr = fromScaledInteger(difScaled, ESCALA_ALIQUOTA);
   const valorDifalStr = fromScaledInteger(difalScaled, ESCALA_VALOR);
   const valorFcpStr = fromScaledInteger(fcpScaled, ESCALA_VALOR);
+
+  const formula =
+    icmsOrigem === undefined
+      ? `base ${base.baseCalculo} × (${regra.aliquotaInterna} − ${aliquotaInterestadualStr}) / 100`
+      : `ICMS de destino ${fromScaledInteger(icmsDestino)} (${base.baseCalculo} × ${regra.aliquotaInterna}%) − ICMS de origem ${icmsOrigem}`;
 
   return {
     ...base,
@@ -279,9 +302,7 @@ export function calcularDifalHipotese(
     pendente: status !== 'CALCULADO',
     memoria:
       `DIFAL ${input.hipotese} (${ufDestino}, ${input.competencia}, resp. ` +
-      `${input.responsavel}): base ${base.baseCalculo} × (interna ` +
-      `${regra.aliquotaInterna} − interestadual ${aliquotaInterestadualStr} = ` +
-      `${diferencialStr}) / 100 = ${valorDifalStr}` +
+`${input.responsavel}): ${formula} = ${valorDifalStr}` +
       (fcpStr != null ? `; FCP ${fcpStr} = ${valorFcpStr}` : '') +
       (status === 'SIMULACAO'
         ? '. Regra vigente porém NÃO aprovada: simulação, não guia (R1.2).'
@@ -337,6 +358,10 @@ function naoVazio(valor: string | null | undefined): string | null {
   if (valor == null) return null;
   const t = valor.trim();
   return t === '' ? null : t;
+}
+
+function aplicarAliquota(base: bigint, aliquota: bigint): bigint {
+  return (base * aliquota + CEM / 2n) / CEM;
 }
 
 function normalizarUf(uf: string): string {

@@ -1,9 +1,5 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { and, eq, gte, lte, sql } from 'drizzle-orm';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
@@ -11,7 +7,7 @@ import {
   documentosFiscaisItens,
 } from '../../database/schema';
 import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
-import { parseCompetenciaMensal } from '../fiscal-date.util';
+import { FiscalPeriodSelectionService } from './fiscal-period-selection.service';
 import { classificarDifalHipotese, type DifalHipotese } from './difal-hipotese';
 import {
   calcularDifalHipotese,
@@ -103,6 +99,7 @@ export class DifalEntradaService {
   constructor(
     private readonly database: DatabaseService,
     private readonly catalogo: FiscalNormativeCatalogService,
+    private readonly periodos: FiscalPeriodSelectionService = new FiscalPeriodSelectionService(),
   ) {}
 
   /**
@@ -119,8 +116,13 @@ export class DifalEntradaService {
    * fonte do valor.
    */
   async apurarCompetencia(input: { clienteId: string; competencia: string }) {
-    const { competencia, competenciaMensal, inicio, fim } =
-      this.competenciaRange(input.competencia);
+    const { periodo, where } = this.periodos.resolve({
+      ...input,
+      finalidade: 'ENTRADA_SAIDA',
+      definitiva: false,
+    });
+    const { competencia: competenciaMensal, competenciaDate: competencia } =
+      periodo;
     const cliente = await this.getCliente(input.clienteId);
     const uf = (cliente.uf ?? '').trim().toUpperCase();
     const aliquotaInternaReferencia =
@@ -146,12 +148,9 @@ export class DifalEntradaService {
         })
       : null;
     const regra = this.regraDoConteudo(regraVersao?.conteudo);
-    // Parâmetros de COMPOSIÇÃO DA BASE (tarefa 2.4) extraídos do mesmo `conteudo`
-    // da regra: por dentro, redução, benefício, FCP. Decimais permanecem strings.
-    const baseRegra = this.baseRegraDoConteudo(regraVersao?.conteudo);
     const regraAprovada = regraVersao?.escopoAprovado ?? false;
 
-    const cfops = [...CFOPS_DIFAL_ENTRADA];
+    const emitenteUf = sql<string | null>`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`;
     const itens = await this.database.db
       .select({
         documentoFiscalId: documentosFiscaisItens.documentoFiscalId,
@@ -162,10 +161,10 @@ export class DifalEntradaService {
         // adquirente) para que o resultado mostre a operação interestadual
         // completa (tarefa 2.6 — R1.5). Normalizada em maiúsculas; null quando
         // o emitente não traz a UF.
-        emitenteUf: sql<
-          string | null
-        >`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
+        emitenteUf,
         valorBcIcms: documentosFiscaisItens.valorBcIcms,
+        valorIcms: documentosFiscaisItens.valorIcms,
+        valorIpi: documentosFiscaisItens.valorIpi,
         valorBrutoProduto: documentosFiscaisItens.valorBrutoProduto,
         aliquotaIcms: documentosFiscaisItens.aliquotaIcms,
         // Parcelas e marcadores que a COMPOSIÇÃO DA BASE (tarefa 2.4) consome:
@@ -191,13 +190,14 @@ export class DifalEntradaService {
           eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'ENTRADA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
           eq(documentosFiscais.escriturado, true),
-          gte(documentosFiscais.dataEmissao, inicio),
-          lte(documentosFiscais.dataEmissao, fim),
-          sql`${documentosFiscaisItens.cfop} = ANY(${cfops})`,
+          where,
+          sql`${emitenteUf} IS DISTINCT FROM ${uf}`,
+          inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA]),
         ),
       );
 
     let totalDifal = 0n;
+    let totalFcp = 0n;
     let totalBase = 0n;
     // Contagem por hipótese (R1.1): a separação precisa ser visível no
     // resultado, não só interna. ST aparece aqui mas NÃO entra no total a
@@ -253,6 +253,8 @@ export class DifalEntradaService {
       const baseComposta = comporBaseDifal(
         {
           valorBcIcms: item.valorBcIcms,
+          valorIcms: item.valorIcms,
+          valorIpi: item.valorIpi,
           valorBrutoProduto: item.valorBrutoProduto,
           valorFrete: item.valorFrete,
           valorSeguro: item.valorSeguro,
@@ -265,7 +267,7 @@ export class DifalEntradaService {
           valorIcmsStRetido: item.valorIcmsStRetido,
           stRetida: classificacao.stRetida,
         },
-        baseRegra,
+        regra,
       );
       const baseStr = baseComposta.baseCalculo;
       // Alíquota interestadual EFETIVA apurada na composição: 4% quando a
@@ -295,6 +297,9 @@ export class DifalEntradaService {
         : null;
 
       if (calc) {
+        if (regraVersao && !regra) {
+          calc.memoria = 'A regra de DIFAL vigente contém parâmetros inválidos ou incompletos.';
+        }
         porStatus[calc.status] += 1;
       }
 
@@ -345,6 +350,7 @@ export class DifalEntradaService {
         calc?.status === 'CALCULADO' && recolhimentoProprio === 'SIM';
       if (recolheDifalProprio) {
         totalDifal += toScaledInteger(calc.valorDifal);
+        totalFcp += toScaledInteger(calc.valorFcp);
         totalBase += toScaledInteger(baseStr);
       }
 
@@ -353,7 +359,11 @@ export class DifalEntradaService {
       // DIFAL de entrada a recolher (CALCULADO + recolhimento próprio). Para
       // Lucro Presumido/Real o DIFAL de entrada corre pela apuração normal, não
       // "fora do DAS"; para itens sob ST/retenção nada é devido (R1.6/R1.4).
-      const recolhidoForaDoDas = adquirenteSimples && recolheDifalProprio;
+      const recolhidoForaDoDas =
+        adquirenteSimples &&
+        recolheDifalProprio &&
+        (toScaledInteger(calc.valorDifal) > 0n ||
+          toScaledInteger(calc.valorFcp) > 0n);
 
       return {
         documento_fiscal_id: item.documentoFiscalId,
@@ -376,6 +386,7 @@ export class DifalEntradaService {
         recolhido_fora_do_das: recolhidoForaDoDas,
         st_retida: classificacao.stRetida,
         base_calculo: baseStr,
+        icms_origem: baseComposta.icmsOrigem ?? null,
         // Estado do cálculo (R1.2): CALCULADO/SIMULACAO/PENDENTE, ou null para
         // hipóteses não calculadas aqui (ST, saída, antecipação).
         status_calculo: calc?.status ?? null,
@@ -433,7 +444,7 @@ export class DifalEntradaService {
       // entrada do Simples (recolhido fora do DAS). Null quando não informado.
       regime_adquirente: regimeAdquirente,
       // Fonte do cálculo: catálogo versionado quando há regra; estado explícito.
-      origem_regra: regraVersao
+      origem_regra: regraVersao && regra
         ? {
             catalogo_versao_id: regraVersao.catalogoVersaoId,
             regra_versao_id: regraVersao.id,
@@ -467,79 +478,69 @@ export class DifalEntradaService {
       // contribuinte, antecipação, itens pendentes/simulados e qualquer item com
       // imposto já retido NÃO compõem o valor a recolher (não-duplicidade, R1.4).
       total_difal_recolher: fromScaledInteger(totalDifal),
+      total_fcp_recolher: fromScaledInteger(totalFcp),
       itens: detalhes,
     };
   }
 
-  // Interpreta o `conteudo` jsonb da regra de catálogo como parâmetros de DIFAL.
-  // Decimais permanecem strings; campos ausentes viram `undefined`/`null` e o
-  // calculador trata a ausência (ex.: sem alíquota interna → não calcula).
   private regraDoConteudo(
     conteudo: Record<string, unknown> | undefined,
-  ): DifalRegra | null {
+  ): (DifalRegra & DifalBaseRegra) | null {
     if (!conteudo) return null;
-    const aliquotaInterna = this.comoDecimalString(
+    const aliquotaInterna = percentual(
       conteudo.aliquota_interna ?? conteudo.aliquotaInterna,
     );
-    if (aliquotaInterna == null) return null;
+    const aliquotaInterestadual = percentual(
+      conteudo.aliquota_interestadual ?? conteudo.aliquotaInterestadual,
+    );
+    const aliquotaFcp = percentual(conteudo.aliquota_fcp ?? conteudo.aliquotaFcp);
+    const percentualReducao = percentual(
+      conteudo.percentual_reducao ?? conteudo.percentualReducao,
+      true,
+    );
+    const percentualBeneficio = percentual(
+      conteudo.percentual_beneficio ?? conteudo.percentualBeneficio,
+      true,
+    );
+    const basePorDentro =
+      conteudo.base_por_dentro ?? conteudo.basePorDentro ?? false;
+    const baseDupla = conteudo.base_dupla ?? conteudo.baseDupla ?? false;
+    const fcpNaBasePorDentro =
+      conteudo.fcp_na_base_por_dentro ?? conteudo.fcpNaBasePorDentro ?? false;
+    if (
+      !aliquotaInterna ||
+      aliquotaInterestadual === undefined ||
+      aliquotaFcp === undefined ||
+      percentualReducao === undefined ||
+      percentualBeneficio === undefined ||
+      typeof basePorDentro !== 'boolean' ||
+      typeof baseDupla !== 'boolean' ||
+      typeof fcpNaBasePorDentro !== 'boolean'
+    ) {
+      return null;
+    }
+
+    if (
+      fcpNaBasePorDentro &&
+      ((!basePorDentro && !baseDupla) ||
+        !aliquotaFcp ||
+        toScaledInteger(aliquotaInterna, 4) +
+          toScaledInteger(aliquotaFcp, 4) >=
+          1_000_000n)
+    ) {
+      return null;
+    }
+
     return {
       aliquotaInterna,
-      aliquotaInterestadual: this.comoDecimalString(
-        conteudo.aliquota_interestadual ?? conteudo.aliquotaInterestadual,
-      ),
-      aliquotaFcp: this.comoDecimalString(
-        conteudo.aliquota_fcp ?? conteudo.aliquotaFcp,
-      ),
+      aliquotaInterestadual,
+      aliquotaFcp,
+      percentualReducao,
+      percentualBeneficio,
+      basePorDentro,
+      baseDupla,
+      fcpNaBasePorDentro,
     };
-  }
-
-  // Interpreta o `conteudo` jsonb como parâmetros de COMPOSIÇÃO DA BASE (tarefa
-  // 2.4): por dentro, redução, benefício e FCP. Independe de `regraDoConteudo`
-  // (que trata o cálculo do diferencial): a composição é aplicada mesmo sem
-  // alíquota interna, pois redução/benefício/retenção/origem não dependem dela.
-  // Decimais permanecem strings; `base_por_dentro` é um booleano do conteúdo.
-  private baseRegraDoConteudo(
-    conteudo: Record<string, unknown> | undefined,
-  ): DifalBaseRegra | null {
-    if (!conteudo) return null;
-    const basePorDentro = conteudo.base_por_dentro ?? conteudo.basePorDentro;
-    return {
-      aliquotaInterna: this.comoDecimalString(
-        conteudo.aliquota_interna ?? conteudo.aliquotaInterna,
-      ),
-      percentualReducao: this.comoDecimalString(
-        conteudo.percentual_reducao ?? conteudo.percentualReducao,
-      ),
-      percentualBeneficio: this.comoDecimalString(
-        conteudo.percentual_beneficio ?? conteudo.percentualBeneficio,
-      ),
-      basePorDentro: basePorDentro === true,
-      aliquotaFcp: this.comoDecimalString(
-        conteudo.aliquota_fcp ?? conteudo.aliquotaFcp,
-      ),
-    };
-  }
-
-  // Aceita apenas strings decimais (restrição da fase: nunca `Number`). Qualquer
-  // outro tipo (inclusive `number` vindo de um jsonb mal cadastrado) é rejeitado
-  // como ausente, para não introduzir aritmética de ponto flutuante.
-  private comoDecimalString(valor: unknown): string | null {
-    if (typeof valor !== 'string') return null;
-    const t = valor.trim();
-    return t === '' ? null : t;
-  }
-
-  private competenciaRange(competencia: string) {
-    try {
-      const range = parseCompetenciaMensal(competencia);
-      // `competenciaMensal` ('YYYY-MM') é o formato que o catálogo consome; o
-      // `competencia` do range é 'YYYY-MM-01' (datas SPED). Devolvemos ambos.
-      return { ...range, competenciaMensal: competencia };
-    } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'Competência inválida.',
-      );
-    }
   }
 
   private async getCliente(clienteId: string) {
@@ -562,4 +563,17 @@ export class DifalEntradaService {
     if (!rows[0]) throw new NotFoundException('Empresa não encontrada.');
     return rows[0];
   }
+}
+
+function percentual(
+  valor: unknown,
+  permiteCem = false,
+): string | null | undefined {
+  if (valor == null) return null;
+  if (typeof valor !== 'string') return undefined;
+  const texto = valor.trim();
+  if (!/^\d{1,3}(?:[.,]\d{1,4})?$/.test(texto)) return undefined;
+  const escalado = toScaledInteger(texto, 4);
+  if (escalado > (permiteCem ? 1_000_000n : 999_999n)) return undefined;
+  return texto;
 }
