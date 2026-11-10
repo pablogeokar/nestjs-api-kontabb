@@ -20,6 +20,8 @@ import type { CurrentUser as CurrentUserType } from '../../common/types';
 import { ClientesService } from '../../clientes/clientes.service';
 import { CiapService } from '../services/ciap.service';
 import { DifalEntradaService } from '../services/difal-entrada.service';
+import { calcularAntecipacaoParcial } from '../services/antecipacao-parcial';
+import { SimularAntecipacaoParcialDto } from '../dto/antecipacao-parcial.dto';
 import {
   FiscalGuiasService,
   type TributoGuia,
@@ -365,6 +367,21 @@ export class AdminFiscalApuracaoController {
       competencia,
     });
     return { data };
+  }
+
+  @Post('antecipacao-parcial/simular')
+  @ApiOperation({ summary: 'Simula a antecipação parcial com parâmetros conferidos' })
+  simularAntecipacaoParcial(@Body() body: SimularAntecipacaoParcialDto) {
+    const porAliquotas = body.metodo === 'DIFERENCA_ALIQUOTAS';
+    return {
+      data: calcularAntecipacaoParcial({
+        baseCalculo: body.baseCalculo,
+        aliquotaInterna: body.aliquotaInterna,
+        aliquotaInterestadual: porAliquotas ? body.aliquotaInterestadual : undefined,
+        deducaoOrigem: porAliquotas ? undefined : body.deducaoOrigem,
+        percentualReducao: body.percentualReducao,
+      }),
+    };
   }
 
   // ── Rollout: inventário read-only antes de ativar correções (R5.2) ─────────

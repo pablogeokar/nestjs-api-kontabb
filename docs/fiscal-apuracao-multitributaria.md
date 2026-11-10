@@ -62,6 +62,30 @@ Referências: [LC 87/1996, art. 13](https://www.planalto.gov.br/ccivil_03/leis/l
 [exemplo oficial de base dupla da SEFAZ-MT](https://app1.sefaz.mt.gov.br/04256E4C004D9CE4/A846E70F044285D7042572F9004EEAA2/1FD72E1EFECC8B3A04258ABD0063EB97)
 e [LC 123/2006, art. 13](https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp123.htm).
 
+## Antecipação Parcial do ICMS
+
+A apuração de entradas mostra um bloco separado para compras interestaduais
+para revenda (CFOP escriturado 2102) na Bahia. O cálculo usa o valor da
+operação, aplica a diferença de alíquotas para o Simples Nacional ou deduz o
+ICMS de origem no regime normal. Sinais de ICMS-ST no XML ficam em conferência
+separada e os itens em revisão permanecem na seção de conferência.
+
+Use a chave `ANTECIPACAO_PARCIAL` no catálogo `DIFAL` de BA. O conteúdo da
+regra tem um array `enquadramentos` com `ncm`, `cest` (ou `null`),
+`regime` e `tratamento` (`APLICAVEL`, `ICMS_ST` ou `DISPENSADO`).
+Quando aplicável, informe `aliquota_interna` em pontos percentuais como
+string. Para fixar a `aliquota_interestadual` no Simples, informe também
+`uf_origem` e `origem_mercadoria` para o escopo exato da regra.
+Correspondências ambíguas ou parâmetros insuficientes deixam o item pendente.
+
+O total da competência considera cálculos com regra homologada antes de
+reduções condicionadas ao pagamento. O simulador administrativo recebe a
+base, a alíquota interna e a alíquota interestadual ou o ICMS de origem
+dedutível, além de uma redução opcional sobre o imposto. A simulação fica
+fora dos totais da competência.
+
+A apuração segue o [RICMS-BA, arts. 274, 321 e 332](https://mbusca.sefaz.ba.gov.br/DITRI/normas_complementares/decretos/decreto_2012_13780_ricms_texto_2021.pdf).
+
 ## PIS/COFINS
 
 `PisCofinsService.apurarCompetencia` segrega a apuração por regime do cliente:
@@ -107,7 +131,8 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`):
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| GET | `/admin/fiscal/apuracao/difal-entrada?clienteId=UUID&competencia=AAAA-MM` | DIFAL de entrada da empresa |
+| GET | `/admin/fiscal/apuracao/difal-entrada?clienteId=UUID&competencia=AAAA-MM` | DIFAL de entrada e Antecipação Parcial da empresa |
+| POST | `/admin/fiscal/apuracao/antecipacao-parcial/simular` | Simular com parâmetros informados |
 | POST | `/admin/fiscal/apuracao/ciap/importar` | Importar bens de ativo |
 | POST | `/admin/fiscal/apuracao/ciap/bens` | Registrar bem manualmente |
 | POST | `/admin/fiscal/apuracao/ciap/apropriar` | Efetivar 1/48 + ajuste E111 |
@@ -118,7 +143,7 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`):
 
 ## Interface
 
-- **Fiscal → DIFAL** (`/admin/fiscal/difal`): consulta da apuração de entrada
+- **Fiscal → DIFAL e Antecipação** (`/admin/fiscal/difal`): consulta da apuração de entrada
   para a empresa e a competência selecionadas no painel administrativo. A
   seção de conferência lista NF-e interestaduais fora do cálculo, identifica
   escrituração em revisão e oferece um atalho para localizar a nota.

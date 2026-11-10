@@ -16,7 +16,7 @@ import {
   documentosFiscais,
   documentosFiscaisItens,
 } from '../../database/schema';
-import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
+import { fromScaledInteger, sumFiscalValues, toScaledInteger } from '../sped/sped-decimal';
 import { FiscalPeriodSelectionService } from './fiscal-period-selection.service';
 import { classificarDifalHipotese, type DifalHipotese } from './difal-hipotese';
 import {
@@ -27,6 +27,10 @@ import {
 } from './difal-calculador';
 import { comporBaseDifal, type DifalBaseRegra } from './difal-base';
 import { FiscalNormativeCatalogService } from './fiscal-normative-catalog.service';
+import {
+  apurarItemAntecipacaoParcial,
+  CFOP_ANTECIPACAO_PARCIAL_BA,
+} from './antecipacao-parcial';
 
 // CFOPs de ENTRADA interestadual de uso/consumo e ativo SEM ST. São os que
 // geram, de fato, DIFAL de entrada do CONTRIBUINTE (a diferença de alíquota que
@@ -60,6 +64,11 @@ const RESPONSAVEL_POR_HIPOTESE: Record<DifalHipotese, DifalResponsavel> = {
 // em vez de simplesmente omitir. (R1.4.)
 const CFOPS_DIFAL_ENTRADA_ST = ['2406', '2407'] as const;
 const CFOPS_REVENDA_INDUSTRIALIZACAO = ['2101', '2102'] as const;
+
+const COMPETENCIA_EMISSAO_NFE = sql<string>`to_char(
+  coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date),
+  'YYYY-MM'
+)`;
 
 type SituacaoEntradaInterestadual =
   | 'EM_REVISAO'
@@ -167,10 +176,17 @@ export class DifalEntradaService {
     const regraAprovada = regraVersao?.escopoAprovado ?? false;
 
     const emitenteUf = sql<string | null>`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`;
-    const itens = await this.database.db
+    const linhas = await this.database.db
       .select({
         documentoFiscalId: documentosFiscaisItens.documentoFiscalId,
         itemId: documentosFiscaisItens.id,
+        numeroItem: documentosFiscaisItens.numeroItem,
+        numeroDocumento: documentosFiscais.numeroDocumento,
+        competenciaEmissao: COMPETENCIA_EMISSAO_NFE,
+        ncm: documentosFiscaisItens.ncm,
+        cest: documentosFiscaisItens.cest,
+        cstIcms: documentosFiscaisItens.cstIcms,
+        csosnIcms: documentosFiscaisItens.csosnIcms,
         cfop: documentosFiscaisItens.cfop,
         // UF de ORIGEM (remetente): extraída do emitente do documento. É a UF de
         // onde a mercadoria saiu, exposta por item ao lado da UF de destino (do
@@ -209,9 +225,51 @@ export class DifalEntradaService {
           eq(documentosFiscaisItens.cfopRevisaoNecessaria, false),
           where,
           sql`${emitenteUf} IS DISTINCT FROM ${uf}`,
-          inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA]),
+          or(
+            inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA]),
+            uf === 'BA'
+              ? and(
+                  eq(documentosFiscaisItens.cfop, CFOP_ANTECIPACAO_PARCIAL_BA),
+                  eq(documentosFiscais.tipoDocumento, 'NFE'),
+                  eq(documentosFiscais.tipoOperacaoEscriturada, 'ENTRADA'),
+                  sql`${documentosFiscais.tpNfXml} IS DISTINCT FROM '0'`,
+                )
+              : undefined,
+          ),
         ),
       );
+
+    const itens = linhas.filter(
+      (item) => item.cfop !== CFOP_ANTECIPACAO_PARCIAL_BA,
+    );
+    const entradasAntecipacao = linhas
+      .filter((item) => item.cfop === CFOP_ANTECIPACAO_PARCIAL_BA)
+      .sort(
+        (a, b) =>
+          a.competenciaEmissao.localeCompare(b.competenciaEmissao) ||
+          a.numeroDocumento.localeCompare(b.numeroDocumento, 'pt-BR', {
+            numeric: true,
+          }) ||
+          a.documentoFiscalId.localeCompare(b.documentoFiscalId) ||
+          a.numeroItem - b.numeroItem,
+      );
+    const regraAntecipacao =
+      entradasAntecipacao.length > 0
+        ? await this.catalogo.resolverRegraVigente({
+            tipo: 'DIFAL',
+            uf,
+            competencia: competenciaMensal,
+            chave: 'ANTECIPACAO_PARCIAL',
+          })
+        : null;
+    const itensAntecipacao = entradasAntecipacao.map((item) =>
+      apurarItemAntecipacaoParcial(item, regimeAdquirente, regraAntecipacao),
+    );
+    const totalAntecipacao = sumFiscalValues(
+      itensAntecipacao
+        .filter((item) => item.situacao === 'CALCULADO')
+        .map((item) => item.calculo?.valor_antecipacao),
+    );
 
     const entradasForaDoCalculo = uf
       ? await this.listarEntradasForaDoCalculo(
@@ -506,6 +564,10 @@ export class DifalEntradaService {
       total_difal_recolher: fromScaledInteger(totalDifal),
       total_fcp_recolher: fromScaledInteger(totalFcp),
       entradas_fora_do_calculo: entradasForaDoCalculo,
+      antecipacao_parcial: {
+        total_apurado: totalAntecipacao,
+        itens: itensAntecipacao,
+      },
       itens: detalhes,
     };
   }
@@ -516,6 +578,8 @@ export class DifalEntradaService {
     periodo: SQL,
     emitenteUf: SQL<string | null>,
   ) {
+    const cfopsApurados = [...CFOPS_DIFAL_ENTRADA];
+    if (uf === 'BA') cfopsApurados.push(CFOP_ANTECIPACAO_PARCIAL_BA);
     const emRevisao = sql`
       (NOT ${documentosFiscais.escriturado} OR ${documentosFiscaisItens.cfopRevisaoNecessaria})
     `;
@@ -525,16 +589,12 @@ export class DifalEntradaService {
         THEN 'REVENDA_INDUSTRIALIZACAO'
       ELSE 'OUTRA_ENTRADA'
     END`.as('situacao_triagem');
-    const competenciaEmissao = sql<string>`to_char(
-      coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date),
-      'YYYY-MM'
-    )`;
 
     return this.database.db
       .select({
         documento_fiscal_id: documentosFiscais.id,
         numero_documento: documentosFiscais.numeroDocumento,
-        competencia_emissao: competenciaEmissao,
+        competencia_emissao: COMPETENCIA_EMISSAO_NFE,
         uf_origem: emitenteUf,
         situacao,
         quantidade_itens: count(),
@@ -563,7 +623,7 @@ export class DifalEntradaService {
           ))`,
           or(
             emRevisao,
-            not(inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA])),
+            not(inArray(documentosFiscaisItens.cfop, cfopsApurados)),
           ),
         ),
       )

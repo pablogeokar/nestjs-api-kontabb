@@ -3,7 +3,12 @@ import { DifalEntradaService } from './difal-entrada.service';
 import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
 
 // DB falso: getCliente resolve por .limit; a busca de itens resolve por .where.
-function createDb(uf: string, itens: unknown[], entradasForaDoCalculo: unknown[] = []) {
+function createDb(
+  uf: string,
+  itens: unknown[],
+  entradasForaDoCalculo: unknown[] = [],
+  regimeTributario?: string,
+) {
   const whereConferencia = jest.fn().mockReturnValue({
     groupBy: jest.fn().mockReturnValue({
       orderBy: jest.fn().mockResolvedValue(entradasForaDoCalculo),
@@ -21,7 +26,7 @@ function createDb(uf: string, itens: unknown[], entradasForaDoCalculo: unknown[]
             return {
               from: jest.fn().mockReturnValue({
                 where: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue([{ id: 'c1', uf }]),
+                  limit: jest.fn().mockResolvedValue([{ id: 'c1', uf, regimeTributario }]),
                 }),
               }),
             };
@@ -111,6 +116,45 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     expect(query.sql).toContain('"documentos_fiscais_itens"."cfop_revisao_necessaria"');
     expect(query.sql).toContain('"documentos_fiscais"."tp_nf_xml" IS DISTINCT FROM');
     expect(query.params).toEqual(expect.arrayContaining(['c1', 'BA', 'NFE', 'ENTRADA']));
+  });
+
+  it('mantém os valores de DIFAL e Antecipação Parcial em totais separados', async () => {
+    const database = createDb('BA', [
+      { cfop: '2556', valorBcIcms: '1000.00', aliquotaIcms: '12.0000' },
+      {
+        cfop: '2102',
+        emitenteUf: 'SE',
+        ncm: '17041000',
+        cest: null,
+        valorBrutoProduto: '1000.00',
+        valorIcms: '120.00',
+      },
+    ], [], 'LUCRO_REAL');
+    const regraDifal = { escopoAprovado: true, conteudo: { aliquota_interna: '18' } };
+    const regraAntecipacao = {
+      escopoAprovado: true,
+      conteudo: { enquadramentos: [{
+        ncm: '17041000',
+        cest: null,
+        regime: 'LUCRO_REAL',
+        tratamento: 'APLICAVEL',
+        aliquota_interna: '20.5',
+      }] },
+    };
+    const catalogo = {
+      resolverRegraVigente: jest.fn(({ chave }) =>
+        Promise.resolve(chave === 'ANTECIPACAO_PARCIAL' ? regraAntecipacao : regraDifal),
+      ),
+    };
+    const service = new DifalEntradaService(database as never, catalogo as never);
+    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-10' });
+
+    expect(result.quantidade_itens).toBe(1);
+    expect(result.total_difal_recolher).toBe('60.00');
+    expect(result.antecipacao_parcial).toMatchObject({
+      total_apurado: '85.00',
+      itens: [{ situacao: 'CALCULADO', calculo: { valor_antecipacao: '85.00' } }],
+    });
   });
 
   it('calcula DIFAL com a alíquota interna vinda do CATÁLOGO, não da tabela fixa', async () => {
