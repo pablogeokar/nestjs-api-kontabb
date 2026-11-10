@@ -52,7 +52,7 @@ import type {
   SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@10';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@11';
 const UFS_SIMPLES = new Set(
   'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
     ' ',
@@ -69,6 +69,7 @@ interface ReceitaAgrupada {
 }
 
 type AbatimentosPorMes = Map<string, { abatimentos: Map<string, bigint> }>;
+type DocumentoDevolucaoPendente = { numero: string; competencia: string };
 
 @Injectable()
 export class SimplesNacionalService {
@@ -758,10 +759,14 @@ export class SimplesNacionalService {
       ...receitasAtividade.pendencias,
       ...auditoriaReceitas.pendencias,
     ];
+    const pendenciasDevolucao: Record<string, DocumentoDevolucaoPendente> = {};
     const inicioAuditoria = `${anoAnterior}-01`;
     for (const [mes, ocorrencia] of devolucoes.ocorrencias) {
       if (mes >= inicioAuditoria && !receitasMensais.mesesManuais.has(mes)) {
-        pendencias.push(...ocorrencia.pendencias);
+        for (const [mensagem, documento] of ocorrencia.pendencias) {
+          pendencias.push(mensagem);
+          pendenciasDevolucao[mensagem] = documento;
+        }
       }
     }
     const historicoComSaldoAConferir = [...devolucoes.porMes].some(
@@ -867,6 +872,7 @@ export class SimplesNacionalService {
         receitasTransportePorMunicipioOrigem:
           receitasAtividade.receitasTransportePorMunicipio,
         pendencias,
+        pendenciasDevolucao,
       },
       itens: calculados.map(toItemResponse),
     };
@@ -1193,6 +1199,9 @@ export class SimplesNacionalService {
         mes: sql<string>`to_char(${dataDevolucao}, 'YYYY-MM')`,
         numero: documentosFiscais.numeroDocumento,
         emitente: documentosFiscais.emitenteCnpjCpf,
+        destinatario: documentosFiscais.destinatarioCnpjCpf,
+        tpNfXml: documentosFiscais.tpNfXml,
+        mesEmissao: sql<string>`to_char(coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date), 'YYYY-MM')`,
         cnpjCliente: clientes.cnpj,
         referencias: documentosFiscais.documentosReferenciados,
         escrituracaoStatus: documentosFiscais.escrituracaoStatus,
@@ -1230,7 +1239,7 @@ export class SimplesNacionalService {
 
     const ocorrencias = new Map<
       string,
-      { valor: bigint; pendencias: Set<string> }
+      { valor: bigint; pendencias: Map<string, DocumentoDevolucaoPendente> }
     >();
     if (!entradas.length) {
       const porMes: ReturnType<typeof distribuirDevolucoesSimples> = new Map();
@@ -1248,7 +1257,7 @@ export class SimplesNacionalService {
     const inicio = `${entradas[0].mes}-01`;
     const [vendas, originais, historicos] = await Promise.all([
       this.carregarItensReceitaPeriodo(clienteId, inicio, fim),
-      this.carregarVendasReferenciadas(clienteId, chaves),
+      this.carregarNfesReferenciadas(clienteId, chaves),
       this.database.db
         .select({
           mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
@@ -1273,29 +1282,49 @@ export class SimplesNacionalService {
       const valor = valorReceitaSimples(entrada);
       if (valor === 0n) return [];
       const { mes, numero, cfop } = entrada;
+      const referencia = chavesPorEntrada[indice];
+      const itensOriginais = referencia.flatMap(
+        (chave) => originaisPorChave.get(chave) ?? [],
+      );
+      const referenciasLocalizadas =
+        referencia.length > 0 &&
+        referencia.every((chave) => originaisPorChave.has(chave));
+
+      // O CFOP de uma NF-e de entrada emitida pelo fornecedor descreve a
+      // operação dele. Se o vínculo comprova uma compra da empresa, não há
+      // devolução de receita de venda a conciliar no Simples da destinatária.
+      const devolucaoDeCompra =
+        entrada.tpNfXml === '0' &&
+        entrada.emitente !== entrada.cnpjCliente &&
+        entrada.destinatario === entrada.cnpjCliente &&
+        referenciasLocalizadas &&
+        itensOriginais.every(
+          (item) =>
+            item.tipoDocumento === 'NFE' &&
+            item.situacao === 'AUTORIZADA' &&
+            item.operacao === 'ENTRADA' &&
+            item.tpNfXml === '1' &&
+            item.emitente === entrada.emitente &&
+            item.destinatario === entrada.destinatario,
+        );
+      if (devolucaoDeCompra) return [];
+
       const ocorrencia = ocorrencias.get(mes) ?? {
         valor: 0n,
-        pendencias: new Set<string>(),
+        pendencias: new Map<string, DocumentoDevolucaoPendente>(),
       };
       ocorrencias.set(mes, ocorrencia);
       if (valor > 0n) ocorrencia.valor += valor;
-      const referencia = chavesPorEntrada[indice];
-      const itensVenda = referencia.flatMap(
-        (chave) => originaisPorChave.get(chave) ?? [],
-      );
       const anexo = /^[12](201|410)$/.test(cfop) ? 'ANEXO_II' : 'ANEXO_I';
       let grupo: string | null = null;
-      if (
-        itensVenda.length &&
-        referencia.every((chave) => originaisPorChave.has(chave))
-      ) {
+      if (referenciasLocalizadas) {
         const mesmoProduto =
           entrada.emitente === entrada.cnpjCliente
-            ? itensVenda.filter(
+            ? itensOriginais.filter(
                 (item) => item.codigoProduto === entrada.codigoProduto,
               )
             : [];
-        const itens = mesmoProduto.length ? mesmoProduto : itensVenda;
+        const itens = mesmoProduto.length ? mesmoProduto : itensOriginais;
         const grupos = new Set(
           itens.map((item) =>
             item.situacao === 'AUTORIZADA' &&
@@ -1307,7 +1336,7 @@ export class SimplesNacionalService {
         );
         if (grupos.size === 1) grupo = [...grupos][0];
       } else if (
-        !itensVenda.length &&
+        !itensOriginais.length &&
         entrada.emitente === entrada.cnpjCliente &&
         referencia.every(
           (chave) => chave.slice(6, 20) === entrada.cnpjCliente,
@@ -1323,18 +1352,28 @@ export class SimplesNacionalService {
         const { st, monofasico } = segregacaoMercadoriaSimples(cfop, entrada);
         grupo = chaveMercadoriaSimples(anexo, st, monofasico);
       }
-      if (
-        valor < 0n ||
-        entrada.escrituracaoStatus !== 'ESCRITURADO' ||
-        !/^[12](201|202|410|411|66[0-2])$/.test(cfop) ||
-        !grupo
-      ) {
-        ocorrencia.pendencias.add(
-          `Devolução NF-e ${numero} (${mes}, CFOP ${cfop}): confira o valor e a segregação da venda referenciada antes do fechamento.`,
+      let motivo: string | null = null;
+      if (valor < 0n) {
+        motivo = 'Confira o valor líquido dos itens da devolução.';
+      } else if (entrada.escrituracaoStatus !== 'ESCRITURADO') {
+        motivo = 'Conclua a revisão da escrituração da devolução.';
+      } else if (!/^[12](201|202|410|411|66[0-2])$/.test(cfop)) {
+        motivo = 'Confira o CFOP escriturado da devolução.';
+      } else if (!grupo) {
+        motivo = !referencia.length
+          ? 'O XML não informa a NF-e original. Confira a referência com o emitente.'
+          : !referenciasLocalizadas
+            ? 'A NF-e original não está no acervo da empresa. Importe o XML referenciado e recalcule.'
+            : 'A referência não identifica uma venda com segregação única. Confira os itens e a operação da NF-e original.';
+      }
+      if (motivo) {
+        ocorrencia.pendencias.set(
+          `Devolução NF-e ${numero} (${mes}, CFOP ${cfop}). ${motivo}`,
+          { numero, competencia: entrada.mesEmissao },
         );
         return [];
       }
-      return [{ mes, grupo, valor }];
+      return grupo ? [{ mes, grupo, valor }] : [];
     });
     const vendasSegregadas = vendas.flatMap((item) => {
       if (item.indTotal !== '1') return [];
@@ -1355,7 +1394,7 @@ export class SimplesNacionalService {
     return { porMes, ocorrencias };
   }
 
-  private async carregarVendasReferenciadas(
+  private async carregarNfesReferenciadas(
     clienteId: string,
     chaves: string[],
   ) {
@@ -1364,6 +1403,9 @@ export class SimplesNacionalService {
       .select({
         chave: documentosFiscais.chaveAcesso,
         tipoDocumento: documentosFiscais.tipoDocumento,
+        emitente: documentosFiscais.emitenteCnpjCpf,
+        destinatario: documentosFiscais.destinatarioCnpjCpf,
+        tpNfXml: documentosFiscais.tpNfXml,
         situacao: documentosFiscais.situacao,
         operacao: documentosFiscais.tipoOperacaoEscriturada,
         codigoProduto: documentosFiscaisItens.codigoProduto,

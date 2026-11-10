@@ -66,7 +66,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       status: 'RASCUNHO',
       rbt12: '573927.24',
       memoriaCalculo: {
-        motorVersao: 'simples-nacional@10',
+        motorVersao: 'simples-nacional@11',
         impedidoIcmsIss: false,
       },
     } as never);
@@ -119,7 +119,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
         ],
       ]),
       ocorrencias: new Map([
-        ['2026-04', { valor: 2500n, pendencias: new Set() }],
+        ['2026-04', { valor: 2500n, pendencias: new Map() }],
       ]),
     });
     mock('carregarPrimeiraCompetenciaReceita', '2026-04');
@@ -282,6 +282,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     const entrada = {
       ...mercadoria,
       mes: '2026-10',
+      mesEmissao: '2026-10',
       numero: '1699',
       cfop: '2411',
       emitente: 'comprador',
@@ -296,6 +297,24 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
         .mockResolvedValue([
           entrada,
           { ...entrada, numero: '1700', referencias: [] },
+          {
+            ...entrada,
+            numero: '8830048',
+            cfop: '2202',
+            tpNfXml: '0',
+            emitente: 'fornecedor',
+            destinatario: 'empresa',
+            referencias: [{ tipo: 'NFE', chaveAcesso: 'compra' }],
+          },
+          {
+            ...entrada,
+            numero: '8830049',
+            cfop: '2202',
+            tpNfXml: '0',
+            emitente: 'outro-fornecedor',
+            destinatario: 'empresa',
+            referencias: [{ tipo: 'NFE', chaveAcesso: 'compra' }],
+          },
         ]),
     });
     const consulta = {
@@ -322,8 +341,19 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       csosn: '500',
       codigoProduto: 'produto-da-empresa',
     };
-    Object.defineProperty(service, 'carregarVendasReferenciadas', {
-      value: jest.fn().mockResolvedValue([venda]),
+    Object.defineProperty(service, 'carregarNfesReferenciadas', {
+      value: jest.fn().mockResolvedValue([
+        venda,
+        {
+          ...venda,
+          chave: 'compra',
+          operacao: 'ENTRADA',
+          tpNfXml: '1',
+          emitente: 'fornecedor',
+          destinatario: 'empresa',
+          cfop: '6102',
+        },
+      ]),
     });
     Object.defineProperty(service, 'carregarItensReceitaPeriodo', {
       value: jest
@@ -339,8 +369,15 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     expect(ajustes.porMes.get('2026-10')?.abatimentos).toEqual(
       new Map([['ANEXO_I:true:false', 10000n]]),
     );
-    expect([...ajustes.ocorrencias.get('2026-10')!.pendencias]).toEqual([
-      expect.stringContaining('NF-e 1700'),
+    const ocorrencia = ajustes.ocorrencias.get('2026-10')!;
+    expect(ocorrencia.valor).toBe(30000n);
+    expect([...ocorrencia.pendencias.keys()]).toEqual([
+      expect.stringContaining('O XML não informa a NF-e original'),
+      expect.stringContaining('NF-e 8830049'),
+    ]);
+    expect([...ocorrencia.pendencias.values()]).toEqual([
+      { numero: '1700', competencia: '2026-10' },
+      { numero: '8830049', competencia: '2026-10' },
     ]);
     const filtro = new PgDialect().sqlToQuery(where.mock.calls[0][0] as SQL);
     expect(filtro.sql).toContain('"documentos_fiscais_itens"."cfop" in');
