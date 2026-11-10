@@ -1,5 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  eq,
+  inArray,
+  not,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
@@ -49,6 +59,12 @@ const RESPONSAVEL_POR_HIPOTESE: Record<DifalHipotese, DifalResponsavel> = {
 // buscamos, classificamos como ST e provamos a ausência de recolhimento próprio,
 // em vez de simplesmente omitir. (R1.4.)
 const CFOPS_DIFAL_ENTRADA_ST = ['2406', '2407'] as const;
+const CFOPS_REVENDA_INDUSTRIALIZACAO = ['2101', '2102'] as const;
+
+type SituacaoEntradaInterestadual =
+  | 'EM_REVISAO'
+  | 'REVENDA_INDUSTRIALIZACAO'
+  | 'OUTRA_ENTRADA';
 
 // Conjunto de busca: candidatos a DIFAL próprio (2551/2556) MAIS os CFOPs de ST
 // (2406/2407), estes últimos retidos apenas para a auditoria da não-duplicidade.
@@ -190,11 +206,21 @@ export class DifalEntradaService {
           eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'ENTRADA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
           eq(documentosFiscais.escriturado, true),
+          eq(documentosFiscaisItens.cfopRevisaoNecessaria, false),
           where,
           sql`${emitenteUf} IS DISTINCT FROM ${uf}`,
           inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA]),
         ),
       );
+
+    const entradasForaDoCalculo = uf
+      ? await this.listarEntradasForaDoCalculo(
+          input.clienteId,
+          uf,
+          where,
+          emitenteUf,
+        )
+      : [];
 
     let totalDifal = 0n;
     let totalFcp = 0n;
@@ -479,8 +505,70 @@ export class DifalEntradaService {
       // imposto já retido NÃO compõem o valor a recolher (não-duplicidade, R1.4).
       total_difal_recolher: fromScaledInteger(totalDifal),
       total_fcp_recolher: fromScaledInteger(totalFcp),
+      entradas_fora_do_calculo: entradasForaDoCalculo,
       itens: detalhes,
     };
+  }
+
+  private listarEntradasForaDoCalculo(
+    clienteId: string,
+    uf: string,
+    periodo: SQL,
+    emitenteUf: SQL<string | null>,
+  ) {
+    const emRevisao = sql`
+      (NOT ${documentosFiscais.escriturado} OR ${documentosFiscaisItens.cfopRevisaoNecessaria})
+    `;
+    const situacao = sql<SituacaoEntradaInterestadual>`CASE
+      WHEN ${emRevisao} THEN 'EM_REVISAO'
+      WHEN ${inArray(documentosFiscaisItens.cfop, [...CFOPS_REVENDA_INDUSTRIALIZACAO])}
+        THEN 'REVENDA_INDUSTRIALIZACAO'
+      ELSE 'OUTRA_ENTRADA'
+    END`.as('situacao_triagem');
+    const competenciaEmissao = sql<string>`to_char(
+      coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date),
+      'YYYY-MM'
+    )`;
+
+    return this.database.db
+      .select({
+        documento_fiscal_id: documentosFiscais.id,
+        numero_documento: documentosFiscais.numeroDocumento,
+        competencia_emissao: competenciaEmissao,
+        uf_origem: emitenteUf,
+        situacao,
+        quantidade_itens: count(),
+      })
+      .from(documentosFiscais)
+      .innerJoin(
+        documentosFiscaisItens,
+        eq(documentosFiscaisItens.documentoFiscalId, documentosFiscais.id),
+      )
+      .where(
+        and(
+          periodo,
+          eq(documentosFiscaisItens.clienteId, clienteId),
+          eq(documentosFiscais.tipoDocumento, 'NFE'),
+          eq(documentosFiscais.tipoOperacaoEscriturada, 'ENTRADA'),
+          eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'ENTRADA'),
+          eq(documentosFiscais.situacao, 'AUTORIZADA'),
+          // Uma nota de entrada emitida pelo fornecedor pode documentar
+          // retorno de mercadoria ao fornecedor, sem compra para a empresa.
+          sql`${documentosFiscais.tpNfXml} IS DISTINCT FROM '0'`,
+          sql`(${emitenteUf} <> ${uf} OR (
+            ${emitenteUf} IS NULL AND (
+              ${documentosFiscaisItens.cfop} LIKE '2%' OR
+              ${documentosFiscaisItens.cfopXml} LIKE '6%'
+            )
+          ))`,
+          or(
+            emRevisao,
+            not(inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA])),
+          ),
+        ),
+      )
+      .groupBy(documentosFiscais.id, situacao)
+      .orderBy(asc(documentosFiscais.dataEmissao), asc(documentosFiscais.id));
   }
 
   private regraDoConteudo(

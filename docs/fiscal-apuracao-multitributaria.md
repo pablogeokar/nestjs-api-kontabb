@@ -103,10 +103,11 @@ Cliente (`/api/fiscal/apuracao/...`):
 | GET | `/fiscal/apuracao/guias?competencia=&tributo=&status=` | Guias |
 | GET | `/fiscal/apuracao/guias/resumo?competencia=AAAA-MM` | Resumo de guias |
 
-Admin/staff (`/api/admin/fiscal/apuracao/...`, escrita):
+Admin/staff (`/api/admin/fiscal/apuracao/...`):
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
+| GET | `/admin/fiscal/apuracao/difal-entrada?clienteId=UUID&competencia=AAAA-MM` | DIFAL de entrada da empresa |
 | POST | `/admin/fiscal/apuracao/ciap/importar` | Importar bens de ativo |
 | POST | `/admin/fiscal/apuracao/ciap/bens` | Registrar bem manualmente |
 | POST | `/admin/fiscal/apuracao/ciap/apropriar` | Efetivar 1/48 + ajuste E111 |
@@ -117,10 +118,15 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`, escrita):
 
 ## Interface
 
+- **Fiscal → DIFAL** (`/admin/fiscal/difal`): consulta da apuração de entrada
+  para a empresa e a competência selecionadas no painel administrativo. A
+  seção de conferência lista NF-e interestaduais fora do cálculo, identifica
+  escrituração em revisão e oferece um atalho para localizar a nota.
+
 - **Fiscal → Cockpit** (`/cliente/fiscal/cockpit`): cards de saúde fiscal
   (ICMS/PIS/COFINS/guias) com semáforo por competência.
-- **Fiscal → Apuração** (`/cliente/fiscal/apuracao`): workspace em abas
-  (ICMS, DIFAL, CIAP, PIS/COFINS, Guias) no estilo livro fiscal.
+- **Fiscal → Apuração e DIFAL** (`/cliente/fiscal/apuracao`): aba DIFAL Entrada
+  na apuração geral ou quadro separado na página do Simples Nacional.
 
 ## Limitações atuais
 

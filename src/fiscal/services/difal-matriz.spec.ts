@@ -62,7 +62,11 @@ function createDb(
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockResolvedValue(itens),
+                where: jest.fn().mockImplementation(() =>
+                  'numero_documento' in selection
+                    ? { groupBy: () => ({ orderBy: () => Promise.resolve([]) }) }
+                    : Promise.resolve(itens),
+                ),
               }),
             }),
           };

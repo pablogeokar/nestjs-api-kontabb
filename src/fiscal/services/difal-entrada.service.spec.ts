@@ -3,10 +3,16 @@ import { DifalEntradaService } from './difal-entrada.service';
 import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
 
 // DB falso: getCliente resolve por .limit; a busca de itens resolve por .where.
-function createDb(uf: string, itens: unknown[]) {
+function createDb(uf: string, itens: unknown[], entradasForaDoCalculo: unknown[] = []) {
+  const whereConferencia = jest.fn().mockReturnValue({
+    groupBy: jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockResolvedValue(entradasForaDoCalculo),
+    }),
+  });
   const whereItens = jest.fn().mockResolvedValue(itens);
   return {
     whereItens,
+    whereConferencia,
     db: {
       select: jest
         .fn()
@@ -23,7 +29,7 @@ function createDb(uf: string, itens: unknown[]) {
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: whereItens,
+                where: 'numero_documento' in selection ? whereConferencia : whereItens,
               }),
             }),
           };
@@ -81,6 +87,30 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     expect(query.sql).toContain('"documentos_fiscais_itens"."cfop" in (');
     expect(query.sql).toContain('IS DISTINCT FROM');
     expect(query.params).toEqual(expect.arrayContaining(['c1', 'SP', '2551', '2556', '2406', '2407']));
+  });
+
+  it('mostra a nota em revisão sem incluir seus itens no total a recolher', async () => {
+    const entrada = {
+      documento_fiscal_id: 'd1',
+      numero_documento: '123',
+      competencia_emissao: '2026-10',
+      uf_origem: 'SE',
+      situacao: 'EM_REVISAO',
+      quantidade_itens: 6,
+    };
+    const database = createDb('BA', [], [entrada]);
+    const catalogo = createCatalogo(regraAprovada({ aliquota_interna: '18' }));
+    const service = new DifalEntradaService(database as never, catalogo as never);
+
+    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-10' });
+
+    expect(result.entradas_fora_do_calculo).toEqual([entrada]);
+    expect(result.itens).toEqual([]);
+    expect(result.total_difal_recolher).toBe('0.00');
+    const query = new PgDialect().sqlToQuery(database.whereConferencia.mock.calls[0][0]);
+    expect(query.sql).toContain('"documentos_fiscais_itens"."cfop_revisao_necessaria"');
+    expect(query.sql).toContain('"documentos_fiscais"."tp_nf_xml" IS DISTINCT FROM');
+    expect(query.params).toEqual(expect.arrayContaining(['c1', 'BA', 'NFE', 'ENTRADA']));
   });
 
   it('calcula DIFAL com a alíquota interna vinda do CATÁLOGO, não da tabela fixa', async () => {

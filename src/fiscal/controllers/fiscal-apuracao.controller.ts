@@ -352,6 +352,21 @@ export class AdminFiscalApuracaoController {
     private readonly rolloutMetricasService: RolloutMetricasService,
   ) {}
 
+  @Get('difal-entrada')
+  @ApiOperation({
+    summary: 'Consulta o DIFAL de entrada da empresa na competência',
+  })
+  async apurarDifal(
+    @Query('clienteId', ParseUUIDPipe) clienteId: string,
+    @Query('competencia') competencia: string,
+  ) {
+    const data = await this.difalService.apurarCompetencia({
+      clienteId,
+      competencia,
+    });
+    return { data };
+  }
+
   // ── Rollout: inventário read-only antes de ativar correções (R5.2) ─────────
   // Mesma projeção read-only do controller do cliente, escopada por `clienteId`
   // (query) para a operação staff do rollout. Não ativa correção nem decide
