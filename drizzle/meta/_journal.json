@@ -22,6 +22,13 @@
       "when": 1794522292366,
       "tag": "0002_foamy_starjammers",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794526309243,
+      "tag": "0003_gorgeous_shape",
+      "breakpoints": true
     }
   ]
 }

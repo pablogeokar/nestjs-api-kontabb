@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -18,6 +19,28 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { COMPETENCIA_MESSAGE, COMPETENCIA_REGEX } from './common';
+import {
+  CODIGOS_SERVICO_CONTRATO,
+  type CodigoServicoContrato,
+} from '../financeiro-servicos.catalogo';
+
+export class ServicoContratoDto {
+  @ApiProperty({ enum: CODIGOS_SERVICO_CONTRATO })
+  @IsIn(CODIGOS_SERVICO_CONTRATO)
+  codigo!: CodigoServicoContrato;
+
+  @ApiPropertyOptional({ description: 'Obrigatória para o serviço OUTROS.' })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(255)
+  descricao?: string;
+
+  @ApiProperty({ minimum: 0, description: 'Honorário mensal deste serviço.' })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  valorMensal!: number;
+}
 
 export class ItemContratoDto {
   @ApiPropertyOptional({
@@ -66,6 +89,39 @@ export class ItemContratoDto {
 }
 
 export class UpsertContratoDto {
+  @ApiPropertyOptional({ type: [ServicoContratoDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => ServicoContratoDto)
+  servicos?: ServicoContratoDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  contratanteRepresentante?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-12' })
+  @IsOptional()
+  @Matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, {
+    message: 'Data de início inválida.',
+  })
+  dataInicio?: string;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 365 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  avisoPrevioDias?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  condicoesContratuais?: string;
   @ApiProperty({ minimum: 0, example: 450 })
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

@@ -7,6 +7,7 @@ import { and, asc, eq, ilike, inArray, notInArray, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
+  contadores,
   financeiroContratos,
   financeiroContratosItens,
   financeiroTiposLancamento,
@@ -15,6 +16,7 @@ import type { PaginationParams } from '../../common/types';
 import {
   competenciaIndex,
   fromCents,
+  isValidCivilDate,
   isUniqueViolation,
   toCents,
 } from '../financeiro.utils';
@@ -23,6 +25,7 @@ import {
   TIPO_ENCERRAMENTO,
   TIPO_MENSALIDADE,
 } from './financeiro-faturas.service';
+import { SERVICOS_CONTRATO } from '../financeiro-servicos.catalogo';
 
 @Injectable()
 export class FinanceiroContratosService {
@@ -43,9 +46,12 @@ export class FinanceiroContratosService {
           contrato: financeiroContratos,
           clienteRazaoSocial: clientes.razaoSocial,
           clienteCnpj: clientes.cnpj,
+          clienteTipoPessoa: clientes.tipoPessoa,
+          contadorNome: contadores.nome,
         })
         .from(financeiroContratos)
         .innerJoin(clientes, eq(clientes.id, financeiroContratos.clienteId))
+        .leftJoin(contadores, eq(contadores.id, clientes.contadorId))
         .where(where)
         .orderBy(asc(clientes.razaoSocial))
         .limit(input.pagination.limit)
@@ -84,6 +90,15 @@ export class FinanceiroContratosService {
         ...row.contrato,
         clienteRazaoSocial: row.clienteRazaoSocial,
         clienteCnpj: row.clienteCnpj,
+        clienteTipoPessoa: row.clienteTipoPessoa,
+        contadorNome: row.contadorNome,
+        podeImprimir: Boolean(
+          row.contadorNome &&
+          row.contrato.dataInicio &&
+          row.contrato.servicosContratados.length &&
+          (row.clienteTipoPessoa !== 'PJ' ||
+            row.contrato.contratanteRepresentante?.trim()),
+        ),
         qtdItensFixos: porContrato.get(row.contrato.id) ?? 0,
       })),
       total,
@@ -135,6 +150,60 @@ export class FinanceiroContratosService {
     if (!cliente) throw new NotFoundException('Cliente não encontrado.');
 
     if (dto.itens) await this.validarItens(dto.itens);
+    if (dto.dataInicio && !isValidCivilDate(dto.dataInicio)) {
+      throw new BadRequestException('Data de início inválida.');
+    }
+    if (dto.servicos) {
+      if (dto.servicos.length === 0) {
+        throw new BadRequestException(
+          'Selecione pelo menos um serviço contratado.',
+        );
+      }
+      const codigos = dto.servicos.map((servico) => servico.codigo);
+      if (new Set(codigos).size !== codigos.length) {
+        throw new BadRequestException(
+          'Cada serviço deve aparecer uma única vez.',
+        );
+      }
+      for (const servico of dto.servicos) {
+        if (
+          !SERVICOS_CONTRATO.some((opcao) => opcao.codigo === servico.codigo)
+        ) {
+          throw new BadRequestException('Serviço contratual inválido.');
+        }
+        if (servico.codigo === 'OUTROS' && !servico.descricao?.trim()) {
+          throw new BadRequestException(
+            'Descreva o serviço adicional contratado.',
+          );
+        }
+      }
+      const totalCents = dto.servicos.reduce(
+        (total, servico) => total + toCents(servico.valorMensal),
+        0,
+      );
+      if (totalCents !== toCents(dto.valorMensalidade)) {
+        throw new BadRequestException(
+          'A mensalidade deve ser igual à soma dos serviços contratados.',
+        );
+      }
+    } else {
+      const [atual] = await this.database.db
+        .select({ servicos: financeiroContratos.servicosContratados })
+        .from(financeiroContratos)
+        .where(eq(financeiroContratos.clienteId, clienteId))
+        .limit(1);
+      if (
+        atual?.servicos.length &&
+        atual.servicos.reduce(
+          (total, servico) => total + toCents(servico.valorMensal),
+          0,
+        ) !== toCents(dto.valorMensalidade)
+      ) {
+        throw new BadRequestException(
+          'Atualize os valores dos serviços contratados junto com a mensalidade.',
+        );
+      }
+    }
 
     const values = {
       valorMensalidade: fromCents(toCents(dto.valorMensalidade)),
@@ -144,6 +213,27 @@ export class FinanceiroContratosService {
       mes13o: dto.mes13o ?? 12,
       ativo: dto.ativo ?? true,
       observacoes: dto.observacoes?.trim() || null,
+      ...(dto.servicos !== undefined && {
+        servicosContratados: dto.servicos.map((servico) => ({
+          codigo: servico.codigo,
+          ...(servico.codigo === 'OUTROS'
+            ? { descricao: servico.descricao?.trim() }
+            : {}),
+          valorMensal: fromCents(toCents(servico.valorMensal)),
+        })),
+      }),
+      ...(dto.contratanteRepresentante !== undefined && {
+        contratanteRepresentante: dto.contratanteRepresentante.trim() || null,
+      }),
+      ...(dto.dataInicio !== undefined && {
+        dataInicio: dto.dataInicio || null,
+      }),
+      ...(dto.avisoPrevioDias !== undefined && {
+        avisoPrevioDias: dto.avisoPrevioDias,
+      }),
+      ...(dto.condicoesContratuais !== undefined && {
+        condicoesContratuais: dto.condicoesContratuais.trim() || null,
+      }),
       atualizadoPor: userId,
     };
 

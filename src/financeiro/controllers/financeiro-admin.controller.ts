@@ -36,6 +36,8 @@ import { FinanceiroFaturasService } from '../services/financeiro-faturas.service
 import { FinanceiroBaixasService } from '../services/financeiro-baixas.service';
 import { FinanceiroDashboardService } from '../services/financeiro-dashboard.service';
 import { FinanceiroDocumentosService } from '../services/financeiro-documentos.service';
+import { FinanceiroContratoDocumentoService } from '../services/financeiro-contrato-documento.service';
+import { SERVICOS_CONTRATO } from '../financeiro-servicos.catalogo';
 import {
   CreateTipoLancamentoDto,
   UpdateTipoLancamentoDto,
@@ -68,6 +70,7 @@ export class FinanceiroAdminController {
     private readonly baixas: FinanceiroBaixasService,
     private readonly dashboard: FinanceiroDashboardService,
     private readonly documentos: FinanceiroDocumentosService,
+    private readonly contratoDocumento: FinanceiroContratoDocumentoService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -97,6 +100,12 @@ export class FinanceiroAdminController {
 
   // ── Contratos ──
 
+  @Get('servicos-contrato')
+  @ApiOperation({ summary: 'Listar serviços disponíveis para contrato' })
+  listServicosContrato() {
+    return SERVICOS_CONTRATO;
+  }
+
   @Get('contratos')
   @ApiOperation({ summary: 'Listar contratos financeiros' })
   async listContratos(@Query() query: ListContratosQueryDto) {
@@ -112,6 +121,22 @@ export class FinanceiroAdminController {
   @ApiOperation({ summary: 'Obter contrato financeiro do cliente' })
   getContrato(@Param('clienteId', ParseUUIDPipe) clienteId: string) {
     return this.contratos.getByCliente(clienteId);
+  }
+
+  @Get('contratos/cliente/:clienteId/pdf')
+  @ApiOperation({ summary: 'Imprimir contrato de prestação de serviços' })
+  async imprimirContrato(
+    @Param('clienteId', ParseUUIDPipe) clienteId: string,
+    @Res() res: Response,
+  ) {
+    const pdf = await this.contratoDocumento.gerarPdf(clienteId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="contrato-${clienteId}.pdf"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
   }
 
   @Put('contratos/cliente/:clienteId')

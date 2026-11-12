@@ -223,10 +223,7 @@ export class ClientesService {
       CLIENT_PROVISIONAL_PASSWORD,
     );
     const authUserId = crypto.randomUUID();
-    const contadorId =
-      input.tipoPessoa === 'PJ'
-        ? await this.resolveContadorId(input.contadorId)
-        : null;
+    const contadorId = await this.resolveContadorId(input.contadorId);
 
     try {
       // Create auth user + account directly (matching better-auth structure)

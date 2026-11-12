@@ -3,6 +3,8 @@ import {
   check,
   index,
   integer,
+  jsonb,
+  date,
   numeric,
   pgTable,
   text,
@@ -13,6 +15,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { clientes } from './clientes';
 import { user } from './user';
+import type { CodigoServicoContrato } from '../../financeiro/financeiro-servicos.catalogo';
 
 export const financeiroContratos = pgTable(
   'financeiro_contratos',
@@ -30,6 +33,20 @@ export const financeiroContratos = pgTable(
     mes13o: integer('mes_13o').notNull().default(12),
     ativo: boolean('ativo').notNull().default(true),
     observacoes: text('observacoes'),
+    servicosContratados: jsonb('servicos_contratados')
+      .$type<
+        Array<{
+          codigo: CodigoServicoContrato;
+          descricao?: string;
+          valorMensal: string;
+        }>
+      >()
+      .notNull()
+      .default([]),
+    contratanteRepresentante: text('contratante_representante'),
+    dataInicio: date('data_inicio'),
+    avisoPrevioDias: integer('aviso_previo_dias').notNull().default(30),
+    condicoesContratuais: text('condicoes_contratuais'),
     atualizadoPor: text('atualizado_por').references(() => user.id, {
       onDelete: 'set null',
     }),
@@ -49,5 +66,9 @@ export const financeiroContratos = pgTable(
       sql`${table.diaFechamento} BETWEEN 1 AND 31`,
     ),
     check('chk_fin_contratos_mes_13o', sql`${table.mes13o} BETWEEN 1 AND 12`),
+    check(
+      'chk_fin_contratos_aviso',
+      sql`${table.avisoPrevioDias} BETWEEN 0 AND 365`,
+    ),
   ],
 );
