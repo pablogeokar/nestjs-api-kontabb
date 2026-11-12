@@ -76,6 +76,31 @@ describeDb('FinanceiroBaixasService (banco)', () => {
     const fatura = await carregar(faturaId);
     expect(fatura.status).toBe('PARCIALMENTE_PAGA');
     expect(fatura.valorPago).toBe('200.00');
+    expect((await faturas.getById(faturaId)).saldoAberto).toBe('300.00');
+
+    await expect(
+      baixas.registrarBaixa(faturaId, baixaDto(300.01), null as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect((await faturas.getById(faturaId)).saldoAberto).toBe('300.00');
+  });
+
+  it('abate o principal correto em pagamentos parciais com encargos e desconto', async () => {
+    const faturaId = await novaFatura();
+    await baixas.registrarBaixa(
+      faturaId,
+      { ...baixaDto(210), valorMulta: 10, valorJuros: 5, valorDesconto: 5 },
+      null as never,
+    );
+
+    const parcial = await faturas.getById(faturaId);
+    expect(parcial.status).toBe('PARCIALMENTE_PAGA');
+    expect(parcial.saldoAberto).toBe('300.00');
+
+    await baixas.registrarBaixa(faturaId, baixaDto(300), null as never);
+    const quitada = await faturas.getById(faturaId);
+    expect(quitada.status).toBe('PAGA');
+    expect(quitada.saldoAberto).toBe('0.00');
+    expect(quitada.valorPago).toBe('510.00');
   });
 
   it('dá baixa total e muda o status para PAGA', async () => {
