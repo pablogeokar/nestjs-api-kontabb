@@ -5,8 +5,10 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/auth.guard';
 import { RequirePasswordChangedGuard } from '../../auth/require-password-changed.guard';
@@ -18,6 +20,7 @@ import {
   parsePaginationParams,
 } from '../../common/pagination';
 import { FinanceiroFaturasService } from '../services/financeiro-faturas.service';
+import { FinanceiroDocumentosService } from '../services/financeiro-documentos.service';
 import { FiltroFaturasDto } from '../dto/fatura.dto';
 import { ExtratoQueryDto } from '../dto/dashboard.dto';
 
@@ -29,6 +32,7 @@ export class FinanceiroClienteController {
   constructor(
     private readonly faturas: FinanceiroFaturasService,
     private readonly clientesService: ClientesService,
+    private readonly documentos: FinanceiroDocumentosService,
   ) {}
 
   private async resolverCliente(userId: string) {
@@ -57,6 +61,40 @@ export class FinanceiroClienteController {
   ) {
     const client = await this.resolverCliente(user.id);
     return this.faturas.getById(id, client.id);
+  }
+
+  @Get('faturas/:id/pdf')
+  @ApiOperation({ summary: 'Imprimir minha fatura em PDF' })
+  async imprimirFatura(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
+  ) {
+    const client = await this.resolverCliente(user.id);
+    const pdf = await this.documentos.faturaPdf(id, client.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="fatura-${id}.pdf"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
+  }
+
+  @Get('faturas/:id/baixas/:baixaId/recibo')
+  @ApiOperation({ summary: 'Imprimir meu recibo de pagamento em PDF' })
+  async imprimirRecibo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('baixaId', ParseUUIDPipe) baixaId: string,
+    @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
+  ) {
+    const client = await this.resolverCliente(user.id);
+    const pdf = await this.documentos.reciboPdf(id, baixaId, client.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="recibo-${baixaId}.pdf"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
   }
 
   @Get('extrato')

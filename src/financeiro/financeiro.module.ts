@@ -10,6 +10,7 @@ import { FinanceiroLancamentosService } from './services/financeiro-lancamentos.
 import { FinanceiroFaturasService } from './services/financeiro-faturas.service';
 import { FinanceiroBaixasService } from './services/financeiro-baixas.service';
 import { FinanceiroDashboardService } from './services/financeiro-dashboard.service';
+import { FinanceiroDocumentosService } from './services/financeiro-documentos.service';
 import { FinanceiroAdminController } from './controllers/financeiro-admin.controller';
 import { FinanceiroClienteController } from './controllers/financeiro-cliente.controller';
 
@@ -20,6 +21,7 @@ const services = [
   FinanceiroFaturasService,
   FinanceiroBaixasService,
   FinanceiroDashboardService,
+  FinanceiroDocumentosService,
 ];
 
 @Module({

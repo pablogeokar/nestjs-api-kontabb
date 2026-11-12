@@ -33,7 +33,7 @@ describeDb('FinanceiroDashboardService (banco)', () => {
   it('consolida faturado, recebido, em aberto e inadimplência da competência', async () => {
     const faturas = new FinanceiroFaturasService(database, testLogger as never);
     const baixas = new FinanceiroBaixasService(database, testLogger as never);
-    const dashboard = new FinanceiroDashboardService(database);
+    const dashboard = new FinanceiroDashboardService(database, faturas);
     const clienteId = await criarClienteTeste(database);
     clienteIds.push(clienteId);
     await database.db.insert(financeiroContratos).values({
@@ -63,12 +63,44 @@ describeDb('FinanceiroDashboardService (banco)', () => {
     expect(resultado.totalRecebido).toBe('200.00');
     expect(resultado.totalEmAberto).toBe('300.00');
     expect(resultado.inadimplencia).toMatchObject({
-      faturasVencidas: 1,
-      valor: '300.00',
-      percentual: 60,
+      valorCompetencia: '300.00',
+      percentualCompetencia: 60,
     });
+    expect(resultado.inadimplencia.faturasVencidas).toBeGreaterThanOrEqual(1);
+    expect(Number(resultado.inadimplencia.valor)).toBeGreaterThanOrEqual(300);
     expect(
       resultado.rankingDevedores.find((d) => d.clienteId === clienteId),
     ).toMatchObject({ valorDevido: '300.00', faturasVencidas: 1 });
+  });
+
+  it('não conta faturas canceladas no saldo em aberto e informa clientes sem fatura', async () => {
+    const faturas = new FinanceiroFaturasService(database, testLogger as never);
+    const dashboard = new FinanceiroDashboardService(database, faturas);
+    const clienteId = await criarClienteTeste(database);
+    clienteIds.push(clienteId);
+    await database.db.insert(financeiroContratos).values({
+      clienteId,
+      valorMensalidade: '200.00',
+      diaVencimento: 10,
+    });
+    const competencia = '02/2020';
+
+    const antes = await dashboard.getDashboard(competencia);
+    expect(antes.pendentesGeracao).toBeGreaterThanOrEqual(1);
+
+    const { faturasIds } = await faturas.gerarFaturasCompetencia({
+      competencia,
+      clienteIds: [clienteId],
+    });
+    await faturas.cancelar(faturasIds[0], { motivo: 'Teste' }, null as never);
+
+    const depois = await dashboard.getDashboard(competencia);
+    expect(depois.totalEmAberto).toBe('0.00');
+    expect(depois.totalFaturado).toBe('0.00');
+    expect(depois.pendentesGeracao).toBeGreaterThanOrEqual(1);
+    const [fatura] = await faturas
+      .list({ clienteId }, { page: 1, pageSize: 5, offset: 0, limit: 5 })
+      .then((r) => r.data);
+    expect(fatura.saldoAberto).toBe('0.00');
   });
 });

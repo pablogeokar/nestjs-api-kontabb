@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm';
 import { clientes } from './clientes';
 import { financeiroTiposLancamento } from './financeiro_tipos_lancamento';
 import { financeiroFaturas } from './financeiro_faturas';
+import { financeiroContratosItens } from './financeiro_contratos_itens';
 import { user } from './user';
 
 export const financeiroLancamentos = pgTable(
@@ -24,6 +25,7 @@ export const financeiroLancamentos = pgTable(
       .notNull()
       .references(() => clientes.id, { onDelete: 'cascade' }),
     tipoLancamentoId: uuid('tipo_lancamento_id').notNull(),
+    contratoItemId: uuid('contrato_item_id'),
     faturaId: uuid('fatura_id').references(() => financeiroFaturas.id, {
       onDelete: 'set null',
     }),
@@ -46,6 +48,11 @@ export const financeiroLancamentos = pgTable(
       columns: [table.tipoLancamentoId],
       foreignColumns: [financeiroTiposLancamento.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'fin_lanc_contrato_item_id_fk',
+      columns: [table.contratoItemId],
+      foreignColumns: [financeiroContratosItens.id],
+    }).onDelete('set null'),
     index('idx_fin_lanc_cliente_id').on(table.clienteId),
     index('idx_fin_lanc_fatura_id').on(table.faturaId),
     index('idx_fin_lanc_competencia').on(table.competencia),

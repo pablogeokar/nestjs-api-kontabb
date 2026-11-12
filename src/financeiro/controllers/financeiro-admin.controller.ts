@@ -10,8 +10,10 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -33,6 +35,7 @@ import { FinanceiroLancamentosService } from '../services/financeiro-lancamentos
 import { FinanceiroFaturasService } from '../services/financeiro-faturas.service';
 import { FinanceiroBaixasService } from '../services/financeiro-baixas.service';
 import { FinanceiroDashboardService } from '../services/financeiro-dashboard.service';
+import { FinanceiroDocumentosService } from '../services/financeiro-documentos.service';
 import {
   CreateTipoLancamentoDto,
   UpdateTipoLancamentoDto,
@@ -64,6 +67,7 @@ export class FinanceiroAdminController {
     private readonly faturas: FinanceiroFaturasService,
     private readonly baixas: FinanceiroBaixasService,
     private readonly dashboard: FinanceiroDashboardService,
+    private readonly documentos: FinanceiroDocumentosService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -188,6 +192,36 @@ export class FinanceiroAdminController {
   @ApiOperation({ summary: 'Detalhar fatura com lançamentos e baixas' })
   getFatura(@Param('id', ParseUUIDPipe) id: string) {
     return this.faturas.getById(id);
+  }
+
+  @Get('faturas/:id/pdf')
+  @ApiOperation({ summary: 'Imprimir fatura em PDF' })
+  async imprimirFatura(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    const pdf = await this.documentos.faturaPdf(id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="fatura-${id}.pdf"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
+  }
+
+  @Get('faturas/:id/baixas/:baixaId/recibo')
+  @ApiOperation({ summary: 'Imprimir recibo de pagamento em PDF' })
+  async imprimirRecibo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('baixaId', ParseUUIDPipe) baixaId: string,
+    @Res() res: Response,
+  ) {
+    const pdf = await this.documentos.reciboPdf(id, baixaId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="recibo-${baixaId}.pdf"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
   }
 
   @Post('faturas/:id/cancelar')

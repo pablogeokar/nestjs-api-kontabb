@@ -101,11 +101,11 @@ export function derivarStatusFatura(
 }
 
 /** Subquery SQL: saldo em aberto (principal) da fatura corrente. */
-export const saldoAbertoSql = sql<string>`GREATEST(0, ${financeiroFaturas.valorLiquido} - COALESCE((
+export const saldoAbertoSql = sql<string>`CASE WHEN ${financeiroFaturas.status} = 'CANCELADA' THEN 0.00 ELSE GREATEST(0.00, ${financeiroFaturas.valorLiquido} - COALESCE((
   SELECT SUM(${financeiroBaixas.valorRecebido} - ${financeiroBaixas.valorMulta} - ${financeiroBaixas.valorJuros} + ${financeiroBaixas.valorDesconto})
   FROM ${financeiroBaixas}
   WHERE ${financeiroBaixas.faturaId} = ${financeiroFaturas.id} AND ${financeiroBaixas.estornado} = false
-), 0))`;
+), 0)) END`;
 
 /** Detecta violação de unicidade (23505) inclusive quando encapsulada pelo Drizzle. */
 export function isUniqueViolation(error: unknown): boolean {
@@ -125,4 +125,22 @@ export function isValidCivilDate(value: string): boolean {
     !Number.isNaN(parsed.getTime()) &&
     parsed.toISOString().slice(0, 10) === value
   );
+}
+
+/** Índice ordenável de uma competência MM/AAAA (ano*12 + mês). */
+export function competenciaIndex(competencia: string): number {
+  const [mes, ano] = competencia.split('/');
+  return Number(ano) * 12 + Number(mes);
+}
+
+/** Verifica se a competência está dentro da vigência (limites opcionais e inclusivos). */
+export function competenciaNaVigencia(
+  competencia: string,
+  inicio?: string | null,
+  fim?: string | null,
+): boolean {
+  const alvo = competenciaIndex(competencia);
+  if (inicio && alvo < competenciaIndex(inicio)) return false;
+  if (fim && alvo > competenciaIndex(fim)) return false;
+  return true;
 }

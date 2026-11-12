@@ -24,6 +24,7 @@ import {
   eventosAuditoria,
   financeiroBaixas,
   financeiroContratos,
+  financeiroContratosItens,
   financeiroFaturas,
   financeiroLancamentos,
   financeiroTiposLancamento,
@@ -33,6 +34,7 @@ import { getBahiaDate } from '../../common/document-status';
 import type { PaginationParams } from '../../common/types';
 import {
   calcularVencimento,
+  competenciaNaVigencia,
   derivarStatusFatura,
   fromCents,
   isUniqueViolation,
@@ -227,6 +229,24 @@ export class FinanceiroFaturasService {
     return { competencia, ...resumo };
   }
 
+  /** Clientes elegíveis à fatura da competência que ainda não possuem fatura ativa. */
+  async contarClientesSemFatura(competencia: string): Promise<number> {
+    const elegiveis = await this.resolverClientesElegiveis(competencia);
+    if (elegiveis.length === 0) return 0;
+    const faturados = await this.db
+      .select({ clienteId: financeiroFaturas.clienteId })
+      .from(financeiroFaturas)
+      .where(
+        and(
+          eq(financeiroFaturas.competencia, competencia),
+          ne(financeiroFaturas.status, 'CANCELADA'),
+          inArray(financeiroFaturas.clienteId, elegiveis),
+        ),
+      );
+    const comFatura = new Set(faturados.map((f) => f.clienteId));
+    return elegiveis.filter((id) => !comFatura.has(id)).length;
+  }
+
   private async resolverClientesElegiveis(
     competencia: string,
     clienteIds?: string[],
@@ -241,7 +261,16 @@ export class FinanceiroFaturasService {
       .where(
         and(
           eq(financeiroContratos.ativo, true),
-          sql`${financeiroContratos.valorMensalidade} > 0`,
+          or(
+            sql`${financeiroContratos.valorMensalidade} > 0`,
+            inArray(
+              financeiroContratos.id,
+              this.db
+                .select({ id: financeiroContratosItens.contratoId })
+                .from(financeiroContratosItens)
+                .where(eq(financeiroContratosItens.ativo, true)),
+            ),
+          ),
         ),
       );
     const comPendentes = this.db
@@ -356,6 +385,53 @@ export class FinanceiroFaturasService {
             descricao: `Encerramento de exercício (13º) - ${competencia}`,
           });
         }
+      }
+    }
+
+    if (contrato) {
+      const fixos = await tx
+        .select({
+          item: financeiroContratosItens,
+          natureza: financeiroTiposLancamento.natureza,
+        })
+        .from(financeiroContratosItens)
+        .innerJoin(
+          financeiroTiposLancamento,
+          eq(
+            financeiroTiposLancamento.id,
+            financeiroContratosItens.tipoLancamentoId,
+          ),
+        )
+        .where(
+          and(
+            eq(financeiroContratosItens.contratoId, contrato.id),
+            eq(financeiroContratosItens.ativo, true),
+          ),
+        )
+        .orderBy(asc(financeiroContratosItens.criadoEm));
+      for (const { item, natureza } of fixos) {
+        if (
+          !competenciaNaVigencia(
+            competencia,
+            item.competenciaInicio,
+            item.competenciaFim,
+          ) ||
+          pendentes.some((l) => l.contratoItemId === item.id)
+        ) {
+          continue;
+        }
+        automaticos.push({
+          clienteId,
+          competencia,
+          tipoLancamentoId: item.tipoLancamentoId,
+          contratoItemId: item.id,
+          descricao: item.descricao,
+          natureza,
+          valor: item.valor,
+          dataLancamento: hoje,
+          status: 'PENDENTE',
+          criadoPor: userId ?? null,
+        });
       }
     }
 
@@ -832,20 +908,23 @@ export class FinanceiroFaturasService {
           ]),
         );
       const automaticoIds = automaticos.map((tipo) => tipo.id);
-      if (automaticoIds.length) {
-        await tx
-          .update(financeiroLancamentos)
-          .set({
-            status: 'CANCELADO',
-            atualizadoEm: sql`NOW()`,
-          })
-          .where(
-            and(
-              eq(financeiroLancamentos.faturaId, id),
-              inArray(financeiroLancamentos.tipoLancamentoId, automaticoIds),
+      await tx
+        .update(financeiroLancamentos)
+        .set({
+          status: 'CANCELADO',
+          atualizadoEm: sql`NOW()`,
+        })
+        .where(
+          and(
+            eq(financeiroLancamentos.faturaId, id),
+            or(
+              automaticoIds.length
+                ? inArray(financeiroLancamentos.tipoLancamentoId, automaticoIds)
+                : undefined,
+              sql`${financeiroLancamentos.contratoItemId} IS NOT NULL`,
             ),
-          );
-      }
+          ),
+        );
       await tx
         .update(financeiroLancamentos)
         .set({

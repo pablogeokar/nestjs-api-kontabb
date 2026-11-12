@@ -9,12 +9,20 @@ import {
   saldoAbertoSql,
   toCents,
 } from '../financeiro.utils';
+import { FinanceiroFaturasService } from './financeiro-faturas.service';
 
 @Injectable()
 export class FinanceiroDashboardService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly faturas: FinanceiroFaturasService,
+  ) {}
 
-  /** KPIs da competência (MM/AAAA); padrão: mês corrente (America/Bahia). */
+  /**
+   * KPIs da competência (MM/AAAA; padrão: mês corrente em America/Bahia).
+   * Faturado, recebido e em aberto são da competência. A inadimplência e o
+   * ranking de devedores cobrem todas as competências vencidas até hoje.
+   */
   async getDashboard(competencia?: string) {
     const hoje = getBahiaDate();
     const alvo = competencia ?? competenciaDeData(hoje);
@@ -23,12 +31,26 @@ export class FinanceiroDashboardService {
       eq(financeiroFaturas.competencia, alvo),
       ne(financeiroFaturas.status, 'CANCELADA'),
     );
-    const vencida = sql`${financeiroFaturas.dataVencimento} < ${hoje}`;
+    const vencidasEmAberto = and(
+      inArray(financeiroFaturas.status, [
+        'PENDENTE',
+        'PARCIALMENTE_PAGA',
+        'VENCIDA',
+      ]),
+      sql`${financeiroFaturas.dataVencimento} < ${hoje}`,
+    );
 
-    const [[totais], [inadimplencia], ranking] = await Promise.all([
+    const [
+      [totais],
+      [vencidoCompetencia],
+      [inadimplenciaGeral],
+      ranking,
+      pendentesGeracao,
+    ] = await Promise.all([
       db
         .select({
           quantidade: sql<number>`count(*)::int`,
+          pagas: sql<number>`count(*) FILTER (WHERE ${financeiroFaturas.status} = 'PAGA')::int`,
           faturado: sql<string>`COALESCE(SUM(${financeiroFaturas.valorLiquido}), 0)`,
           recebido: sql<string>`COALESCE(SUM(${financeiroFaturas.valorPago}), 0)`,
           emAberto: sql<string>`COALESCE(SUM(${saldoAbertoSql}), 0)`,
@@ -37,21 +59,18 @@ export class FinanceiroDashboardService {
         .where(ativas),
       db
         .select({
-          quantidade: sql<number>`count(*)::int`,
           valor: sql<string>`COALESCE(SUM(${saldoAbertoSql}), 0)`,
         })
         .from(financeiroFaturas)
-        .where(
-          and(
-            ativas,
-            inArray(financeiroFaturas.status, [
-              'PENDENTE',
-              'PARCIALMENTE_PAGA',
-              'VENCIDA',
-            ]),
-            vencida,
-          ),
-        ),
+        .where(and(ativas, vencidasEmAberto)),
+      db
+        .select({
+          faturasVencidas: sql<number>`count(*)::int`,
+          clientes: sql<number>`count(DISTINCT ${financeiroFaturas.clienteId})::int`,
+          valor: sql<string>`COALESCE(SUM(${saldoAbertoSql}), 0)`,
+        })
+        .from(financeiroFaturas)
+        .where(vencidasEmAberto),
       db
         .select({
           clienteId: clientes.id,
@@ -61,35 +80,32 @@ export class FinanceiroDashboardService {
         })
         .from(financeiroFaturas)
         .innerJoin(clientes, eq(clientes.id, financeiroFaturas.clienteId))
-        .where(
-          and(
-            inArray(financeiroFaturas.status, [
-              'PENDENTE',
-              'PARCIALMENTE_PAGA',
-              'VENCIDA',
-            ]),
-            vencida,
-          ),
-        )
+        .where(vencidasEmAberto)
         .groupBy(clientes.id, clientes.razaoSocial)
         .orderBy(desc(sql`SUM(${saldoAbertoSql})`))
         .limit(10),
+      this.faturas.contarClientesSemFatura(alvo),
     ]);
 
     const faturadoCents = toCents(totais.faturado);
-    const inadimplidoCents = toCents(inadimplencia.valor);
+    const vencidoCompetenciaCents = toCents(vencidoCompetencia.valor);
     return {
       competencia: alvo,
       totalFaturas: totais.quantidade,
+      faturasPagas: totais.pagas,
       totalFaturado: fromCents(faturadoCents),
       totalRecebido: fromCents(toCents(totais.recebido)),
       totalEmAberto: fromCents(toCents(totais.emAberto)),
+      pendentesGeracao,
       inadimplencia: {
-        faturasVencidas: inadimplencia.quantidade,
-        valor: fromCents(inadimplidoCents),
-        percentual:
+        faturasVencidas: inadimplenciaGeral.faturasVencidas,
+        clientes: inadimplenciaGeral.clientes,
+        valor: fromCents(toCents(inadimplenciaGeral.valor)),
+        valorCompetencia: fromCents(vencidoCompetenciaCents),
+        percentualCompetencia:
           faturadoCents > 0
-            ? Math.round((inadimplidoCents / faturadoCents) * 10000) / 100
+            ? Math.round((vencidoCompetenciaCents / faturadoCents) * 10000) /
+              100
             : 0,
       },
       rankingDevedores: ranking.map((row) => ({

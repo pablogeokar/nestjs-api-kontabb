@@ -15,6 +15,13 @@
       "when": 1794519863579,
       "tag": "0001_unique_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794522292366,
+      "tag": "0002_foamy_starjammers",
+      "breakpoints": true
     }
   ]
 }
