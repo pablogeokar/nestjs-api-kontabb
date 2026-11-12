@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
 import { DatabaseService } from '../../database/database.service';
@@ -12,6 +14,9 @@ const INK = '#172B4D';
 const MUTED = '#60728B';
 const LINE = '#DCE5EF';
 const PAGE_RIGHT = 555;
+const LOGO = readFileSync(
+  resolve(__dirname, '../../assets/financeiro/kontabb-logo.png'),
+);
 
 const money = (value: string | number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
@@ -47,17 +52,7 @@ function header(
   continuation = false,
 ) {
   pdf.rect(0, 0, 595.28, 10).fill(BRAND);
-  pdf
-    .font('Helvetica-Bold')
-    .fontSize(23)
-    .fillColor(DEEP)
-    .text('kontabb', 40, 34);
-  pdf.circle(146, 53, 3).fill(BRAND);
-  pdf
-    .font('Helvetica')
-    .fontSize(8)
-    .fillColor(MUTED)
-    .text('CONTABILIDADE BORGES', 40, 65);
+  pdf.image(LOGO, 40, 18, { fit: [168, 70] });
   pdf
     .font('Helvetica-Bold')
     .fontSize(16)
