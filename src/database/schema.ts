@@ -53,3 +53,8 @@ export * from './schemas/fiscal_simples_historicos_mensais';
 export * from './schemas/fiscal_regras_versoes';
 export * from './schemas/fiscal_pagamentos_eventos';
 export * from './schemas/fiscal_entregas';
+export * from './schemas/financeiro_tipos_lancamento';
+export * from './schemas/financeiro_contratos';
+export * from './schemas/financeiro_lancamentos';
+export * from './schemas/financeiro_faturas';
+export * from './schemas/financeiro_baixas';

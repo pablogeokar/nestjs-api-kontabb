@@ -15,6 +15,7 @@ import { AppLogger } from '../common/logger.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import { CrmService } from '../crm/crm.service';
 import { getBahiaDate } from '../common/document-status';
+import { FinanceiroFaturasService } from '../financeiro/services/financeiro-faturas.service';
 
 @ApiTags('Cron')
 @Controller('cron')
@@ -26,6 +27,7 @@ export class CronController {
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
     private readonly crmService: CrmService,
+    private readonly financeiroFaturas: FinanceiroFaturasService,
   ) {}
 
   @Get('storage-cleanup')
@@ -168,5 +170,49 @@ export class CronController {
       { requestId: this.logger.generateRequestId() },
     );
     return { success: true, ...summary };
+  }
+  @Get('financeiro-rotina-mensal')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Rotina financeira diária (cron)',
+    description:
+      'Marca como VENCIDA as faturas em aberto com vencimento passado e pré-gera as faturas da competência corrente dos contratos cujo dia de fechamento é hoje. Ambas as operações são idempotentes.',
+  })
+  @ApiHeader({
+    name: 'authorization',
+    required: true,
+    description: 'Bearer <CRON_SECRET>',
+  })
+  @ApiResponse({ status: 200, description: 'Rotina executada.' })
+  @ApiResponse({ status: 401, description: 'Token inválido ou ausente.' })
+  async runFinanceiroRotina(@Headers('authorization') authHeader: string) {
+    const secret = this.configService.get<string>('CRON_SECRET');
+    if (!secret) {
+      this.logger.warn('cron_not_configured', {
+        operation: 'financeiro_rotina_mensal',
+      });
+      return {
+        code: 'CRON_NOT_CONFIGURED',
+        message: 'Rotina não configurada.',
+      };
+    }
+    if (!this.hasValidAuthorization(authHeader, secret)) {
+      throw new UnauthorizedException('Não autorizado.');
+    }
+    const requestId = this.logger.generateRequestId();
+    const hoje = getBahiaDate();
+    const faturasVencidas =
+      await this.financeiroFaturas.marcarFaturasVencidas(hoje);
+    const fechamento = await this.financeiroFaturas.gerarFaturasFechamentoDoDia(
+      hoje,
+      requestId,
+    );
+    this.logger.info('financeiro_rotina_mensal_concluida', {
+      requestId,
+      operation: 'financeiro_rotina_mensal',
+      faturasVencidas,
+      faturasGeradas: fechamento.totalGeradas,
+    });
+    return { success: true, faturasVencidas, fechamento };
   }
 }

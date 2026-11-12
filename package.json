@@ -27,6 +27,7 @@
     "db:check": "drizzle-kit check",
     "db:seed:admin": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/admin.seed.ts",
     "db:seed:cfops": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/cfops.seed.ts",
+    "db:seed:financeiro": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/financeiro-tipos.seed.ts",
     "db:seed:fiscal-catalogos": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/fiscal-catalogos.seed.ts",
     "db:seed:required": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/required.seed.ts",
     "db:seed:simples": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/simples-nacional.seed.ts",
