@@ -23,6 +23,11 @@ import {
 } from './difal-calculador';
 import { projetarResultadoApuracao } from './resultado-apuracao.projector';
 import type { FechamentoSnapshots } from './resultado-apuracao.projector';
+import {
+  dataCalendarioValida,
+  motivoFechamentoInelegivelParaGuia,
+  ufValida,
+} from './fiscal-guias-vinculo';
 import { compararGuiaComObrigacao } from './fiscal-guias-divergencia';
 import {
   projetarSaldoObrigacao,
@@ -151,6 +156,19 @@ export class FiscalGuiasService {
     await this.assertCliente(input.clienteId);
     const { competencia } = this.competenciaRange(input.competencia);
 
+    // P0/A1: UF e vencimento são validados também fora do HTTP (calendário e
+    // UF reais), já que o serviço é chamável sem ValidationPipe.
+    if (!ufValida(input.ufFavorecida)) {
+      throw new BadRequestException(
+        `UF favorecida inválida: "${input.ufFavorecida}".`,
+      );
+    }
+    if (!dataCalendarioValida(input.dataVencimento)) {
+      throw new BadRequestException(
+        `Data de vencimento inválida: "${input.dataVencimento}".`,
+      );
+    }
+
     // R1.6 (Fase 5, tarefa 1.6): DEDUPLICAÇÃO POR CHAVE DE IDEMPOTÊNCIA. Quando o
     // chamador fornece uma chave, um RETRY com a MESMA chave (mesmo cliente) NÃO
     // cria uma guia nova — retornamos a já criada. A chave é a FRONTEIRA de
@@ -179,6 +197,7 @@ export class FiscalGuiasService {
       input.clienteId,
       origem,
       input.fechamentoId,
+      { competencia, tributo: input.tributo },
     );
 
     // R1.2 / tarefa 2.3: um DIFAL em SIMULAÇÃO/PENDÊNCIA NUNCA vira guia. Este é
@@ -186,7 +205,7 @@ export class FiscalGuiasService {
     // sem este guard, um chamador poderia criar uma guia DIFAL a partir de um
     // item simulado/pendente. A decisão delega a `difalPodeGerarGuia` (fonte
     // única da regra); a referência legada jamais é fonte de verdade para guia.
-    this.assertDifalElegivel(input);
+    this.assertDifalElegivel(input, origem);
 
     // R6.4/R6.3: reforça as invariantes do CriarGuiaDto no serviço para que um
     // chamador fora do HTTP (sem ValidationPipe) não as burle. Cada componente
@@ -893,6 +912,7 @@ export class FiscalGuiasService {
     clienteId: string,
     origem: OrigemGuia,
     fechamentoId: string | undefined,
+    guia: { competencia: string; tributo: TributoGuia },
   ): Promise<{ fechamentoId: string | null; valorObrigacao: string | null }> {
     if (origem === 'MANUAL') {
       if (fechamentoId != null) {
@@ -934,6 +954,24 @@ export class FiscalGuiasService {
         'Versão de apuração (fechamento) não encontrada para esta empresa. A ' +
           'guia calculada só pode vincular-se a um fechamento do próprio cliente ' +
           '(R1.7).',
+      );
+    }
+    // P0/A1: o vínculo precisa demonstrar a obrigação, não só existir. Estado
+    // FECHADO e corrente, mesma competência e obrigação compatível com o tributo.
+    const motivo = motivoFechamentoInelegivelParaGuia(
+      {
+        id: row.id,
+        clienteId: row.clienteId,
+        obrigacao: row.obrigacao,
+        competencia: row.competencia,
+        estado: row.estado,
+        corrente: row.corrente,
+      },
+      { clienteId, competencia: guia.competencia, tributo: guia.tributo },
+    );
+    if (motivo != null) {
+      throw new BadRequestException(
+        `Fechamento não sustenta a guia: ${motivo}`,
       );
     }
     return {
@@ -995,8 +1033,23 @@ export class FiscalGuiasService {
    * - Com estado presente, só `CALCULADO` passa; `SIMULACAO`/`PENDENTE` são
    *   barrados com o motivo auditável (nunca guia a partir de simulação/pendência).
    */
-  private assertDifalElegivel(input: CriarGuiaInput) {
+  private assertDifalElegivel(input: CriarGuiaInput, origem: OrigemGuia) {
     if (!TRIBUTOS_DIFAL.has(input.tributo)) return;
+
+    // P0/A1: com origem APURACAO a autoridade é o fechamento FECHADO validado
+    // em `resolverVinculoApuracao`. O `difalStatus` do cliente não autoriza
+    // nada; só é recusado se o próprio chamador declarar um estado não
+    // calculado. Em MANUAL, o campo é apenas declaração do chamador (registro
+    // de guia externa) e a guia mantém `origem = MANUAL` como proveniência.
+    if (origem === 'APURACAO') {
+      if (input.difalStatus != null && !difalPodeGerarGuia(input.difalStatus)) {
+        throw new BadRequestException(
+          difalMotivoInelegibilidadeGuia(input.difalStatus) ??
+            `DIFAL em estado ${input.difalStatus} não pode gerar guia (R1.2).`,
+        );
+      }
+      return;
+    }
 
     if (input.difalStatus == null) {
       throw new BadRequestException(

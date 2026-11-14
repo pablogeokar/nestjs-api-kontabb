@@ -1220,3 +1220,74 @@ describe('FiscalGuiasService — idempotency key (tarefa 1.6 / R1.6)', () => {
     });
   });
 });
+
+describe('FiscalGuiasService — abuso do vínculo com a apuração (ICMS nacional P0/A1)', () => {
+  const criar = (
+    fech: Record<string, unknown>,
+    over: Partial<CriarGuiaInput> = {},
+  ) => {
+    const db = createCriarGuiaDb({
+      fechamentoRows: [{ ...fechamentoRow(), ...fech }],
+    });
+    const service = new FiscalGuiasService(db as never);
+    return {
+      db,
+      run: () =>
+        service.criarGuia(
+          baseInput({ origem: 'APURACAO', fechamentoId: 'f1', ...over }),
+        ),
+    };
+  };
+
+  it('rejeita fechamento em rascunho', async () => {
+    const { db, run } = criar({ estado: 'RASCUNHO', corrente: false });
+    await expect(run()).rejects.toThrow('só uma apuração FECHADA');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejeita fechamento fechado que não é a versão corrente', async () => {
+    const { db, run } = criar({ corrente: false });
+    await expect(run()).rejects.toThrow('não é a versão corrente');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejeita fechamento de outra competência', async () => {
+    const { run } = criar({ competencia: '2026-07-01' });
+    await expect(run()).rejects.toThrow('competência da guia');
+  });
+
+  it('rejeita fechamento de outro cliente que escapou do filtro', async () => {
+    const { run } = criar({ clienteId: 'c2' });
+    await expect(run()).rejects.toThrow('outro estabelecimento');
+  });
+
+  it('rejeita obrigação incompatível com o tributo (DAS para ICMS-ST)', async () => {
+    const { run } = criar({ obrigacao: 'DAS' }, { tributo: 'ICMS_ST' });
+    await expect(run()).rejects.toThrow('não origina guia de ICMS_ST');
+  });
+
+  it('DIFAL com origem APURACAO é autorizado pelo fechamento, não pelo status do cliente', async () => {
+    const { run } = criar({}, { tributo: 'DIFAL_ENTRADA' });
+    await expect(run()).resolves.toBeDefined();
+  });
+
+  it('DIFAL com origem APURACAO recusa quando o cliente declara simulação', async () => {
+    const { run } = criar(
+      {},
+      { tributo: 'DIFAL_ENTRADA', difalStatus: 'SIMULACAO' },
+    );
+    await expect(run()).rejects.toThrow();
+  });
+
+  it('rejeita UF inexistente e vencimento fora do calendário', async () => {
+    const db = createCriarGuiaDb({});
+    const service = new FiscalGuiasService(db as never);
+    await expect(
+      service.criarGuia(baseInput({ ufFavorecida: 'ZZ' })),
+    ).rejects.toThrow('UF favorecida inválida');
+    await expect(
+      service.criarGuia(baseInput({ dataVencimento: '2026-02-30' })),
+    ).rejects.toThrow('Data de vencimento inválida');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+});
