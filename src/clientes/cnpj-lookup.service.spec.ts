@@ -207,3 +207,57 @@ describe('CNPJ lookup', () => {
     });
   });
 });
+
+describe('CNPJ lookup: dados da DeSTDA', () => {
+  it('traz fantasia, responsável e código IBGE', async () => {
+    const payload = {
+      cnpj: '03198283000116',
+      razao_social: 'Empresa Exemplo Ltda',
+      nome_fantasia: 'Loja Exemplo',
+      municipio: 'FEIRA DE SANTANA',
+      uf: 'BA',
+      QSA: [
+        {
+          nome_socio: 'MARIA SOUZA',
+          qualificacao_socio: 'Sócio-Administrador',
+          identificador_socio: 'Pessoa Física',
+        },
+      ],
+    };
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(payload),
+    } as Response);
+    const logger = { info: jest.fn(), warn: jest.fn() } as unknown as AppLogger;
+    const ibge = { resolverCodigo: jest.fn().mockResolvedValue('2910800') };
+    const service = new CnpjLookupService(logger, ibge as never);
+    const result = await service.lookup('03198283000116', { userId: 'u1' });
+    expect(result.trade_name).toBe('Loja Exemplo');
+    expect(result.ibge_code).toBe('2910800');
+    expect(result.responsible).toEqual({
+      name: 'MARIA SOUZA',
+      qualification_code: '205',
+      qualification_label: 'Sócio-Administrador',
+    });
+    expect(ibge.resolverCodigo).toHaveBeenCalledWith('FEIRA DE SANTANA', 'BA');
+  });
+
+  it('lê fantasia e qsa da ReceitaWS', () => {
+    const result = normalizeCnpjPayload(
+      'RECEITA_WS',
+      {
+        status: 'OK',
+        cnpj: '03.198.283/0001-16',
+        nome: 'Empresa Exemplo Ltda',
+        fantasia: 'Loja Receita',
+        uf: 'BA',
+        municipio: 'FEIRA DE SANTANA',
+        qsa: [{ nome: 'JOSE DIRETOR', qual: '10-Diretor' }],
+      },
+      '03198283000116',
+    );
+    expect(result.trade_name).toBe('Loja Receita');
+    expect(result.responsible?.qualification_code).toBe('203');
+  });
+});

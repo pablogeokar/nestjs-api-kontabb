@@ -127,14 +127,19 @@ export function apurarItemAntecipacaoParcial(
     };
   }
 
+  if (!regra) {
+    return pendente(
+      'Não há regra normativa de Antecipação Parcial vigente para BA nesta competência. Corrigir o CFOP seleciona a operação, mas não define o tratamento tributário do produto.',
+    );
+  }
   if (
-    !regra ||
     !item.emitenteUf ||
+    item.emitenteUf === 'BA' ||
     !regime ||
     !/^\d{8}$/.test(item.ncm ?? '')
   ) {
     return pendente(
-      'Confira o enquadramento por produto e regime. É necessária uma regra vigente aplicável ao item.',
+      'Confira a UF de origem, o regime tributário e o NCM de oito dígitos antes de calcular.',
     );
   }
 
@@ -156,9 +161,23 @@ export function apurarItemAntecipacaoParcial(
       )
     : [];
   const [enquadramento] = aplicaveis;
-  if (aplicaveis.length !== 1) {
+  if (aplicaveis.length === 0) {
     return pendente(
-      'Confira o enquadramento por produto e regime. É necessária uma regra vigente aplicável ao item.',
+      `A regra vigente não contém enquadramento para NCM ${item.ncm}, ` +
+        `CEST ${item.cest ?? 'não informado'}, regime ${regime} e origem ${item.emitenteUf}.`,
+    );
+  }
+  if (aplicaveis.length > 1) {
+    return pendente(
+      `Há ${aplicaveis.length} enquadramentos conflitantes para este NCM, CEST, regime e origem. Revise a regra normativa.`,
+    );
+  }
+
+  if (enquadramento.tratamento === 'CONFERIR') {
+    return pendente(
+      typeof enquadramento.motivo === 'string' && enquadramento.motivo.trim()
+        ? enquadramento.motivo
+        : 'O enquadramento exige revisão fiscal antes do cálculo.',
     );
   }
 

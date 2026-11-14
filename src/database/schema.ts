@@ -35,6 +35,8 @@ export * from './schemas/sped_obrigacoes_recolhimento';
 export * from './schemas/sped_inventarios';
 export * from './schemas/sped_inventario_itens';
 export * from './schemas/sped_arquivos_gerados';
+export * from './schemas/destda_configuracoes';
+export * from './schemas/destda_arquivos_gerados';
 export * from './schemas/regras_fiscais';
 export * from './schemas/ciap_ativo_permanente';
 export * from './schemas/ciap_competencias_apropriadas';

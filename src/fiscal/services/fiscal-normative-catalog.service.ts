@@ -295,7 +295,10 @@ export class FiscalNormativeCatalogService {
           ),
         ),
       )
-      .orderBy(desc(fiscalRegrasVersoes.vigenciaInicio))
+      .orderBy(
+        desc(fiscalRegrasVersoes.vigenciaInicio),
+        desc(fiscalRegrasVersoes.revisao),
+      )
       .limit(1);
 
     const row = rows[0];

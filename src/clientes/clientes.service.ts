@@ -40,6 +40,27 @@ export interface StoredCnae {
   description: string;
 }
 
+/** Dados do cadastro usados pela DeSTDA (undefined = não alterar). */
+interface ClientDeclarationData {
+  codigoMunicipioIbge?: string | null;
+  nomeFantasia?: string | null;
+  responsavelNome?: string | null;
+  responsavelCpf?: string | null;
+  responsavelCodAssinante?: string | null;
+}
+function normalizeDeclarationData(input: ClientDeclarationData) {
+  const text = (value: string | null | undefined) =>
+    value?.trim().replace(/\s+/g, ' ') || null;
+  const digitsOrNull = (value: string | null | undefined) =>
+    value?.replace(/\D/g, '') || null;
+  return {
+    codigoMunicipioIbge: digitsOrNull(input.codigoMunicipioIbge),
+    nomeFantasia: text(input.nomeFantasia),
+    responsavelNome: text(input.responsavelNome),
+    responsavelCpf: digitsOrNull(input.responsavelCpf),
+    responsavelCodAssinante: digitsOrNull(input.responsavelCodAssinante),
+  };
+}
 interface ExistingClientFiscalConfig {
   tipoPessoa: string;
   regimeTributario: string | null;
@@ -111,6 +132,11 @@ export class ClientesService {
           apuraIcms: clientes.apuraIcms,
           inscricaoEstadual: clientes.inscricaoEstadual,
           inscricaoMunicipal: clientes.inscricaoMunicipal,
+          codigoMunicipioIbge: clientes.codigoMunicipioIbge,
+          nomeFantasia: clientes.nomeFantasia,
+          responsavelNome: clientes.responsavelNome,
+          responsavelCpf: clientes.responsavelCpf,
+          responsavelCodAssinante: clientes.responsavelCodAssinante,
           tipoContribuinteIcms: clientes.tipoContribuinteIcms,
           optanteSimplesNacional: clientes.optanteSimplesNacional,
           simplesNacionalFonte: clientes.simplesNacionalFonte,
@@ -170,6 +196,11 @@ export class ClientesService {
         apura_icms: client.apuraIcms,
         inscricao_estadual: client.inscricaoEstadual,
         inscricao_municipal: client.inscricaoMunicipal,
+        codigo_municipio_ibge: client.codigoMunicipioIbge,
+        nome_fantasia: client.nomeFantasia,
+        responsavel_nome: client.responsavelNome,
+        responsavel_cpf: client.responsavelCpf,
+        responsavel_cod_assinante: client.responsavelCodAssinante,
         tipo_contribuinte_icms:
           client.tipoContribuinteIcms as TipoContribuinteIcms | null,
         optante_simples_nacional: client.optanteSimplesNacional,
@@ -203,27 +234,30 @@ export class ClientesService {
     };
   }
 
-  async registerClient(input: {
-    requestId?: string;
-    actorUserId: string;
-    tipoPessoa: 'PF' | 'PJ';
-    regimeCompetencia?: boolean;
-    dataAberturaCnpj?: string | null;
-    companyName: string;
-    cnpj: string;
-    cpf: string;
-    emails: string[];
-    address?: StoredAddress;
-    primaryActivity?: StoredCnae | null;
-    secondaryActivities?: StoredCnae[];
-    optanteSimplesNacional?: boolean | null;
-    simplesNacionalFonte?: FonteConsultaCnpj | null;
-    contadorId?: string | null;
-  }) {
+  async registerClient(
+    input: {
+      requestId?: string;
+      actorUserId: string;
+      tipoPessoa: 'PF' | 'PJ';
+      regimeCompetencia?: boolean;
+      dataAberturaCnpj?: string | null;
+      companyName: string;
+      cnpj: string;
+      cpf: string;
+      emails: string[];
+      address?: StoredAddress;
+      primaryActivity?: StoredCnae | null;
+      secondaryActivities?: StoredCnae[];
+      optanteSimplesNacional?: boolean | null;
+      simplesNacionalFonte?: FonteConsultaCnpj | null;
+      contadorId?: string | null;
+    } & ClientDeclarationData,
+  ) {
     const simplesNacional = this.normalizeSimplesNacionalRegistration(
       input.tipoPessoa,
       input,
     );
+    const declaration = normalizeDeclarationData(input);
     const authIdentifier = input.tipoPessoa === 'PF' ? input.cpf : input.cnpj;
     const authEmail = `${authIdentifier}@kontabb.local`;
     const hashedPassword = await this.authService.hashPassword(
@@ -266,6 +300,7 @@ export class ClientesService {
             cnae_principal_codigo, cnae_principal_descricao, cnaes_secundarios,
             regime_tributario, regime_competencia, data_abertura_cnpj, apura_icms, optante_simples_nacional,
             simples_nacional_fonte, simples_nacional_consultado_em,
+            codigo_municipio_ibge, nome_fantasia, responsavel_nome, responsavel_cpf, responsavel_cod_assinante,
             primeiro_login, user_id, contador_id
           )
           SELECT
@@ -287,6 +322,11 @@ export class ClientesService {
             ${simplesNacional.optanteSimplesNacional}::boolean,
             ${simplesNacional.simplesNacionalFonte}::text,
             CASE WHEN ${simplesNacional.optanteSimplesNacional}::boolean IS NULL THEN NULL ELSE now() END,
+            ${declaration.codigoMunicipioIbge}::text,
+            ${declaration.nomeFantasia}::text,
+            ${declaration.responsavelNome}::text,
+            ${declaration.responsavelCpf}::text,
+            ${declaration.responsavelCodAssinante}::text,
             true, id, ${contadorId}::uuid
           FROM inserted_user
           RETURNING id
@@ -334,25 +374,27 @@ export class ClientesService {
     }
   }
 
-  async updateClient(input: {
-    clientId: string;
-    actorUserId: string;
-    companyName?: string;
-    emails?: string[];
-    address?: StoredAddress;
-    primaryActivity?: StoredCnae | null;
-    secondaryActivities?: StoredCnae[];
-    regimeTributario?: RegimeTributario | null;
-    regimeCompetencia?: boolean;
-    dataAberturaCnpj?: string | null;
-    apuraIcms?: boolean;
-    inscricaoEstadual?: string | null;
-    inscricaoMunicipal?: string | null;
-    tipoContribuinteIcms?: TipoContribuinteIcms | null;
-    optanteSimplesNacional?: boolean | null;
-    simplesNacionalFonte?: FonteConsultaCnpj | null;
-    contadorId?: string | null;
-  }) {
+  async updateClient(
+    input: {
+      clientId: string;
+      actorUserId: string;
+      companyName?: string;
+      emails?: string[];
+      address?: StoredAddress;
+      primaryActivity?: StoredCnae | null;
+      secondaryActivities?: StoredCnae[];
+      regimeTributario?: RegimeTributario | null;
+      regimeCompetencia?: boolean;
+      dataAberturaCnpj?: string | null;
+      apuraIcms?: boolean;
+      inscricaoEstadual?: string | null;
+      inscricaoMunicipal?: string | null;
+      tipoContribuinteIcms?: TipoContribuinteIcms | null;
+      optanteSimplesNacional?: boolean | null;
+      simplesNacionalFonte?: FonteConsultaCnpj | null;
+      contadorId?: string | null;
+    } & ClientDeclarationData,
+  ) {
     if (input.contadorId) await this.assertContador(input.contadorId);
     const existingRows = await this.database.db
       .select({
@@ -391,6 +433,7 @@ export class ClientesService {
         'Pessoa Física não possui inscrição municipal.',
       );
     }
+    const declaration = normalizeDeclarationData(input);
     const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
     const result = await this.database.db.execute(sql`
       WITH updated_client AS (
@@ -414,6 +457,11 @@ export class ClientesService {
           apura_icms = CASE WHEN ${fiscalUpdate.writeApuraIcms} THEN ${fiscalUpdate.apuraIcms}::boolean ELSE apura_icms END,
           inscricao_estadual = CASE WHEN ${fiscalUpdate.writeInscricaoEstadual} THEN ${fiscalUpdate.inscricaoEstadual}::text ELSE inscricao_estadual END,
           inscricao_municipal = CASE WHEN ${hasInscricaoMunicipal} THEN ${inscricaoMunicipal}::text ELSE inscricao_municipal END,
+          codigo_municipio_ibge = CASE WHEN ${input.codigoMunicipioIbge !== undefined} THEN ${declaration.codigoMunicipioIbge}::text ELSE codigo_municipio_ibge END,
+          nome_fantasia = CASE WHEN ${input.nomeFantasia !== undefined} THEN ${declaration.nomeFantasia}::text ELSE nome_fantasia END,
+          responsavel_nome = CASE WHEN ${input.responsavelNome !== undefined} THEN ${declaration.responsavelNome}::text ELSE responsavel_nome END,
+          responsavel_cpf = CASE WHEN ${input.responsavelCpf !== undefined} THEN ${declaration.responsavelCpf}::text ELSE responsavel_cpf END,
+          responsavel_cod_assinante = CASE WHEN ${input.responsavelCodAssinante !== undefined} THEN ${declaration.responsavelCodAssinante}::text ELSE responsavel_cod_assinante END,
           tipo_contribuinte_icms = CASE WHEN ${fiscalUpdate.writeTipoContribuinteIcms} THEN ${fiscalUpdate.tipoContribuinteIcms}::text ELSE tipo_contribuinte_icms END,
           optante_simples_nacional = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.optanteSimplesNacional}::boolean ELSE optante_simples_nacional END,
           simples_nacional_fonte = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.simplesNacionalFonte}::text ELSE simples_nacional_fonte END,
@@ -651,6 +699,11 @@ export class ClientesService {
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
         inscricaoMunicipal: clientes.inscricaoMunicipal,
+        codigoMunicipioIbge: clientes.codigoMunicipioIbge,
+        nomeFantasia: clientes.nomeFantasia,
+        responsavelNome: clientes.responsavelNome,
+        responsavelCpf: clientes.responsavelCpf,
+        responsavelCodAssinante: clientes.responsavelCodAssinante,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
         optanteSimplesNacional: clientes.optanteSimplesNacional,
         simplesNacionalFonte: clientes.simplesNacionalFonte,
@@ -695,6 +748,11 @@ export class ClientesService {
       inscricao_estadual: client.inscricaoEstadual,
       inscricao_municipal:
         client.inscricaoMunicipal ?? sped?.inscricaoMunicipal ?? null,
+      codigo_municipio_ibge: client.codigoMunicipioIbge,
+      nome_fantasia: client.nomeFantasia,
+      responsavel_nome: client.responsavelNome,
+      responsavel_cpf: client.responsavelCpf,
+      responsavel_cod_assinante: client.responsavelCodAssinante,
       tipo_contribuinte_icms:
         client.tipoContribuinteIcms as TipoContribuinteIcms | null,
       optante_simples_nacional: client.optanteSimplesNacional,

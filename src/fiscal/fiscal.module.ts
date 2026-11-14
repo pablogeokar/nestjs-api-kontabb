@@ -37,6 +37,8 @@ import { RolloutMetricasService } from './services/rollout-metricas.service';
 import { PisCofinsService } from './services/pis-cofins.service';
 import { RegrasFiscaisService } from './services/regras-fiscais.service';
 import { FiscalNormativeCatalogService } from './services/fiscal-normative-catalog.service';
+import { IcmsRegrasController } from './controllers/icms-regras.controller';
+import { IcmsRegrasService } from './services/icms-regras.service';
 import {
   AdminFiscalApuracaoController,
   ClienteFiscalApuracaoController,
@@ -54,6 +56,13 @@ import { EfdIcmsIpiService } from './sped/efd-icms-ipi.service';
 import { SpedConfiguracaoService } from './sped/sped-configuracao.service';
 import { SpedApuracaoContextoService } from './sped/sped-apuracao-contexto.service';
 import { SpedInventarioService } from './sped/sped-inventario.service';
+import {
+  AdminDestdaController,
+  ClienteDestdaController,
+} from './destda/destda.controller';
+import { DestdaService } from './destda/destda.service';
+import { DestdaApuracaoService } from './destda/destda-apuracao.service';
+import { DestdaConfiguracaoService } from './destda/destda-configuracao.service';
 import {
   AdminSimplesNacionalController,
   ClienteSimplesNacionalController,
@@ -77,10 +86,13 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     AdminEscrituracaoFiscalController,
     AdminSpedEfdController,
     ClienteSpedEfdController,
+    AdminDestdaController,
+    ClienteDestdaController,
     AdminFiscalApuracaoController,
     ClienteFiscalApuracaoController,
     ClienteRegrasFiscaisController,
     AdminRegrasFiscaisController,
+    IcmsRegrasController,
     AdminSimplesNacionalController,
     ClienteSimplesNacionalController,
   ],
@@ -107,6 +119,9 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     SpedConfiguracaoService,
     SpedApuracaoContextoService,
     SpedInventarioService,
+    DestdaService,
+    DestdaApuracaoService,
+    DestdaConfiguracaoService,
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
@@ -120,6 +135,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     PisCofinsService,
     RegrasFiscaisService,
     FiscalNormativeCatalogService,
+    IcmsRegrasService,
     SimplesCalculadorService,
     SimplesNacionalService,
     SimplesNacionalRelatorioService,

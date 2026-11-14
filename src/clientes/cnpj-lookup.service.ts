@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { AppLogger } from '../common/logger.service';
 import type { FonteConsultaCnpj } from './clientes.types';
+import { CepLookupService } from './cep-lookup.service';
+import { IbgeMunicipiosService } from './ibge-municipios.service';
+import {
+  escolherResponsavel,
+  type ResponsavelEmpresa,
+  type SocioProvedor,
+} from './responsavel-qualificacao';
 
 export interface CnaeData {
   code: string;
@@ -21,7 +28,19 @@ export interface ClientAddressData {
 export interface CnpjLookupResult {
   cnpj: string;
   company_name: string;
+  /** Nome fantasia ('' quando o provedor não informa). */
+  trade_name: string;
   address: ClientAddressData;
+  /**
+   * Código IBGE do município (7 dígitos). Resolvido pela API do IBGE a partir
+   * do nome e da UF; `null` quando não foi possível determinar.
+   */
+  ibge_code: string | null;
+  /**
+   * Sócio sugerido como responsável pela empresa. O CPF não é público
+   * (a Receita o mascara) e deve ser informado manualmente.
+   */
+  responsible: ResponsavelEmpresa | null;
   primary_activity: CnaeData | null;
   secondary_activities: CnaeData[];
   /**
@@ -64,7 +83,30 @@ const LOOKUP_TIMEOUT_MS = 8_000;
 
 @Injectable()
 export class CnpjLookupService {
-  constructor(private readonly logger: AppLogger) { }
+  constructor(
+    private readonly logger: AppLogger,
+    private readonly ibge: IbgeMunicipiosService = new IbgeMunicipiosService(),
+    private readonly cep?: CepLookupService,
+  ) {}
+
+  /**
+   * O CEP é a fonte mais confiável do código IBGE; o nome do município é só
+   * o recurso de reserva (homônimos e grafias diferentes podem falhar).
+   */
+  private async resolveIbge(address: ClientAddressData) {
+    const postalCode = address.postal_code.replace(/\D/g, '');
+    if (this.cep && postalCode.length === 8) {
+      try {
+        const byCep = await this.cep.lookup(postalCode);
+        if (byCep.ibge_code && byCep.state === address.state) {
+          return byCep.ibge_code;
+        }
+      } catch {
+        // Cai para a busca por nome.
+      }
+    }
+    return this.ibge.resolverCodigo(address.city, address.state);
+  }
 
   async lookup(cnpj: string, context: { requestId?: string; userId: string }) {
     let notFound = false;
@@ -84,7 +126,11 @@ export class CnpjLookupService {
         if (!response.ok) throw new Error(`HTTP_${response.status}`);
 
         const payload: unknown = await response.json();
-        const result = normalizeCnpjPayload(provider.source, payload, cnpj);
+        const normalized = normalizeCnpjPayload(provider.source, payload, cnpj);
+        const result: CnpjLookupResult = {
+          ...normalized,
+          ibge_code: await this.resolveIbge(normalized.address),
+        };
         this.logger.info('cnpj_lookup_succeeded', {
           requestId: context.requestId,
           userId: context.userId,
@@ -205,7 +251,20 @@ function normalizeOpenCnpj(
   return {
     cnpj: normalizeCnpj(requestedCnpj),
     company_name: companyName,
+    trade_name: cleanText(payload.nome_fantasia),
     address,
+    ibge_code: null,
+    responsible: escolherResponsavel(
+      arrayRecords(payload.QSA).map((socio) => ({
+        name: cleanText(socio.nome_socio),
+        qualification: cleanText(socio.qualificacao_socio),
+        isPerson:
+          cleanText(socio.identificador_socio).toLowerCase() !==
+            'pessoa jurídica' &&
+          cleanText(socio.identificador_socio).toLowerCase() !==
+            'pessoa juridica',
+      })),
+    ),
     primary_activity: primary
       ? { code: primary.code, description: primary.description }
       : primaryCode
@@ -252,7 +311,16 @@ function normalizeReceitaWs(
   return {
     cnpj: normalizeCnpj(requestedCnpj),
     company_name: companyName,
+    trade_name: cleanText(payload.fantasia),
     address,
+    ibge_code: null,
+    responsible: escolherResponsavel(
+      arrayRecords(payload.qsa).map((socio): SocioProvedor => ({
+        name: cleanText(socio.nome),
+        qualification: cleanText(socio.qual),
+        isPerson: true,
+      })),
+    ),
     primary_activity: primary ?? null,
     secondary_activities: deduplicateCnaes(secondary),
     simples_nacional: simplesNacional,

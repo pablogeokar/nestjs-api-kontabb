@@ -63,6 +63,8 @@ const RESPONSAVEL_POR_HIPOTESE: Record<DifalHipotese, DifalResponsavel> = {
 // buscamos, classificamos como ST e provamos a ausência de recolhimento próprio,
 // em vez de simplesmente omitir. (R1.4.)
 const CFOPS_DIFAL_ENTRADA_ST = ['2406', '2407'] as const;
+const CST_ICMS_ST = new Set(['10', '30', '60', '70']);
+const CSOSN_ICMS_ST = new Set(['201', '202', '203', '500']);
 const CFOPS_REVENDA_INDUSTRIALIZACAO = ['2101', '2102'] as const;
 
 const COMPETENCIA_EMISSAO_NFE = sql<string>`to_char(
@@ -317,7 +319,10 @@ export class DifalEntradaService {
       // entrada-contribuinte. Sem isso, recolheríamos DIFAL em duplicidade.
       const stRetidaAnteriormente =
         toScaledInteger(item.valorIcmsStRetido ?? '0') > 0n;
-      const possuiSt = toScaledInteger(item.valorIcmsSt ?? '0') > 0n;
+      const possuiSt =
+        toScaledInteger(item.valorIcmsSt ?? '0') > 0n ||
+        CST_ICMS_ST.has(item.cstIcms?.slice(-2) ?? '') ||
+        CSOSN_ICMS_ST.has(item.csosnIcms ?? '');
       const classificacao = classificarDifalHipotese({
         tipoOperacaoEscriturada: 'ENTRADA',
         cfop: item.cfop ?? '',
@@ -566,6 +571,8 @@ export class DifalEntradaService {
       entradas_fora_do_calculo: entradasForaDoCalculo,
       antecipacao_parcial: {
         total_apurado: totalAntecipacao,
+        regra_configurada: regraAntecipacao != null,
+        regra_homologada: regraAntecipacao?.escopoAprovado ?? false,
         itens: itensAntecipacao,
       },
       itens: detalhes,

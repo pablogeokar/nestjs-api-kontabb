@@ -32,8 +32,18 @@ const item = {
 
 function regra(escopoAprovado: boolean): RegraVersaoResolvida {
   return {
+    id: 'regra-teste',
+    catalogoVersaoId: 'catalogo-teste',
+    chave: 'ANTECIPACAO_PARCIAL',
+    revisao: 1,
     fonte: 'Regra de teste',
+    fonteUrl: null,
+    responsavelPor: null,
+    vigenciaInicio: '2026-10-01',
+    vigenciaFim: '2026-10-31',
+    competencia: '2026-10-01',
     escopoAprovado,
+    pendente: !escopoAprovado,
     conteudo: {
       enquadramentos: [
         {
@@ -48,7 +58,7 @@ function regra(escopoAprovado: boolean): RegraVersaoResolvida {
         },
       ],
     },
-  } as RegraVersaoResolvida;
+  };
 }
 
 describe('Antecipação Parcial', () => {
@@ -85,16 +95,20 @@ describe('Antecipação Parcial', () => {
   });
 
   it('mantém em conferência o item sem regra ou sem o mesmo enquadramento', () => {
-    expect(
-      apurarItemAntecipacaoParcial(item, 'SIMPLES_NACIONAL', null).situacao,
-    ).toBe('PENDENTE');
-    expect(
-      apurarItemAntecipacaoParcial(
-        { ...item, cest: '0000000' },
-        'SIMPLES_NACIONAL',
-        regra(true),
-      ).situacao,
-    ).toBe('PENDENTE');
+    const semRegra = apurarItemAntecipacaoParcial(
+      item,
+      'SIMPLES_NACIONAL',
+      null,
+    );
+    expect(semRegra.situacao).toBe('PENDENTE');
+    expect(semRegra.motivo).toContain('Não há regra normativa');
+    const semEnquadramento = apurarItemAntecipacaoParcial(
+      { ...item, cest: '0000000' },
+      'SIMPLES_NACIONAL',
+      regra(true),
+    );
+    expect(semEnquadramento.situacao).toBe('PENDENTE');
+    expect(semEnquadramento.motivo).toContain('CEST 0000000');
   });
 
   it('usa a alíquota aprovada para a combinação exata quando o XML não a traz', () => {
@@ -125,6 +139,26 @@ describe('Antecipação Parcial', () => {
         regra(true),
       ),
     ).toMatchObject({ situacao: 'ICMS_ST', calculo: null });
+  });
+
+  it('mantém bloqueado o enquadramento cadastrado para conferência fiscal', () => {
+    const r = regra(false);
+    r.conteudo.enquadramentos = [
+      {
+        ncm: item.ncm,
+        cest: item.cest,
+        regime: 'SIMPLES_NACIONAL',
+        tratamento: 'CONFERIR',
+        motivo: 'Revisar a alíquota da operação.',
+      },
+    ];
+    expect(
+      apurarItemAntecipacaoParcial(item, 'SIMPLES_NACIONAL', r),
+    ).toMatchObject({
+      situacao: 'PENDENTE',
+      motivo: 'Revisar a alíquota da operação.',
+      calculo: null,
+    });
   });
 
   it('exige o parâmetro de origem do método selecionado e valida os decimais', () => {

@@ -153,7 +153,27 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     expect(result.total_difal_recolher).toBe('60.00');
     expect(result.antecipacao_parcial).toMatchObject({
       total_apurado: '85.00',
+      regra_configurada: true,
+      regra_homologada: true,
       itens: [{ situacao: 'CALCULADO', calculo: { valor_antecipacao: '85.00' } }],
+    });
+  });
+
+  it('explica a ausência da regra normativa para uma compra 2102 na BA', async () => {
+    const service = new DifalEntradaService(
+      createDb('BA', [{
+        documentoFiscalId: 'd1', itemId: 'i1', numeroDocumento: '341055',
+        competenciaEmissao: '2026-10', numeroItem: 1, cfop: '2102',
+        emitenteUf: 'SE', ncm: '19053100', cest: '1705302',
+        valorBrutoProduto: '162.00',
+      }], [], 'SIMPLES_NACIONAL') as never,
+      createCatalogo(null) as never,
+    );
+
+    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-10' });
+    expect(result.antecipacao_parcial).toMatchObject({
+      total_apurado: '0.00', regra_configurada: false, regra_homologada: false,
+      itens: [{ situacao: 'PENDENTE', motivo: expect.stringContaining('Não há regra normativa') }],
     });
   });
 
@@ -355,6 +375,34 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     expect(result.itens[0].hipotese).toBe('ST');
     expect(result.itens[0].status_calculo).toBeNull();
     expect(result.itens_por_hipotese.ST).toBe(1);
+    expect(result.total_difal_recolher).toBe('0.00');
+  });
+
+  it.each([
+    { cstIcms: '060', csosnIcms: null },
+    { cstIcms: null, csosnIcms: '500' },
+  ])('não cobra DIFAL quando o XML indica ST sem valor retido', async (marcador) => {
+    const service = new DifalEntradaService(
+      createDb('SP', [{
+        documentoFiscalId: 'd1',
+        itemId: 'i1',
+        cfop: '2556',
+        valorBcIcms: '1000.00',
+        valorBrutoProduto: '1000.00',
+        aliquotaIcms: '12.0000',
+        valorIcmsSt: '0.00',
+        valorIcmsStRetido: '0.00',
+        ...marcador,
+      }]) as never,
+      createCatalogo(regraAprovada({ aliquota_interna: '18.0000' })) as never,
+    );
+
+    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-09' });
+    expect(result.itens[0]).toMatchObject({
+      hipotese: 'ST',
+      recolhimento_proprio: 'NAO',
+      status_calculo: null,
+    });
     expect(result.total_difal_recolher).toBe('0.00');
   });
 

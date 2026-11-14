@@ -72,11 +72,49 @@ separada e os itens em revisão permanecem na seção de conferência.
 
 Use a chave `ANTECIPACAO_PARCIAL` no catálogo `DIFAL` de BA. O conteúdo da
 regra tem um array `enquadramentos` com `ncm`, `cest` (ou `null`),
-`regime` e `tratamento` (`APLICAVEL`, `ICMS_ST` ou `DISPENSADO`).
+`regime` e `tratamento` (`APLICAVEL`, `ICMS_ST`, `DISPENSADO` ou
+`CONFERIR`, este último acompanhado de `motivo` e sempre pendente).
 Quando aplicável, informe `aliquota_interna` em pontos percentuais como
 string. Para fixar a `aliquota_interestadual` no Simples, informe também
 `uf_origem` e `origem_mercadoria` para o escopo exato da regra.
 Correspondências ambíguas ou parâmetros insuficientes deixam o item pendente.
+Quando a versão normativa de `DIFAL`/BA ou a chave `ANTECIPACAO_PARCIAL`
+não estiverem cadastradas e vigentes, a API informa a ausência da regra.
+Quando houver regra mas faltar combinação exata de NCM, CEST, regime e origem,
+informa os eixos sem correspondência; regras ambíguas também ficam pendentes.
+Corrigir o CFOP apenas seleciona a compra para análise e não homologa o
+tratamento tributário do produto.
+
+### Rascunho BA/10-2026
+
+O script `scripts/cadastrar-antecipacao-ba-2026-10.cjs` registra, de forma
+idempotente, uma versão de catálogo e a revisão `ANTECIPACAO_PARCIAL` restritas
+à competência 10/2026. Sem `--execute`, mostra o conteúdo; com `--execute`,
+insere as regras. O catálogo é criado com `escopo_aprovado = false` e nunca
+emite guia. As seis combinações cobrem sete itens de compras: uma combinação
+permite simulação e cinco permanecem em `CONFERIR` até validação fiscal.
+
+A revisão deve confrontar as descrições e CEST dos biscoitos, o tratamento do
+IPI, a alíquota interestadual dos itens de origem de mercadoria 5, os CEST de
+higiene/pulverizador e eventuais benefícios. Depois da análise, crie nova
+revisão com a fonte e a vigência corretas; não altere a revisão existente
+nem aprove o catálogo em bloco enquanto houver combinações pendentes.
+
+### Cadastro e homologação
+
+O administrador acessa **Cadastros → Fiscal → ICMS** e seleciona a competência.
+O cadastro de Antecipação Parcial atualmente atende à UF de apuração **BA**.
+Cada salvamento cria uma revisão da chave `ANTECIPACAO_PARCIAL`, preservando as
+anteriores. A API exige combinação única de NCM, CEST, regime, UF de origem e
+origem da mercadoria, valida as alíquotas e rejeita revisões concorrentes.
+Enquanto o catálogo for rascunho, o motor mostra apenas simulação e pendência.
+
+A homologação exige revisão salva, URL da fonte normativa, fundamento e
+confirmação fiscal explícita por enquadramento, e nenhuma linha `CONFERIR`.
+A aprovação registra o usuário e o
+hash do conteúdo. Mesmo após a homologação, itens com IPI, dados incompletos,
+ST no XML ou sem combinação exata continuam sujeitos à conferência. Um catálogo
+homologado não é editado: alterações exigem nova vigência.
 
 O total da competência considera cálculos com regra homologada antes de
 reduções condicionadas ao pagamento. O simulador administrativo recebe a
@@ -112,7 +150,11 @@ evidência/declaração manual e vínculo à versão de apuração. O detalhamen
 em `fiscal-entrega-conciliacao-operacao.md`.
 
 As guias ainda são criadas manualmente via endpoint; a emissão automática de
-DAE/GNRE a partir das apurações é evolução planejada.
+DAE/GNRE a partir das apurações depende de integração homologada com cada UF.
+Na Antecipação Parcial da BA, a interface encaminha ao serviço oficial da
+SEFAZ-BA com o código de receita **2175** e mostra somente o total calculado
+com regra homologada. A emissão, o vencimento e o valor final são confirmados
+no portal estadual; o demonstrativo interno não é um DAE emitido.
 
 ## Endpoints
 
@@ -132,6 +174,9 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`):
 | Método | Rota | Descrição |
 | --- | --- | --- |
 | GET | `/admin/fiscal/apuracao/difal-entrada?clienteId=UUID&competencia=AAAA-MM` | DIFAL de entrada e Antecipação Parcial da empresa |
+| GET | `/admin/fiscal/icms/regras?uf=BA&competencia=AAAA-MM` | Consultar a revisão vigente (staff) |
+| PUT | `/admin/fiscal/icms/regras` | Salvar nova revisão em rascunho (admin) |
+| POST | `/admin/fiscal/icms/regras/homologar` | Homologar revisão salva (admin) |
 | POST | `/admin/fiscal/apuracao/antecipacao-parcial/simular` | Simular com parâmetros informados |
 | POST | `/admin/fiscal/apuracao/ciap/importar` | Importar bens de ativo |
 | POST | `/admin/fiscal/apuracao/ciap/bens` | Registrar bem manualmente |
@@ -159,5 +204,9 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`):
   serviço de PIS/COFINS produz o demonstrativo, não o TXT.
 - As guias são conciliadas com trilha e vínculo à apuração (Fase 5), mas ainda
   são lançadas manualmente; não há emissão automática de DAE/GNRE.
+- O calculador puro de ICMS-ST separa imposto próprio, retenção e FCP-ST, mas
+  ainda não está conectado à apuração por competência nem à emissão de guia.
+  Itens sob ST aparecem na conferência de DIFAL sem recolhimento próprio; não
+  devem ser tratados como ST já apurada ou paga.
 - A tabela de alíquotas internas de ICMS por UF é uma referência modal e pode
   divergir de alíquotas específicas por NCM.

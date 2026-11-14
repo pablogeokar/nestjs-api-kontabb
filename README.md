@@ -146,6 +146,7 @@ geração da EFD ICMS/IPI (SPED Fiscal). Endpoints de cliente em `/api/fiscal/*`
 | Simples Nacional | `/api/fiscal/simples/*` | [Revisão da receita e precisão](docs/simples-revisao-receita-2026.md) |
 | Entrega e conciliação | `/api/fiscal/apuracao/entregas`, `/api/admin/fiscal/apuracao/entregas` | [Operação fiscal](docs/fiscal-entrega-conciliacao-operacao.md) |
 | SPED EFD ICMS/IPI | `/api/fiscal/sped/efd-icms-ipi/*` | [Guia da EFD](docs/fiscal-sped-efd-icms-ipi.md) |
+| DeSTDA (Simples Nacional) | `/api/fiscal/destda/*` | [Guia da DeSTDA](docs/fiscal-destda.md) |
 
 Documentação operacional: [recriação do banco](docs/database-rebuild.md),
 [datas e fusos](docs/database-timezones.md), [ciclo de vida do R2](docs/storage-lifecycle.md),
