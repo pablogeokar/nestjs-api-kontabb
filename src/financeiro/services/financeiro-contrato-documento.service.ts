@@ -251,6 +251,7 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
         color?: string;
         indent?: number;
         gap?: number;
+        justify?: boolean;
       } = {},
     ) => {
       const size = options.size ?? 9;
@@ -262,14 +263,36 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
           .fontSize(size)
           .fillColor(options.color ?? INK);
       style();
-      const lines = wrap(pdf, value, width);
-      const height = lines.length * (size + 2.5) + (options.gap ?? 4);
+      const paragraphs = value
+        .split(/\r?\n/)
+        .map((paragraph) => wrap(pdf, paragraph, width));
+      const lineCount = paragraphs.reduce(
+        (total, lines) => total + lines.length,
+        0,
+      );
+      const height = lineCount * (size + 2.5) + (options.gap ?? 4);
       if (height <= BOTTOM - 120) ensure(height);
-      for (const line of lines) {
-        ensure(size + 3);
-        style();
-        pdf.text(line || ' ', 40 + indent, y, { width, lineBreak: false });
-        y += size + 2.5;
+      for (const lines of paragraphs) {
+        for (const [index, line] of lines.entries()) {
+          ensure(size + 3);
+          style();
+          const words = line.trim().split(/\s+/);
+          const justify =
+            options.justify !== false &&
+            index < lines.length - 1 &&
+            words.length > 1;
+          const wordSpacing = justify
+            ? Math.max(
+                0,
+                (width - pdf.widthOfString(line)) / (words.length - 1),
+              )
+            : 0;
+          pdf.text(line || ' ', 40 + indent, y, {
+            lineBreak: false,
+            ...(wordSpacing > 0 ? { wordSpacing } : {}),
+          });
+          y += size + 2.5;
+        }
       }
       y += options.gap ?? 4;
     };
