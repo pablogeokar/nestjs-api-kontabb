@@ -36,15 +36,34 @@ import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
 
 // DB falso: getCliente resolve por .limit (devolvendo também o regime do
 // adquirente, exigido pela tarefa 2.7); a busca de itens resolve por .where.
+// Itens de teste sem `emitenteUf` explícito recebem uma UF de origem diferente
+// da UF do adquirente (operação interestadual conhecida). Para testar origem
+// ausente, informe `emitenteUf: null`.
+function comOrigem(itens: unknown[], ufDestino: string): unknown[] {
+  return itens.map((i) => {
+    const item = i as Record<string, unknown>;
+    return 'emitenteUf' in item
+      ? item
+      : { ...item, emitenteUf: ufDestino === 'MG' ? 'SP' : 'MG' };
+  });
+}
 function createDb(
   cliente: { uf: string; regimeTributario?: string | null },
   itens: unknown[],
+  perfisHistorico: unknown[] = [],
 ) {
   return {
     db: {
       select: jest
         .fn()
         .mockImplementation((selection: Record<string, unknown>) => {
+          if ('vigenciaInicio' in selection) {
+            return {
+              from: jest.fn().mockReturnValue({
+                where: jest.fn().mockResolvedValue(perfisHistorico),
+              }),
+            };
+          }
           if ('uf' in selection) {
             return {
               from: jest.fn().mockReturnValue({
@@ -63,17 +82,15 @@ function createDb(
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: jest
-                  .fn()
-                  .mockImplementation(() =>
-                    'numero_documento' in selection
-                      ? {
-                          groupBy: () => ({
-                            orderBy: () => Promise.resolve([]),
-                          }),
-                        }
-                      : Promise.resolve(itens),
-                  ),
+                where: jest.fn().mockImplementation(() =>
+                  'numero_documento' in selection
+                    ? {
+                        groupBy: () => ({
+                          orderBy: () => Promise.resolve([]),
+                        }),
+                      }
+                    : Promise.resolve(comOrigem(itens, cliente.uf)),
+                ),
               }),
             }),
           };

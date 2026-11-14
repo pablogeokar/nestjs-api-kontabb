@@ -28,6 +28,7 @@ import { CiapService } from './services/ciap.service';
 import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
 import { FiscalEntregasService } from './services/fiscal-entregas.service';
+import { EstabelecimentoPerfilService } from './services/estabelecimento-perfil.service';
 import { FiscalPeriodSelectionService } from './services/fiscal-period-selection.service';
 import { FiscalClosingService } from './services/fiscal-closing.service';
 import { FiscalBooksProjectionService } from './services/fiscal-books-projection.service';
@@ -127,6 +128,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     FiscalGuiasService,
     FiscalEntregasService,
     FiscalPeriodSelectionService,
+    EstabelecimentoPerfilService,
     FiscalClosingService,
     FiscalBooksProjectionService,
     OnboardingMatrizService,

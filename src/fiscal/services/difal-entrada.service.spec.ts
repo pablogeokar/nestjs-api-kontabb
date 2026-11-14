@@ -7,19 +7,31 @@ import {
   resolucaoDe,
 } from './catalogo-test-helpers';
 
+// Itens de teste sem `emitenteUf` explícito recebem uma UF de origem diferente
+// da UF do adquirente (operação interestadual conhecida). Para testar origem
+// ausente, informe `emitenteUf: null`.
+function comOrigem(itens: unknown[], ufDestino: string): unknown[] {
+  return itens.map((i) => {
+    const item = i as Record<string, unknown>;
+    return 'emitenteUf' in item
+      ? item
+      : { ...item, emitenteUf: ufDestino === 'MG' ? 'SP' : 'MG' };
+  });
+}
 // DB falso: getCliente resolve por .limit; a busca de itens resolve por .where.
 function createDb(
   uf: string,
   itens: unknown[],
   entradasForaDoCalculo: unknown[] = [],
   regimeTributario?: string,
+  perfisHistorico: unknown[] = [],
 ) {
   const whereConferencia = jest.fn().mockReturnValue({
     groupBy: jest.fn().mockReturnValue({
       orderBy: jest.fn().mockResolvedValue(entradasForaDoCalculo),
     }),
   });
-  const whereItens = jest.fn().mockResolvedValue(itens);
+  const whereItens = jest.fn().mockResolvedValue(comOrigem(itens, uf));
   return {
     whereItens,
     whereConferencia,
@@ -27,6 +39,13 @@ function createDb(
       select: jest
         .fn()
         .mockImplementation((selection: Record<string, unknown>) => {
+          if ('vigenciaInicio' in selection) {
+            return {
+              from: jest.fn().mockReturnValue({
+                where: jest.fn().mockResolvedValue(perfisHistorico),
+              }),
+            };
+          }
           if ('uf' in selection) {
             return {
               from: jest.fn().mockReturnValue({
@@ -83,9 +102,11 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
       '"documentos_fiscais"."data_entrada_saida_fiscal"',
     );
     expect(query.sql).toContain('"documentos_fiscais_itens"."cfop" in (');
-    expect(query.sql).toContain('IS DISTINCT FROM');
+    // A UF de origem deixou de filtrar no SQL: é decidida por item, pela UF do
+    // estabelecimento NA DATA (perfil histórico).
+    expect(query.sql).not.toContain('IS DISTINCT FROM');
     expect(query.params).toEqual(
-      expect.arrayContaining(['c1', 'SP', '2551', '2556', '2406', '2407']),
+      expect.arrayContaining(['c1', '2551', '2556', '2406', '2407']),
     );
   });
 
@@ -916,32 +937,56 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
   });
 });
 
-// ICMS nacional, A3: testes de CARACTERIZAÇÃO. Registram o comportamento atual
-// que o diagnóstico classifica como defeito. Quando a correção entrar (fatos com
-// proveniência, perfil histórico do estabelecimento, vigência por dia), estes
-// testes devem ser invertidos, não removidos.
-describe('DifalEntradaService — A3 defeitos conhecidos (caracterização)', () => {
-  it('A3.1: origem nula não é excluída da seleção (IS DISTINCT FROM sem guarda de nulo)', async () => {
-    const database = createDb('SP', []);
+describe('DifalEntradaService — A3 perfil histórico do estabelecimento', () => {
+  it('A3.1 (corrigido): origem ausente vira pendência de fato, sem valor e fora do total', async () => {
+    const item = {
+      documentoFiscalId: 'd1',
+      itemId: 'i1',
+      cfop: '2556',
+      emitenteUf: null,
+      dataFato: '2026-09-10',
+      valorBcIcms: '1000.00',
+      valorBrutoProduto: '1000.00',
+      aliquotaIcms: '12.0000',
+    };
+    const database = createDb('SP', [item]);
     const service = new DifalEntradaService(
       database as never,
-      createCatalogo(null) as never,
+      createCatalogo(regraAprovada({ aliquota_interna: '18.0000' })) as never,
     );
-
-    await service.apurarCompetencia({
+    const result = await service.apurarCompetencia({
       clienteId: 'c1',
       competencia: '2026-09',
     });
+    expect(result.itens).toHaveLength(1);
+    expect(result.itens[0].status_calculo).toBe('PENDENTE');
+    expect(result.itens[0].pendencia_fato).toContain('UF de origem ausente');
+    expect(result.itens[0].valor_difal).toBe('0.00');
+    expect(result.total_difal_recolher).toBe('0.00');
+    expect(result.itens_por_status.PENDENTE).toBe(1);
+  });
 
-    const sqlText = new PgDialect().sqlToQuery(
-      database.whereItens.mock.calls[0][0],
-    ).sql;
-    expect(sqlText).toMatch(
-      /NULLIF\(UPPER\(BTRIM\([^)]*\)\), ''\) IS DISTINCT FROM/i,
+  it('A3.1: origem igual à UF do estabelecimento na data é intraestadual e sai do cálculo', async () => {
+    const database = createDb('SP', [
+      {
+        documentoFiscalId: 'd1',
+        itemId: 'i1',
+        cfop: '2556',
+        emitenteUf: 'SP',
+        dataFato: '2026-09-10',
+        valorBrutoProduto: '1000.00',
+      },
+    ]);
+    const service = new DifalEntradaService(
+      database as never,
+      createCatalogo(regraAprovada({ aliquota_interna: '18.0000' })) as never,
     );
-    // Nenhuma exigência de que a UF do emitente exista: item sem UF de origem
-    // seria tratado como interestadual.
-    expect(sqlText).not.toMatch(/'uf'\)\), ''\) IS NOT NULL/i);
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+    expect(result.itens).toHaveLength(0);
+    expect(result.itens_intraestaduais_ignorados).toBe(1);
   });
 
   it('A3.2 (corrigido): a regra é resolvida pela data do fato gerador de cada item', async () => {
@@ -1035,22 +1080,116 @@ describe('DifalEntradaService — A3 defeitos conhecidos (caracterização)', ()
     expect(result.total_difal_recolher).toBe('0.00');
   });
 
-  it('A3.3: UF e regime vêm do cadastro ATUAL do cliente, ignorando a competência', async () => {
+  it('A3.3 (corrigido): UF e regime vêm do perfil histórico na data do fato', async () => {
+    const perfis = [
+      {
+        vigenciaInicio: '2020-01-01',
+        vigenciaFim: '2025-12-31',
+        uf: 'SP',
+        inscricaoEstadual: null,
+        regimeTributario: 'SIMPLES_NACIONAL',
+        origem: 'ALTERACAO_CADASTRAL',
+      },
+      {
+        vigenciaInicio: '2026-01-01',
+        vigenciaFim: null,
+        uf: 'SP',
+        inscricaoEstadual: null,
+        regimeTributario: 'LUCRO_REAL',
+        origem: 'ALTERACAO_CADASTRAL',
+      },
+    ];
+    // Cadastro ATUAL é Lucro Real; a competência de 2024 era Simples.
+    const database = createDb('SP', [], [], 'LUCRO_REAL', perfis);
+    const service = new DifalEntradaService(
+      database as never,
+      createCatalogo(null) as never,
+    );
+    const antigo = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2024-01',
+    });
+    expect(antigo.regime_adquirente).toBe('SIMPLES_NACIONAL');
+    expect(antigo.perfil_estabelecimento_fim_competencia.confianca).toBe(
+      'ALTA',
+    );
+    const atual = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
+    expect(atual.regime_adquirente).toBe('LUCRO_REAL');
+  });
+
+  it('A3.3: mudança de UF no meio do mês aplica a UF de cada data ao item', async () => {
+    const perfis = [
+      {
+        vigenciaInicio: '2020-01-01',
+        vigenciaFim: '2026-10-14',
+        uf: 'SP',
+        inscricaoEstadual: null,
+        regimeTributario: 'LUCRO_REAL',
+        origem: 'MANUAL',
+      },
+      {
+        vigenciaInicio: '2026-10-15',
+        vigenciaFim: null,
+        uf: 'MG',
+        inscricaoEstadual: null,
+        regimeTributario: 'LUCRO_REAL',
+        origem: 'MANUAL',
+      },
+    ];
+    const item = (id: string, dataFato: string) => ({
+      documentoFiscalId: `d-${id}`,
+      itemId: id,
+      cfop: '2556',
+      emitenteUf: 'RJ',
+      dataFato,
+      valorBcIcms: '1000.00',
+      valorBrutoProduto: '1000.00',
+      aliquotaIcms: '12.0000',
+    });
+    const database = createDb(
+      'MG',
+      [item('i1', '2026-10-14'), item('i2', '2026-10-15')],
+      [],
+      'LUCRO_REAL',
+      perfis,
+    );
+    const catalogo = createCatalogo(
+      regraAprovada({ aliquota_interna: '18.0000' }),
+    );
+    const service = new DifalEntradaService(
+      database as never,
+      catalogo as never,
+    );
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
+    expect(result.itens.map((i) => i.uf_destino)).toEqual(['SP', 'MG']);
+    expect(catalogo.resolverRegraPorData).toHaveBeenCalledWith(
+      expect.objectContaining({ uf: 'SP', data: '2026-10-14' }),
+    );
+    expect(catalogo.resolverRegraPorData).toHaveBeenCalledWith(
+      expect.objectContaining({ uf: 'MG', data: '2026-10-15' }),
+    );
+  });
+
+  it('A3.3: sem histórico usa o cadastro atual, marcado como confiança BAIXA', async () => {
     const database = createDb('SP', [], [], 'SIMPLES_NACIONAL');
     const service = new DifalEntradaService(
       database as never,
       createCatalogo(null) as never,
     );
-
-    // Competência de 2 anos atrás: o resultado ainda carrega o regime de hoje.
     const result = await service.apurarCompetencia({
       clienteId: 'c1',
       competencia: '2024-01',
     });
-
     expect(result.regime_adquirente).toBe('SIMPLES_NACIONAL');
-    expect(database.db.select).toHaveBeenCalledWith(
-      expect.objectContaining({ regimeTributario: expect.anything() }),
-    );
+    expect(result.perfil_estabelecimento_fim_competencia).toMatchObject({
+      fonte: 'CADASTRO_ATUAL_SEM_HISTORICO',
+      confianca: 'BAIXA',
+    });
   });
 });

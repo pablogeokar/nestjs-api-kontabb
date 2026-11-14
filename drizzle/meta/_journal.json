@@ -78,6 +78,13 @@
       "when": 1794688418359,
       "tag": "0010_regras_aprovacao_por_regra",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794690266825,
+      "tag": "0011_clientes_perfis_fiscais",
+      "breakpoints": true
     }
   ]
 }

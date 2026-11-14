@@ -6,6 +6,7 @@ export * from './schemas/verification';
 export * from './schemas/contadores';
 export * from './schemas/contadores_certificados';
 export * from './schemas/clientes';
+export * from './schemas/clientes_perfis_fiscais';
 export * from './schemas/guias';
 export * from './schemas/visualizacoes_guias';
 export * from './schemas/storage_cleanup_jobs';
