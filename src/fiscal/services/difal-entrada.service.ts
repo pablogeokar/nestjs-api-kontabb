@@ -16,7 +16,11 @@ import {
   documentosFiscais,
   documentosFiscaisItens,
 } from '../../database/schema';
-import { fromScaledInteger, sumFiscalValues, toScaledInteger } from '../sped/sped-decimal';
+import {
+  fromScaledInteger,
+  sumFiscalValues,
+  toScaledInteger,
+} from '../sped/sped-decimal';
 import { FiscalPeriodSelectionService } from './fiscal-period-selection.service';
 import { classificarDifalHipotese, type DifalHipotese } from './difal-hipotese';
 import {
@@ -26,7 +30,11 @@ import {
   type DifalCalculoStatus,
 } from './difal-calculador';
 import { comporBaseDifal, type DifalBaseRegra } from './difal-base';
-import { FiscalNormativeCatalogService } from './fiscal-normative-catalog.service';
+import {
+  FiscalNormativeCatalogService,
+  type RegraVersaoResolvida,
+} from './fiscal-normative-catalog.service';
+import { regraResolvidaDe, type ResolucaoRegra } from './catalogo-resolucao';
 import {
   apurarItemAntecipacaoParcial,
   CFOP_ANTECIPACAO_PARCIAL_BA,
@@ -67,15 +75,20 @@ const CST_ICMS_ST = new Set(['10', '30', '60', '70']);
 const CSOSN_ICMS_ST = new Set(['201', '202', '203', '500']);
 const CFOPS_REVENDA_INDUSTRIALIZACAO = ['2101', '2102'] as const;
 
+// Data do fato gerador do item (AAAA-MM-DD), a mesma regra de recorte do período:
+// entrada/saída fiscal, senão emissão fiscal, senão emissão bruta.
+const DATA_FATO_ITEM = sql<string>`to_char(
+  coalesce(${documentosFiscais.dataEntradaSaidaFiscal}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date),
+  'YYYY-MM-DD'
+)`;
+
 const COMPETENCIA_EMISSAO_NFE = sql<string>`to_char(
   coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date),
   'YYYY-MM'
 )`;
 
 type SituacaoEntradaInterestadual =
-  | 'EM_REVISAO'
-  | 'REVENDA_INDUSTRIALIZACAO'
-  | 'OUTRA_ENTRADA';
+  'EM_REVISAO' | 'REVENDA_INDUSTRIALIZACAO' | 'OUTRA_ENTRADA';
 
 // Conjunto de busca: candidatos a DIFAL próprio (2551/2556) MAIS os CFOPs de ST
 // (2406/2407), estes últimos retidos apenas para a auditoria da não-duplicidade.
@@ -121,6 +134,11 @@ const ALIQUOTA_INTERNA_REFERENCIA_LEGADA: Record<string, string> = {
   TO: '20',
 };
 
+interface ResolvidaPorData {
+  resolucao: ResolucaoRegra;
+  versao: RegraVersaoResolvida | null;
+}
+
 @Injectable()
 export class DifalEntradaService {
   constructor(
@@ -163,21 +181,9 @@ export class DifalEntradaService {
     const regimeAdquirente = (cliente.regimeTributario ?? '').trim() || null;
     const adquirenteSimples = regimeAdquirente === 'SIMPLES_NACIONAL';
 
-    // Resolve a REGRA de DIFAL de entrada-contribuinte vigente para a UF do
-    // adquirente na competência. Fonte do cálculo (R1.1/R1.3), não a tabela
-    // fixa. `null` quando não há regra vigente → os itens caem em PENDÊNCIA.
-    const regraVersao = uf
-      ? await this.catalogo.resolverRegraVigente({
-          tipo: 'DIFAL',
-          uf,
-          competencia: competenciaMensal,
-          chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
-        })
-      : null;
-    const regra = this.regraDoConteudo(regraVersao?.conteudo);
-    const regraAprovada = regraVersao?.escopoAprovado ?? false;
-
-    const emitenteUf = sql<string | null>`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`;
+    const emitenteUf = sql<
+      string | null
+    >`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`;
     const linhas = await this.database.db
       .select({
         documentoFiscalId: documentosFiscaisItens.documentoFiscalId,
@@ -185,6 +191,7 @@ export class DifalEntradaService {
         numeroItem: documentosFiscaisItens.numeroItem,
         numeroDocumento: documentosFiscais.numeroDocumento,
         competenciaEmissao: COMPETENCIA_EMISSAO_NFE,
+        dataFato: DATA_FATO_ITEM,
         ncm: documentosFiscaisItens.ncm,
         cest: documentosFiscaisItens.cest,
         cstIcms: documentosFiscaisItens.cstIcms,
@@ -255,17 +262,35 @@ export class DifalEntradaService {
           a.documentoFiscalId.localeCompare(b.documentoFiscalId) ||
           a.numeroItem - b.numeroItem,
       );
-    const regraAntecipacao =
-      entradasAntecipacao.length > 0
-        ? await this.catalogo.resolverRegraVigente({
-            tipo: 'DIFAL',
+    // Vigência por DIA do fato gerador (ICMS nacional, A2/A3): uma consulta por
+    // data distinta, nunca por item, e sem escolher catálogo antes da regra.
+    const dataDoItem = (item: { dataFato?: string | null }) =>
+      item.dataFato ?? competencia;
+    const resolucoesDifal = uf
+      ? await this.resolverPorDatas(
+          uf,
+          'DIFAL_ENTRADA_CONTRIBUINTE',
+          itens.map(dataDoItem),
+          competencia,
+        )
+      : new Map<string, ResolvidaPorData>();
+    const resolucoesAntecipacao =
+      uf && entradasAntecipacao.length > 0
+        ? await this.resolverPorDatas(
             uf,
-            competencia: competenciaMensal,
-            chave: 'ANTECIPACAO_PARCIAL',
-          })
-        : null;
+            'ANTECIPACAO_PARCIAL',
+            entradasAntecipacao.map(dataDoItem),
+            competencia,
+          )
+        : new Map<string, ResolvidaPorData>();
+    const regraAntecipacao =
+      [...resolucoesAntecipacao.values()].find((r) => r.versao)?.versao ?? null;
     const itensAntecipacao = entradasAntecipacao.map((item) =>
-      apurarItemAntecipacaoParcial(item, regimeAdquirente, regraAntecipacao),
+      apurarItemAntecipacaoParcial(
+        item,
+        regimeAdquirente,
+        resolucoesAntecipacao.get(dataDoItem(item))?.versao ?? null,
+      ),
     );
     const totalAntecipacao = sumFiscalValues(
       itensAntecipacao
@@ -309,6 +334,10 @@ export class DifalEntradaService {
     let itensSemRecolhimentoProprio = 0;
 
     const detalhes = itens.map((item) => {
+      const resolvida = resolucoesDifal.get(dataDoItem(item));
+      const regraVersao = resolvida?.versao ?? null;
+      const regra = this.regraDoConteudo(regraVersao?.conteudo);
+      const regraAprovada = regraVersao?.escopoAprovado ?? false;
       // SEPARAÇÃO POR HIPÓTESE (tarefa 2.1, R1.1): cada item é enquadrado em
       // uma das quatro hipóteses antes de qualquer cálculo. Itens sob ST
       // (2406/2407 ou com ICMS-ST retido) são roteados para `ST` e NÃO geram
@@ -387,7 +416,11 @@ export class DifalEntradaService {
 
       if (calc) {
         if (regraVersao && !regra) {
-          calc.memoria = 'A regra de DIFAL vigente contém parâmetros inválidos ou incompletos.';
+          calc.memoria =
+            'A regra de DIFAL vigente contém parâmetros inválidos ou incompletos.';
+        } else if (resolvida?.resolucao.estado === 'AMBIGUA') {
+          calc.memoria =
+            'Há mais de uma regra de DIFAL aprovada para a data do fato gerador com conteúdos distintos. Resolva a sobreposição no catálogo.';
         }
         porStatus[calc.status] += 1;
       }
@@ -516,6 +549,12 @@ export class DifalEntradaService {
         // recolhido (não omitido), impedindo recolher sobre imposto já retido.
         recolhimento_proprio: recolhimentoProprio,
         motivo_nao_recolhimento: motivoNaoRecolhimento,
+        // Regra efetivamente aplicada ao item, resolvida pela data do fato
+        // gerador (`data_fato`). Permite duas alíquotas no mesmo mês.
+        data_fato: dataDoItem(item),
+        estado_resolucao_regra: resolvida?.resolucao.estado ?? 'SEM_REGRA',
+        regra_versao_id: regraVersao?.id ?? null,
+        regra_revisao: regraVersao?.revisao ?? null,
       };
     });
 
@@ -525,6 +564,14 @@ export class DifalEntradaService {
     const itensRecolhidosForaDoDas = detalhes.filter(
       (d) => d.recolhido_fora_do_das,
     ).length;
+    // Cabeçalho (compatibilidade): regra da data mais recente do período. O
+    // detalhe por item informa a regra efetivamente aplicada.
+    const regraDoCabecalho =
+      [...resolucoesDifal.entries()]
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([, r]) => r.versao)
+        .find((v) => v != null) ?? null;
+    const regraCabecalho = this.regraDoConteudo(regraDoCabecalho?.conteudo);
 
     return {
       competencia,
@@ -533,18 +580,19 @@ export class DifalEntradaService {
       // entrada do Simples (recolhido fora do DAS). Null quando não informado.
       regime_adquirente: regimeAdquirente,
       // Fonte do cálculo: catálogo versionado quando há regra; estado explícito.
-      origem_regra: regraVersao && regra
-        ? {
-            catalogo_versao_id: regraVersao.catalogoVersaoId,
-            regra_versao_id: regraVersao.id,
-            chave: regraVersao.chave,
-            revisao: regraVersao.revisao,
-            fonte: regraVersao.fonte,
-            escopo_aprovado: regraVersao.escopoAprovado,
-            vigencia_inicio: regraVersao.vigenciaInicio,
-            vigencia_fim: regraVersao.vigenciaFim,
-          }
-        : null,
+      origem_regra:
+        regraDoCabecalho && regraCabecalho
+          ? {
+              catalogo_versao_id: regraDoCabecalho.catalogoVersaoId,
+              regra_versao_id: regraDoCabecalho.id,
+              chave: regraDoCabecalho.chave,
+              revisao: regraDoCabecalho.revisao,
+              fonte: regraDoCabecalho.fonte,
+              escopo_aprovado: regraDoCabecalho.escopoAprovado,
+              vigencia_inicio: regraDoCabecalho.vigenciaInicio,
+              vigencia_fim: regraDoCabecalho.vigenciaFim,
+            }
+          : null,
       // Referência legada apenas identificada (nunca fonte de verdade); null
       // quando a UF não consta da tabela de referência.
       aliquota_interna_referencia_legada: aliquotaInternaReferencia,
@@ -577,6 +625,29 @@ export class DifalEntradaService {
       },
       itens: detalhes,
     };
+  }
+
+  /** Resolve a regra para cada data distinta (uma consulta por data, nunca por item). */
+  private async resolverPorDatas(
+    uf: string,
+    chave: string,
+    datas: string[],
+    competenciaDate: string,
+  ): Promise<Map<string, ResolvidaPorData>> {
+    const out = new Map<string, ResolvidaPorData>();
+    for (const data of new Set(datas)) {
+      const resolucao = await this.catalogo.resolverRegraPorData({
+        tipo: 'DIFAL',
+        uf,
+        chave,
+        data,
+      });
+      out.set(data, {
+        resolucao,
+        versao: regraResolvidaDe(resolucao, competenciaDate),
+      });
+    }
+    return out;
   }
 
   private listarEntradasForaDoCalculo(
@@ -648,7 +719,9 @@ export class DifalEntradaService {
     const aliquotaInterestadual = percentual(
       conteudo.aliquota_interestadual ?? conteudo.aliquotaInterestadual,
     );
-    const aliquotaFcp = percentual(conteudo.aliquota_fcp ?? conteudo.aliquotaFcp);
+    const aliquotaFcp = percentual(
+      conteudo.aliquota_fcp ?? conteudo.aliquotaFcp,
+    );
     const percentualReducao = percentual(
       conteudo.percentual_reducao ?? conteudo.percentualReducao,
       true,
@@ -679,8 +752,7 @@ export class DifalEntradaService {
       fcpNaBasePorDentro &&
       ((!basePorDentro && !baseDupla) ||
         !aliquotaFcp ||
-        toScaledInteger(aliquotaInterna, 4) +
-          toScaledInteger(aliquotaFcp, 4) >=
+        toScaledInteger(aliquotaInterna, 4) + toScaledInteger(aliquotaFcp, 4) >=
           1_000_000n)
     ) {
       return null;

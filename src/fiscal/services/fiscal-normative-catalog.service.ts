@@ -397,6 +397,9 @@ export class FiscalNormativeCatalogService {
         catalogoVigenciaFim: c.vigenciaFim ?? null,
         aprovada: r.escopoAprovado ?? c.escopoAprovado,
         conteudo: r.conteudo ?? {},
+        fonte: r.fonte,
+        fonteUrl: r.fonteUrl ?? null,
+        responsavelPor: r.responsavelPor ?? null,
       };
     });
     return resolverRegraPorData(candidatas, input);

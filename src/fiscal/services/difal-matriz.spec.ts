@@ -31,6 +31,7 @@
  * cobrem a aritmética pura de cada peça. Decimais permanecem strings.
  */
 import { DifalEntradaService } from './difal-entrada.service';
+import { createCatalogo } from './catalogo-test-helpers';
 import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
 
 // DB falso: getCliente resolve por .limit (devolvendo também o regime do
@@ -62,45 +63,22 @@ function createDb(
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockImplementation(() =>
-                  'numero_documento' in selection
-                    ? { groupBy: () => ({ orderBy: () => Promise.resolve([]) }) }
-                    : Promise.resolve(itens),
-                ),
+                where: jest
+                  .fn()
+                  .mockImplementation(() =>
+                    'numero_documento' in selection
+                      ? {
+                          groupBy: () => ({
+                            orderBy: () => Promise.resolve([]),
+                          }),
+                        }
+                      : Promise.resolve(itens),
+                  ),
               }),
             }),
           };
         }),
     },
-  };
-}
-
-// Catálogo falso: devolve uma regra de DIFAL homologada por hipótese/UF/
-// competência (fonte do cálculo, N12), ou `null` quando não há regra vigente.
-function createCatalogo(regra: Partial<RegraVersaoResolvida> | null): {
-  resolverRegraVigente: jest.Mock;
-} {
-  return {
-    resolverRegraVigente: jest.fn().mockResolvedValue(
-      regra == null
-        ? null
-        : {
-            id: 'reg-1',
-            catalogoVersaoId: 'cat-1',
-            chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
-            revisao: 1,
-            conteudo: {},
-            fonte: 'LC190/2022',
-            fonteUrl: null,
-            responsavelPor: null,
-            vigenciaInicio: '2026-01-01',
-            vigenciaFim: null,
-            competencia: '2026-09-01',
-            escopoAprovado: true,
-            pendente: false,
-            ...regra,
-          },
-    ),
   };
 }
 

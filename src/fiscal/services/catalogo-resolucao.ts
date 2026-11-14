@@ -24,6 +24,10 @@ export interface RegraCandidata {
   /** Aprovação efetiva: `regra.escopoAprovado ?? catalogo.escopoAprovado`. */
   aprovada: boolean;
   conteudo: Record<string, unknown>;
+  /** Proveniência, repassada ao consumidor para a memória de cálculo. */
+  fonte?: string;
+  fonteUrl?: string | null;
+  responsavelPor?: string | null;
 }
 
 export type EstadoResolucao =
@@ -155,5 +159,45 @@ export function resolverRegraPorData(
     candidatas: [],
     rascunhosIgnorados: pendentes,
     motivo: 'Regra aprovada e vigente na data.',
+  };
+}
+
+/**
+ * Adapta uma resolução ao formato `RegraVersaoResolvida` consumido pelos
+ * cálculos existentes. DEFINITIVA vira regra aprovada; PENDENTE_APROVACAO com
+ * conteúdo único vira regra NÃO aprovada (simulação); SEM_REGRA e AMBIGUA
+ * viram `null`, ou seja, pendência sem valor.
+ */
+export function regraResolvidaDe(
+  resolucao: ResolucaoRegra,
+  competenciaDate: string,
+): import('./fiscal-normative-catalog.service').RegraVersaoResolvida | null {
+  let r: RegraCandidata | null = null;
+  let aprovada = false;
+  if (resolucao.estado === 'DEFINITIVA') {
+    r = resolucao.regra;
+    aprovada = true;
+  } else if (resolucao.estado === 'PENDENTE_APROVACAO') {
+    const topo = vencedoras(resolucao.candidatas);
+    if (new Set(topo.map((c) => canonico(c.conteudo))).size === 1) {
+      r = [...topo].sort((a, b) => a.id.localeCompare(b.id))[0];
+    }
+  }
+  if (!r) return null;
+  const v = vigenciaEfetiva(r);
+  return {
+    id: r.id,
+    catalogoVersaoId: r.catalogoVersaoId,
+    chave: r.chave,
+    revisao: r.revisao,
+    conteudo: r.conteudo,
+    fonte: r.fonte ?? '',
+    fonteUrl: r.fonteUrl ?? null,
+    responsavelPor: r.responsavelPor ?? null,
+    vigenciaInicio: v.inicio,
+    vigenciaFim: v.fim,
+    competencia: competenciaDate,
+    escopoAprovado: aprovada,
+    pendente: !aprovada,
   };
 }

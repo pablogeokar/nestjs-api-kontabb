@@ -1,6 +1,11 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { DifalEntradaService } from './difal-entrada.service';
 import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
+import {
+  createCatalogo,
+  regraPadrao,
+  resolucaoDe,
+} from './catalogo-test-helpers';
 
 // DB falso: getCliente resolve por .limit; a busca de itens resolve por .where.
 function createDb(
@@ -51,33 +56,6 @@ function createDb(
 // Catálogo falso (tarefa 2.2): devolve uma regra de DIFAL já resolvida por
 // hipótese/UF/competência, ou `null` quando não há regra vigente. Substitui a
 // tabela modal fixa como fonte do cálculo.
-function createCatalogo(regra: Partial<RegraVersaoResolvida> | null): {
-  resolverRegraVigente: jest.Mock;
-} {
-  return {
-    resolverRegraVigente: jest.fn().mockResolvedValue(
-      regra == null
-        ? null
-        : {
-            id: 'reg-1',
-            catalogoVersaoId: 'cat-1',
-            chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
-            revisao: 1,
-            conteudo: {},
-            fonte: 'LC190/2022',
-            fonteUrl: null,
-            responsavelPor: null,
-            vigenciaInicio: '2026-01-01',
-            vigenciaFim: null,
-            competencia: '2026-09-01',
-            escopoAprovado: true,
-            pendente: false,
-            ...regra,
-          },
-    ),
-  };
-}
-
 // Regra aprovada e vigente com alíquota interna no conteúdo (fonte do cálculo).
 function regraAprovada(
   conteudo: Record<string, unknown>,
@@ -185,10 +163,19 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
       },
     };
     const catalogo = {
-      resolverRegraVigente: jest.fn(({ chave }) =>
-        Promise.resolve(
-          chave === 'ANTECIPACAO_PARCIAL' ? regraAntecipacao : regraDifal,
-        ),
+      resolverRegraPorData: jest.fn(
+        ({ chave, data }: { chave: string; data: string }) =>
+          Promise.resolve(
+            resolucaoDe(
+              regraPadrao(
+                (chave === 'ANTECIPACAO_PARCIAL'
+                  ? regraAntecipacao
+                  : regraDifal) as Partial<RegraVersaoResolvida>,
+              ),
+              data,
+              chave,
+            ),
+          ),
       ),
     };
     const service = new DifalEntradaService(
@@ -957,28 +944,95 @@ describe('DifalEntradaService — A3 defeitos conhecidos (caracterização)', ()
     expect(sqlText).not.toMatch(/'uf'\)\), ''\) IS NOT NULL/i);
   });
 
-  it('A3.2: a regra é resolvida só pelo mês, sem data do fato gerador', async () => {
-    const database = createDb('SP', []);
-    const catalogo = createCatalogo(null);
+  it('A3.2 (corrigido): a regra é resolvida pela data do fato gerador de cada item', async () => {
+    const item = (id: string, dataFato: string) => ({
+      documentoFiscalId: `d-${id}`,
+      itemId: id,
+      cfop: '2556',
+      dataFato,
+      valorBcIcms: '1000.00',
+      valorBrutoProduto: '1000.00',
+      aliquotaIcms: '12.0000',
+    });
+    const database = createDb('SP', [
+      item('i1', '2026-10-14'),
+      item('i2', '2026-10-15'),
+    ]);
+    const catalogo = {
+      resolverRegraPorData: jest.fn(
+        ({ data, chave }: { data: string; chave: string }) =>
+          Promise.resolve(
+            resolucaoDe(
+              regraPadrao({
+                id: data < '2026-10-15' ? 'antes' : 'depois',
+                conteudo: {
+                  aliquota_interna: data < '2026-10-15' ? '18.0000' : '20.0000',
+                },
+              }),
+              data,
+              chave,
+            ),
+          ),
+      ),
+    };
     const service = new DifalEntradaService(
       database as never,
       catalogo as never,
     );
 
-    await service.apurarCompetencia({
+    const result = await service.apurarCompetencia({
       clienteId: 'c1',
       competencia: '2026-10',
     });
 
-    expect(catalogo.resolverRegraVigente).toHaveBeenCalledWith(
-      expect.objectContaining({ uf: 'SP', competencia: '2026-10' }),
+    // Duas alíquotas internas no mesmo mês: 1000*(18-12)% = 60 e 1000*(20-12)% = 80.
+    expect(result.itens.map((i) => i.valor_difal)).toEqual(['60.00', '80.00']);
+    expect(result.itens.map((i) => i.regra_versao_id)).toEqual([
+      'antes',
+      'depois',
+    ]);
+    expect(result.total_difal_recolher).toBe('140.00');
+    // Uma consulta por data distinta, não por item além disso.
+    expect(catalogo.resolverRegraPorData).toHaveBeenCalledTimes(2);
+  });
+
+  it('regra AMBIGUA na data deixa o item pendente com motivo, sem valor', async () => {
+    const database = createDb('SP', [
+      {
+        documentoFiscalId: 'd1',
+        itemId: 'i1',
+        cfop: '2556',
+        dataFato: '2026-10-20',
+        valorBcIcms: '1000.00',
+        valorBrutoProduto: '1000.00',
+        aliquotaIcms: '12.0000',
+      },
+    ]);
+    const catalogo = {
+      resolverRegraPorData: jest.fn(({ data, chave }) =>
+        Promise.resolve({
+          estado: 'AMBIGUA',
+          data,
+          chave,
+          regra: null,
+          candidatas: [],
+          rascunhosIgnorados: [],
+          motivo: 'x',
+        }),
+      ),
+    };
+    const service = new DifalEntradaService(
+      database as never,
+      catalogo as never,
     );
-    // Uma mudança de alíquota em 15/10 não pode ser representada por esta chamada.
-    const arg = catalogo.resolverRegraVigente.mock.calls[0][0] as Record<
-      string,
-      unknown
-    >;
-    expect(arg).not.toHaveProperty('data');
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
+    expect(result.itens[0].status_calculo).toBe('PENDENTE');
+    expect(result.itens[0].estado_resolucao_regra).toBe('AMBIGUA');
+    expect(result.itens[0].memoria_calculo).toContain('mais de uma regra');
+    expect(result.total_difal_recolher).toBe('0.00');
   });
 
   it('A3.3: UF e regime vêm do cadastro ATUAL do cliente, ignorando a competência', async () => {
