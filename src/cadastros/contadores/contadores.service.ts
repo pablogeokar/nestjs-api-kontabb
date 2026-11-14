@@ -47,7 +47,7 @@ export class ContadoresService {
           atualizadoEm: contadores.atualizadoEm,
           clientesVinculados: sql<number>`(
             SELECT count(*)::int FROM clientes
-            WHERE clientes.contador_id = ${contadores.id}
+            WHERE clientes.contador_id = "contadores"."id"
           )`,
         })
         .from(contadores)
@@ -84,7 +84,7 @@ export class ContadoresService {
         atualizadoEm: contadores.atualizadoEm,
         clientesVinculados: sql<number>`(
           SELECT count(*)::int FROM clientes
-          WHERE clientes.contador_id = ${contadores.id}
+          WHERE clientes.contador_id = "contadores"."id"
         )`,
       })
       .from(contadores)
