@@ -176,7 +176,7 @@ export class IcmsRegrasService {
       throw new BadRequestException('Informe a fonte normativa.');
     return this.database.db.transaction(async (tx) => {
       await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtext(${`icms:${input.uf}:${input.competencia}`}))`,
+        sql`select pg_advisory_xact_lock(hashtext(${`icms:${input.uf}`}))`,
       );
       const [catalogo] = await tx
         .select()
@@ -199,10 +199,8 @@ export class IcmsRegrasService {
         throw new ConflictException(
           'Este catálogo já foi homologado. Abra uma nova vigência para alterá-lo.',
         );
-      if (catalogo && catalogo.vigenciaInicio !== competencia)
-        throw new ConflictException(
-          'Há uma vigência iniciada em outra competência. Cadastre a revisão nessa vigência.',
-        );
+      // A revisão vale para a vigência inteira do catálogo que contém a
+      // competência (ex.: 01/01 a 31/12), não só para o mês aberto na tela.
       const [previous] = catalogo
         ? await tx
             .select()
@@ -255,7 +253,7 @@ export class IcmsRegrasService {
         fonte: input.fonte,
         fonteUrl: input.fonteUrl ?? null,
         responsavelPor: userId,
-        vigenciaInicio: competencia,
+        vigenciaInicio: savedCatalogo.vigenciaInicio,
         vigenciaFim: savedCatalogo.vigenciaFim,
       });
       await tx
@@ -276,6 +274,8 @@ export class IcmsRegrasService {
         catalogoId: savedCatalogo.id,
         revisao: revisao + 1,
         escopoAprovado: false,
+        vigenciaInicio: savedCatalogo.vigenciaInicio,
+        vigenciaFim: savedCatalogo.vigenciaFim,
       };
     });
   }
@@ -284,7 +284,7 @@ export class IcmsRegrasService {
     const competencia = competenciaDate(input);
     return this.database.db.transaction(async (tx) => {
       await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtext(${`icms:${input.uf}:${input.competencia}`}))`,
+        sql`select pg_advisory_xact_lock(hashtext(${`icms:${input.uf}`}))`,
       );
       const [catalogo] = await tx
         .select()
@@ -293,10 +293,15 @@ export class IcmsRegrasService {
           and(
             eq(fiscalCatalogosVersoes.tipo, TIPO),
             eq(fiscalCatalogosVersoes.uf, input.uf),
-            eq(fiscalCatalogosVersoes.vigenciaInicio, competencia),
             eq(fiscalCatalogosVersoes.ativo, true),
+            lte(fiscalCatalogosVersoes.vigenciaInicio, competencia),
+            or(
+              isNull(fiscalCatalogosVersoes.vigenciaFim),
+              gte(fiscalCatalogosVersoes.vigenciaFim, competencia),
+            ),
           ),
         )
+        .orderBy(desc(fiscalCatalogosVersoes.vigenciaInicio))
         .limit(1);
       if (!catalogo) throw new NotFoundException('Catálogo não encontrado.');
       const [regra] = await tx

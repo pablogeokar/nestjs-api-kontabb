@@ -164,3 +164,35 @@ describe('IcmsRegrasService.salvar — revisão homologada é imutável', () => 
     expect(f.inserts).toHaveLength(0);
   });
 });
+
+describe('IcmsRegrasService — competência dentro de vigência anual', () => {
+  const anual = { vigenciaInicio: '2026-01-01', vigenciaFim: '2026-12-31' };
+
+  it('salvar em 2026-10 grava a revisão na vigência que contém a competência', async () => {
+    const f = fakeDb([[catalogo(anual)], [regra({ ...anual, revisao: 2 })]]);
+    const out = await new IcmsRegrasService(f as never).salvar(
+      {
+        uf: 'BA',
+        competencia: '2026-10',
+        fonte: 'RICMS-BA',
+        fonteUrl: 'https://exemplo.gov.br/norma',
+        expectedRevision: 2,
+        enquadramentos: [enquadramento],
+      } as never,
+      'u1',
+    );
+    expect(out).toMatchObject({ revisao: 3, ...anual });
+    expect(f.inserts).toHaveLength(1);
+    expect(f.inserts[0]).toMatchObject({ revisao: 3, ...anual });
+  });
+
+  it('homologar em 2026-10 encontra o catálogo anual', async () => {
+    const f = fakeDb([[catalogo(anual)], [regra({ ...anual, revisao: 2 })]]);
+    await expect(
+      new IcmsRegrasService(f as never).homologar(
+        { uf: 'BA', competencia: '2026-10', expectedRevision: 2 } as never,
+        'u1',
+      ),
+    ).resolves.toMatchObject({ escopoAprovado: true, revisao: 2 });
+  });
+});

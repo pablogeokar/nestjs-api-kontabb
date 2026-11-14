@@ -191,7 +191,7 @@ export async function seedIcmsBa2026(
   const db = postgres(databaseUrl, { max: 1 });
   try {
     const result = await db.begin(async (sql) => {
-      await sql`select pg_advisory_xact_lock(hashtext('antecipacao-ba-2026'))`;
+      await sql`select pg_advisory_xact_lock(hashtext('icms:BA'))`;
       const sobrepostos = await sql<
         { id: string; inicio: string; escopo_aprovado: boolean }[]
       >`
