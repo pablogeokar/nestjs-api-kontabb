@@ -71,6 +71,13 @@
       "when": 1794683976379,
       "tag": "0009_clientes_destda",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794688418359,
+      "tag": "0010_regras_aprovacao_por_regra",
+      "breakpoints": true
     }
   ]
 }

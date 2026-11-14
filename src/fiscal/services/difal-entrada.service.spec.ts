@@ -26,7 +26,9 @@ function createDb(
             return {
               from: jest.fn().mockReturnValue({
                 where: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue([{ id: 'c1', uf, regimeTributario }]),
+                  limit: jest
+                    .fn()
+                    .mockResolvedValue([{ id: 'c1', uf, regimeTributario }]),
                 }),
               }),
             };
@@ -34,7 +36,10 @@ function createDb(
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: 'numero_documento' in selection ? whereConferencia : whereItens,
+                where:
+                  'numero_documento' in selection
+                    ? whereConferencia
+                    : whereItens,
               }),
             }),
           };
@@ -83,15 +88,27 @@ function regraAprovada(
 describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catálogo)', () => {
   it('seleciona pelo período de entrada e delimita os CFOPs interestaduais', async () => {
     const database = createDb('SP', []);
-    const service = new DifalEntradaService(database as never, createCatalogo(null) as never);
+    const service = new DifalEntradaService(
+      database as never,
+      createCatalogo(null) as never,
+    );
 
-    await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-09' });
+    await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
 
-    const query = new PgDialect().sqlToQuery(database.whereItens.mock.calls[0][0]);
-    expect(query.sql).toContain('"documentos_fiscais"."data_entrada_saida_fiscal"');
+    const query = new PgDialect().sqlToQuery(
+      database.whereItens.mock.calls[0][0],
+    );
+    expect(query.sql).toContain(
+      '"documentos_fiscais"."data_entrada_saida_fiscal"',
+    );
     expect(query.sql).toContain('"documentos_fiscais_itens"."cfop" in (');
     expect(query.sql).toContain('IS DISTINCT FROM');
-    expect(query.params).toEqual(expect.arrayContaining(['c1', 'SP', '2551', '2556', '2406', '2407']));
+    expect(query.params).toEqual(
+      expect.arrayContaining(['c1', 'SP', '2551', '2556', '2406', '2407']),
+    );
   });
 
   it('mostra a nota em revisão sem incluir seus itens no total a recolher', async () => {
@@ -105,49 +122,83 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     };
     const database = createDb('BA', [], [entrada]);
     const catalogo = createCatalogo(regraAprovada({ aliquota_interna: '18' }));
-    const service = new DifalEntradaService(database as never, catalogo as never);
+    const service = new DifalEntradaService(
+      database as never,
+      catalogo as never,
+    );
 
-    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-10' });
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
 
     expect(result.entradas_fora_do_calculo).toEqual([entrada]);
     expect(result.itens).toEqual([]);
     expect(result.total_difal_recolher).toBe('0.00');
-    const query = new PgDialect().sqlToQuery(database.whereConferencia.mock.calls[0][0]);
-    expect(query.sql).toContain('"documentos_fiscais_itens"."cfop_revisao_necessaria"');
-    expect(query.sql).toContain('"documentos_fiscais"."tp_nf_xml" IS DISTINCT FROM');
-    expect(query.params).toEqual(expect.arrayContaining(['c1', 'BA', 'NFE', 'ENTRADA']));
+    const query = new PgDialect().sqlToQuery(
+      database.whereConferencia.mock.calls[0][0],
+    );
+    expect(query.sql).toContain(
+      '"documentos_fiscais_itens"."cfop_revisao_necessaria"',
+    );
+    expect(query.sql).toContain(
+      '"documentos_fiscais"."tp_nf_xml" IS DISTINCT FROM',
+    );
+    expect(query.params).toEqual(
+      expect.arrayContaining(['c1', 'BA', 'NFE', 'ENTRADA']),
+    );
   });
 
   it('mantém os valores de DIFAL e Antecipação Parcial em totais separados', async () => {
-    const database = createDb('BA', [
-      { cfop: '2556', valorBcIcms: '1000.00', aliquotaIcms: '12.0000' },
-      {
-        cfop: '2102',
-        emitenteUf: 'SE',
-        ncm: '17041000',
-        cest: null,
-        valorBrutoProduto: '1000.00',
-        valorIcms: '120.00',
-      },
-    ], [], 'LUCRO_REAL');
-    const regraDifal = { escopoAprovado: true, conteudo: { aliquota_interna: '18' } };
+    const database = createDb(
+      'BA',
+      [
+        { cfop: '2556', valorBcIcms: '1000.00', aliquotaIcms: '12.0000' },
+        {
+          cfop: '2102',
+          emitenteUf: 'SE',
+          ncm: '17041000',
+          cest: null,
+          valorBrutoProduto: '1000.00',
+          valorIcms: '120.00',
+        },
+      ],
+      [],
+      'LUCRO_REAL',
+    );
+    const regraDifal = {
+      escopoAprovado: true,
+      conteudo: { aliquota_interna: '18' },
+    };
     const regraAntecipacao = {
       escopoAprovado: true,
-      conteudo: { enquadramentos: [{
-        ncm: '17041000',
-        cest: null,
-        regime: 'LUCRO_REAL',
-        tratamento: 'APLICAVEL',
-        aliquota_interna: '20.5',
-      }] },
+      conteudo: {
+        enquadramentos: [
+          {
+            ncm: '17041000',
+            cest: null,
+            regime: 'LUCRO_REAL',
+            tratamento: 'APLICAVEL',
+            aliquota_interna: '20.5',
+          },
+        ],
+      },
     };
     const catalogo = {
       resolverRegraVigente: jest.fn(({ chave }) =>
-        Promise.resolve(chave === 'ANTECIPACAO_PARCIAL' ? regraAntecipacao : regraDifal),
+        Promise.resolve(
+          chave === 'ANTECIPACAO_PARCIAL' ? regraAntecipacao : regraDifal,
+        ),
       ),
     };
-    const service = new DifalEntradaService(database as never, catalogo as never);
-    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-10' });
+    const service = new DifalEntradaService(
+      database as never,
+      catalogo as never,
+    );
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
 
     expect(result.quantidade_itens).toBe(1);
     expect(result.total_difal_recolher).toBe('60.00');
@@ -155,25 +206,50 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
       total_apurado: '85.00',
       regra_configurada: true,
       regra_homologada: true,
-      itens: [{ situacao: 'CALCULADO', calculo: { valor_antecipacao: '85.00' } }],
+      itens: [
+        { situacao: 'CALCULADO', calculo: { valor_antecipacao: '85.00' } },
+      ],
     });
   });
 
   it('explica a ausência da regra normativa para uma compra 2102 na BA', async () => {
     const service = new DifalEntradaService(
-      createDb('BA', [{
-        documentoFiscalId: 'd1', itemId: 'i1', numeroDocumento: '341055',
-        competenciaEmissao: '2026-10', numeroItem: 1, cfop: '2102',
-        emitenteUf: 'SE', ncm: '19053100', cest: '1705302',
-        valorBrutoProduto: '162.00',
-      }], [], 'SIMPLES_NACIONAL') as never,
+      createDb(
+        'BA',
+        [
+          {
+            documentoFiscalId: 'd1',
+            itemId: 'i1',
+            numeroDocumento: '341055',
+            competenciaEmissao: '2026-10',
+            numeroItem: 1,
+            cfop: '2102',
+            emitenteUf: 'SE',
+            ncm: '19053100',
+            cest: '1705302',
+            valorBrutoProduto: '162.00',
+          },
+        ],
+        [],
+        'SIMPLES_NACIONAL',
+      ) as never,
       createCatalogo(null) as never,
     );
 
-    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-10' });
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
     expect(result.antecipacao_parcial).toMatchObject({
-      total_apurado: '0.00', regra_configurada: false, regra_homologada: false,
-      itens: [{ situacao: 'PENDENTE', motivo: expect.stringContaining('Não há regra normativa') }],
+      total_apurado: '0.00',
+      regra_configurada: false,
+      regra_homologada: false,
+      itens: [
+        {
+          situacao: 'PENDENTE',
+          motivo: expect.stringContaining('Não há regra normativa'),
+        },
+      ],
     });
   });
 
@@ -381,39 +457,51 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
   it.each([
     { cstIcms: '060', csosnIcms: null },
     { cstIcms: null, csosnIcms: '500' },
-  ])('não cobra DIFAL quando o XML indica ST sem valor retido', async (marcador) => {
-    const service = new DifalEntradaService(
-      createDb('SP', [{
-        documentoFiscalId: 'd1',
-        itemId: 'i1',
-        cfop: '2556',
-        valorBcIcms: '1000.00',
-        valorBrutoProduto: '1000.00',
-        aliquotaIcms: '12.0000',
-        valorIcmsSt: '0.00',
-        valorIcmsStRetido: '0.00',
-        ...marcador,
-      }]) as never,
-      createCatalogo(regraAprovada({ aliquota_interna: '18.0000' })) as never,
-    );
+  ])(
+    'não cobra DIFAL quando o XML indica ST sem valor retido',
+    async (marcador) => {
+      const service = new DifalEntradaService(
+        createDb('SP', [
+          {
+            documentoFiscalId: 'd1',
+            itemId: 'i1',
+            cfop: '2556',
+            valorBcIcms: '1000.00',
+            valorBrutoProduto: '1000.00',
+            aliquotaIcms: '12.0000',
+            valorIcmsSt: '0.00',
+            valorIcmsStRetido: '0.00',
+            ...marcador,
+          },
+        ]) as never,
+        createCatalogo(regraAprovada({ aliquota_interna: '18.0000' })) as never,
+      );
 
-    const result = await service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-09' });
-    expect(result.itens[0]).toMatchObject({
-      hipotese: 'ST',
-      recolhimento_proprio: 'NAO',
-      status_calculo: null,
-    });
-    expect(result.total_difal_recolher).toBe('0.00');
-  });
+      const result = await service.apurarCompetencia({
+        clienteId: 'c1',
+        competencia: '2026-09',
+      });
+      expect(result.itens[0]).toMatchObject({
+        hipotese: 'ST',
+        recolhimento_proprio: 'NAO',
+        status_calculo: null,
+      });
+      expect(result.total_difal_recolher).toBe('0.00');
+    },
+  );
 
   it('mantém em pendência quando o catálogo contém alíquota inválida', async () => {
     const service = new DifalEntradaService(
-      createDb('SP', [{
-        cfop: '2556',
-        valorBcIcms: '1000.00',
-        aliquotaIcms: '12.0000',
-      }]) as never,
-      createCatalogo(regraAprovada({ aliquota_interna: '18', aliquota_fcp: 'inválida' })) as never,
+      createDb('SP', [
+        {
+          cfop: '2556',
+          valorBcIcms: '1000.00',
+          aliquotaIcms: '12.0000',
+        },
+      ]) as never,
+      createCatalogo(
+        regraAprovada({ aliquota_interna: '18', aliquota_fcp: 'inválida' }),
+      ) as never,
     );
 
     const result = await service.apurarCompetencia({
@@ -498,41 +586,46 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     ['70.00', null, '1120.48', '120.48', '0.00', 'CALCULADO'],
     ['70.00', '2.0000', '1148.15', '125.19', '22.96', 'CALCULADO'],
     [null, null, '1000.00', '0.00', '0.00', 'PENDENTE'],
-  ])('apura base dupla com ICMS de origem %s e FCP %s', async (valorIcms, aliquotaFcp, base, difal, fcp, status) => {
-    const service = new DifalEntradaService(
-      createDb('MT', [
-        {
-          documentoFiscalId: 'd1',
-          itemId: 'i1',
-          cfop: '2551',
-          valorBcIcms: '1000.00',
-          valorBrutoProduto: '980.00',
-          valorIpi: '20.00',
-          valorIcms,
-          aliquotaIcms: '7.0000',
-        },
-      ]) as never,
-      createCatalogo(regraAprovada({
-        aliquota_interna: '17.0000',
-        base_dupla: true,
-        aliquota_fcp: aliquotaFcp,
-        fcp_na_base_por_dentro: aliquotaFcp != null,
-      })) as never,
-    );
-    const result = await service.apurarCompetencia({
-      clienteId: 'c1',
-      competencia: '2026-09',
-    });
-    expect(result.itens[0]).toMatchObject({
-      base_calculo: base,
-      icms_origem: valorIcms,
-      valor_difal: difal,
-      valor_fcp: fcp,
-      status_calculo: status,
-    });
-    expect(result.total_difal_recolher).toBe(difal);
-    expect(result.total_fcp_recolher).toBe(fcp);
-  });
+  ])(
+    'apura base dupla com ICMS de origem %s e FCP %s',
+    async (valorIcms, aliquotaFcp, base, difal, fcp, status) => {
+      const service = new DifalEntradaService(
+        createDb('MT', [
+          {
+            documentoFiscalId: 'd1',
+            itemId: 'i1',
+            cfop: '2551',
+            valorBcIcms: '1000.00',
+            valorBrutoProduto: '980.00',
+            valorIpi: '20.00',
+            valorIcms,
+            aliquotaIcms: '7.0000',
+          },
+        ]) as never,
+        createCatalogo(
+          regraAprovada({
+            aliquota_interna: '17.0000',
+            base_dupla: true,
+            aliquota_fcp: aliquotaFcp,
+            fcp_na_base_por_dentro: aliquotaFcp != null,
+          }),
+        ) as never,
+      );
+      const result = await service.apurarCompetencia({
+        clienteId: 'c1',
+        competencia: '2026-09',
+      });
+      expect(result.itens[0]).toMatchObject({
+        base_calculo: base,
+        icms_origem: valorIcms,
+        valor_difal: difal,
+        valor_fcp: fcp,
+        status_calculo: status,
+      });
+      expect(result.total_difal_recolher).toBe(difal);
+      expect(result.total_fcp_recolher).toBe(fcp);
+    },
+  );
 
   it('faz o gross-up (base por dentro) quando a regra exige', async () => {
     // base 1000 / (1 − 18/100) = 1219,51. DIFAL = 1219,51 * (18 - 12)/100 = 73,17.
@@ -833,5 +926,77 @@ describe('DifalEntradaService (tarefa 2.2 — cálculo parametrizado pelo catál
     expect(result.itens[0].recolhimento_proprio).toBe('SIM');
     expect(result.itens[0].motivo_nao_recolhimento).toBeNull();
     expect(result.itens_sem_recolhimento_proprio).toBe(0);
+  });
+});
+
+// ICMS nacional, A3: testes de CARACTERIZAÇÃO. Registram o comportamento atual
+// que o diagnóstico classifica como defeito. Quando a correção entrar (fatos com
+// proveniência, perfil histórico do estabelecimento, vigência por dia), estes
+// testes devem ser invertidos, não removidos.
+describe('DifalEntradaService — A3 defeitos conhecidos (caracterização)', () => {
+  it('A3.1: origem nula não é excluída da seleção (IS DISTINCT FROM sem guarda de nulo)', async () => {
+    const database = createDb('SP', []);
+    const service = new DifalEntradaService(
+      database as never,
+      createCatalogo(null) as never,
+    );
+
+    await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-09',
+    });
+
+    const sqlText = new PgDialect().sqlToQuery(
+      database.whereItens.mock.calls[0][0],
+    ).sql;
+    expect(sqlText).toMatch(
+      /NULLIF\(UPPER\(BTRIM\([^)]*\)\), ''\) IS DISTINCT FROM/i,
+    );
+    // Nenhuma exigência de que a UF do emitente exista: item sem UF de origem
+    // seria tratado como interestadual.
+    expect(sqlText).not.toMatch(/'uf'\)\), ''\) IS NOT NULL/i);
+  });
+
+  it('A3.2: a regra é resolvida só pelo mês, sem data do fato gerador', async () => {
+    const database = createDb('SP', []);
+    const catalogo = createCatalogo(null);
+    const service = new DifalEntradaService(
+      database as never,
+      catalogo as never,
+    );
+
+    await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
+
+    expect(catalogo.resolverRegraVigente).toHaveBeenCalledWith(
+      expect.objectContaining({ uf: 'SP', competencia: '2026-10' }),
+    );
+    // Uma mudança de alíquota em 15/10 não pode ser representada por esta chamada.
+    const arg = catalogo.resolverRegraVigente.mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
+    expect(arg).not.toHaveProperty('data');
+  });
+
+  it('A3.3: UF e regime vêm do cadastro ATUAL do cliente, ignorando a competência', async () => {
+    const database = createDb('SP', [], [], 'SIMPLES_NACIONAL');
+    const service = new DifalEntradaService(
+      database as never,
+      createCatalogo(null) as never,
+    );
+
+    // Competência de 2 anos atrás: o resultado ainda carrega o regime de hoje.
+    const result = await service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2024-01',
+    });
+
+    expect(result.regime_adquirente).toBe('SIMPLES_NACIONAL');
+    expect(database.db.select).toHaveBeenCalledWith(
+      expect.objectContaining({ regimeTributario: expect.anything() }),
+    );
   });
 });

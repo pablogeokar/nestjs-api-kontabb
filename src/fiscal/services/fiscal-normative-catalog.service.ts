@@ -1,11 +1,16 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { and, desc, eq, gte, isNull, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   fiscalCatalogosVersoes,
   fiscalRegrasVersoes,
 } from '../../database/schema';
 import { parseCompetenciaMensal } from '../fiscal-date.util';
+import {
+  resolverRegraPorData,
+  type RegraCandidata,
+  type ResolucaoRegra,
+} from './catalogo-resolucao';
 
 /**
  * Serviço comum do catálogo normativo versionado da Fase 4 (design §6.2/§7).
@@ -332,6 +337,69 @@ export class FiscalNormativeCatalogService {
     const regra = await this.resolverRegraVigente(input);
     if (!regra || !regra.escopoAprovado) return null;
     return regra;
+  }
+
+  /**
+   * Resolve a regra pela DATA do fato gerador (ICMS nacional, A2), sem escolher
+   * um catálogo antes e com aprovação por regra. Não altera o contrato dos
+   * métodos legados usados por CIAP/PIS. Ver `catalogo-resolucao.ts`.
+   */
+  async resolverRegraPorData(input: {
+    tipo: CatalogoTipo;
+    uf: string;
+    chave: string;
+    /** Data do fato gerador, AAAA-MM-DD. */
+    data: string;
+  }): Promise<ResolucaoRegra> {
+    const uf = this.normalizarUf(input.uf);
+    const catalogos = await this.database.db
+      .select()
+      .from(fiscalCatalogosVersoes)
+      .where(
+        and(
+          eq(fiscalCatalogosVersoes.tipo, input.tipo),
+          eq(fiscalCatalogosVersoes.uf, uf),
+          eq(fiscalCatalogosVersoes.ativo, true),
+          lte(fiscalCatalogosVersoes.vigenciaInicio, input.data),
+          or(
+            isNull(fiscalCatalogosVersoes.vigenciaFim),
+            gte(fiscalCatalogosVersoes.vigenciaFim, input.data),
+          ),
+        ),
+      );
+    if (catalogos.length === 0) {
+      return resolverRegraPorData([], input);
+    }
+    const regras = await this.database.db
+      .select()
+      .from(fiscalRegrasVersoes)
+      .where(
+        and(
+          inArray(
+            fiscalRegrasVersoes.catalogoVersaoId,
+            catalogos.map((c) => c.id),
+          ),
+          eq(fiscalRegrasVersoes.chave, input.chave),
+        ),
+      );
+    const porId = new Map(catalogos.map((c) => [c.id, c]));
+    const candidatas: RegraCandidata[] = regras.map((r) => {
+      const c = porId.get(r.catalogoVersaoId)!;
+      return {
+        id: r.id,
+        catalogoVersaoId: r.catalogoVersaoId,
+        chave: r.chave,
+        revisao: r.revisao,
+        vigenciaInicio: r.vigenciaInicio,
+        vigenciaFim: r.vigenciaFim ?? null,
+        ativo: r.ativo,
+        catalogoVigenciaInicio: c.vigenciaInicio,
+        catalogoVigenciaFim: c.vigenciaFim ?? null,
+        aprovada: r.escopoAprovado ?? c.escopoAprovado,
+        conteudo: r.conteudo ?? {},
+      };
+    });
+    return resolverRegraPorData(candidatas, input);
   }
 
   // Converte a competência mensal 'YYYY-MM' no primeiro dia do mês
