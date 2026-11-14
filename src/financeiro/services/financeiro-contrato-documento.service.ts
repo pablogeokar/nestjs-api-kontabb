@@ -404,11 +404,18 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
       text(
         `A prestação terá início em ${civilDate(data.contrato.dataInicio!)} e vigorará por prazo indeterminado. Qualquer parte poderá solicitar o encerramento por comunicação escrita com antecedência de ${data.contrato.avisoPrevioDias} dia(s), sem prejuízo dos valores devidos pelos serviços prestados até o encerramento.`,
       );
-      section('8', 'Sigilo e dados');
+      section('8', 'Inadimplência, suspensão e rescisão');
+      text(
+        'Ao acumular 3 (três) mensalidades vencidas e não integralmente quitadas, consecutivas ou não, a CONTRATANTE terá os serviços contratados suspensos, independentemente de aviso prévio, enquanto persistir a inadimplência. O pagamento parcial não quita a mensalidade nem afasta sua contagem para esse fim. A retomada dependerá da quitação dos débitos ou de acordo escrito entre as partes.',
+      );
+      text(
+        'A inadimplência também sujeita o contrato à rescisão unilateral motivada pelo(a) CONTRATADO(A), mediante comunicação escrita à CONTRATANTE. A suspensão e a rescisão não extinguem os valores vencidos nem afastam os deveres legais e ético-profissionais do(a) CONTRATADO(A), inclusive quanto ao distrato ou, se este não for possível, à notificação da cessação das responsabilidades e à disponibilização dos documentos da CONTRATANTE.',
+      );
+      section('9', 'Sigilo e dados');
       text(
         'As partes manterão confidenciais as informações recebidas em razão deste contrato, ressalvadas as comunicações exigidas por lei e as necessárias à execução dos serviços. O tratamento de dados pessoais observará a legislação aplicável e o escopo deste instrumento.',
       );
-      section('9', 'Foro competente');
+      section('10', 'Foro competente');
       const domicilioCliente =
         data.cliente.municipio && data.cliente.uf
           ? `, em ${data.cliente.municipio}/${data.cliente.uf}`
@@ -417,7 +424,7 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
         `Para dirimir controvérsias decorrentes deste contrato, as partes elegem o foro competente do domicílio da CONTRATANTE${domicilioCliente}, observadas as regras de competência inderrogável e os direitos do consumidor quando aplicáveis.`,
       );
       if (data.contrato.condicoesContratuais) {
-        section('10', 'Condições adicionais');
+        section('11', 'Condições adicionais');
         text(data.contrato.condicoesContratuais);
       }
       ensure(120);

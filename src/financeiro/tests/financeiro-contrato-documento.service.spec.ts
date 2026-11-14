@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { execFileSync } from 'node:child_process';
 import {
   renderContratoPdf,
   servicosDoInstrumento,
@@ -47,6 +48,19 @@ describe('contrato financeiro personalizado', () => {
   it('inclui apenas os serviços selecionados, os honorários e o contador vinculado', async () => {
     const pdf = await renderContratoPdf(exemplo);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    const texto = execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        "import { extractText } from 'unpdf'; const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk); const result = await extractText(new Uint8Array(Buffer.concat(chunks)), { mergePages: true }); process.stdout.write(result.text ?? '');",
+      ],
+      { input: pdf, encoding: 'utf8' },
+    );
+    expect(texto).toContain('INADIMPLÊNCIA, SUSPENSÃO E RESCISÃO');
+    expect(texto).toContain('3 (três) mensalidades vencidas');
+    expect(texto).toContain('independentemente de aviso prévio');
+    expect(texto).toContain('rescisão unilateral motivada');
     expect(
       servicosDoInstrumento(exemplo.contrato.servicosContratados).map(
         (item) => item.nome,
