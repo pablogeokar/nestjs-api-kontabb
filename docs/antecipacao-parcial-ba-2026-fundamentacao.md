@@ -1,7 +1,7 @@
 # Antecipação Parcial BA 2026: fundamentação do seed
 
-Seed: `scripts/seed-antecipacao-parcial-ba-2026.cjs` (regras `ANTECIPACAO_PARCIAL` e `DIFAL_ENTRADA_CONTRIBUINTE`)
-Dados: `scripts/data/antecipacao-parcial-ba-2026.enquadramentos.json` (123 enquadramentos)
+Seed: `src/database/seeds/icms-ba-2026.seed.ts` (`pnpm db:seed:icms-ba`) (regras `ANTECIPACAO_PARCIAL` e `DIFAL_ENTRADA_CONTRIBUINTE`)
+Dados: `src/database/seeds/data/antecipacao-parcial-ba-2026.enquadramentos.ts` (123 enquadramentos)
 Consulta às fontes: 14/11/2026. Situação: **rascunho** (`escopo_aprovado = false`), nenhuma linha com `confirmado_fiscalmente = true`.
 
 ## Escopo
@@ -83,8 +83,8 @@ Os textos das fontes foram resumidos, não transcritos.
 
 ## Operação
 
-1. Prévia: `node scripts/seed-antecipacao-parcial-ba-2026.cjs`
-2. Gravar: `node --env-file=.env scripts/seed-antecipacao-parcial-ba-2026.cjs --execute`. O script é idempotente e aborta se houver outra vigência de Antecipação Parcial BA sobreposta a 2026.
+1. Prévia: `pnpm db:seed:icms-ba --preview`
+2. Gravar: `pnpm db:seed:icms-ba`. O script é idempotente e aborta se houver outra vigência de Antecipação Parcial BA sobreposta a 2026.
 3. Na tela, abrir **Cadastros → Fiscal → ICMS** com UF BA e competência **2026-01**. Salvar e homologar só funcionam na competência em que a vigência começa.
 4. Para homologar, cada linha precisa de `confirmado_fiscalmente` e nenhuma pode estar em CONFERIR. Até lá, o cálculo sai como SIMULACAO e não entra no total, na guia nem na DeSTDA.
 

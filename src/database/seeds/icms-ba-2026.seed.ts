@@ -1,25 +1,25 @@
-/*
- * Seed do motor de regras de ICMS: Antecipação Parcial da BA, ano 2026.
- *
- * Cria UM rascunho (escopo_aprovado = false) com vigência 01/01/2026 a
- * 31/12/2026 e a regra ANTECIPACAO_PARCIAL revisão 1, com os enquadramentos de
- * scripts/data/antecipacao-parcial-ba-2026.enquadramentos.json. Nada é
- * homologado: os itens calculam como SIMULACAO até a revisão fiscal confirmar
- * cada linha e homologar em Cadastros → Fiscal → ICMS (competência 2026-01).
- *
- * Fundamentação e evidências: api/docs/antecipacao-parcial-ba-2026-fundamentacao.md
- *
- * Uso:
- *   node scripts/seed-antecipacao-parcial-ba-2026.cjs              # prévia, sem gravar
- *   node --env-file=.env scripts/seed-antecipacao-parcial-ba-2026.cjs --execute
- *
- * Idempotente: reexecutar com o mesmo conteúdo não grava nada. Aborta se já
- * houver catálogo homologado, regra diferente ou outra vigência sobreposta.
- */
-const { createHash } = require('node:crypto');
-const path = require('node:path');
-const fs = require('node:fs');
+import { createHash } from 'node:crypto';
+import postgres from 'postgres';
+import { ENQUADRAMENTOS_ANTECIPACAO_BA_2026 } from './data/antecipacao-parcial-ba-2026.enquadramentos';
 
+/**
+ * Seed do motor de regras de ICMS da BA para 2026 (rascunho, nada homologado):
+ * - ANTECIPACAO_PARCIAL: enquadramentos por NCM/CEST/regime/origem e redução de
+ *   20% para ME/EPP (RICMS-BA, art. 274);
+ * - DIFAL_ENTRADA_CONTRIBUINTE: alíquota interna, base dupla e dispensa sobre
+ *   ativo para ME/EPP (RICMS-BA, art. 272, I, "a", 2).
+ *
+ * Vigência 01/01/2026 a 31/12/2026. Fundamentação e evidências em
+ * docs/antecipacao-parcial-ba-2026-fundamentacao.md.
+ *
+ * Uso: pnpm db:seed:icms-ba            (grava)
+ *      pnpm db:seed:icms-ba --preview  (só mostra o resumo)
+ *
+ * Idempotente. Aborta se houver catálogo homologado, revisão homologada a
+ * alterar ou outra vigência de Antecipação Parcial BA sobreposta a 2026. Se o
+ * conteúdo mudar e a última revisão não estiver aprovada, grava a revisão
+ * seguinte.
+ */
 const ANEXO_1_2026 =
   'https://mbusca.sefaz.ba.gov.br/ditri/normas_complementares/decretos/decreto_2012_13780_ricms_anexo_1_vigente_2026.pdf';
 const FONTES = [
@@ -29,7 +29,8 @@ const FONTES = [
     sha256: 'd009df80b3897e04377adc82a1a7c0f1ddbec3547a1da1cb69fef54516663b8e',
   },
   {
-    titulo: 'RICMS-BA (Dec. 13.780/12), texto com alterações a partir de 2021 (última: Dec. 24.829/26)',
+    titulo:
+      'RICMS-BA (Dec. 13.780/12), texto com alterações a partir de 2021 (última: Dec. 24.829/26)',
     url: 'https://mbusca.sefaz.ba.gov.br/ditri/normas_complementares/decretos/decreto_2012_13780_ricms_texto_2021.pdf',
     sha256: '9cf243f7693e4d4f29050040a3261bcfac0afcc10400d589447b6278313bca82',
   },
@@ -61,12 +62,7 @@ const FONTES = [
 ];
 const CONSULTADO_EM = '2026-11-14';
 
-const enquadramentos = JSON.parse(
-  fs.readFileSync(
-    path.join(__dirname, 'data', 'antecipacao-parcial-ba-2026.enquadramentos.json'),
-    'utf8',
-  ),
-);
+const enquadramentos = ENQUADRAMENTOS_ANTECIPACAO_BA_2026;
 const conteudo = {
   enquadramentos,
   // RICMS-BA, art. 274: redução de 20% do imposto apurado para ME/EPP que
@@ -110,12 +106,18 @@ const conteudoDifal = {
   consultado_em: CONSULTADO_EM,
 };
 const FONTE_DIFAL = 'Lei 7.014/96 arts.4,15,17; RICMS-BA arts.272,321'; // <= 60
-const catalogoConteudo = { status: 'RASCUNHO', competencia: '2026-01', ...conteudo };
-const hash = createHash('sha256').update(JSON.stringify(catalogoConteudo)).digest('hex');
+const catalogoConteudo = {
+  status: 'RASCUNHO',
+  competencia: '2026-01',
+  ...conteudo,
+};
+const hash = createHash('sha256')
+  .update(JSON.stringify(catalogoConteudo))
+  .digest('hex');
 const FONTE = 'Lei 7.014/96 art.12-A; RICMS-BA art.321; Anexo 1/2026'; // <= 60
 
 function resumo() {
-  const porTratamento = {};
+  const porTratamento: Record<string, number> = {};
   for (const e of enquadramentos) {
     porTratamento[e.tratamento] = (porTratamento[e.tratamento] ?? 0) + 1;
   }
@@ -127,10 +129,21 @@ function resumo() {
  * conteúdo, não faz nada. Se difere e NÃO está aprovada, cria a revisão
  * seguinte (a anterior fica no histórico). Revisão aprovada nunca é alterada.
  */
-async function upsertRegra(sql, catalogoId, chave, conteudoRegra, fonte) {
-  const [ultima] = await sql`
+async function upsertRegra(
+  sql: postgres.TransactionSql,
+  catalogoId: string,
+  chave: string,
+  conteudoRegra: Record<string, unknown>,
+  fonte: string,
+): Promise<{
+  acao: 'criada' | 'nova_revisao' | 'inalterada';
+  revisao: number;
+}> {
+  const [ultima] = await sql<
+    { id: string; revisao: number; aprovada: boolean; igual: boolean }[]
+  >`
     select id, revisao, coalesce(escopo_aprovado, false) as aprovada,
-           conteudo = ${sql.json(conteudoRegra)}::jsonb as igual
+           conteudo = ${sql.json(conteudoRegra as postgres.JSONValue)}::jsonb as igual
       from fiscal_regras_versoes
      where catalogo_versao_id = ${catalogoId} and chave = ${chave} and ativo = true
      order by revisao desc
@@ -148,31 +161,40 @@ async function upsertRegra(sql, catalogoId, chave, conteudoRegra, fonte) {
       (catalogo_versao_id, chave, revisao, conteudo, fonte, fonte_url,
        vigencia_inicio, vigencia_fim, ativo)
     values
-      (${catalogoId}, ${chave}, ${revisao}, ${sql.json(conteudoRegra)},
+      (${catalogoId}, ${chave}, ${revisao}, ${sql.json(conteudoRegra as postgres.JSONValue)},
        ${fonte}, ${ANEXO_1_2026}, '2026-01-01', '2026-12-31', true)
   `;
   return { acao: ultima ? 'nova_revisao' : 'criada', revisao };
 }
 
-async function main() {
-  if (process.argv[2] !== '--execute') {
+export async function seedIcmsBa2026(
+  databaseUrl: string,
+  opcoes: { preview?: boolean } = {},
+) {
+  if (opcoes.preview) {
     process.stdout.write(
       JSON.stringify(
-        { modo: 'preview', uf: 'BA', vigencia: '2026-01-01..2026-12-31',
-          escopo_aprovado: false, hash_conteudo: hash, ...resumo() },
+        {
+          modo: 'preview',
+          uf: 'BA',
+          vigencia: '2026-01-01..2026-12-31',
+          escopo_aprovado: false,
+          hash_conteudo: hash,
+          ...resumo(),
+        },
         null,
         2,
       ) + '\n',
     );
-    return;
+    return null;
   }
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não configurada.');
-  const postgres = require('postgres');
-  const db = postgres(process.env.DATABASE_URL, { max: 1 });
+  const db = postgres(databaseUrl, { max: 1 });
   try {
     const result = await db.begin(async (sql) => {
       await sql`select pg_advisory_xact_lock(hashtext('antecipacao-ba-2026'))`;
-      const sobrepostos = await sql`
+      const sobrepostos = await sql<
+        { id: string; inicio: string; escopo_aprovado: boolean }[]
+      >`
         select c.id, c.vigencia_inicio::text as inicio, c.escopo_aprovado
           from fiscal_catalogos_versoes c
          where c.tipo = 'DIFAL' and c.uf = 'BA' and c.ativo = true
@@ -189,14 +211,19 @@ async function main() {
             `(${outros.map((c) => c.id).join(', ')}). Revise antes de semear.`,
         );
       }
-      const existentes = await sql`
+      const existentes = await sql<{ id: string; escopo_aprovado: boolean }[]>`
         select id, escopo_aprovado from fiscal_catalogos_versoes
          where tipo = 'DIFAL' and uf = 'BA' and vigencia_inicio = '2026-01-01'
       `;
       if (existentes[0]?.escopo_aprovado) {
-        throw new Error('Já existe catálogo homologado para BA/2026; revisão manual necessária.');
+        throw new Error(
+          'Já existe catálogo homologado para BA/2026; revisão manual necessária.',
+        );
       }
-      const catalogo = existentes[0] ?? (await sql`
+      const catalogo =
+        existentes[0] ??
+        (
+          await sql<{ id: string; escopo_aprovado: boolean }[]>`
         insert into fiscal_catalogos_versoes
           (tipo, uf, codigo, descricao, fonte, fonte_url, hash_conteudo,
            conteudo, vigencia_inicio, vigencia_fim, escopo_aprovado)
@@ -204,20 +231,29 @@ async function main() {
           ('DIFAL', 'BA', 'ANTECIPACAO_PARCIAL_BA_2026',
            'Rascunho de enquadramentos de Antecipação Parcial da BA para 2026',
            ${FONTE}, ${ANEXO_1_2026}, ${hash},
-           ${sql.json(catalogoConteudo)},
+           ${sql.json(catalogoConteudo as unknown as postgres.JSONValue)},
            '2026-01-01', '2026-12-31', false)
         returning id, escopo_aprovado
-      `)[0];
+      `
+        )[0];
       const regraAntecipacao = await upsertRegra(
-        sql, catalogo.id, 'ANTECIPACAO_PARCIAL', conteudo, FONTE,
+        sql,
+        catalogo.id,
+        'ANTECIPACAO_PARCIAL',
+        conteudo,
+        FONTE,
       );
       const regraDifal = await upsertRegra(
-        sql, catalogo.id, 'DIFAL_ENTRADA_CONTRIBUINTE', conteudoDifal, FONTE_DIFAL,
+        sql,
+        catalogo.id,
+        'DIFAL_ENTRADA_CONTRIBUINTE',
+        conteudoDifal,
+        FONTE_DIFAL,
       );
       // Mantém o resumo do catálogo (rascunho) alinhado à revisão gravada.
       await sql`
         update fiscal_catalogos_versoes
-           set conteudo = ${sql.json(catalogoConteudo)}, hash_conteudo = ${hash},
+           set conteudo = ${sql.json(catalogoConteudo as unknown as postgres.JSONValue)}, hash_conteudo = ${hash},
                atualizado_em = now()
          where id = ${catalogo.id} and escopo_aprovado = false
            and hash_conteudo is distinct from ${hash}
@@ -230,13 +266,28 @@ async function main() {
         ...resumo(),
       };
     });
-    process.stdout.write(JSON.stringify(result) + '\n');
+    return result;
   } finally {
     await db.end({ timeout: 5 });
   }
 }
 
-main().catch((error) => {
-  process.stderr.write(`Falha no seed: ${error.message}\n`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('DATABASE_URL não configurada.');
+  void seedIcmsBa2026(databaseUrl, {
+    preview: process.argv.includes('--preview'),
+  })
+    .then((result) => {
+      if (result)
+        process.stdout.write(
+          `Seed de regras ICMS BA 2026 concluído: ${JSON.stringify(result)}\n`,
+        );
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `Falha ao executar seed de regras ICMS BA 2026: ${error instanceof Error ? error.message : 'erro desconhecido'}\n`,
+      );
+      process.exitCode = 1;
+    });
+}
