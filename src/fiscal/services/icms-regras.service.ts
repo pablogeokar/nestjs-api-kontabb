@@ -147,7 +147,11 @@ export class IcmsRegrasService {
         competencia: query.competencia,
         vigenciaInicio: catalogo.vigenciaInicio,
         vigenciaFim: catalogo.vigenciaFim,
-        escopoAprovado: catalogo.escopoAprovado,
+        // Aprovação efetiva da REGRA (por regra; herda o catálogo quando nula).
+        // Mantém o nome do campo para a tela atual.
+        escopoAprovado: regra
+          ? (regra.escopoAprovado ?? catalogo.escopoAprovado)
+          : catalogo.escopoAprovado,
         fonte: catalogo.fonte,
         fonteUrl: catalogo.fonteUrl,
       },
@@ -156,6 +160,9 @@ export class IcmsRegrasService {
             revisao: regra.revisao,
             fonte: regra.fonte,
             fonteUrl: regra.fonteUrl,
+            escopoAprovado: regra.escopoAprovado ?? catalogo.escopoAprovado,
+            aprovadoPor: regra.aprovadoPor ?? catalogo.aprovadoPor ?? null,
+            aprovadoEm: regra.aprovadoEm ?? null,
             enquadramentos: regra.conteudo.enquadramentos ?? [],
           }
         : null,
@@ -210,6 +217,12 @@ export class IcmsRegrasService {
             .orderBy(desc(fiscalRegrasVersoes.revisao))
             .limit(1)
         : [];
+      // Aprovação por regra: a revisão homologada é imutável. Nova alteração
+      // exige nova vigência, mesmo que o catálogo em si não esteja aprovado.
+      if (previous && (previous.escopoAprovado ?? catalogo?.escopoAprovado))
+        throw new ConflictException(
+          'Esta regra já foi homologada. Abra uma nova vigência para alterá-la.',
+        );
       const revisao = previous?.revisao ?? 0;
       if (revisao !== input.expectedRevision)
         throw new ConflictException(
@@ -286,8 +299,6 @@ export class IcmsRegrasService {
         )
         .limit(1);
       if (!catalogo) throw new NotFoundException('Catálogo não encontrado.');
-      if (catalogo.escopoAprovado)
-        throw new ConflictException('Catálogo já homologado.');
       const [regra] = await tx
         .select()
         .from(fiscalRegrasVersoes)
@@ -300,6 +311,10 @@ export class IcmsRegrasService {
         )
         .orderBy(desc(fiscalRegrasVersoes.revisao))
         .limit(1);
+      // Aprovação POR REGRA: a regra aprovada herda o catálogo apenas quando o
+      // campo próprio é nulo (catálogos legados homologados em bloco).
+      if (regra && (regra.escopoAprovado ?? catalogo.escopoAprovado))
+        throw new ConflictException('Regra já homologada.');
       if (!regra || regra.revisao !== input.expectedRevision)
         throw new ConflictException(
           'A revisão mudou. Recarregue antes de homologar.',
@@ -318,18 +333,32 @@ export class IcmsRegrasService {
         enquadramentos: rows,
         revisao: regra.revisao,
       };
+      // O hash sela o conteúdo e também os parâmetros de vigência e de fonte
+      // da regra aprovada, não só os enquadramentos.
       const hashConteudo = createHash('sha256')
-        .update(JSON.stringify(conteudo))
+        .update(
+          JSON.stringify({
+            chave: regra.chave,
+            uf: catalogo.uf,
+            tipo: catalogo.tipo,
+            vigenciaInicio: regra.vigenciaInicio,
+            vigenciaFim: regra.vigenciaFim,
+            fonte: regra.fonte,
+            fonteUrl: regra.fonteUrl,
+            conteudo,
+          }),
+        )
         .digest('hex');
+      const agora = new Date();
+      // Aprova SOMENTE a regra. `fiscal_catalogos_versoes.escopo_aprovado` não
+      // muda: regras vizinhas do catálogo continuam sem aprovação própria.
+      await tx
+        .update(fiscalRegrasVersoes)
+        .set({ escopoAprovado: true, aprovadoPor: userId, aprovadoEm: agora })
+        .where(eq(fiscalRegrasVersoes.id, regra.id));
       await tx
         .update(fiscalCatalogosVersoes)
-        .set({
-          escopoAprovado: true,
-          aprovadoPor: userId,
-          conteudo,
-          hashConteudo,
-          atualizadoEm: new Date(),
-        })
+        .set({ conteudo, hashConteudo, atualizadoEm: agora })
         .where(eq(fiscalCatalogosVersoes.id, catalogo.id));
       return {
         catalogoId: catalogo.id,
