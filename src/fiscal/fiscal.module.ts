@@ -28,6 +28,7 @@ import { CiapService } from './services/ciap.service';
 import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
 import { FiscalEntregasService } from './services/fiscal-entregas.service';
+import { PerfilFiscalController } from './controllers/perfil-fiscal.controller';
 import { EstabelecimentoPerfilService } from './services/estabelecimento-perfil.service';
 import { FiscalPeriodSelectionService } from './services/fiscal-period-selection.service';
 import { FiscalClosingService } from './services/fiscal-closing.service';
@@ -94,6 +95,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     ClienteRegrasFiscaisController,
     AdminRegrasFiscaisController,
     IcmsRegrasController,
+    PerfilFiscalController,
     AdminSimplesNacionalController,
     ClienteSimplesNacionalController,
   ],

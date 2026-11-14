@@ -1,4 +1,5 @@
 import {
+  boolean,
   check,
   date,
   pgTable,
@@ -10,6 +11,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { clientes } from './clientes';
+import { user } from './user';
 
 // Perfil fiscal HISTÓRICO do estabelecimento (ICMS nacional, A3).
 //
@@ -38,15 +40,25 @@ export const clientesPerfisFiscais = pgTable(
     inscricaoEstadual: text('inscricao_estadual'),
     regimeTributario: text('regime_tributario'),
     origem: varchar('origem', { length: 30 }).notNull(),
+    // Perfil MANUAL: proveniência e responsável. Nulos nas linhas automáticas.
+    fonte: text('fonte'),
+    justificativa: text('justificativa'),
+    criadoPor: text('criado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    // Linhas nunca são apagadas: `ativo = false` preserva a trilha.
+    ativo: boolean('ativo').notNull().default(true),
+    // Linha automática desativada por um perfil MANUAL; permite restaurá-la
+    // se o perfil manual for removido.
+    substituidoPor: uuid('substituido_por'),
     criadoEm: timestamp('criado_em', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex('uidx_clientes_perfil_fiscal_inicio').on(
-      table.clienteId,
-      table.vigenciaInicio,
-    ),
+    uniqueIndex('uidx_clientes_perfil_fiscal_inicio')
+      .on(table.clienteId, table.vigenciaInicio)
+      .where(sql`${table.ativo}`),
     check(
       'chk_clientes_perfil_fiscal_vigencia',
       sql`${table.vigenciaFim} IS NULL OR ${table.vigenciaFim} >= ${table.vigenciaInicio}`,

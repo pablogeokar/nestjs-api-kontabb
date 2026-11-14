@@ -85,6 +85,13 @@
       "when": 1794690266825,
       "tag": "0011_clientes_perfis_fiscais",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794692450192,
+      "tag": "0012_clientes_perfis_fiscais_manual",
+      "breakpoints": true
     }
   ]
 }

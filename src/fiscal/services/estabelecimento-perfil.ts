@@ -1,6 +1,8 @@
 // Perfil fiscal do estabelecimento NA DATA do fato (ICMS nacional, A3).
 // Puro: sem banco. O serviço carrega as linhas de `clientes_perfis_fiscais`.
 
+import { dataCalendarioValida, ufValida } from './fiscal-guias-vinculo';
+
 export interface PerfilFiscalLinha {
   /** AAAA-MM-DD */
   vigenciaInicio: string;
@@ -121,4 +123,55 @@ export function ufsNoIntervalo(
     if (u) ufs.add(u);
   }
   return ufs;
+}
+
+export const REGIMES_PERFIL = [
+  'SIMPLES_NACIONAL',
+  'LUCRO_PRESUMIDO',
+  'LUCRO_REAL',
+] as const;
+
+export interface PerfilManualInput {
+  vigenciaInicio: string;
+  vigenciaFim?: string | null;
+  uf: string;
+  inscricaoEstadual?: string | null;
+  regimeTributario?: string | null;
+  fonte: string;
+  justificativa: string;
+}
+
+/** Valida o perfil informado manualmente. Retorna a lista de problemas (vazia = válido). */
+export function validarPerfilManual(input: PerfilManualInput): string[] {
+  const erros: string[] = [];
+  if (!dataCalendarioValida(input.vigenciaInicio)) {
+    erros.push('Início de vigência inválido (AAAA-MM-DD).');
+  }
+  if (input.vigenciaFim != null) {
+    if (!dataCalendarioValida(input.vigenciaFim)) {
+      erros.push('Fim de vigência inválido (AAAA-MM-DD).');
+    } else if (input.vigenciaFim < input.vigenciaInicio) {
+      erros.push('O fim da vigência não pode ser anterior ao início.');
+    }
+  }
+  if (!ufValida(input.uf ?? '')) erros.push('UF inválida.');
+  if (
+    input.regimeTributario != null &&
+    !(REGIMES_PERFIL as readonly string[]).includes(input.regimeTributario)
+  ) {
+    erros.push('Regime tributário inválido.');
+  }
+  if (
+    input.inscricaoEstadual != null &&
+    !/^[0-9A-Z./-]{2,20}$/.test(input.inscricaoEstadual)
+  ) {
+    erros.push('Inscrição estadual em formato inválido.');
+  }
+  if ((input.fonte ?? '').trim().length < 3) {
+    erros.push('Informe a fonte do dado (documento ou comprovante).');
+  }
+  if ((input.justificativa ?? '').trim().length < 10) {
+    erros.push('Informe a justificativa (mínimo de 10 caracteres).');
+  }
+  return erros;
 }
