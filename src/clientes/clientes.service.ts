@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { clientes, contadores, user } from '../database/schema';
+import {
+  clientes,
+  contadores,
+  spedConfiguracoes,
+  user,
+} from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageService } from '../storage/storage.service';
@@ -650,6 +655,11 @@ export class ClientesService {
       .limit(1);
     const client = result[0];
     if (!client) return undefined;
+    const [sped] = await this.database.db
+      .select({ inscricaoMunicipal: spedConfiguracoes.inscricaoMunicipal })
+      .from(spedConfiguracoes)
+      .where(eq(spedConfiguracoes.clienteId, clientId))
+      .limit(1);
     return {
       id: client.id,
       portal_user_name: client.portalUserName,
@@ -670,6 +680,7 @@ export class ClientesService {
       data_abertura_cnpj: client.dataAberturaCnpj,
       apura_icms: client.apuraIcms,
       inscricao_estadual: client.inscricaoEstadual,
+      inscricao_municipal: sped?.inscricaoMunicipal ?? null,
       tipo_contribuinte_icms:
         client.tipoContribuinteIcms as TipoContribuinteIcms | null,
       optante_simples_nacional: client.optanteSimplesNacional,

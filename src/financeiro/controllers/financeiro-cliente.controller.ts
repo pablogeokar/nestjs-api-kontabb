@@ -21,6 +21,7 @@ import {
 } from '../../common/pagination';
 import { FinanceiroFaturasService } from '../services/financeiro-faturas.service';
 import { FinanceiroDocumentosService } from '../services/financeiro-documentos.service';
+import { FinanceiroContratoDocumentoService } from '../services/financeiro-contrato-documento.service';
 import { FiltroFaturasDto } from '../dto/fatura.dto';
 import { ExtratoQueryDto } from '../dto/dashboard.dto';
 
@@ -33,6 +34,7 @@ export class FinanceiroClienteController {
     private readonly faturas: FinanceiroFaturasService,
     private readonly clientesService: ClientesService,
     private readonly documentos: FinanceiroDocumentosService,
+    private readonly contratoDocumento: FinanceiroContratoDocumentoService,
   ) {}
 
   private async resolverCliente(userId: string) {
@@ -81,6 +83,23 @@ export class FinanceiroClienteController {
     const pdf = await this.documentos.faturaPdf(id, client.id);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="fatura-${id}.pdf"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
+  }
+
+  @Get('contrato/pdf')
+  @ApiOperation({ summary: 'Imprimir meu contrato de prestação de serviços' })
+  async imprimirContrato(
+    @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
+  ) {
+    const client = await this.resolverCliente(user.id);
+    const pdf = await this.contratoDocumento.gerarPdf(client.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="contrato-prestacao-servicos.pdf"`,
+    );
     res.setHeader('Cache-Control', 'private, no-store');
     res.send(pdf);
   }

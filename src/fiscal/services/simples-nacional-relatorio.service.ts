@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
 import { DatabaseService } from '../../database/database.service';
@@ -14,6 +16,9 @@ const MUTED = '#64748B';
 const BORDER = '#CBD5E1';
 const PAPER = '#F8FAFC';
 const AMBER = '#92400E';
+const OFFICE_LOGO = readFileSync(
+  resolve(__dirname, '../../assets/financeiro/kontabb-logo.png'),
+);
 
 const ANEXOS: Record<string, string> = {
   ANEXO_I: 'Anexo I - Comércio',
@@ -292,24 +297,40 @@ function drawHeader(
   competencia: string,
   status: string,
 ) {
-  document.rect(0, 0, document.page.width, 92).fill(BLUE);
+  document.rect(0, 0, document.page.width, 5).fill(BLUE);
+  document.image(OFFICE_LOGO, 36, 18, {
+    fit: [144, 61],
+    align: 'center',
+    valign: 'center',
+  });
   document
-    .fillColor('#FFFFFF')
+    .fillColor(BLUE)
     .font('Helvetica-Bold')
-    .fontSize(17)
-    .text('Demonstrativo de Apuração', 36, 27, { width: 360 });
-  document.fontSize(11).text('Simples Nacional', 36, 51);
+    .fontSize(15)
+    .text('Demonstrativo de', 196, 22, { width: 220, lineBreak: false })
+    .text('Apuração', 196, 41, { width: 220, lineBreak: false });
+  document.font('Helvetica').fontSize(10).text('Simples Nacional', 196, 64, {
+    width: 220,
+    lineBreak: false,
+  });
   document
     .font('Helvetica')
     .fontSize(8)
-    .text(`Competência ${formatCompetencia(competencia)}`, 405, 31, {
-      width: 154,
+    .fillColor(SLATE)
+    .text(`Competência ${formatCompetencia(competencia)}`, 423, 31, {
+      width: 136,
       align: 'right',
     })
-    .text(`Situação: ${statusLabel(status)}`, 405, 48, {
-      width: 154,
+    .text(`Situação: ${statusLabel(status)}`, 423, 48, {
+      width: 136,
       align: 'right',
     });
+  document
+    .moveTo(36, 91)
+    .lineTo(559, 91)
+    .strokeColor(BORDER)
+    .lineWidth(0.6)
+    .stroke();
   document.y = 110;
 }
 
