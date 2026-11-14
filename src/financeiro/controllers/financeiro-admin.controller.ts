@@ -37,12 +37,14 @@ import { FinanceiroBaixasService } from '../services/financeiro-baixas.service';
 import { FinanceiroDashboardService } from '../services/financeiro-dashboard.service';
 import { FinanceiroDocumentosService } from '../services/financeiro-documentos.service';
 import { FinanceiroContratoDocumentoService } from '../services/financeiro-contrato-documento.service';
+import { FinanceiroContratoPreferenciasService } from '../services/financeiro-contrato-preferencias.service';
 import { SERVICOS_CONTRATO } from '../financeiro-servicos.catalogo';
 import {
   CreateTipoLancamentoDto,
   UpdateTipoLancamentoDto,
 } from '../dto/tipo-lancamento.dto';
 import { UpsertContratoDto } from '../dto/contrato.dto';
+import { ContratoPreferenciasDto } from '../dto/contrato-preferencias.dto';
 import {
   CreateLancamentoDto,
   FiltroLancamentosDto,
@@ -71,6 +73,7 @@ export class FinanceiroAdminController {
     private readonly dashboard: FinanceiroDashboardService,
     private readonly documentos: FinanceiroDocumentosService,
     private readonly contratoDocumento: FinanceiroContratoDocumentoService,
+    private readonly contratoPreferencias: FinanceiroContratoPreferenciasService,
     private readonly logger: AppLogger,
   ) {}
 
@@ -104,6 +107,23 @@ export class FinanceiroAdminController {
   @ApiOperation({ summary: 'Listar serviços disponíveis para contrato' })
   listServicosContrato() {
     return SERVICOS_CONTRATO;
+  }
+
+  @Get('contratos/preferencias')
+  @ApiOperation({ summary: 'Obter preferências pessoais para novos contratos' })
+  getContratoPreferencias(@CurrentUser() user: CurrentUserType) {
+    return this.contratoPreferencias.get(user.id);
+  }
+
+  @Put('contratos/preferencias')
+  @ApiOperation({
+    summary: 'Salvar preferências pessoais para novos contratos',
+  })
+  putContratoPreferencias(
+    @Body() dto: ContratoPreferenciasDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.contratoPreferencias.put(user.id, dto);
   }
 
   @Get('contratos')

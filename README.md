@@ -209,6 +209,17 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 pnpm db:check
 ```
 
+### Preferências de novos contratos
+
+Usuários da equipe podem consultar e salvar seus próprios padrões em
+`GET /admin/financeiro/contratos/preferencias` e
+`PUT /admin/financeiro/contratos/preferencias`. O `PUT` recebe cidade/UF da
+assinatura, dias de vencimento e fechamento, aviso prévio e configuração da
+cobrança do 13º. Os valores ficam em `financeiro_contrato_preferencias`, criada
+pela migration `0005_heavy_donald_blake.sql`. Aplique essa migration na API
+antes de publicar o formulário que consulta o endpoint. Contratos já salvos
+mantêm seus valores próprios.
+
 ### Regime de apuração do Simples Nacional
 
 `clientes.regime_competencia` está incluída na nova baseline, com default
