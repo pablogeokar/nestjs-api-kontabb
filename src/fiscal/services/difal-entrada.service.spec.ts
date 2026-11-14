@@ -1193,3 +1193,91 @@ describe('DifalEntradaService — A3 perfil histórico do estabelecimento', () =
     });
   });
 });
+
+describe('DifalEntradaService — dispensa do DIFAL sobre ativo para ME/EPP (RICMS-BA art. 272, I, a, 2)', () => {
+  const itemDe = (id: string, cfop: string) => ({
+    documentoFiscalId: `d-${id}`,
+    itemId: id,
+    cfop,
+    dataFato: '2026-10-10',
+    valorBcIcms: '1000.00',
+    valorBrutoProduto: '1000.00',
+    aliquotaIcms: '7.0000',
+  });
+  const conteudo = (dispensa: unknown) => ({
+    aliquota_interna: '20.5',
+    ...(dispensa === undefined ? {} : { dispensa_ativo_me_epp: dispensa }),
+  });
+  const run = async (regime: string, dispensa: unknown, aprovada = true) => {
+    const database = createDb(
+      'BA',
+      [itemDe('ativo', '2551'), itemDe('consumo', '2556')],
+      [],
+      regime,
+    );
+    const service = new DifalEntradaService(
+      database as never,
+      createCatalogo({
+        conteudo: conteudo(dispensa),
+        escopoAprovado: aprovada,
+        pendente: !aprovada,
+      }) as never,
+    );
+    return service.apurarCompetencia({
+      clienteId: 'c1',
+      competencia: '2026-10',
+    });
+  };
+  const art272 = { fundamento: 'RICMS-BA, art. 272, I, "a", 2' };
+
+  it('Simples: ativo (2551) dispensado e fora do total; consumo (2556) devido', async () => {
+    const r = await run('SIMPLES_NACIONAL', art272);
+    const [ativo, consumo] = r.itens;
+    expect(ativo).toMatchObject({
+      cfop: '2551',
+      valor_difal: '0.00',
+      recolhimento_proprio: 'NAO',
+      dispensa_difal: {
+        fundamento: art272.fundamento,
+        valor_dispensado: '135.00',
+      },
+    });
+    expect(ativo.motivo_nao_recolhimento).toContain('art. 272');
+    expect(consumo).toMatchObject({
+      cfop: '2556',
+      valor_difal: '135.00',
+      dispensa_difal: null,
+    });
+    expect(r.total_difal_recolher).toBe('135.00');
+    expect(r.itens_dispensados).toBe(1);
+  });
+
+  it('regime normal: ativo continua devido', async () => {
+    const r = await run('LUCRO_REAL', art272);
+    expect(r.itens[0]).toMatchObject({
+      cfop: '2551',
+      valor_difal: '135.00',
+      dispensa_difal: null,
+    });
+    expect(r.total_difal_recolher).toBe('270.00');
+  });
+
+  it('sem o parâmetro na regra (ou sem fundamento), não dispensa', async () => {
+    for (const d of [undefined, {}, { fundamento: '  ' }]) {
+      const r = await run('SIMPLES_NACIONAL', d);
+      expect(r.itens[0]).toMatchObject({
+        valor_difal: '135.00',
+        dispensa_difal: null,
+      });
+    }
+  });
+
+  it('regra em rascunho: dispensa aparece na simulação e nada entra no total', async () => {
+    const r = await run('SIMPLES_NACIONAL', art272, false);
+    expect(r.itens[0]).toMatchObject({
+      status_calculo: 'SIMULACAO',
+      valor_difal: '0.00',
+    });
+    expect(r.total_difal_recolher).toBe('0.00');
+  });
+});

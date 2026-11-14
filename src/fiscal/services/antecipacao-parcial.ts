@@ -232,6 +232,15 @@ export function apurarItemAntecipacaoParcial(
     );
   }
 
+  const reducao = reducaoMeEppDaRegra(regra.conteudo);
+  if (reducao === 'INVALIDA') {
+    return pendente(
+      'A regra vigente traz a redução para ME/EPP com parâmetros inválidos (percentual e fundamento).',
+    );
+  }
+  const reducaoAplicada =
+    reducao != null && adquirenteMeEpp(regime) ? reducao : null;
+
   return {
     ...identificacao,
     situacao: regra.escopoAprovado
@@ -243,8 +252,69 @@ export function apurarItemAntecipacaoParcial(
       aliquotaInterna: enquadramento.aliquota_interna,
       deducaoOrigem,
       aliquotaInterestadual,
+      percentualReducao: reducaoAplicada?.percentual,
     }),
+    // Redução condicionada (ex.: RICMS-BA art. 274). `valor_antecipacao` já
+    // considera a redução; se o recolhimento perder a condição, o devido é
+    // `imposto_apurado`.
+    reducao_condicionada: reducaoAplicada
+      ? {
+          percentual: reducaoAplicada.percentual,
+          fundamento: reducaoAplicada.fundamento,
+          condicao: reducaoAplicada.condicao,
+        }
+      : null,
   };
+}
+
+/**
+ * Redução do imposto apurado concedida a ME/EPP, parametrizada na REGRA
+ * (`conteudo.reducao_me_epp`), por exemplo RICMS-BA art. 274: 20% quando o
+ * recolhimento ocorrer no prazo regulamentar. O motor não presume a redução:
+ * sem o parâmetro na regra vigente, nada é reduzido.
+ */
+export interface ReducaoMeEpp {
+  percentual: string;
+  fundamento: string;
+  condicao: string | null;
+}
+
+export function reducaoMeEppDaRegra(
+  conteudo: Record<string, unknown> | undefined,
+): ReducaoMeEpp | null | 'INVALIDA' {
+  const bruto = conteudo?.reducao_me_epp;
+  if (bruto == null) return null;
+  if (typeof bruto !== 'object') return 'INVALIDA';
+  const r = bruto as Record<string, unknown>;
+  const percentual = r.percentual;
+  const fundamento = r.fundamento;
+  if (
+    typeof percentual !== 'string' ||
+    !/^\d{1,3}(?:\.\d{1,4})?$/.test(percentual) ||
+    toScaledInteger(percentual, 4) <= 0n ||
+    toScaledInteger(percentual, 4) > CEM ||
+    typeof fundamento !== 'string' ||
+    !fundamento.trim()
+  ) {
+    return 'INVALIDA';
+  }
+  return {
+    percentual,
+    fundamento: fundamento.trim(),
+    condicao:
+      typeof r.condicao === 'string' && r.condicao.trim()
+        ? r.condicao.trim()
+        : null,
+  };
+}
+
+/**
+ * Optante pelo Simples Nacional é necessariamente ME ou EPP (LC 123/06, art.
+ * 3º). ME/EPP fora do Simples não é identificável pelo cadastro atual e não
+ * recebe a redução (resultado conservador, sinalizado na memória).
+ */
+function adquirenteMeEpp(regime: string | null): boolean {
+  return regime === 'SIMPLES_NACIONAL';
 }
 
 function aplicarPercentual(base: bigint, aliquota: bigint) {

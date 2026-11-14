@@ -178,3 +178,80 @@ describe('Antecipação Parcial', () => {
     ]);
   });
 });
+
+describe('Antecipação Parcial — redução ME/EPP parametrizada (RICMS-BA art. 274)', () => {
+  const comReducao = (aprovada: boolean, reducao: unknown) => {
+    const r = regra(aprovada);
+    r.conteudo.reducao_me_epp = reducao;
+    return r;
+  };
+  const art274 = {
+    percentual: '20',
+    fundamento: 'RICMS-BA, art. 274',
+    condicao: 'Recolhimento no prazo regulamentar',
+  };
+
+  it('Simples: aplica 20% sobre o imposto apurado e expõe a condição', () => {
+    const r = apurarItemAntecipacaoParcial(
+      item,
+      'SIMPLES_NACIONAL',
+      comReducao(true, art274),
+    );
+    expect(r).toMatchObject({
+      situacao: 'CALCULADO',
+      calculo: {
+        imposto_apurado: '85.00',
+        reducao: '17.00',
+        valor_antecipacao: '68.00',
+      },
+      reducao_condicionada: {
+        percentual: '20',
+        fundamento: 'RICMS-BA, art. 274',
+      },
+    });
+  });
+
+  it('sem o parâmetro na regra, não reduz', () => {
+    const r = apurarItemAntecipacaoParcial(
+      item,
+      'SIMPLES_NACIONAL',
+      regra(true),
+    );
+    expect(r).toMatchObject({
+      calculo: { reducao: '0.00', valor_antecipacao: '85.00' },
+      reducao_condicionada: null,
+    });
+  });
+
+  it('regime normal não recebe a redução de ME/EPP', () => {
+    const r = comReducao(true, art274);
+    (r.conteudo.enquadramentos as Array<Record<string, unknown>>).forEach(
+      (e) => (e.regime = 'LUCRO_REAL'),
+    );
+    const out = apurarItemAntecipacaoParcial(
+      { ...item, valorIcms: '120.00' },
+      'LUCRO_REAL',
+      r,
+    );
+    expect(out).toMatchObject({
+      calculo: { reducao: '0.00' },
+      reducao_condicionada: null,
+    });
+  });
+
+  it('parâmetro inválido deixa o item pendente', () => {
+    for (const invalido of [
+      { percentual: '20' },
+      { percentual: '120', fundamento: 'x' },
+      'sim',
+    ]) {
+      expect(
+        apurarItemAntecipacaoParcial(
+          item,
+          'SIMPLES_NACIONAL',
+          comReducao(true, invalido),
+        ).situacao,
+      ).toBe('PENDENTE');
+    }
+  });
+});

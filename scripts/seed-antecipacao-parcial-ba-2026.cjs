@@ -69,9 +69,47 @@ const enquadramentos = JSON.parse(
 );
 const conteudo = {
   enquadramentos,
+  // RICMS-BA, art. 274: redução de 20% do imposto apurado para ME/EPP que
+  // recolhe no prazo regulamentar. O motor só aplica a optantes do Simples.
+  reducao_me_epp: {
+    percentual: '20',
+    fundamento: 'RICMS-BA, art. 274',
+    condicao: 'Recolhimento no prazo regulamentar',
+  },
   fontes: FONTES,
   consultado_em: CONSULTADO_EM,
 };
+
+// DIFAL de entrada de contribuinte (uso/consumo 2556 e ativo 2551).
+const conteudoDifal = {
+  // Lei 7.014/96, art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24).
+  aliquota_interna: '20.5',
+  // Interestadual do item (Res. SF 22/89 e 13/12), sem valor fixo na regra.
+  aliquota_interestadual: null,
+  // Adicional de FCP (Lei 7.014/96, art. 16-A) só vale para mercadorias
+  // listadas; a regra geral não o aplica.
+  aliquota_fcp: null,
+  percentual_reducao: null,
+  percentual_beneficio: null,
+  // Lei 7.014/96, art. 17, XI, "b" e § 6º (Lei 14.415/21, efeitos 31/12/21):
+  // base do destino com o imposto por dentro.
+  base_por_dentro: false,
+  base_dupla: true,
+  fcp_na_base_por_dentro: false,
+  // RICMS-BA, art. 272, I, "a", 2: dispensa na aquisição de ativo por ME/EPP.
+  dispensa_ativo_me_epp: { fundamento: 'RICMS-BA, art. 272, I, "a", 2' },
+  fundamentos: [
+    'Lei 7.014/96, art. 4º, XV (fato gerador na entrada para uso, consumo ou ativo)',
+    'Lei 7.014/96, art. 15, I, "a" (alíquota interna 20,5%)',
+    'Lei 7.014/96, art. 17, XI, "b" e § 6º (base do destino e diferença de alíquotas)',
+    'RICMS-BA, art. 305, § 4º, III, "a" (lançamento do diferencial de alíquotas)',
+    'RICMS-BA, art. 321, VIII e § 1º (Simples Nacional, alíquotas de não optantes)',
+    'RICMS-BA, art. 272, I, "a", 2 (dispensa sobre ativo para ME/EPP)',
+  ],
+  fontes: FONTES,
+  consultado_em: CONSULTADO_EM,
+};
+const FONTE_DIFAL = 'Lei 7.014/96 arts.4,15,17; RICMS-BA arts.272,321'; // <= 60
 const catalogoConteudo = { status: 'RASCUNHO', competencia: '2026-01', ...conteudo };
 const hash = createHash('sha256').update(JSON.stringify(catalogoConteudo)).digest('hex');
 const FONTE = 'Lei 7.014/96 art.12-A; RICMS-BA art.321; Anexo 1/2026'; // <= 60
@@ -82,6 +120,38 @@ function resumo() {
     porTratamento[e.tratamento] = (porTratamento[e.tratamento] ?? 0) + 1;
   }
   return { total: enquadramentos.length, por_tratamento: porTratamento };
+}
+
+/**
+ * Grava a regra se ainda não existe. Se a última revisão ativa tem o mesmo
+ * conteúdo, não faz nada. Se difere e NÃO está aprovada, cria a revisão
+ * seguinte (a anterior fica no histórico). Revisão aprovada nunca é alterada.
+ */
+async function upsertRegra(sql, catalogoId, chave, conteudoRegra, fonte) {
+  const [ultima] = await sql`
+    select id, revisao, coalesce(escopo_aprovado, false) as aprovada,
+           conteudo = ${sql.json(conteudoRegra)}::jsonb as igual
+      from fiscal_regras_versoes
+     where catalogo_versao_id = ${catalogoId} and chave = ${chave} and ativo = true
+     order by revisao desc
+     limit 1
+  `;
+  if (ultima?.igual) return { acao: 'inalterada', revisao: ultima.revisao };
+  if (ultima?.aprovada) {
+    throw new Error(
+      `A regra ${chave} revisão ${ultima.revisao} já foi homologada; abra nova vigência para alterá-la.`,
+    );
+  }
+  const revisao = (ultima?.revisao ?? 0) + 1;
+  await sql`
+    insert into fiscal_regras_versoes
+      (catalogo_versao_id, chave, revisao, conteudo, fonte, fonte_url,
+       vigencia_inicio, vigencia_fim, ativo)
+    values
+      (${catalogoId}, ${chave}, ${revisao}, ${sql.json(conteudoRegra)},
+       ${fonte}, ${ANEXO_1_2026}, '2026-01-01', '2026-12-31', true)
+  `;
+  return { acao: ultima ? 'nova_revisao' : 'criada', revisao };
 }
 
 async function main() {
@@ -138,32 +208,24 @@ async function main() {
            '2026-01-01', '2026-12-31', false)
         returning id, escopo_aprovado
       `)[0];
-      const regras = await sql`
-        select id, revisao, coalesce(escopo_aprovado, false) as aprovada,
-               conteudo = ${sql.json(conteudo)}::jsonb as igual
-          from fiscal_regras_versoes
-         where catalogo_versao_id = ${catalogo.id}
-           and chave = 'ANTECIPACAO_PARCIAL' and ativo = true
+      const regraAntecipacao = await upsertRegra(
+        sql, catalogo.id, 'ANTECIPACAO_PARCIAL', conteudo, FONTE,
+      );
+      const regraDifal = await upsertRegra(
+        sql, catalogo.id, 'DIFAL_ENTRADA_CONTRIBUINTE', conteudoDifal, FONTE_DIFAL,
+      );
+      // Mantém o resumo do catálogo (rascunho) alinhado à revisão gravada.
+      await sql`
+        update fiscal_catalogos_versoes
+           set conteudo = ${sql.json(catalogoConteudo)}, hash_conteudo = ${hash},
+               atualizado_em = now()
+         where id = ${catalogo.id} and escopo_aprovado = false
+           and hash_conteudo is distinct from ${hash}
       `;
-      if (regras.length > 1 || (regras.length === 1 && !regras[0].igual)) {
-        throw new Error(
-          'Já existe regra diferente nesta vigência; não sobrescrever a revisão. ' +
-            'Edite pela tela ou desative a regra existente.',
-        );
-      }
-      if (regras.length === 0) {
-        await sql`
-          insert into fiscal_regras_versoes
-            (catalogo_versao_id, chave, revisao, conteudo, fonte, fonte_url,
-             vigencia_inicio, vigencia_fim, ativo)
-          values
-            (${catalogo.id}, 'ANTECIPACAO_PARCIAL', 1, ${sql.json(conteudo)},
-             ${FONTE}, ${ANEXO_1_2026}, '2026-01-01', '2026-12-31', true)
-        `;
-      }
       return {
         catalogo_id: catalogo.id,
-        regra_criada: regras.length === 0,
+        antecipacao_parcial: regraAntecipacao,
+        difal_entrada: regraDifal,
         escopo_aprovado: false,
         ...resumo(),
       };

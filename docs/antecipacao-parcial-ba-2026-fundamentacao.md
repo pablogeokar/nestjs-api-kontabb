@@ -1,6 +1,6 @@
 # Antecipação Parcial BA 2026: fundamentação do seed
 
-Seed: `scripts/seed-antecipacao-parcial-ba-2026.cjs`
+Seed: `scripts/seed-antecipacao-parcial-ba-2026.cjs` (regras `ANTECIPACAO_PARCIAL` e `DIFAL_ENTRADA_CONTRIBUINTE`)
 Dados: `scripts/data/antecipacao-parcial-ba-2026.enquadramentos.json` (123 enquadramentos)
 Consulta às fontes: 14/11/2026. Situação: **rascunho** (`escopo_aprovado = false`), nenhuma linha com `confirmado_fiscalmente = true`.
 
@@ -41,12 +41,35 @@ As combinações vêm das entradas interestaduais de NF-e de clientes da BA no b
 
 Os demais 116 estão como APLICAVEL a 20,5%. Quando o XML traz NCM ou CEST incompatível com a descrição e a correção não muda o tributo, o caso está anotado em `revisao_fiscal`.
 
-## Limitações do motor que afetam o valor
+## Redução de 20% para ME/EPP (art. 274)
 
-1. **Redução de 20% do art. 274 do RICMS-BA:** vale para ME/EPP que recolhem no prazo, mas `apurarItemAntecipacaoParcial` não a aplica. O valor simulado fica 25% acima do valor com redução.
-2. **IPI:** itens com IPI diferente de zero ficam pendentes por política do motor. A inclusão do IPI na base (art. 23, III) precisa de decisão fiscal.
-3. **CFOP escriturado:** o motor só lê itens escriturados com CFOP 2102. Das 293 entradas interestaduais, só 7 estão com 2102; as demais mantêm o CFOP do emitente (6101/6102).
-4. **DIFAL de entrada:** este seed não cadastra regra de DIFAL. O banco não tem entradas 2551/2556. Além disso, o motor trata ativo e uso/consumo com a mesma regra, enquanto o RICMS-BA, art. 272, I, "a", 2, dispensa o DIFAL na aquisição de ativo por ME/EPP.
+A regra `ANTECIPACAO_PARCIAL` (revisão 2) traz `reducao_me_epp`, com percentual de 20, fundamento no RICMS-BA, art. 274, e a condição de recolhimento no prazo regulamentar. O motor aplica a redução só a optantes do Simples Nacional, que são ME ou EPP por definição (LC 123/06, art. 3º). Uma ME/EPP fora do Simples não é identificável pelo cadastro e recebe o valor sem redução.
+
+O item mostra três valores: `imposto_apurado` (sem redução), `reducao` e `valor_antecipacao` (com redução). Também mostra `reducao_condicionada`. Se a condição não for cumprida, o devido é `imposto_apurado`.
+
+## DIFAL de entrada (regra `DIFAL_ENTRADA_CONTRIBUINTE`, revisão 1, rascunho)
+
+| Parâmetro | Valor | Fonte |
+|---|---|---|
+| Alíquota interna | 20,5% | Lei 7.014/96, art. 15, I, "a" |
+| Interestadual | a do item (Res. SF 22/89 e 13/12) | — |
+| Base | dupla: base do destino com o imposto por dentro | Lei 7.014/96, art. 17, XI, "b" e § 6º (Lei 14.415/21, efeitos 31/12/21) |
+| FCP | não aplicado na regra geral | Lei 7.014/96, art. 16-A, que só alcança mercadorias listadas |
+| Dispensa sobre ativo (CFOP 2551) para ME/EPP | sim | RICMS-BA, art. 272, I, "a", 2 |
+| Lançamento | débito do diferencial de alíquotas | RICMS-BA, art. 305, § 4º, III, "a" |
+
+Pontos a confirmar antes de homologar:
+
+- **ICMS de origem:** o motor deduz o ICMS **destacado** no XML. Se o fornecedor é do Simples e não destaca ICMS, o item fica pendente ("Base dupla exige o valor do ICMS da origem"). Falta confirmar com a SEFAZ-BA se a dedução deve ser o destacado ou o valor nominal pela alíquota interestadual. É o ponto A4 do diagnóstico.
+- **Simples como adquirente:** a aplicação da base dupla e o alcance dos Temas 517 e 1284 do STF devem ser confirmados pela revisão fiscal.
+- **FCP:** mercadorias de uso e consumo com adicional de FCP (art. 16, II, IV, V e VII, e cosméticos da IN SAT 05/2016) não têm o adicional na regra geral.
+- **Dados:** o banco ainda não tem entradas 2551/2556, então a regra ainda não foi exercitada com dados reais.
+
+## Limitações que continuam
+
+1. **IPI:** itens com IPI diferente de zero ficam pendentes por política do motor. A inclusão do IPI na base (art. 23, III) precisa de decisão fiscal.
+2. **CFOP escriturado:** o motor só lê itens escriturados com CFOP 2102 (antecipação) e 2551/2556 (DIFAL). Das 293 entradas interestaduais, só 7 estão com 2102.
+3. **Homologação na tela:** a tela homologa apenas a regra `ANTECIPACAO_PARCIAL`. A regra de DIFAL ainda não tem tela de revisão.
 
 ## Evidências (SHA-256 do arquivo baixado em 14/11/2026)
 

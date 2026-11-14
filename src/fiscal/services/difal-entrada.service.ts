@@ -51,6 +51,23 @@ import {
 // geram, de fato, DIFAL de entrada do CONTRIBUINTE (a diferença de alíquota que
 // o próprio adquirente recolhe). 2551 = ativo imobilizado; 2556 = uso/consumo.
 const CFOPS_DIFAL_ENTRADA_CONTRIBUINTE = ['2556', '2551'] as const;
+const CFOP_ATIVO_IMOBILIZADO = '2551';
+
+/**
+ * Fundamento da dispensa do DIFAL sobre ativo para ME/EPP, quando a regra a
+ * institui em `dispensa_ativo_me_epp: { fundamento }`. Sem fundamento textual a
+ * dispensa não é aplicada.
+ */
+function dispensaAtivoMeEppDaRegra(
+  conteudo: Record<string, unknown>,
+): string | null {
+  const bruto = conteudo.dispensa_ativo_me_epp;
+  if (bruto == null || typeof bruto !== 'object') return null;
+  const fundamento = (bruto as Record<string, unknown>).fundamento;
+  return typeof fundamento === 'string' && fundamento.trim()
+    ? fundamento.trim()
+    : null;
+}
 
 // RESPONSÁVEL pelo recolhimento por hipótese (tarefa 2.6 — R1.5). Eixo de
 // responsabilidade exigido no resultado: entrada-contribuinte e antecipação são
@@ -381,6 +398,7 @@ export class DifalEntradaService {
     // próprio (sem guia, base zero). Torna a garantia visível no resultado, não
     // apenas implícita na ausência de valor.
     let itensSemRecolhimentoProprio = 0;
+    let itensDispensados = 0;
 
     const detalhes = itens.map((item) => {
       const perfilItem = perfilDe(item);
@@ -495,6 +513,37 @@ export class DifalEntradaService {
         porStatus[calc.status] += 1;
       }
 
+      // DISPENSA do DIFAL na aquisição de ATIVO por ME/EPP, quando a REGRA
+      // vigente a institui (`dispensa_ativo_me_epp`; na BA, RICMS art. 272, I,
+      // "a", 2). Ativo = CFOP 2551. ME/EPP = optante do Simples Nacional (LC
+      // 123/06, art. 3º). O diferencial calculado fica na memória como valor
+      // dispensado e não entra no total.
+      const dispensaAtivo =
+        calc != null &&
+        regraVersao != null &&
+        regra != null &&
+        adquirenteSimples &&
+        item.cfop === CFOP_ATIVO_IMOBILIZADO
+          ? dispensaAtivoMeEppDaRegra(regraVersao.conteudo)
+          : null;
+      const dispensaDifal =
+        calc != null && dispensaAtivo != null
+          ? {
+              fundamento: dispensaAtivo,
+              valor_dispensado: calc.valorDifal,
+              fcp_dispensado: calc.valorFcp,
+            }
+          : null;
+      if (calc != null && dispensaDifal != null) {
+        calc.memoria =
+          `Dispensado: aquisição de ativo (CFOP ${CFOP_ATIVO_IMOBILIZADO}) por ME/EPP ` +
+          `(${dispensaDifal.fundamento}). Diferencial calculado e não devido: ` +
+          `${calc.valorDifal}. ${calc.memoria}`;
+        calc.valorDifal = fromScaledInteger(0n);
+        calc.valorFcp = fromScaledInteger(0n);
+        itensDispensados += 1;
+      }
+
       // NÃO-DUPLICIDADE (tarefa 2.5 — R1.4): o item NÃO recolhe DIFAL próprio
       // quando há retenção/responsabilidade de terceiro — seja porque a hipótese
       // é ST (imposto do substituto), seja porque a composição zerou a base por
@@ -503,17 +552,18 @@ export class DifalEntradaService {
       // que impede o recolhimento em duplicidade e o deixa AUDITÁVEL.
       const sobRetencaoOuSt =
         classificacao.hipotese === 'ST' || baseComposta.retido;
-      const recolhimentoProprio: 'SIM' | 'NAO' = sobRetencaoOuSt
-        ? 'NAO'
-        : 'SIM';
-      const motivoNaoRecolhimento = sobRetencaoOuSt
-        ? classificacao.hipotese === 'ST'
-          ? 'Operação sob substituição tributária (ICMS retido/responsabilidade ' +
-            'do substituto): não há DIFAL de entrada próprio a recolher — ' +
-            'recolher aqui duplicaria o imposto já retido (R1.4).'
-          : 'ICMS-ST retido/responsabilidade de terceiro no item: base de DIFAL ' +
-            'próprio zerada; nenhum valor a recolher para evitar duplicidade (R1.4).'
-        : null;
+      const recolhimentoProprio: 'SIM' | 'NAO' =
+        sobRetencaoOuSt || dispensaDifal != null ? 'NAO' : 'SIM';
+      const motivoNaoRecolhimento = dispensaDifal
+        ? `DIFAL dispensado na aquisição de ativo por ME/EPP (${dispensaDifal.fundamento}).`
+        : sobRetencaoOuSt
+          ? classificacao.hipotese === 'ST'
+            ? 'Operação sob substituição tributária (ICMS retido/responsabilidade ' +
+              'do substituto): não há DIFAL de entrada próprio a recolher — ' +
+              'recolher aqui duplicaria o imposto já retido (R1.4).'
+            : 'ICMS-ST retido/responsabilidade de terceiro no item: base de DIFAL ' +
+              'próprio zerada; nenhum valor a recolher para evitar duplicidade (R1.4).'
+          : null;
       if (sobRetencaoOuSt) itensSemRecolhimentoProprio += 1;
 
       // SIMPLES NACIONAL — DIFAL de entrada FORA do DAS (tarefa 2.7 — R1.6):
@@ -640,6 +690,7 @@ export class DifalEntradaService {
         // recolhido (não omitido), impedindo recolher sobre imposto já retido.
         recolhimento_proprio: recolhimentoProprio,
         motivo_nao_recolhimento: motivoNaoRecolhimento,
+        dispensa_difal: dispensaDifal,
         // Regra efetivamente aplicada ao item, resolvida pela data do fato
         // gerador (`data_fato`). Permite duas alíquotas no mesmo mês.
         data_fato: dataDoItem(item),
@@ -708,6 +759,7 @@ export class DifalEntradaService {
       // retenção/responsabilidade de terceiro e que, por isso, NÃO geraram DIFAL
       // próprio. Resume no cabeçalho a garantia detalhada por item.
       itens_sem_recolhimento_proprio: itensSemRecolhimentoProprio,
+      itens_dispensados: itensDispensados,
       // SIMPLES NACIONAL (tarefa 2.7 — R1.6): quantidade de itens cujo DIFAL de
       // entrada é devido e recolhido FORA do DAS por ser o adquirente Simples.
       itens_recolhidos_fora_do_das: itensRecolhidosForaDoDas,
