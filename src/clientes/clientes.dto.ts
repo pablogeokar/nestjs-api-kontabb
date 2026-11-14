@@ -314,6 +314,21 @@ export class UpdateClientDto {
   inscricao_estadual?: string | null;
 
   @ApiPropertyOptional({
+    description: 'Inscrição municipal da empresa',
+    nullable: true,
+    example: '12345678',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9A-Z./-]{2,20}$/, {
+    message: 'Formato de inscrição municipal inválido.',
+  })
+  inscricao_municipal?: string | null;
+
+  @ApiPropertyOptional({
     description: 'Contador responsável pelo cliente',
     format: 'uuid',
     nullable: true,

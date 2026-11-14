@@ -110,6 +110,7 @@ export class ClientesService {
           dataAberturaCnpj: clientes.dataAberturaCnpj,
           apuraIcms: clientes.apuraIcms,
           inscricaoEstadual: clientes.inscricaoEstadual,
+          inscricaoMunicipal: clientes.inscricaoMunicipal,
           tipoContribuinteIcms: clientes.tipoContribuinteIcms,
           optanteSimplesNacional: clientes.optanteSimplesNacional,
           simplesNacionalFonte: clientes.simplesNacionalFonte,
@@ -168,6 +169,7 @@ export class ClientesService {
         data_abertura_cnpj: client.dataAberturaCnpj,
         apura_icms: client.apuraIcms,
         inscricao_estadual: client.inscricaoEstadual,
+        inscricao_municipal: client.inscricaoMunicipal,
         tipo_contribuinte_icms:
           client.tipoContribuinteIcms as TipoContribuinteIcms | null,
         optante_simples_nacional: client.optanteSimplesNacional,
@@ -345,6 +347,7 @@ export class ClientesService {
     dataAberturaCnpj?: string | null;
     apuraIcms?: boolean;
     inscricaoEstadual?: string | null;
+    inscricaoMunicipal?: string | null;
     tipoContribuinteIcms?: TipoContribuinteIcms | null;
     optanteSimplesNacional?: boolean | null;
     simplesNacionalFonte?: FonteConsultaCnpj | null;
@@ -380,6 +383,14 @@ export class ClientesService {
     const hasSecondaryActivities = input.secondaryActivities !== undefined;
     const hasContadorId = input.contadorId !== undefined;
     const hasDataAbertura = input.dataAberturaCnpj !== undefined;
+    const hasInscricaoMunicipal = input.inscricaoMunicipal !== undefined;
+    const inscricaoMunicipal =
+      input.inscricaoMunicipal?.trim().toUpperCase() || null;
+    if (existing.tipoPessoa === 'PF' && inscricaoMunicipal) {
+      throw new BadRequestException(
+        'Pessoa Física não possui inscrição municipal.',
+      );
+    }
     const secondaryActivities = JSON.stringify(input.secondaryActivities ?? []);
     const result = await this.database.db.execute(sql`
       WITH updated_client AS (
@@ -402,6 +413,7 @@ export class ClientesService {
           data_abertura_cnpj = CASE WHEN ${hasDataAbertura} THEN ${input.dataAberturaCnpj ?? null}::date ELSE data_abertura_cnpj END,
           apura_icms = CASE WHEN ${fiscalUpdate.writeApuraIcms} THEN ${fiscalUpdate.apuraIcms}::boolean ELSE apura_icms END,
           inscricao_estadual = CASE WHEN ${fiscalUpdate.writeInscricaoEstadual} THEN ${fiscalUpdate.inscricaoEstadual}::text ELSE inscricao_estadual END,
+          inscricao_municipal = CASE WHEN ${hasInscricaoMunicipal} THEN ${inscricaoMunicipal}::text ELSE inscricao_municipal END,
           tipo_contribuinte_icms = CASE WHEN ${fiscalUpdate.writeTipoContribuinteIcms} THEN ${fiscalUpdate.tipoContribuinteIcms}::text ELSE tipo_contribuinte_icms END,
           optante_simples_nacional = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.optanteSimplesNacional}::boolean ELSE optante_simples_nacional END,
           simples_nacional_fonte = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.simplesNacionalFonte}::text ELSE simples_nacional_fonte END,
@@ -638,6 +650,7 @@ export class ClientesService {
         dataAberturaCnpj: clientes.dataAberturaCnpj,
         apuraIcms: clientes.apuraIcms,
         inscricaoEstadual: clientes.inscricaoEstadual,
+        inscricaoMunicipal: clientes.inscricaoMunicipal,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
         optanteSimplesNacional: clientes.optanteSimplesNacional,
         simplesNacionalFonte: clientes.simplesNacionalFonte,
@@ -680,7 +693,8 @@ export class ClientesService {
       data_abertura_cnpj: client.dataAberturaCnpj,
       apura_icms: client.apuraIcms,
       inscricao_estadual: client.inscricaoEstadual,
-      inscricao_municipal: sped?.inscricaoMunicipal ?? null,
+      inscricao_municipal:
+        client.inscricaoMunicipal ?? sped?.inscricaoMunicipal ?? null,
       tipo_contribuinte_icms:
         client.tipoContribuinteIcms as TipoContribuinteIcms | null,
       optante_simples_nacional: client.optanteSimplesNacional,

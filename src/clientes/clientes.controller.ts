@@ -354,6 +354,7 @@ export class ClientesController {
       dataAberturaCnpj: dto.data_abertura_cnpj,
       apuraIcms: dto.apura_icms,
       inscricaoEstadual: dto.inscricao_estadual,
+      inscricaoMunicipal: dto.inscricao_municipal,
       tipoContribuinteIcms: dto.tipo_contribuinte_icms,
       optanteSimplesNacional: dto.optante_simples_nacional,
       simplesNacionalFonte: dto.simples_nacional_fonte,

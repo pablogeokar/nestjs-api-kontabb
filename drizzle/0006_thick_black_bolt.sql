@@ -1,0 +1,2 @@
+ALTER TABLE "clientes" ADD COLUMN "inscricao_municipal" text;--> statement-breakpoint
+ALTER TABLE "clientes" ADD CONSTRAINT "chk_clientes_inscricao_municipal" CHECK ("clientes"."inscricao_municipal" IS NULL OR "clientes"."inscricao_municipal" ~ '^[0-9A-Z./-]{2,20}$');

@@ -41,6 +41,7 @@ export const clientes = pgTable(
     dataAberturaCnpj: date('data_abertura_cnpj'),
     apuraIcms: boolean('apura_icms').notNull().default(false),
     inscricaoEstadual: text('inscricao_estadual'),
+    inscricaoMunicipal: text('inscricao_municipal'),
     tipoContribuinteIcms: text('tipo_contribuinte_icms'),
     optanteSimplesNacional: boolean('optante_simples_nacional'),
     simplesNacionalFonte: text('simples_nacional_fonte'),
@@ -83,6 +84,10 @@ export const clientes = pgTable(
     check(
       'chk_clientes_tipo_contribuinte_icms',
       sql`${table.tipoContribuinteIcms} IS NULL OR ${table.tipoContribuinteIcms} IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')`,
+    ),
+    check(
+      'chk_clientes_inscricao_municipal',
+      sql`${table.inscricaoMunicipal} IS NULL OR ${table.inscricaoMunicipal} ~ '^[0-9A-Z./-]{2,20}$'`,
     ),
     check(
       'chk_clientes_inscricao_estadual',
