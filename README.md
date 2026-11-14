@@ -209,6 +209,44 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/preflight-migrations.sql
 pnpm db:check
 ```
 
+### Demonstrativo de faturamento verificável
+
+A migration `drizzle/0007_cynical_kang.sql` cria
+`contadores_certificados` e `relatorios_faturamento`. Aplique-a antes de
+publicar a API e o frontend. O contador precisa ter CPF cadastrado para receber
+um certificado e-CPF A1 (.pfx/.p12). Somente `ADMIN` pode consultar o status e
+enviar/substituir ou remover o arquivo em
+`GET/POST/DELETE /admin/cadastros/contadores/:id/certificado`. O arquivo é criptografado
+com `CERTIFICATE_ENCRYPTION_KEY` antes de ir ao R2 privado; a senha também fica
+criptografada. Mantenha essa chave configurada e estável em todos os ambientes
+que precisem assinar documentos. Certificados A3 em token não são suportados por
+upload.
+
+O cliente emite pelo `POST /cliente/fiscal/faturamento` com
+`{"inicio":"AAAA-MM","fim":"AAAA-MM"}`. O `GET` da mesma rota lista as últimas
+30 emissões; `GET /cliente/fiscal/faturamento/:codigo/pdf` entrega a cópia ao
+cliente autenticado. A emissão consulta NF-e/NFC-e autorizadas de saída, apenas
+itens com CFOP de receita, e NFS-e autorizadas emitidas pela empresa. A NFS-e
+usa a competência declarada quando disponível; demais documentos usam a data
+fiscal de emissão. Não depende do fechamento da competência. Cada emissão salva
+os valores por mês, um número sequencial, um código aleatório e o hash SHA-256
+do PDF original. Períodos sem notas importadas aparecem com zero; o relatório
+explica que retrata apenas os documentos disponíveis no instante da emissão.
+
+Se o contador vinculado tem A1 válido, a API assina o PDF com assinatura
+criptográfica destacada `ETSI.CAdES.detached`. Sem certificado, o PDF é emitido
+com indicação explícita de ausência de assinatura. Se o certificado configurado
+falhar durante a assinatura, a emissão falha sem publicar um PDF incorretamente
+marcado como assinado. A validade da cadeia ICP-Brasil e eventual revogação devem
+ser conferidas em um validador de assinaturas; o código da KONTABB confere a
+existência e a cópia arquivada, não substitui essa validação.
+
+A landing page usa `POST /public/faturamento/verificar` e
+`POST /public/faturamento/documento`, ambos com `{"codigo":"KTB-..."}`. Os
+endpoints públicos não exigem sessão, têm limite de tentativas, respondem com
+`Cache-Control: no-store` e não colocam o código na URL. Publique a API antes do
+frontend para evitar que a página de verificação aponte para rotas ausentes.
+
 ### Preferências de novos contratos
 
 Usuários da equipe podem consultar e salvar seus próprios padrões em

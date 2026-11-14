@@ -23,6 +23,7 @@ import { CronController } from './cron/cron.controller';
 import { StorageAdminController } from './storage/storage.controller';
 import { CrmModule } from './crm/crm.module';
 import { FinanceiroModule } from './financeiro/financeiro.module';
+import { FaturamentoModule } from './fiscal/faturamento.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { FinanceiroModule } from './financeiro/financeiro.module';
     ColaboradorModule,
     ContadoresModule,
     FinanceiroModule,
+    FaturamentoModule,
   ],
   controllers: [
     HealthController,
