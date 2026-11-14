@@ -41,6 +41,13 @@ export class FinanceiroClienteController {
     return client;
   }
 
+  @Get('resumo')
+  @ApiOperation({ summary: 'Total das mensalidades em aberto' })
+  async resumo(@CurrentUser() user: CurrentUserType) {
+    const client = await this.resolverCliente(user.id);
+    return this.faturas.totalEmAberto(client.id);
+  }
+
   @Get('faturas')
   @ApiOperation({ summary: 'Listar minhas faturas' })
   async listFaturas(

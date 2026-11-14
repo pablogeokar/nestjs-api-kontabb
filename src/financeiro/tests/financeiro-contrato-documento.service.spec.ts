@@ -16,6 +16,8 @@ const exemplo: ContratoPdfData = {
     mes13o: 12,
     ativo: true,
     dataInicio: '2026-11-12',
+    localAssinatura: 'Feira de Santana/BA',
+    dataAssinatura: '2026-11-14',
     avisoPrevioDias: 30,
     condicoesContratuais: null,
     servicosContratados: [
@@ -30,6 +32,8 @@ const exemplo: ContratoPdfData = {
     tipoPessoa: 'PJ',
     representante: 'Maria Exemplo',
     endereco: 'Rua Exemplo, 100, Feira de Santana, BA',
+    municipio: 'Feira de Santana',
+    uf: 'BA',
   },
   contador: {
     nome: 'Contador Responsável',
@@ -76,6 +80,18 @@ describe('contrato financeiro personalizado', () => {
       validarContratoParaImpressao({
         ...exemplo,
         contrato: { ...exemplo.contrato, valorMensalidade: '430.00' },
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      validarContratoParaImpressao({
+        ...exemplo,
+        contrato: { ...exemplo.contrato, localAssinatura: '' },
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      validarContratoParaImpressao({
+        ...exemplo,
+        contrato: { ...exemplo.contrato, dataAssinatura: '2026-02-30' },
       }),
     ).toThrow(BadRequestException);
   });

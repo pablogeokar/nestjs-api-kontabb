@@ -110,6 +110,19 @@ export class UpsertContratoDto {
   })
   dataInicio?: string;
 
+  @ApiPropertyOptional({ example: 'Feira de Santana/BA' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  localAssinatura?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-14' })
+  @IsOptional()
+  @Matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, {
+    message: 'Data de assinatura inválida.',
+  })
+  dataAssinatura?: string;
+
   @ApiPropertyOptional({ minimum: 0, maximum: 365 })
   @IsOptional()
   @IsInt()

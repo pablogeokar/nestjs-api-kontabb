@@ -45,6 +45,8 @@ export const financeiroContratos = pgTable(
       .default([]),
     contratanteRepresentante: text('contratante_representante'),
     dataInicio: date('data_inicio'),
+    localAssinatura: text('local_assinatura'),
+    dataAssinatura: date('data_assinatura'),
     avisoPrevioDias: integer('aviso_previo_dias').notNull().default(30),
     condicoesContratuais: text('condicoes_contratuais'),
     atualizadoPor: text('atualizado_por').references(() => user.id, {

@@ -29,6 +29,13 @@
       "when": 1794526309243,
       "tag": "0003_gorgeous_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794669620924,
+      "tag": "0004_lucky_miracleman",
+      "breakpoints": true
     }
   ]
 }

@@ -95,6 +95,8 @@ export class FinanceiroContratosService {
         podeImprimir: Boolean(
           row.contadorNome &&
           row.contrato.dataInicio &&
+          row.contrato.localAssinatura?.trim() &&
+          row.contrato.dataAssinatura &&
           row.contrato.servicosContratados.length &&
           (row.clienteTipoPessoa !== 'PJ' ||
             row.contrato.contratanteRepresentante?.trim()),
@@ -152,6 +154,9 @@ export class FinanceiroContratosService {
     if (dto.itens) await this.validarItens(dto.itens);
     if (dto.dataInicio && !isValidCivilDate(dto.dataInicio)) {
       throw new BadRequestException('Data de início inválida.');
+    }
+    if (dto.dataAssinatura && !isValidCivilDate(dto.dataAssinatura)) {
+      throw new BadRequestException('Data de assinatura inválida.');
     }
     if (dto.servicos) {
       if (dto.servicos.length === 0) {
@@ -227,6 +232,12 @@ export class FinanceiroContratosService {
       }),
       ...(dto.dataInicio !== undefined && {
         dataInicio: dto.dataInicio || null,
+      }),
+      ...(dto.localAssinatura !== undefined && {
+        localAssinatura: dto.localAssinatura.trim() || null,
+      }),
+      ...(dto.dataAssinatura !== undefined && {
+        dataAssinatura: dto.dataAssinatura || null,
       }),
       ...(dto.avisoPrevioDias !== undefined && {
         avisoPrevioDias: dto.avisoPrevioDias,

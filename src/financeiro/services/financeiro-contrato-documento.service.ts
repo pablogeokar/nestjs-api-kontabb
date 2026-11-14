@@ -18,7 +18,7 @@ const INK = '#172B4D';
 const MUTED = '#60728B';
 const LINE = '#DCE5EF';
 const RIGHT = 555;
-const BOTTOM = 750;
+const BOTTOM = 763;
 
 const money = (value: string | number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
@@ -28,6 +28,13 @@ const civilDate = (value: string) => {
   const [year, month, day] = value.split('-');
   return `${day}/${month}/${year}`;
 };
+const dateInWords = (value: string) =>
+  new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${value}T12:00:00Z`));
 const documentId = (value: string) =>
   /^[0-9A-Z]{12}[0-9]{2}$/.test(value)
     ? value.replace(
@@ -50,6 +57,8 @@ export interface ContratoPdfData {
     mes13o: number;
     ativo: boolean;
     dataInicio: string | null;
+    localAssinatura: string | null;
+    dataAssinatura: string | null;
     avisoPrevioDias: number;
     condicoesContratuais: string | null;
     servicosContratados: Array<{
@@ -72,6 +81,8 @@ export interface ContratoPdfData {
     tipoPessoa: string;
     representante: string | null;
     endereco: string;
+    municipio: string | null;
+    uf: string | null;
   };
   contador: { nome: string; documento: string; crc: string; endereco: string };
 }
@@ -100,9 +111,25 @@ export function validarContratoParaImpressao(data: ContratoPdfData) {
       'Selecione os serviços contratados antes de imprimir.',
     );
   }
-  if (!data.contrato.dataInicio || !isValidCivilDate(data.contrato.dataInicio)) {
+  if (
+    !data.contrato.dataInicio ||
+    !isValidCivilDate(data.contrato.dataInicio)
+  ) {
     throw new BadRequestException(
       'Informe a data de início do contrato antes de imprimir.',
+    );
+  }
+  if (!data.contrato.localAssinatura?.trim()) {
+    throw new BadRequestException(
+      'Informe o local de assinatura antes de imprimir.',
+    );
+  }
+  if (
+    !data.contrato.dataAssinatura ||
+    !isValidCivilDate(data.contrato.dataAssinatura)
+  ) {
+    throw new BadRequestException(
+      'Informe a data de assinatura antes de imprimir.',
     );
   }
   if (data.cliente.tipoPessoa === 'PJ' && !data.cliente.representante?.trim()) {
@@ -229,28 +256,31 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
       const size = options.size ?? 9;
       const indent = options.indent ?? 0;
       const width = 515 - indent;
-      pdf
-        .font(options.bold ? 'Helvetica-Bold' : 'Helvetica')
-        .fontSize(size)
-        .fillColor(options.color ?? INK);
+      const style = () =>
+        pdf
+          .font(options.bold ? 'Helvetica-Bold' : 'Helvetica')
+          .fontSize(size)
+          .fillColor(options.color ?? INK);
+      style();
       const lines = wrap(pdf, value, width);
-      const height = lines.length * (size + 3.5) + (options.gap ?? 6);
+      const height = lines.length * (size + 2.5) + (options.gap ?? 4);
       if (height <= BOTTOM - 120) ensure(height);
       for (const line of lines) {
-        ensure(size + 4);
+        ensure(size + 3);
+        style();
         pdf.text(line || ' ', 40 + indent, y, { width, lineBreak: false });
-        y += size + 3.5;
+        y += size + 2.5;
       }
-      y += options.gap ?? 6;
+      y += options.gap ?? 4;
     };
     const section = (number: string, title: string) => {
-      ensure(27);
+      ensure(44);
       pdf
         .font('Helvetica-Bold')
         .fontSize(10)
         .fillColor(BLUE)
         .text(`${number}. ${title.toUpperCase()}`, 40, y);
-      y += 18;
+      y += 16;
     };
 
     try {
@@ -283,19 +313,45 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
       text(
         'Serviços não relacionados acima dependerão de ajuste escrito entre as partes.',
       );
-      section('3', 'Execução e responsabilidades');
+      section('3', 'Obrigações da contratante');
       text(
-        'O(A) CONTRATADO(A) executará os serviços contratados com observância das normas profissionais aplicáveis. A CONTRATANTE fornecerá, em tempo hábil, documentos, dados, acessos e esclarecimentos necessários à execução dos serviços e responderá pela veracidade das informações que entregar. Prazos legais dependem do recebimento tempestivo dessas informações.',
+        'A CONTRATANTE entregará documentos, dados e esclarecimentos completos, legíveis e verdadeiros, com a antecedência indicada no calendário de entregas comunicado pelo(a) CONTRATADO(A). Informará sem demora fatos, movimentações, admissões, desligamentos, alterações cadastrais, notificações e demais eventos relacionados aos serviços contratados.',
       );
-      section('4', 'Honorários e pagamento');
+      text(
+        'Cabe à CONTRATANTE manter acessos e autorizações necessários, conferir as informações e documentos que lhe forem submetidos, tomar as decisões de gestão e efetuar, nos prazos legais, os pagamentos de tributos, salários e encargos sob sua responsabilidade. A entrega ao(à) CONTRATADO(A) não substitui essas obrigações.',
+      );
+      text(
+        'A CONTRATANTE responderá pelas consequências de atrasos, omissões, inexatidões, documentos falsos ou atos praticados por si ou por seus prepostos, inclusive quando contrariem orientação técnica comunicada por escrito. Multas, juros e despesas decorrentes desses fatos serão de sua responsabilidade na medida do nexo causal e da culpa de cada parte. O(A) CONTRATADO(A) comunicará as pendências identificadas e os prazos afetados, sempre que possível.',
+      );
+      section('4', 'Atuação e responsabilidade profissional');
+      text(
+        'O(A) CONTRATADO(A) executará os serviços selecionados com diligência e observância das normas legais e profissionais, orientará a CONTRATANTE sobre as pendências identificadas e responderá pelos danos decorrentes de erro, omissão, dolo ou culpa próprios, conforme a legislação aplicável.',
+      );
+      text(
+        'O(A) CONTRATADO(A) não assume a autoria ou a veracidade de fatos e documentos produzidos pela CONTRATANTE, nem decisões de gestão, recolhimentos não confiados expressamente ou atos de terceiros fora do escopo contratado. Poderá solicitar correção ou esclarecimento e recusar, mediante comunicação escrita, instrução ou ato contrário à lei ou às normas profissionais. Esta cláusula não afasta responsabilidades legais ou profissionais próprias.',
+      );
+      text(
+        'A CONTRATANTE não solicitará registros fictícios, omissões deliberadas ou práticas ilícitas e fornecerá as informações exigidas para identificação e conformidade. O(A) CONTRATADO(A) poderá deixar de praticar o ato inviabilizado até a regularização, após comunicar a pendência, e cumprirá seus deveres legais de comunicação às autoridades quando aplicáveis.',
+      );
+      section('5', 'Honorários e pagamento');
       for (const servico of servicosDoInstrumento(
         data.contrato.servicosContratados,
       )) {
         pdf.font('Helvetica').fontSize(9).fillColor(INK);
         const linhas = wrap(pdf, servico.nome, 365);
-        ensure(linhas.length * 13 + 14);
+        const alturaLinha = linhas.length * 12 + 12;
+        if (y + alturaLinha > BOTTOM) {
+          nextPage();
+          text('Honorários e pagamento (continuação)', {
+            size: 8,
+            bold: true,
+            color: BLUE,
+            gap: 8,
+          });
+        }
+        pdf.font('Helvetica').fontSize(9).fillColor(INK);
         for (const [index, linha] of linhas.entries()) {
-          pdf.text(linha, 52, y + index * 13, {
+          pdf.text(linha, 52, y + index * 12, {
             width: 365,
             lineBreak: false,
           });
@@ -304,9 +360,9 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
           width: 113,
           align: 'right',
         });
-        y += linhas.length * 13 + 7;
+        y += linhas.length * 12 + 6;
         rule(y);
-        y += 7;
+        y += 6;
       }
       text(
         `Honorários mensais base: ${money(data.contrato.valorMensalidade)}. O vencimento ocorre no dia ${data.contrato.diaVencimento} do mês subsequente à competência dos serviços. O fechamento para faturamento é realizado no dia ${data.contrato.diaFechamento}.`,
@@ -335,40 +391,59 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
         }
       }
       text(
-        'Qualquer reajuste dos honorários dependerá de acordo escrito entre as partes. Tributos, taxas públicas e serviços extraordinários não descritos neste instrumento não integram os honorários acima, salvo ajuste expresso.',
+        'Tributos, taxas públicas e serviços extraordinários não descritos neste instrumento não integram os honorários acima, salvo ajuste expresso.',
       );
-      section('5', 'Vigência e encerramento');
+      section('6', 'Reajuste anual dos honorários');
+      text(
+        'Após 12 meses do início da vigência, e a cada período subsequente de 12 meses, os honorários mensais base serão reajustados pela variação positiva acumulada do IPCA/IBGE nos 12 meses anteriores à data-base. Se o índice deixar de ser divulgado, será utilizado o índice oficial que o substituir. O novo valor será comunicado por escrito antes da primeira cobrança reajustada.',
+      );
+      text(
+        'Se o aumento percentual do salário mínimo nacional superar o IPCA no mesmo período, as partes avaliarão o impacto comprovado nos custos dos serviços e poderão pactuar complemento por aditivo escrito. O salário mínimo não constitui indexador automático dos honorários. Mudanças no escopo ou no volume de trabalho também dependerão de ajuste escrito.',
+      );
+      section('7', 'Vigência e encerramento');
       text(
         `A prestação terá início em ${civilDate(data.contrato.dataInicio!)} e vigorará por prazo indeterminado. Qualquer parte poderá solicitar o encerramento por comunicação escrita com antecedência de ${data.contrato.avisoPrevioDias} dia(s), sem prejuízo dos valores devidos pelos serviços prestados até o encerramento.`,
       );
-      section('6', 'Sigilo e dados');
+      section('8', 'Sigilo e dados');
       text(
         'As partes manterão confidenciais as informações recebidas em razão deste contrato, ressalvadas as comunicações exigidas por lei e as necessárias à execução dos serviços. O tratamento de dados pessoais observará a legislação aplicável e o escopo deste instrumento.',
       );
+      section('9', 'Foro competente');
+      const domicilioCliente =
+        data.cliente.municipio && data.cliente.uf
+          ? `, em ${data.cliente.municipio}/${data.cliente.uf}`
+          : '';
+      text(
+        `Para dirimir controvérsias decorrentes deste contrato, as partes elegem o foro competente do domicílio da CONTRATANTE${domicilioCliente}, observadas as regras de competência inderrogável e os direitos do consumidor quando aplicáveis.`,
+      );
       if (data.contrato.condicoesContratuais) {
-        section('7', 'Condições adicionais');
+        section('10', 'Condições adicionais');
         text(data.contrato.condicoesContratuais);
       }
       ensure(120);
       text('E, por estarem de acordo, as partes assinam este instrumento.', {
         gap: 6,
       });
-      ensure(102);
-      rule(y + 27);
-      rule(y + 71);
+      text(
+        `${data.contrato.localAssinatura!.trim()}, ${dateInWords(data.contrato.dataAssinatura!)}.`,
+        { bold: true, gap: 10 },
+      );
+      ensure(78);
+      rule(y + 22);
+      rule(y + 61);
       pdf
         .font('Helvetica')
         .fontSize(8)
         .fillColor(INK)
-        .text(data.contador.nome, 40, y + 31, { width: 515, align: 'center' });
-      pdf.text('CONTRATADO(A)', 40, y + 42, { width: 515, align: 'center' });
+        .text(data.contador.nome, 40, y + 26, { width: 515, align: 'center' });
+      pdf.text('CONTRATADO(A)', 40, y + 37, { width: 515, align: 'center' });
       pdf.text(
         data.cliente.representante || data.cliente.razaoSocial,
         40,
-        y + 75,
+        y + 65,
         { width: 515, align: 'center' },
       );
-      pdf.text('CONTRATANTE', 40, y + 86, { width: 515, align: 'center' });
+      pdf.text('CONTRATANTE', 40, y + 76, { width: 515, align: 'center' });
 
       const range = pdf.bufferedPageRange();
       for (let i = range.start; i < range.start + range.count; i++) {
@@ -421,6 +496,8 @@ export class FinanceiroContratoDocumentoService {
         cnpj: cliente.cnpj,
         tipoPessoa: cliente.tipoPessoa,
         representante: contrato.contratanteRepresentante,
+        municipio: cliente.municipio,
+        uf: cliente.uf,
         endereco: address([
           cliente.logradouro,
           cliente.numero,

@@ -630,6 +630,27 @@ export class FinanceiroFaturasService {
     }
   }
 
+  /** Soma do saldo em aberto das faturas não pagas e não canceladas do cliente. */
+  async totalEmAberto(clienteId: string) {
+    const [row] = await this.db
+      .select({
+        total: sql<string>`COALESCE(SUM(${saldoAbertoSql}), 0)`,
+        quantidade: sql<number>`count(*)::int`,
+      })
+      .from(financeiroFaturas)
+      .where(
+        and(
+          eq(financeiroFaturas.clienteId, clienteId),
+          inArray(financeiroFaturas.status, [
+            'PENDENTE',
+            'PARCIALMENTE_PAGA',
+            'VENCIDA',
+          ]),
+        ),
+      );
+    return { total: String(row.total), quantidade: row.quantidade };
+  }
+
   async list(
     filtro: FiltroFaturasDto,
     pagination: PaginationParams,
