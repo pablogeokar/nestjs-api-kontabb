@@ -6,7 +6,7 @@ Consulta às fontes: 14/11/2026. Situação: **rascunho** (`escopo_aprovado = fa
 
 ## Escopo
 
-As combinações vêm das entradas interestaduais de NF-e de clientes da BA no banco de desenvolvimento (293 itens, todos de 2026, todos de clientes do Simples Nacional), agrupadas pela mesma chave que o motor usa: NCM, CEST, regime, UF de origem e origem da mercadoria. Os 1.037 pares de `ncm-cest-unicos.csv` incluem saídas e entradas internas, que não são hipótese de antecipação parcial. Por isso ficaram fora.
+As combinações vêm das entradas interestaduais de NF-e de clientes da BA no banco de desenvolvimento (293 itens, todos de 2026, todos de clientes do Simples Nacional), agrupadas pela mesma chave que o motor usa: NCM, CEST, regime, UF de origem e origem da mercadoria. O arquivo `ncm-cest-unicos.csv` tem 1.036 pares de dados (mais o cabeçalho), incluindo saídas e entradas internas, que não são hipótese de antecipação parcial. Por isso ficaram fora. Desses pares, 220 NCMs têm apenas sete dígitos, compatíveis com perda do zero inicial na exportação; para comparar códigos, foi feito o preenchimento à esquerda com zero, sem inferir que a classificação fiscal esteja correta. Dos 79 pares distintos do seed, 78 aparecem no CSV após essa normalização; o outro é o NCM inválido `00000000`, mantido em conferência.
 
 ## Regra geral aplicada
 
@@ -43,9 +43,9 @@ Os demais 116 estão como APLICAVEL a 20,5%. Quando o XML traz NCM ou CEST incom
 
 ## Redução de 20% para ME/EPP (art. 274)
 
-A regra `ANTECIPACAO_PARCIAL` (revisão 2) traz `reducao_me_epp`, com percentual de 20, fundamento no RICMS-BA, art. 274, e a condição de recolhimento no prazo regulamentar. O motor aplica a redução só a optantes do Simples Nacional, que são ME ou EPP por definição (LC 123/06, art. 3º). Uma ME/EPP fora do Simples não é identificável pelo cadastro e recebe o valor sem redução.
+A regra `ANTECIPACAO_PARCIAL` (revisão 2) traz `reducao_me_epp`, com percentual de 20, fundamento no RICMS-BA, art. 274, e a condição de recolhimento no prazo regulamentar. O motor oferece o valor reduzido apenas como cenário condicionado para optantes do Simples Nacional, que são ME ou EPP por definição (LC 123/06, art. 3º). Uma ME/EPP fora do Simples não é identificável pelo cadastro.
 
-O item mostra três valores: `imposto_apurado` (sem redução), `reducao` e `valor_antecipacao` (com redução). Também mostra `reducao_condicionada`. Se a condição não for cumprida, o devido é `imposto_apurado`.
+O item mantém `valor_antecipacao` e o total da apuração pelo imposto integral enquanto o sistema não comprovar o pagamento tempestivo. `reducao_condicionada` mostra `valor_reducao` e `valor_com_reducao` para a conferência no DAE. A DeSTDA também recebe o valor integral nesse estado.
 
 ## DIFAL de entrada (regra `DIFAL_ENTRADA_CONTRIBUINTE`, revisão 1, rascunho)
 
@@ -70,6 +70,7 @@ Pontos a confirmar antes de homologar:
 1. **IPI:** itens com IPI diferente de zero ficam pendentes por política do motor. A inclusão do IPI na base (art. 23, III) precisa de decisão fiscal.
 2. **CFOP escriturado:** o motor só lê itens escriturados com CFOP 2102 (antecipação) e 2551/2556 (DIFAL). Das 293 entradas interestaduais, só 7 estão com 2102.
 3. **Homologação na tela:** a tela homologa apenas a regra `ANTECIPACAO_PARCIAL`. A regra de DIFAL ainda não tem tela de revisão.
+4. **ST no relatório de DIFAL:** o fluxo de CFOP 2406/2407 e sinais de ST no XML evita recolhimento próprio em duplicidade, mas ainda não cruza cada item com uma regra `ST_FCP` estadual homologada. Essa classificação permanece sujeita à conferência do recolhimento e da responsabilidade tributária.
 
 ## Evidências (SHA-256 do arquivo baixado em 14/11/2026)
 

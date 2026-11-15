@@ -68,6 +68,10 @@ export function validarEnquadramentosIcms(
       throw new BadRequestException(
         `Linha ${index + 1}: confirme a revisão fiscal do enquadramento.`,
       );
+    if (row.tratamento === 'ICMS_ST' && !row.cest)
+      throw new BadRequestException(
+        `Linha ${index + 1}: informe o CEST para o enquadramento de ICMS-ST.`,
+      );
     if (row.tratamento === 'APLICAVEL') {
       if (
         !row.aliquota_interna ||

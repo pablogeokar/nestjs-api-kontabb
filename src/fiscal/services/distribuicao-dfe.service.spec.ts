@@ -293,7 +293,7 @@ describe('DistribuicaoDfeService', () => {
     );
   });
 
-  it('respeita uma hora após cStat 137 sem iniciar consulta por chave', async () => {
+  it('respeita uma hora de NSU após cStat 137 e ainda recupera resumos por chave', async () => {
     const { service, nfeWizard, atualizacoes } = createSyncHarness([
       { data: {}, xMotivo: 'Nenhum documento localizado' },
     ]);
@@ -308,7 +308,7 @@ describe('DistribuicaoDfeService', () => {
 
     expect(resultado).toMatchObject({ status: 'OK', cStat: 137, ultimoNsu: 0 });
     expect(nfeWizard.consultarDistribuicaoDFe).toHaveBeenCalledTimes(1);
-    expect(recuperar).not.toHaveBeenCalled();
+    expect(recuperar).toHaveBeenCalledTimes(5);
     const proxima = atualizacoes.find(
       (value) => value.statusSefaz === 137,
     )?.proximaConsultaEm;
@@ -550,10 +550,10 @@ describe('DistribuicaoDfeService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-              values: jest.fn().mockReturnValue({
-                onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
-              }),
-            }
+            values: jest.fn().mockReturnValue({
+              onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
+            }),
+          }
           : { values: itemValues },
       ),
     };

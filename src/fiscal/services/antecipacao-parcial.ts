@@ -112,24 +112,17 @@ export function apurarItemAntecipacaoParcial(
     };
   }
 
-  if (
+  const sinalStXml =
     ICMS_CST_ST.has(item.cstIcms?.slice(-2) ?? '') ||
     ICMS_CSOSN_ST.has(item.csosnIcms ?? '') ||
     toScaledInteger(item.valorIcmsSt) > 0n ||
-    toScaledInteger(item.valorIcmsStRetido) > 0n
-  ) {
-    return {
-      ...identificacao,
-      situacao: 'ICMS_ST' as const,
-      motivo:
-        'O XML indica ICMS-ST. Confira o recolhimento pela hipótese de substituição tributária.',
-      calculo: null,
-    };
-  }
+    toScaledInteger(item.valorIcmsStRetido) > 0n;
 
   if (!regra) {
     return pendente(
-      'Não há regra normativa de Antecipação Parcial vigente para BA nesta competência. Corrigir o CFOP seleciona a operação, mas não define o tratamento tributário do produto.',
+      sinalStXml
+        ? 'O XML indica ICMS-ST, mas não há regra normativa vigente para confirmar o enquadramento. Confira a retenção e a obrigação de ST.'
+        : 'Não há regra normativa de Antecipação Parcial vigente para BA nesta competência. Corrigir o CFOP seleciona a operação, mas não define o tratamento tributário do produto.',
     );
   }
   if (
@@ -181,6 +174,19 @@ export function apurarItemAntecipacaoParcial(
     );
   }
 
+  // O XML é evidência da tributação declarada pelo fornecedor, não substitui
+  // a classificação fiscal aprovada para o produto e a operação.
+  if (sinalStXml && enquadramento.tratamento !== 'ICMS_ST') {
+    return pendente(
+      'O XML indica ICMS-ST, mas o enquadramento cadastrado diverge. Confira NCM, CEST e recolhimento antes de apurar.',
+    );
+  }
+  if (enquadramento.tratamento === 'ICMS_ST' && !sinalStXml) {
+    return pendente(
+      'A regra indica ICMS-ST, mas o XML não comprova retenção. Confira a responsabilidade pelo recolhimento.',
+    );
+  }
+
   if (
     enquadramento.tratamento === 'DISPENSADO' ||
     enquadramento.tratamento === 'ICMS_ST'
@@ -189,7 +195,10 @@ export function apurarItemAntecipacaoParcial(
       ? {
           ...identificacao,
           situacao: enquadramento.tratamento,
-          motivo: regra.fonte,
+          motivo:
+            enquadramento.tratamento === 'ICMS_ST'
+              ? `Regra homologada e XML indicam ICMS-ST (${regra.fonte}). Confira a retenção e o responsável pelo recolhimento.`
+              : regra.fonte,
           calculo: null,
         }
       : pendente('O enquadramento ainda aguarda homologação.');
@@ -238,8 +247,24 @@ export function apurarItemAntecipacaoParcial(
       'A regra vigente traz a redução para ME/EPP com parâmetros inválidos (percentual e fundamento).',
     );
   }
-  const reducaoAplicada =
+  const reducaoCondicionada =
     reducao != null && adquirenteMeEpp(regime) ? reducao : null;
+
+  const calculo = calcularAntecipacaoParcial({
+    baseCalculo: identificacao.valor_operacao,
+    aliquotaInterna: enquadramento.aliquota_interna,
+    deducaoOrigem,
+    aliquotaInterestadual,
+  });
+  const calculoComReducao = reducaoCondicionada
+    ? calcularAntecipacaoParcial({
+        baseCalculo: identificacao.valor_operacao,
+        aliquotaInterna: enquadramento.aliquota_interna,
+        deducaoOrigem,
+        aliquotaInterestadual,
+        percentualReducao: reducaoCondicionada.percentual,
+      })
+    : null;
 
   return {
     ...identificacao,
@@ -247,21 +272,16 @@ export function apurarItemAntecipacaoParcial(
       ? ('CALCULADO' as const)
       : ('SIMULACAO' as const),
     motivo: regra.fonte,
-    calculo: calcularAntecipacaoParcial({
-      baseCalculo: identificacao.valor_operacao,
-      aliquotaInterna: enquadramento.aliquota_interna,
-      deducaoOrigem,
-      aliquotaInterestadual,
-      percentualReducao: reducaoAplicada?.percentual,
-    }),
-    // Redução condicionada (ex.: RICMS-BA art. 274). `valor_antecipacao` já
-    // considera a redução; se o recolhimento perder a condição, o devido é
-    // `imposto_apurado`.
-    reducao_condicionada: reducaoAplicada
+    // Sem comprovação do recolhimento tempestivo, o total e a DeSTDA usam o
+    // imposto integral. O benefício fica disponível como cenário condicionado.
+    calculo,
+    reducao_condicionada: reducaoCondicionada
       ? {
-          percentual: reducaoAplicada.percentual,
-          fundamento: reducaoAplicada.fundamento,
-          condicao: reducaoAplicada.condicao,
+          percentual: reducaoCondicionada.percentual,
+          fundamento: reducaoCondicionada.fundamento,
+          condicao: reducaoCondicionada.condicao,
+          valor_reducao: calculoComReducao!.reducao,
+          valor_com_reducao: calculoComReducao!.valor_antecipacao,
         }
       : null,
   };

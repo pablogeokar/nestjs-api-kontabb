@@ -131,12 +131,30 @@ describe('Antecipação Parcial', () => {
     ).toBe('PENDENTE');
   });
 
-  it('separa o ICMS-ST mesmo com regra aplicável', () => {
+  it('mantém em conferência o ICMS-ST indicado pelo XML sem enquadramento aprovado compatível', () => {
     expect(
       apurarItemAntecipacaoParcial(
         { ...item, csosnIcms: '500' },
         'SIMPLES_NACIONAL',
         regra(true),
+      ),
+    ).toMatchObject({ situacao: 'PENDENTE', calculo: null });
+    expect(
+      apurarItemAntecipacaoParcial(
+        { ...item, csosnIcms: '500' },
+        'SIMPLES_NACIONAL',
+        null,
+      ),
+    ).toMatchObject({ situacao: 'PENDENTE', calculo: null });
+    const r = regra(true);
+    (
+      r.conteudo.enquadramentos as Array<Record<string, unknown>>
+    )[0].tratamento = 'ICMS_ST';
+    expect(
+      apurarItemAntecipacaoParcial(
+        { ...item, csosnIcms: '500' },
+        'SIMPLES_NACIONAL',
+        r,
       ),
     ).toMatchObject({ situacao: 'ICMS_ST', calculo: null });
   });
@@ -191,7 +209,7 @@ describe('Antecipação Parcial — redução ME/EPP parametrizada (RICMS-BA art
     condicao: 'Recolhimento no prazo regulamentar',
   };
 
-  it('Simples: aplica 20% sobre o imposto apurado e expõe a condição', () => {
+  it('Simples: separa a redução condicionada do total sem comprovante de prazo', () => {
     const r = apurarItemAntecipacaoParcial(
       item,
       'SIMPLES_NACIONAL',
@@ -201,12 +219,14 @@ describe('Antecipação Parcial — redução ME/EPP parametrizada (RICMS-BA art
       situacao: 'CALCULADO',
       calculo: {
         imposto_apurado: '85.00',
-        reducao: '17.00',
-        valor_antecipacao: '68.00',
+        reducao: '0.00',
+        valor_antecipacao: '85.00',
       },
       reducao_condicionada: {
         percentual: '20',
         fundamento: 'RICMS-BA, art. 274',
+        valor_reducao: '17.00',
+        valor_com_reducao: '68.00',
       },
     });
   });

@@ -4,8 +4,8 @@ import { ENQUADRAMENTOS_ANTECIPACAO_BA_2026 } from './data/antecipacao-parcial-b
 
 /**
  * Seed do motor de regras de ICMS da BA para 2026 (rascunho, nada homologado):
- * - ANTECIPACAO_PARCIAL: enquadramentos por NCM/CEST/regime/origem e redução de
- *   20% para ME/EPP (RICMS-BA, art. 274);
+ * - ANTECIPACAO_PARCIAL: enquadramentos por NCM/CEST/regime/origem e cenário
+ *   de redução de 20% para ME/EPP condicionado ao pagamento no prazo (art. 274);
  * - DIFAL_ENTRADA_CONTRIBUINTE: alíquota interna, base dupla e dispensa sobre
  *   ativo para ME/EPP (RICMS-BA, art. 272, I, "a", 2).
  *

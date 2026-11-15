@@ -58,6 +58,14 @@ describe('cadastro de regras de ICMS', () => {
     ).not.toThrow();
   });
 
+  it('não permite classificar ST sem CEST identificado', () => {
+    expect(() =>
+      validarEnquadramentosIcms([
+        { ...row, cest: null, tratamento: 'ICMS_ST' },
+      ]),
+    ).toThrow('informe o CEST');
+  });
+
   it('não homologa pendência ou linha sem fundamento', () => {
     expect(() =>
       validarEnquadramentosIcms(
