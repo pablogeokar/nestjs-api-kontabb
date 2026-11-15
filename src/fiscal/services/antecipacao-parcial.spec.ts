@@ -85,6 +85,21 @@ describe('Antecipação Parcial', () => {
     expect(result.valor_antecipacao).toBe('0.01');
   });
 
+  it('separa a base de destino da base interestadual quando o IPI compõe apenas a primeira', () => {
+    const result = calcularAntecipacaoParcial({
+      baseCalculo: '1020.00',
+      baseCalculoOrigem: '1000.00',
+      aliquotaInterna: '20.5',
+      aliquotaInterestadual: '12',
+    });
+    expect(result).toMatchObject({
+      icms_interno: '209.10',
+      deducao_origem: '120.00',
+      imposto_apurado: '89.10',
+      base_calculo_origem: '1000.00',
+    });
+  });
+
   it('reproduz a dedução do ICMS de origem do Acórdão JJF nº 0236-05/25-VD', () => {
     const result = calcularAntecipacaoParcial({
       baseCalculo: '23542.36',
@@ -109,6 +124,55 @@ describe('Antecipação Parcial', () => {
     );
     expect(semEnquadramento.situacao).toBe('PENDENTE');
     expect(semEnquadramento.motivo).toContain('CEST 0000000');
+  });
+
+  it('mostra os dois cenários com IPI sem lançar valor no total', () => {
+    const result = apurarItemAntecipacaoParcial(
+      { ...item, valorIpi: '20.00' },
+      'SIMPLES_NACIONAL',
+      regra(true),
+    );
+    expect(result).toMatchObject({
+      situacao: 'PENDENTE',
+      valor_ipi: '20.00',
+      calculo: null,
+      cenarios_ipi: {
+        sem_ipi: { base_calculo: '1000.00', valor_antecipacao: '85.00' },
+        com_ipi: {
+          base_calculo: '1020.00',
+          base_calculo_origem: '1000.00',
+          valor_antecipacao: '89.10',
+        },
+      },
+    });
+  });
+
+  it('usa a decisão fundamentada sobre IPI na base', () => {
+    for (const [tratamento, base, devido] of [
+      ['INCLUIR', '1020.00', '89.10'],
+      ['EXCLUIR', '1000.00', '85.00'],
+    ] as const) {
+      const r = regra(true);
+      Object.assign(
+        (r.conteudo.enquadramentos as Array<Record<string, unknown>>)[0],
+        {
+          ipi_na_base: tratamento,
+          fundamento_ipi:
+            'Lei 7.014/96, arts. 17, § 2º, e 23, III; hipótese revisada.',
+        },
+      );
+      expect(
+        apurarItemAntecipacaoParcial(
+          { ...item, valorIpi: '20.00' },
+          'SIMPLES_NACIONAL',
+          r,
+        ),
+      ).toMatchObject({
+        situacao: 'CALCULADO',
+        tratamento_ipi: tratamento,
+        calculo: { base_calculo: base, valor_antecipacao: devido },
+      });
+    }
   });
 
   it('usa a alíquota aprovada para a combinação exata quando o XML não a traz', () => {

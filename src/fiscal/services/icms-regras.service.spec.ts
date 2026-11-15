@@ -66,6 +66,21 @@ describe('cadastro de regras de ICMS', () => {
     ).toThrow('informe o CEST');
   });
 
+  it('exige fundamento para a decisão sobre IPI', () => {
+    expect(() =>
+      validarEnquadramentosIcms([{ ...row, ipi_na_base: 'INCLUIR' }]),
+    ).toThrow('fundamente a decisão sobre o IPI');
+    expect(() =>
+      validarEnquadramentosIcms([
+        {
+          ...row,
+          ipi_na_base: 'EXCLUIR',
+          fundamento_ipi: 'Lei 7.014/96, art. 17, § 2º',
+        },
+      ]),
+    ).not.toThrow();
+  });
+
   it('não homologa pendência ou linha sem fundamento', () => {
     expect(() =>
       validarEnquadramentosIcms(

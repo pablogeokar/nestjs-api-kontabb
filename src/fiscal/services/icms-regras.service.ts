@@ -72,6 +72,10 @@ export function validarEnquadramentosIcms(
       throw new BadRequestException(
         `Linha ${index + 1}: informe o CEST para o enquadramento de ICMS-ST.`,
       );
+    if (row.ipi_na_base && !row.fundamento_ipi?.trim())
+      throw new BadRequestException(
+        `Linha ${index + 1}: fundamente a decisão sobre o IPI na base.`,
+      );
     if (row.tratamento === 'APLICAVEL') {
       if (
         !row.aliquota_interna ||

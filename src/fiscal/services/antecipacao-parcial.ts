@@ -13,6 +13,7 @@ const ICMS_CSOSN_ST = new Set(['201', '202', '203', '500']);
 
 export interface ParametrosAntecipacaoParcial {
   baseCalculo: string;
+  baseCalculoOrigem?: string;
   aliquotaInterna: string;
   deducaoOrigem?: string;
   aliquotaInterestadual?: string;
@@ -28,13 +29,17 @@ export function calcularAntecipacaoParcial(
     input.aliquotaInterestadual == null
       ? null
       : toScaledInteger(input.aliquotaInterestadual, 4);
+  const baseOrigem =
+    input.baseCalculoOrigem == null
+      ? base
+      : toScaledInteger(input.baseCalculoOrigem);
   const icmsInterno = aplicarPercentual(base, aliquotaInterna);
   const deducao =
     interestadual == null
       ? toScaledInteger(input.deducaoOrigem)
-      : aplicarPercentual(base, interestadual);
+      : aplicarPercentual(baseOrigem, interestadual);
   const impostoApurado =
-    interestadual == null
+    interestadual == null || input.baseCalculoOrigem != null
       ? positive(icmsInterno - deducao)
       : aplicarPercentual(base, positive(aliquotaInterna - interestadual));
   const reducao = aplicarPercentual(
@@ -44,6 +49,8 @@ export function calcularAntecipacaoParcial(
 
   return {
     base_calculo: fromScaledInteger(base),
+    base_calculo_origem:
+      input.baseCalculoOrigem == null ? null : fromScaledInteger(baseOrigem),
     aliquota_interna: fromScaledInteger(aliquotaInterna, 4),
     aliquota_interestadual:
       interestadual == null ? null : fromScaledInteger(interestadual, 4),
@@ -101,6 +108,7 @@ export function apurarItemAntecipacaoParcial(
     ncm: item.ncm,
     cest: item.cest,
     valor_operacao: fromScaledInteger(valorOperacao),
+    valor_ipi: fromScaledInteger(toScaledInteger(item.valorIpi)),
   };
 
   function pendente(motivo: string) {
@@ -204,22 +212,19 @@ export function apurarItemAntecipacaoParcial(
       : pendente('O enquadramento ainda aguarda homologação.');
   }
 
+  const aliquotaInterna = enquadramento.aliquota_interna;
   if (
     enquadramento.tratamento !== 'APLICAVEL' ||
-    !percentualValido(enquadramento.aliquota_interna)
+    !percentualValido(aliquotaInterna)
   ) {
     return pendente('O enquadramento tem parâmetros de cálculo incompletos.');
   }
 
-  if (
-    valorOperacao <= 0n ||
-    item.valorBrutoProduto == null ||
-    toScaledInteger(item.valorIpi) !== 0n
-  ) {
-    return pendente(
-      'Confira a base de cálculo da operação e o tratamento do IPI.',
-    );
-  }
+  if (valorOperacao <= 0n || item.valorBrutoProduto == null)
+    return pendente('Confira a base de cálculo da operação.');
+  const valorIpi = toScaledInteger(item.valorIpi);
+  if (valorIpi < 0n)
+    return pendente('O valor de IPI do XML é negativo; confira o documento.');
 
   const simples = regime === 'SIMPLES_NACIONAL';
   const aliquotaDaRegra =
@@ -250,20 +255,51 @@ export function apurarItemAntecipacaoParcial(
   const reducaoCondicionada =
     reducao != null && adquirenteMeEpp(regime) ? reducao : null;
 
-  const calculo = calcularAntecipacaoParcial({
-    baseCalculo: identificacao.valor_operacao,
-    aliquotaInterna: enquadramento.aliquota_interna,
-    deducaoOrigem,
-    aliquotaInterestadual,
-  });
+  const calcularComBase = (base: bigint, percentualReducao?: string) =>
+    calcularAntecipacaoParcial({
+      baseCalculo: fromScaledInteger(base),
+      baseCalculoOrigem:
+        simples && base !== valorOperacao
+          ? fromScaledInteger(valorOperacao)
+          : undefined,
+      aliquotaInterna,
+      deducaoOrigem,
+      aliquotaInterestadual,
+      percentualReducao,
+    });
+
+  const ipiNaBase =
+    enquadramento.ipi_na_base === 'INCLUIR' ||
+    enquadramento.ipi_na_base === 'EXCLUIR'
+      ? enquadramento.ipi_na_base
+      : null;
+  const fundamentoIpi =
+    typeof enquadramento.fundamento_ipi === 'string' &&
+    enquadramento.fundamento_ipi.trim()
+      ? enquadramento.fundamento_ipi.trim()
+      : null;
+  if (valorIpi > 0n && (ipiNaBase == null || fundamentoIpi == null)) {
+    return {
+      ...identificacao,
+      situacao: 'PENDENTE' as const,
+      motivo:
+        'O XML contém IPI. Defina e fundamente, na regra do item, se o IPI integra a base da antecipação (Lei 7.014/96, arts. 17, § 2º, e 23, III).',
+      calculo: null,
+      cenarios_ipi: {
+        sem_ipi: calcularComBase(valorOperacao),
+        com_ipi: calcularComBase(valorOperacao + valorIpi),
+      },
+    };
+  }
+
+  const baseCalculo =
+    valorIpi > 0n && ipiNaBase === 'INCLUIR'
+      ? valorOperacao + valorIpi
+      : valorOperacao;
+
+  const calculo = calcularComBase(baseCalculo);
   const calculoComReducao = reducaoCondicionada
-    ? calcularAntecipacaoParcial({
-        baseCalculo: identificacao.valor_operacao,
-        aliquotaInterna: enquadramento.aliquota_interna,
-        deducaoOrigem,
-        aliquotaInterestadual,
-        percentualReducao: reducaoCondicionada.percentual,
-      })
+    ? calcularComBase(baseCalculo, reducaoCondicionada.percentual)
     : null;
 
   return {
@@ -272,6 +308,8 @@ export function apurarItemAntecipacaoParcial(
       ? ('CALCULADO' as const)
       : ('SIMULACAO' as const),
     motivo: regra.fonte,
+    tratamento_ipi: valorIpi > 0n ? ipiNaBase : null,
+    fundamento_ipi: valorIpi > 0n ? fundamentoIpi : null,
     // Sem comprovação do recolhimento tempestivo, o total e a DeSTDA usam o
     // imposto integral. O benefício fica disponível como cenário condicionado.
     calculo,

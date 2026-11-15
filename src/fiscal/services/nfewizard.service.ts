@@ -31,6 +31,9 @@ const XMLDSIG_NS = 'http://www.w3.org/2000/09/xmldsig#';
 const C14N = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
 const MAX_SOAP_BYTES = 64 * 1024 * 1024;
 const TIMEOUT_MS = 30_000;
+// Eventos de manifestação do destinatário são recebidos pelo Ambiente Nacional
+// (cOrgao 91), não pela UF do emitente ou do destinatário.
+const COD_ORGAO_AMBIENTE_NACIONAL = 91;
 
 const ENDPOINTS = {
   nfe: {
@@ -320,7 +323,18 @@ function postSoap(
             res.statusCode < 200 ||
             res.statusCode >= 300
           ) {
-            reject(new Error(`SEFAZ respondeu HTTP ${res.statusCode ?? 0}.`));
+            // Falhas SOAP (HTTP 500) trazem o motivo no corpo; sem ele o log
+            // não distingue assinatura inválida, XML malformado e instabilidade.
+            const fault =
+              /<(?:\w+:)?(?:Text|faultstring|xMotivo)[^>]*>([^<]{1,300})</i.exec(
+                xml,
+              )?.[1];
+            const host = new URL(url).pathname.split('/').filter(Boolean)[0];
+            reject(
+              new Error(
+                `SEFAZ respondeu HTTP ${res.statusCode ?? 0} (${host})${fault ? `: ${fault.trim()}` : '.'}`,
+              ),
+            );
             return;
           }
           resolve(xml);
@@ -406,7 +420,9 @@ export class NfeWizardService {
       certificate,
     );
     const ns = `${NFE_NS}/wsdl/NFeRecepcaoEvento4`;
-    const body = envelope('nfeRecepcaoEvento', ns, evento);
+    // Serviços das UFs/AN (exceto a distribuição) recebem nfeDadosMsg direto
+    // no Body; o wrapper da operação faz a SEFAZ responder HTTP 500.
+    const body = `<?xml version="1.0" encoding="UTF-8"?><Envelope xmlns="http://www.w3.org/2003/05/soap-envelope"><Body><nfeDadosMsg xmlns="${ns}">${evento}</nfeDadosMsg></Body></Envelope>`;
     const response = parseSoap(
       await postSoap(
         ENDPOINTS.evento[this.ambiente()],
@@ -585,7 +601,7 @@ export function buildSignedManifestacaoXml(
       : '';
   const detail = `<detEvento versao="1.00"><descEvento>${description[input.tipoEvento]}</descEvento>${justification}</detEvento>`;
   // Namespace e ordem de atributos já estão em C14N 1.0 para este XML gerado.
-  const info = `<infEvento xmlns="${NFE_NS}" Id="${id}"><cOrgao>${getCodigoUF(input.uf)}</cOrgao><tpAmb>${ambiente}</tpAmb><CNPJ>${cnpj}</CNPJ><chNFe>${accessKey}</chNFe><dhEvento>${timestamp}</dhEvento><tpEvento>${input.tipoEvento}</tpEvento><nSeqEvento>${sequence}</nSeqEvento><verEvento>1.00</verEvento>${detail}</infEvento>`;
+  const info = `<infEvento xmlns="${NFE_NS}" Id="${id}"><cOrgao>${COD_ORGAO_AMBIENTE_NACIONAL}</cOrgao><tpAmb>${ambiente}</tpAmb><CNPJ>${cnpj}</CNPJ><chNFe>${accessKey}</chNFe><dhEvento>${timestamp}</dhEvento><tpEvento>${input.tipoEvento}</tpEvento><nSeqEvento>${sequence}</nSeqEvento><verEvento>1.00</verEvento>${detail}</infEvento>`;
   const digest = createHash('sha1').update(info, 'utf8').digest('base64');
   const signedInfo = `<SignedInfo xmlns="${XMLDSIG_NS}"><CanonicalizationMethod Algorithm="${C14N}"></CanonicalizationMethod><SignatureMethod Algorithm="${XMLDSIG_NS}rsa-sha1"></SignatureMethod><Reference URI="#${id}"><Transforms><Transform Algorithm="${XMLDSIG_NS}enveloped-signature"></Transform><Transform Algorithm="${C14N}"></Transform></Transforms><DigestMethod Algorithm="${XMLDSIG_NS}sha1"></DigestMethod><DigestValue>${digest}</DigestValue></Reference></SignedInfo>`;
   const signature = sign(

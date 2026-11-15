@@ -1164,6 +1164,7 @@ export class DistribuicaoDfeService {
     }
 
     let cienciaRegistrada = false;
+    let etapa: 'ciência' | 'consulta por chave' = 'ciência';
     try {
       if (doc.manifestacaoStatus === 'SEM_MANIFESTACAO') {
         const resultado = await this.nfeWizard.enviarManifestacao({
@@ -1183,6 +1184,7 @@ export class DistribuicaoDfeService {
         });
         cienciaRegistrada = true;
       }
+      etapa = 'consulta por chave';
       const xmlStatus = await this.buscarXmlCompletoAposManifestacao({
         documentoId: doc.id,
         clienteId: doc.clienteId,
@@ -1199,10 +1201,16 @@ export class DistribuicaoDfeService {
         throw new ServiceUnavailableException(error.message);
       }
       this.logger.warn(
-        `Busca manual de XML ${doc.chaveAcesso}: ${this.getRootCauseMessage(error)}`,
+        `Busca manual de XML ${doc.chaveAcesso} (etapa: ${etapa}): ${this.getRootCauseMessage(error)}`,
       );
+      // A Ciência já está registrada: a falha é só da consulta e o XML será
+      // retomado pelas sincronizações, como no fluxo de manifestação.
+      if (cienciaRegistrada)
+        return { xmlStatus: 'PENDENTE', cienciaRegistrada };
       throw new ServiceUnavailableException(
-        'Não foi possível consultar a SEFAZ agora. Tente novamente em alguns minutos.',
+        etapa === 'ciência'
+          ? 'A SEFAZ não aceitou o registro da Ciência da Operação agora. Tente novamente em alguns minutos.'
+          : 'Não foi possível consultar a SEFAZ agora. Tente novamente em alguns minutos.',
       );
     }
   }

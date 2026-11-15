@@ -37,6 +37,9 @@ export class EnquadramentoIcmsDto {
   @IsOptional()
   @Matches(/^\d{1,3}(\.\d{1,4})?$/)
   aliquota_interestadual?: string;
+  @IsOptional() @IsIn(['INCLUIR', 'EXCLUIR']) ipi_na_base?:
+    'INCLUIR' | 'EXCLUIR';
+  @IsOptional() @IsString() @MaxLength(500) fundamento_ipi?: string;
   @IsOptional() @IsString() @MaxLength(500) motivo?: string;
   @IsOptional() @IsString() @MaxLength(500) fundamento?: string;
   @IsOptional() @IsString() @MaxLength(500) revisao_fiscal?: string;

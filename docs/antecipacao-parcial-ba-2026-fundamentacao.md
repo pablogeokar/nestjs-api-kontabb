@@ -47,6 +47,16 @@ A regra `ANTECIPACAO_PARCIAL` (revisão 2) traz `reducao_me_epp`, com percentual
 
 O item mantém `valor_antecipacao` e o total da apuração pelo imposto integral enquanto o sistema não comprovar o pagamento tempestivo. `reducao_condicionada` mostra `valor_reducao` e `valor_com_reducao` para a conferência no DAE. A DeSTDA também recebe o valor integral nesse estado.
 
+## IPI destacado na aquisição
+
+A base da antecipação parcial é o valor da operação interestadual no documento (Lei 7.014/96, arts. 12-A e 23, III). A exclusão do IPI depende dos requisitos do art. 17, § 2º; um CEST/NCM ou o simples fato de haver IPI destacado não demonstram todos eles. Por isso, cada enquadramento pode registrar `ipi_na_base` (`INCLUIR` ou `EXCLUIR`) e `fundamento_ipi`. A decisão é validada no cadastro e fica sujeita à confirmação fiscal. Sem decisão fundamentada, o item com IPI mostra os valores **com** e **sem** IPI, permanece `PENDENTE` e não compõe o total ou a DeSTDA. Quando o IPI é incluído para adquirente do Simples, o motor calcula o ICMS interno sobre a base com IPI e a parcela interestadual sobre a operação sem IPI; o detalhe expõe `base_calculo_origem`, `base_calculo` e `deducao_origem`. Com decisão e regra homologada, a base adotada e o tratamento do IPI aparecem no detalhe.
+
+O [Acórdão CJF 0042-11/25-VD](https://mbusca.sefaz.ba.gov.br/consef/2025%20-%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0042-11.25-VD.pdf) registra base com IPI em compras de optante do Simples. O [Acórdão JJF 0007-05/17](https://mbusca.sefaz.ba.gov.br/consef/2017%20ac%C3%B3rd%C3%A3os%20juntas/A-0007-05.17.pdf) distingue a base paga pelo comerciante da base do ICMS na origem. O [Acórdão CJF 0239-12/18](https://mbusca.sefaz.ba.gov.br/consef/2019%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0239-12.18.pdf) trata da exclusão condicionada do IPI. Esses precedentes motivam a decisão explícita por enquadramento, sujeita à verificação das circunstâncias da operação.
+
+Na NF-e 320904 exibida na revisão, os NCMs 18063120/CEST 1700202 e 18063220/CEST 1700301 já têm enquadramento no seed, mas não possuem decisão sobre IPI. Assim, o bloqueio anterior por IPI passa a trazer os dois cenários para revisão, sem presumir o tratamento fiscal.
+
+Uma decisão `ipi_na_base` no cadastro vale para todos os itens que coincidam com NCM, CEST, regime, UF de origem e origem da mercadoria. Quando as condições do art. 17, § 2º, variam entre fornecedores ou operações dessa mesma combinação, a regra deve continuar sem decisão e os itens permanecem em conferência; o modelo atual ainda não possui uma decisão individual por item para esse caso.
+
 ## DIFAL de entrada (regra `DIFAL_ENTRADA_CONTRIBUINTE`, revisão 1, rascunho)
 
 | Parâmetro | Valor | Fonte |
@@ -67,7 +77,7 @@ Pontos a confirmar antes de homologar:
 
 ## Limitações que continuam
 
-1. **IPI:** itens com IPI diferente de zero ficam pendentes por política do motor. A inclusão do IPI na base (art. 23, III) precisa de decisão fiscal.
+1. **IPI:** itens com IPI destacado ficam pendentes até a decisão fiscal fundamentada por enquadramento; os dois cenários são apresentados para conferência.
 2. **CFOP escriturado:** o motor só lê itens escriturados com CFOP 2102 (antecipação) e 2551/2556 (DIFAL). Das 293 entradas interestaduais, só 7 estão com 2102.
 3. **Homologação na tela:** a tela homologa apenas a regra `ANTECIPACAO_PARCIAL`. A regra de DIFAL ainda não tem tela de revisão.
 4. **ST no relatório de DIFAL:** o fluxo de CFOP 2406/2407 e sinais de ST no XML evita recolhimento próprio em duplicidade, mas ainda não cruza cada item com uma regra `ST_FCP` estadual homologada. Essa classificação permanece sujeita à conferência do recolhimento e da responsabilidade tributária.
