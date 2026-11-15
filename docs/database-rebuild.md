@@ -5,9 +5,10 @@ frontend ainda mostra apenas um aviso; ela não inicia restore PostgreSQL.
 Use o Backup Drive ou o helper `backup-restore` em um banco de destino
 separado e autorizado.
 
-O histórico atual começa em `drizzle/0000_silent_warbird.sql`, que cria
-diretamente as 54 tabelas atuais em banco vazio. O histórico antigo `0000`–`0004`
-foi substituído; não aplique a nova baseline sobre um banco existente. O nome
+O histórico atual começa em `drizzle/0000_mute_dark_beast.sql`, que cria
+diretamente as 66 tabelas atuais em banco vazio, seguida de
+`0001_clientes_perfis_fiscais_trigger.sql` (função e trigger de perfis fiscais).
+O histórico anterior (`0000`–`0012`) foi substituído; não aplique a nova baseline sobre um banco existente. O nome
 das foreign keys longas agora é explícito para evitar truncamento no PostgreSQL.
 
 O backup data-only contém somente dados. O schema, constraints e índices sempre

@@ -1,11 +1,4 @@
-DROP INDEX "uidx_clientes_perfil_fiscal_inicio";--> statement-breakpoint
-ALTER TABLE "clientes_perfis_fiscais" ADD COLUMN "fonte" text;--> statement-breakpoint
-ALTER TABLE "clientes_perfis_fiscais" ADD COLUMN "justificativa" text;--> statement-breakpoint
-ALTER TABLE "clientes_perfis_fiscais" ADD COLUMN "criado_por" text;--> statement-breakpoint
-ALTER TABLE "clientes_perfis_fiscais" ADD COLUMN "ativo" boolean DEFAULT true NOT NULL;--> statement-breakpoint
-ALTER TABLE "clientes_perfis_fiscais" ADD COLUMN "substituido_por" uuid;--> statement-breakpoint
-ALTER TABLE "clientes_perfis_fiscais" ADD CONSTRAINT "clientes_perfis_fiscais_criado_por_user_id_fk" FOREIGN KEY ("criado_por") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "uidx_clientes_perfil_fiscal_inicio" ON "clientes_perfis_fiscais" USING btree ("cliente_id","vigencia_inicio") WHERE "clientes_perfis_fiscais"."ativo";--> statement-breakpoint
+-- Custom SQL: mantém o histórico automático de perfis fiscais (cadastro inicial e alterações de UF/IE/regime).
 CREATE OR REPLACE FUNCTION fn_clientes_perfil_fiscal() RETURNS trigger AS $$
 DECLARE
   hoje date := (now() AT TIME ZONE 'America/Sao_Paulo')::date;
@@ -62,3 +55,7 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+--> statement-breakpoint
+CREATE TRIGGER trg_clientes_perfil_fiscal
+AFTER INSERT OR UPDATE OF uf, inscricao_estadual, regime_tributario ON clientes
+FOR EACH ROW EXECUTE FUNCTION fn_clientes_perfil_fiscal();

@@ -5,92 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1794146605560,
-      "tag": "0000_short_phil_sheldon",
+      "when": 1794774439715,
+      "tag": "0000_mute_dark_beast",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1794519863579,
-      "tag": "0001_unique_bastion",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1794522292366,
-      "tag": "0002_foamy_starjammers",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1794526309243,
-      "tag": "0003_gorgeous_shape",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1794669620924,
-      "tag": "0004_lucky_miracleman",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1794670716317,
-      "tag": "0005_heavy_donald_blake",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1794674249960,
-      "tag": "0006_thick_black_bolt",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1794675794808,
-      "tag": "0007_cynical_kang",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1794682720442,
-      "tag": "0008_destda",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1794683976379,
-      "tag": "0009_clientes_destda",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1794688418359,
-      "tag": "0010_regras_aprovacao_por_regra",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1794690266825,
-      "tag": "0011_clientes_perfis_fiscais",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1794692450192,
-      "tag": "0012_clientes_perfis_fiscais_manual",
+      "when": 1794774445594,
+      "tag": "0001_clientes_perfis_fiscais_trigger",
       "breakpoints": true
     }
   ]

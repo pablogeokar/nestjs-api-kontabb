@@ -14,7 +14,8 @@ export ADMIN_SEED_EMAIL='admin@seudominio.com.br'
 export ADMIN_SEED_PASSWORD='defina-uma-senha-forte'
 export ADMIN_SEED_NAME='Administrador'   # opcional
 
-# 3. Schema (aplica as migrations do journal, 0000 a 0012)
+# 3. Schema (baseline 0000 com as 66 tabelas + 0001 com a função e o trigger
+#    de perfis fiscais)
 pnpm db:migrate
 pnpm db:check
 

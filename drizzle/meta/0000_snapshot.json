@@ -1,5 +1,5 @@
 {
-  "id": "9c14a308-3b5e-4938-a31e-e7a2af0e349d",
+  "id": "a783f258-93fb-4bdc-b059-f1efa7915b94",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1740,6 +1740,165 @@
       },
       "isRLSEnabled": false
     },
+    "public.clientes_perfis_fiscais": {
+      "name": "clientes_perfis_fiscais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vigencia_inicio": {
+          "name": "vigencia_inicio",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vigencia_fim": {
+          "name": "vigencia_fim",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uf": {
+          "name": "uf",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricao_estadual": {
+          "name": "inscricao_estadual",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "regime_tributario": {
+          "name": "regime_tributario",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origem": {
+          "name": "origem",
+          "type": "varchar(30)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fonte": {
+          "name": "fonte",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "justificativa": {
+          "name": "justificativa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_por": {
+          "name": "criado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "substituido_por": {
+          "name": "substituido_por",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_clientes_perfil_fiscal_inicio": {
+          "name": "uidx_clientes_perfil_fiscal_inicio",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "vigencia_inicio",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"clientes_perfis_fiscais\".\"ativo\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "clientes_perfis_fiscais_cliente_id_clientes_id_fk": {
+          "name": "clientes_perfis_fiscais_cliente_id_clientes_id_fk",
+          "tableFrom": "clientes_perfis_fiscais",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "clientes_perfis_fiscais_criado_por_user_id_fk": {
+          "name": "clientes_perfis_fiscais_criado_por_user_id_fk",
+          "tableFrom": "clientes_perfis_fiscais",
+          "tableTo": "user",
+          "columnsFrom": [
+            "criado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_clientes_perfil_fiscal_vigencia": {
+          "name": "chk_clientes_perfil_fiscal_vigencia",
+          "value": "\"clientes_perfis_fiscais\".\"vigencia_fim\" IS NULL OR \"clientes_perfis_fiscais\".\"vigencia_fim\" >= \"clientes_perfis_fiscais\".\"vigencia_inicio\""
+        },
+        "chk_clientes_perfil_fiscal_origem": {
+          "name": "chk_clientes_perfil_fiscal_origem",
+          "value": "\"clientes_perfis_fiscais\".\"origem\" IN ('CADASTRO_INICIAL', 'ANTERIOR_A_ALTERACAO', 'ALTERACAO_CADASTRAL', 'MANUAL')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.clientes": {
       "name": "clientes",
       "schema": "",
@@ -1873,6 +2032,42 @@
         "inscricao_estadual": {
           "name": "inscricao_estadual",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricao_municipal": {
+          "name": "inscricao_municipal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nome_fantasia": {
+          "name": "nome_fantasia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_nome": {
+          "name": "responsavel_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cpf": {
+          "name": "responsavel_cpf",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cod_assinante": {
+          "name": "responsavel_cod_assinante",
+          "type": "varchar(3)",
           "primaryKey": false,
           "notNull": false
         },
@@ -2041,6 +2236,18 @@
       },
       "policies": {},
       "checkConstraints": {
+        "chk_clientes_codigo_municipio_ibge": {
+          "name": "chk_clientes_codigo_municipio_ibge",
+          "value": "\"clientes\".\"codigo_municipio_ibge\" IS NULL OR \"clientes\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        },
+        "chk_clientes_responsavel_cpf": {
+          "name": "chk_clientes_responsavel_cpf",
+          "value": "\"clientes\".\"responsavel_cpf\" IS NULL OR \"clientes\".\"responsavel_cpf\" ~ '^[0-9]{11}$'"
+        },
+        "chk_clientes_responsavel_cod_assinante": {
+          "name": "chk_clientes_responsavel_cod_assinante",
+          "value": "\"clientes\".\"responsavel_cod_assinante\" IS NULL OR \"clientes\".\"responsavel_cod_assinante\" ~ '^[0-9]{3}$'"
+        },
         "chk_clientes_tipo_pessoa": {
           "name": "chk_clientes_tipo_pessoa",
           "value": "\"clientes\".\"tipo_pessoa\" IN ('PF', 'PJ')"
@@ -2069,6 +2276,10 @@
           "name": "chk_clientes_tipo_contribuinte_icms",
           "value": "\"clientes\".\"tipo_contribuinte_icms\" IS NULL OR \"clientes\".\"tipo_contribuinte_icms\" IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')"
         },
+        "chk_clientes_inscricao_municipal": {
+          "name": "chk_clientes_inscricao_municipal",
+          "value": "\"clientes\".\"inscricao_municipal\" IS NULL OR \"clientes\".\"inscricao_municipal\" ~ '^[0-9A-Z./-]{2,20}$'"
+        },
         "chk_clientes_inscricao_estadual": {
           "name": "chk_clientes_inscricao_estadual",
           "value": "\"clientes\".\"inscricao_estadual\" IS NULL OR \"clientes\".\"inscricao_estadual\" ~ '^[0-9A-Z./-]{2,20}$'"
@@ -2088,6 +2299,142 @@
         "chk_clientes_suspensao_coerencia": {
           "name": "chk_clientes_suspensao_coerencia",
           "value": "(\"clientes\".\"suspenso\" = true AND \"clientes\".\"suspenso_em\" IS NOT NULL) OR (\"clientes\".\"suspenso\" = false AND \"clientes\".\"suspenso_em\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.contadores_certificados": {
+      "name": "contadores_certificados",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contador_id": {
+          "name": "contador_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "senha_criptografada": {
+          "name": "senha_criptografada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "titular": {
+          "name": "titular",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "documento": {
+          "name": "documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thumbprint": {
+          "name": "thumbprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "validade_inicio": {
+          "name": "validade_inicio",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "validade_fim": {
+          "name": "validade_fim",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "autorizado_assinar": {
+          "name": "autorizado_assinar",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'SIM'"
+        },
+        "uploadado_por": {
+          "name": "uploadado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_contadores_certificados_contador": {
+          "name": "uidx_contadores_certificados_contador",
+          "columns": [
+            {
+              "expression": "contador_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "contadores_certificados_contador_id_contadores_id_fk": {
+          "name": "contadores_certificados_contador_id_contadores_id_fk",
+          "tableFrom": "contadores_certificados",
+          "tableTo": "contadores",
+          "columnsFrom": [
+            "contador_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "contadores_certificados_uploadado_por_user_id_fk": {
+          "name": "contadores_certificados_uploadado_por_user_id_fk",
+          "tableFrom": "contadores_certificados",
+          "tableTo": "user",
+          "columnsFrom": [
+            "uploadado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_contadores_certificados_autorizado": {
+          "name": "chk_contadores_certificados_autorizado",
+          "value": "\"contadores_certificados\".\"autorizado_assinar\" IN ('SIM', 'NAO')"
         }
       },
       "isRLSEnabled": false
@@ -2471,6 +2818,398 @@
         "chk_controle_nsu_sincronizacao_coerencia": {
           "name": "chk_controle_nsu_sincronizacao_coerencia",
           "value": "(\"controle_nsu\".\"sincronizacao_id\" IS NULL AND \"controle_nsu\".\"sincronizacao_iniciada_em\" IS NULL) OR (\"controle_nsu\".\"sincronizacao_id\" IS NOT NULL AND \"controle_nsu\".\"sincronizacao_iniciada_em\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.destda_arquivos_gerados": {
+      "name": "destda_arquivos_gerados",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finalidade": {
+          "name": "finalidade",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cod_versao": {
+          "name": "cod_versao",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hash_sha256": {
+          "name": "hash_sha256",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_nome": {
+          "name": "arquivo_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tamanho_bytes": {
+          "name": "tamanho_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contadores": {
+          "name": "contadores",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "totais": {
+          "name": "totais",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inconsistencias": {
+          "name": "inconsistencias",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "erro": {
+          "name": "erro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gerado_por": {
+          "name": "gerado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "concluido_em": {
+          "name": "concluido_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_destda_arquivo_cliente_competencia": {
+          "name": "idx_destda_arquivo_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_destda_arquivo_status": {
+          "name": "idx_destda_arquivo_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "destda_arquivos_gerados_cliente_id_clientes_id_fk": {
+          "name": "destda_arquivos_gerados_cliente_id_clientes_id_fk",
+          "tableFrom": "destda_arquivos_gerados",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "destda_arquivos_gerados_gerado_por_user_id_fk": {
+          "name": "destda_arquivos_gerados_gerado_por_user_id_fk",
+          "tableFrom": "destda_arquivos_gerados",
+          "tableTo": "user",
+          "columnsFrom": [
+            "gerado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_destda_arquivo_finalidade": {
+          "name": "chk_destda_arquivo_finalidade",
+          "value": "\"destda_arquivos_gerados\".\"finalidade\" IN ('0', '1')"
+        },
+        "chk_destda_arquivo_status": {
+          "name": "chk_destda_arquivo_status",
+          "value": "\"destda_arquivos_gerados\".\"status\" IN ('PROCESSANDO', 'GERADO', 'FALHOU')"
+        },
+        "chk_destda_arquivo_hash": {
+          "name": "chk_destda_arquivo_hash",
+          "value": "\"destda_arquivos_gerados\".\"hash_sha256\" IS NULL OR \"destda_arquivos_gerados\".\"hash_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "chk_destda_arquivo_tamanho": {
+          "name": "chk_destda_arquivo_tamanho",
+          "value": "\"destda_arquivos_gerados\".\"tamanho_bytes\" IS NULL OR \"destda_arquivos_gerados\".\"tamanho_bytes\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.destda_configuracoes": {
+      "name": "destda_configuracoes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nome_fantasia": {
+          "name": "nome_fantasia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricao_municipal": {
+          "name": "inscricao_municipal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suframa": {
+          "name": "suframa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nire": {
+          "name": "nire",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telefone": {
+          "name": "telefone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fax": {
+          "name": "fax",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_nome": {
+          "name": "responsavel_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cpf": {
+          "name": "responsavel_cpf",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cod_assinante": {
+          "name": "responsavel_cod_assinante",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricoes_substituto": {
+          "name": "inscricoes_substituto",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "perfil": {
+          "name": "perfil",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_destda_config_cliente": {
+          "name": "uidx_destda_config_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "destda_configuracoes_cliente_id_clientes_id_fk": {
+          "name": "destda_configuracoes_cliente_id_clientes_id_fk",
+          "tableFrom": "destda_configuracoes",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "destda_configuracoes_atualizado_por_user_id_fk": {
+          "name": "destda_configuracoes_atualizado_por_user_id_fk",
+          "tableFrom": "destda_configuracoes",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_destda_config_codigo_municipio": {
+          "name": "chk_destda_config_codigo_municipio",
+          "value": "\"destda_configuracoes\".\"codigo_municipio_ibge\" IS NULL OR \"destda_configuracoes\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        },
+        "chk_destda_config_nire": {
+          "name": "chk_destda_config_nire",
+          "value": "\"destda_configuracoes\".\"nire\" IS NULL OR \"destda_configuracoes\".\"nire\" ~ '^[0-9]{11}$'"
+        },
+        "chk_destda_config_resp_cpf": {
+          "name": "chk_destda_config_resp_cpf",
+          "value": "\"destda_configuracoes\".\"responsavel_cpf\" IS NULL OR \"destda_configuracoes\".\"responsavel_cpf\" ~ '^[0-9]{11}$'"
+        },
+        "chk_destda_config_cod_assinante": {
+          "name": "chk_destda_config_cod_assinante",
+          "value": "\"destda_configuracoes\".\"responsavel_cod_assinante\" IS NULL OR \"destda_configuracoes\".\"responsavel_cod_assinante\" ~ '^[0-9]{3}$'"
+        },
+        "chk_destda_config_inscricoes": {
+          "name": "chk_destda_config_inscricoes",
+          "value": "jsonb_typeof(\"destda_configuracoes\".\"inscricoes_substituto\") = 'array'"
+        },
+        "chk_destda_config_perfil": {
+          "name": "chk_destda_config_perfil",
+          "value": "jsonb_typeof(\"destda_configuracoes\".\"perfil\") = 'object'"
         }
       },
       "isRLSEnabled": false
@@ -4737,6 +5476,1324 @@
       },
       "isRLSEnabled": false
     },
+    "public.financeiro_baixas": {
+      "name": "financeiro_baixas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "fatura_id": {
+          "name": "fatura_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_recebido": {
+          "name": "valor_recebido",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_pagamento": {
+          "name": "data_pagamento",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "forma_pagamento": {
+          "name": "forma_pagamento",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_multa": {
+          "name": "valor_multa",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "valor_juros": {
+          "name": "valor_juros",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "valor_desconto": {
+          "name": "valor_desconto",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "comprovante_key": {
+          "name": "comprovante_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "comprovante_nome": {
+          "name": "comprovante_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observacao": {
+          "name": "observacao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "registrado_por": {
+          "name": "registrado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estornado": {
+          "name": "estornado",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "estornado_em": {
+          "name": "estornado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estornado_por": {
+          "name": "estornado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "motivo_estorno": {
+          "name": "motivo_estorno",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_fin_baixas_fatura_id": {
+          "name": "idx_fin_baixas_fatura_id",
+          "columns": [
+            {
+              "expression": "fatura_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_baixas_data_pagamento": {
+          "name": "idx_fin_baixas_data_pagamento",
+          "columns": [
+            {
+              "expression": "data_pagamento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_baixas_estornado": {
+          "name": "idx_fin_baixas_estornado",
+          "columns": [
+            {
+              "expression": "estornado",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "financeiro_baixas_fatura_id_financeiro_faturas_id_fk": {
+          "name": "financeiro_baixas_fatura_id_financeiro_faturas_id_fk",
+          "tableFrom": "financeiro_baixas",
+          "tableTo": "financeiro_faturas",
+          "columnsFrom": [
+            "fatura_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "financeiro_baixas_registrado_por_user_id_fk": {
+          "name": "financeiro_baixas_registrado_por_user_id_fk",
+          "tableFrom": "financeiro_baixas",
+          "tableTo": "user",
+          "columnsFrom": [
+            "registrado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "financeiro_baixas_estornado_por_user_id_fk": {
+          "name": "financeiro_baixas_estornado_por_user_id_fk",
+          "tableFrom": "financeiro_baixas",
+          "tableTo": "user",
+          "columnsFrom": [
+            "estornado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_baixas_valor_recebido": {
+          "name": "chk_fin_baixas_valor_recebido",
+          "value": "\"financeiro_baixas\".\"valor_recebido\" > 0"
+        },
+        "chk_fin_baixas_acrescimos_desconto": {
+          "name": "chk_fin_baixas_acrescimos_desconto",
+          "value": "\"financeiro_baixas\".\"valor_multa\" >= 0 AND \"financeiro_baixas\".\"valor_juros\" >= 0 AND \"financeiro_baixas\".\"valor_desconto\" >= 0"
+        },
+        "chk_fin_baixas_forma_pagamento": {
+          "name": "chk_fin_baixas_forma_pagamento",
+          "value": "\"financeiro_baixas\".\"forma_pagamento\" IN ('PIX', 'BOLETO', 'TRANSFERENCIA', 'DINHEIRO', 'CARTAO', 'OUTROS')"
+        },
+        "chk_fin_baixas_estorno_coerencia": {
+          "name": "chk_fin_baixas_estorno_coerencia",
+          "value": "(\"financeiro_baixas\".\"estornado\" = false AND \"financeiro_baixas\".\"estornado_em\" IS NULL AND \"financeiro_baixas\".\"estornado_por\" IS NULL) OR (\"financeiro_baixas\".\"estornado\" = true AND \"financeiro_baixas\".\"estornado_em\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_contrato_preferencias": {
+      "name": "financeiro_contrato_preferencias",
+      "schema": "",
+      "columns": {
+        "usuario_id": {
+          "name": "usuario_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "local_assinatura": {
+          "name": "local_assinatura",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "dia_vencimento": {
+          "name": "dia_vencimento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "dia_fechamento": {
+          "name": "dia_fechamento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 25
+        },
+        "aviso_previo_dias": {
+          "name": "aviso_previo_dias",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 30
+        },
+        "gera_13o": {
+          "name": "gera_13o",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "mes_13o": {
+          "name": "mes_13o",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 12
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "financeiro_contrato_preferencias_usuario_id_user_id_fk": {
+          "name": "financeiro_contrato_preferencias_usuario_id_user_id_fk",
+          "tableFrom": "financeiro_contrato_preferencias",
+          "tableTo": "user",
+          "columnsFrom": [
+            "usuario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_contrato_pref_venc": {
+          "name": "chk_fin_contrato_pref_venc",
+          "value": "\"financeiro_contrato_preferencias\".\"dia_vencimento\" BETWEEN 1 AND 31"
+        },
+        "chk_fin_contrato_pref_fech": {
+          "name": "chk_fin_contrato_pref_fech",
+          "value": "\"financeiro_contrato_preferencias\".\"dia_fechamento\" BETWEEN 1 AND 31"
+        },
+        "chk_fin_contrato_pref_aviso": {
+          "name": "chk_fin_contrato_pref_aviso",
+          "value": "\"financeiro_contrato_preferencias\".\"aviso_previo_dias\" BETWEEN 0 AND 365"
+        },
+        "chk_fin_contrato_pref_mes13": {
+          "name": "chk_fin_contrato_pref_mes13",
+          "value": "\"financeiro_contrato_preferencias\".\"mes_13o\" BETWEEN 1 AND 12"
+        },
+        "chk_fin_contrato_pref_local": {
+          "name": "chk_fin_contrato_pref_local",
+          "value": "char_length(\"financeiro_contrato_preferencias\".\"local_assinatura\") <= 120"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_contratos_itens": {
+      "name": "financeiro_contratos_itens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contrato_id": {
+          "name": "contrato_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_lancamento_id": {
+          "name": "tipo_lancamento_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor": {
+          "name": "valor",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia_inicio": {
+          "name": "competencia_inicio",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "competencia_fim": {
+          "name": "competencia_fim",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_fin_contr_itens_contrato": {
+          "name": "idx_fin_contr_itens_contrato",
+          "columns": [
+            {
+              "expression": "contrato_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fin_contr_itens_contrato_id_fk": {
+          "name": "fin_contr_itens_contrato_id_fk",
+          "tableFrom": "financeiro_contratos_itens",
+          "tableTo": "financeiro_contratos",
+          "columnsFrom": [
+            "contrato_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fin_contr_itens_tipo_id_fk": {
+          "name": "fin_contr_itens_tipo_id_fk",
+          "tableFrom": "financeiro_contratos_itens",
+          "tableTo": "financeiro_tipos_lancamento",
+          "columnsFrom": [
+            "tipo_lancamento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_contr_itens_valor": {
+          "name": "chk_fin_contr_itens_valor",
+          "value": "\"financeiro_contratos_itens\".\"valor\" > 0"
+        },
+        "chk_fin_contr_itens_descricao": {
+          "name": "chk_fin_contr_itens_descricao",
+          "value": "btrim(\"financeiro_contratos_itens\".\"descricao\") <> ''"
+        },
+        "chk_fin_contr_itens_inicio": {
+          "name": "chk_fin_contr_itens_inicio",
+          "value": "\"financeiro_contratos_itens\".\"competencia_inicio\" IS NULL OR \"financeiro_contratos_itens\".\"competencia_inicio\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        },
+        "chk_fin_contr_itens_fim": {
+          "name": "chk_fin_contr_itens_fim",
+          "value": "\"financeiro_contratos_itens\".\"competencia_fim\" IS NULL OR \"financeiro_contratos_itens\".\"competencia_fim\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_contratos": {
+      "name": "financeiro_contratos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_mensalidade": {
+          "name": "valor_mensalidade",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "dia_vencimento": {
+          "name": "dia_vencimento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "dia_fechamento": {
+          "name": "dia_fechamento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 25
+        },
+        "gera_13o": {
+          "name": "gera_13o",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "mes_13o": {
+          "name": "mes_13o",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 12
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "observacoes": {
+          "name": "observacoes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "servicos_contratados": {
+          "name": "servicos_contratados",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "contratante_representante": {
+          "name": "contratante_representante",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_inicio": {
+          "name": "data_inicio",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "local_assinatura": {
+          "name": "local_assinatura",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_assinatura": {
+          "name": "data_assinatura",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aviso_previo_dias": {
+          "name": "aviso_previo_dias",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 30
+        },
+        "condicoes_contratuais": {
+          "name": "condicoes_contratuais",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_fin_contratos_cliente": {
+          "name": "uidx_fin_contratos_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_contratos_ativo": {
+          "name": "idx_fin_contratos_ativo",
+          "columns": [
+            {
+              "expression": "ativo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "financeiro_contratos_cliente_id_clientes_id_fk": {
+          "name": "financeiro_contratos_cliente_id_clientes_id_fk",
+          "tableFrom": "financeiro_contratos",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "financeiro_contratos_atualizado_por_user_id_fk": {
+          "name": "financeiro_contratos_atualizado_por_user_id_fk",
+          "tableFrom": "financeiro_contratos",
+          "tableTo": "user",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_contratos_valor": {
+          "name": "chk_fin_contratos_valor",
+          "value": "\"financeiro_contratos\".\"valor_mensalidade\" >= 0"
+        },
+        "chk_fin_contratos_dia_vencimento": {
+          "name": "chk_fin_contratos_dia_vencimento",
+          "value": "\"financeiro_contratos\".\"dia_vencimento\" BETWEEN 1 AND 31"
+        },
+        "chk_fin_contratos_dia_fechamento": {
+          "name": "chk_fin_contratos_dia_fechamento",
+          "value": "\"financeiro_contratos\".\"dia_fechamento\" BETWEEN 1 AND 31"
+        },
+        "chk_fin_contratos_mes_13o": {
+          "name": "chk_fin_contratos_mes_13o",
+          "value": "\"financeiro_contratos\".\"mes_13o\" BETWEEN 1 AND 12"
+        },
+        "chk_fin_contratos_aviso": {
+          "name": "chk_fin_contratos_aviso",
+          "value": "\"financeiro_contratos\".\"aviso_previo_dias\" BETWEEN 0 AND 365"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_faturas": {
+      "name": "financeiro_faturas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "numero": {
+          "name": "numero",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_emissao": {
+          "name": "data_emissao",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_vencimento": {
+          "name": "data_vencimento",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor_bruto": {
+          "name": "valor_bruto",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "valor_descontos": {
+          "name": "valor_descontos",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "valor_acrescimos": {
+          "name": "valor_acrescimos",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "valor_liquido": {
+          "name": "valor_liquido",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "valor_pago": {
+          "name": "valor_pago",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.00'"
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDENTE'"
+        },
+        "pix_copia_e_cola": {
+          "name": "pix_copia_e_cola",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linha_digitavel": {
+          "name": "linha_digitavel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observacoes": {
+          "name": "observacoes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_por": {
+          "name": "criado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_fin_faturas_numero": {
+          "name": "uidx_fin_faturas_numero",
+          "columns": [
+            {
+              "expression": "numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_fin_faturas_cliente_competencia": {
+          "name": "uidx_fin_faturas_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"financeiro_faturas\".\"status\" <> 'CANCELADA'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_faturas_cliente_id": {
+          "name": "idx_fin_faturas_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_faturas_competencia": {
+          "name": "idx_fin_faturas_competencia",
+          "columns": [
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_faturas_status": {
+          "name": "idx_fin_faturas_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_faturas_vencimento": {
+          "name": "idx_fin_faturas_vencimento",
+          "columns": [
+            {
+              "expression": "data_vencimento",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "financeiro_faturas_cliente_id_clientes_id_fk": {
+          "name": "financeiro_faturas_cliente_id_clientes_id_fk",
+          "tableFrom": "financeiro_faturas",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "financeiro_faturas_criado_por_user_id_fk": {
+          "name": "financeiro_faturas_criado_por_user_id_fk",
+          "tableFrom": "financeiro_faturas",
+          "tableTo": "user",
+          "columnsFrom": [
+            "criado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_faturas_competencia": {
+          "name": "chk_fin_faturas_competencia",
+          "value": "\"financeiro_faturas\".\"competencia\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        },
+        "chk_fin_faturas_status": {
+          "name": "chk_fin_faturas_status",
+          "value": "\"financeiro_faturas\".\"status\" IN ('PENDENTE', 'PARCIALMENTE_PAGA', 'PAGA', 'VENCIDA', 'CANCELADA')"
+        },
+        "chk_fin_faturas_valores": {
+          "name": "chk_fin_faturas_valores",
+          "value": "\"financeiro_faturas\".\"valor_bruto\" >= 0 AND \"financeiro_faturas\".\"valor_descontos\" >= 0 AND \"financeiro_faturas\".\"valor_acrescimos\" >= 0 AND \"financeiro_faturas\".\"valor_liquido\" >= 0 AND \"financeiro_faturas\".\"valor_pago\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_lancamentos": {
+      "name": "financeiro_lancamentos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_lancamento_id": {
+          "name": "tipo_lancamento_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contrato_item_id": {
+          "name": "contrato_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fatura_id": {
+          "name": "fatura_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "natureza": {
+          "name": "natureza",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'DEBITO'"
+        },
+        "valor": {
+          "name": "valor",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data_lancamento": {
+          "name": "data_lancamento",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDENTE'"
+        },
+        "criado_por": {
+          "name": "criado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_fin_lanc_cliente_id": {
+          "name": "idx_fin_lanc_cliente_id",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_lanc_fatura_id": {
+          "name": "idx_fin_lanc_fatura_id",
+          "columns": [
+            {
+              "expression": "fatura_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_lanc_competencia": {
+          "name": "idx_fin_lanc_competencia",
+          "columns": [
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_lanc_status": {
+          "name": "idx_fin_lanc_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "financeiro_lancamentos_cliente_id_clientes_id_fk": {
+          "name": "financeiro_lancamentos_cliente_id_clientes_id_fk",
+          "tableFrom": "financeiro_lancamentos",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "financeiro_lancamentos_fatura_id_financeiro_faturas_id_fk": {
+          "name": "financeiro_lancamentos_fatura_id_financeiro_faturas_id_fk",
+          "tableFrom": "financeiro_lancamentos",
+          "tableTo": "financeiro_faturas",
+          "columnsFrom": [
+            "fatura_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "financeiro_lancamentos_criado_por_user_id_fk": {
+          "name": "financeiro_lancamentos_criado_por_user_id_fk",
+          "tableFrom": "financeiro_lancamentos",
+          "tableTo": "user",
+          "columnsFrom": [
+            "criado_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "fin_lanc_tipo_lancamento_id_fk": {
+          "name": "fin_lanc_tipo_lancamento_id_fk",
+          "tableFrom": "financeiro_lancamentos",
+          "tableTo": "financeiro_tipos_lancamento",
+          "columnsFrom": [
+            "tipo_lancamento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fin_lanc_contrato_item_id_fk": {
+          "name": "fin_lanc_contrato_item_id_fk",
+          "tableFrom": "financeiro_lancamentos",
+          "tableTo": "financeiro_contratos_itens",
+          "columnsFrom": [
+            "contrato_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_lanc_competencia": {
+          "name": "chk_fin_lanc_competencia",
+          "value": "\"financeiro_lancamentos\".\"competencia\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        },
+        "chk_fin_lanc_natureza": {
+          "name": "chk_fin_lanc_natureza",
+          "value": "\"financeiro_lancamentos\".\"natureza\" IN ('DEBITO', 'CREDITO')"
+        },
+        "chk_fin_lanc_valor": {
+          "name": "chk_fin_lanc_valor",
+          "value": "\"financeiro_lancamentos\".\"valor\" > 0"
+        },
+        "chk_fin_lanc_status": {
+          "name": "chk_fin_lanc_status",
+          "value": "\"financeiro_lancamentos\".\"status\" IN ('PENDENTE', 'FATURADO', 'CANCELADO')"
+        },
+        "chk_fin_lanc_descricao": {
+          "name": "chk_fin_lanc_descricao",
+          "value": "btrim(\"financeiro_lancamentos\".\"descricao\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_tipos_lancamento": {
+      "name": "financeiro_tipos_lancamento",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "codigo": {
+          "name": "codigo",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nome": {
+          "name": "nome",
+          "type": "varchar(150)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "natureza": {
+          "name": "natureza",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'DEBITO'"
+        },
+        "valor_padrao": {
+          "name": "valor_padrao",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "permite_avulso": {
+          "name": "permite_avulso",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_fin_tipos_codigo": {
+          "name": "uidx_fin_tipos_codigo",
+          "columns": [
+            {
+              "expression": "codigo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_fin_tipos_ativo": {
+          "name": "idx_fin_tipos_ativo",
+          "columns": [
+            {
+              "expression": "ativo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_tipos_natureza": {
+          "name": "chk_fin_tipos_natureza",
+          "value": "\"financeiro_tipos_lancamento\".\"natureza\" IN ('DEBITO', 'CREDITO')"
+        },
+        "chk_fin_tipos_valor_padrao": {
+          "name": "chk_fin_tipos_valor_padrao",
+          "value": "\"financeiro_tipos_lancamento\".\"valor_padrao\" IS NULL OR \"financeiro_tipos_lancamento\".\"valor_padrao\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.fiscal_apuracoes_guias": {
       "name": "fiscal_apuracoes_guias",
       "schema": "",
@@ -6345,6 +8402,24 @@
           "notNull": true,
           "default": true
         },
+        "escopo_aprovado": {
+          "name": "escopo_aprovado",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aprovado_por": {
+          "name": "aprovado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aprovado_em": {
+          "name": "aprovado_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "criado_em": {
           "name": "criado_em",
           "type": "timestamp with time zone",
@@ -6416,6 +8491,19 @@
           "tableTo": "user",
           "columnsFrom": [
             "responsavel_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "fiscal_regras_versoes_aprovado_por_user_id_fk": {
+          "name": "fiscal_regras_versoes_aprovado_por_user_id_fk",
+          "tableFrom": "fiscal_regras_versoes",
+          "tableTo": "user",
+          "columnsFrom": [
+            "aprovado_por"
           ],
           "columnsTo": [
             "id"
@@ -8765,6 +10853,261 @@
         "chk_regras_fiscais_prioridade": {
           "name": "chk_regras_fiscais_prioridade",
           "value": "\"regras_fiscais\".\"prioridade\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.relatorios_faturamento": {
+      "name": "relatorios_faturamento",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "numero": {
+          "name": "numero",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "relatorios_faturamento_numero_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "codigo": {
+          "name": "codigo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contador_id": {
+          "name": "contador_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "periodo_inicio": {
+          "name": "periodo_inicio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "periodo_fim": {
+          "name": "periodo_fim",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "empresa_nome": {
+          "name": "empresa_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "empresa_documento": {
+          "name": "empresa_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contador_nome": {
+          "name": "contador_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contador_crc": {
+          "name": "contador_crc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "meses": {
+          "name": "meses",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total": {
+          "name": "total",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf_key": {
+          "name": "pdf_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_sha256": {
+          "name": "pdf_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assinatura_status": {
+          "name": "assinatura_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'SEM_CERTIFICADO'"
+        },
+        "assinatura_thumbprint": {
+          "name": "assinatura_thumbprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PROCESSANDO'"
+        },
+        "emitido_por": {
+          "name": "emitido_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "emitido_em": {
+          "name": "emitido_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uidx_relat_faturamento_numero": {
+          "name": "uidx_relat_faturamento_numero",
+          "columns": [
+            {
+              "expression": "numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uidx_relat_faturamento_codigo": {
+          "name": "uidx_relat_faturamento_codigo",
+          "columns": [
+            {
+              "expression": "codigo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_relat_faturamento_cliente_data": {
+          "name": "idx_relat_faturamento_cliente_data",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "relatorios_faturamento_cliente_id_clientes_id_fk": {
+          "name": "relatorios_faturamento_cliente_id_clientes_id_fk",
+          "tableFrom": "relatorios_faturamento",
+          "tableTo": "clientes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "relatorios_faturamento_contador_id_contadores_id_fk": {
+          "name": "relatorios_faturamento_contador_id_contadores_id_fk",
+          "tableFrom": "relatorios_faturamento",
+          "tableTo": "contadores",
+          "columnsFrom": [
+            "contador_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "relatorios_faturamento_emitido_por_user_id_fk": {
+          "name": "relatorios_faturamento_emitido_por_user_id_fk",
+          "tableFrom": "relatorios_faturamento",
+          "tableTo": "user",
+          "columnsFrom": [
+            "emitido_por"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_relat_faturamento_status": {
+          "name": "chk_relat_faturamento_status",
+          "value": "\"relatorios_faturamento\".\"status\" IN ('PROCESSANDO', 'EMITIDO', 'FALHOU')"
+        },
+        "chk_relat_faturamento_assinatura": {
+          "name": "chk_relat_faturamento_assinatura",
+          "value": "\"relatorios_faturamento\".\"assinatura_status\" IN ('ASSINADO', 'SEM_CERTIFICADO')"
         }
       },
       "isRLSEnabled": false

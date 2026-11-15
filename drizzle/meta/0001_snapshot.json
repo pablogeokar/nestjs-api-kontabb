@@ -1,6 +1,6 @@
 {
-  "id": "f3b81b42-a973-458d-b15b-c342103cd306",
-  "prevId": "9c14a308-3b5e-4938-a31e-e7a2af0e349d",
+  "id": "f9d3fc5a-7100-460a-8e76-cec355504c34",
+  "prevId": "a783f258-93fb-4bdc-b059-f1efa7915b94",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -107,9 +107,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_account_user_provider": {
           "name": "uidx_account_user_provider",
@@ -128,24 +128,24 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -299,9 +299,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_certificados_cnpj": {
           "name": "idx_certificados_cnpj",
@@ -314,9 +314,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_certificados_status": {
           "name": "idx_certificados_status",
@@ -329,9 +329,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_certificados_validade_fim": {
           "name": "idx_certificados_validade_fim",
@@ -344,9 +344,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_certificados_cliente": {
           "name": "uidx_certificados_cliente",
@@ -359,37 +359,37 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "certificados_digitais_cliente_id_clientes_id_fk": {
           "name": "certificados_digitais_cliente_id_clientes_id_fk",
           "tableFrom": "certificados_digitais",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "certificados_digitais_uploadado_por_user_id_fk": {
           "name": "certificados_digitais_uploadado_por_user_id_fk",
           "tableFrom": "certificados_digitais",
-          "tableTo": "user",
           "columnsFrom": [
             "uploadado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -491,9 +491,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_cfop_eq_cliente": {
           "name": "idx_cfop_eq_cliente",
@@ -506,61 +506,61 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "cfop_equivalencias_cliente_id_clientes_id_fk": {
           "name": "cfop_equivalencias_cliente_id_clientes_id_fk",
           "tableFrom": "cfop_equivalencias",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "cfop_equivalencias_cfop_origem_cfops_codigo_fk": {
           "name": "cfop_equivalencias_cfop_origem_cfops_codigo_fk",
           "tableFrom": "cfop_equivalencias",
-          "tableTo": "cfops",
           "columnsFrom": [
             "cfop_origem"
           ],
+          "tableTo": "cfops",
           "columnsTo": [
             "codigo"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "cfop_equivalencias_cfop_destino_cfops_codigo_fk": {
           "name": "cfop_equivalencias_cfop_destino_cfops_codigo_fk",
           "tableFrom": "cfop_equivalencias",
-          "tableTo": "cfops",
           "columnsFrom": [
             "cfop_destino"
           ],
+          "tableTo": "cfops",
           "columnsTo": [
             "codigo"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uidx_cfop_eq_cliente_origem": {
           "name": "uidx_cfop_eq_cliente_origem",
-          "nullsNotDistinct": true,
           "columns": [
             "cliente_id",
             "cfop_origem"
-          ]
+          ],
+          "nullsNotDistinct": true
         }
       },
       "policies": {},
@@ -664,9 +664,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_cfops_abrangencia": {
           "name": "idx_cfops_abrangencia",
@@ -679,9 +679,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_cfops_categoria": {
           "name": "idx_cfops_categoria",
@@ -694,9 +694,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -841,9 +841,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_ciap_aprop_bem": {
           "name": "idx_ciap_aprop_bem",
@@ -856,9 +856,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_ciap_aprop_cliente_competencia": {
           "name": "idx_ciap_aprop_cliente_competencia",
@@ -877,9 +877,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_ciap_aprop_bem_competencia_versao": {
           "name": "uidx_ciap_aprop_bem_competencia_versao",
@@ -904,9 +904,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_ciap_aprop_bem_competencia_ativa": {
           "name": "uidx_ciap_aprop_bem_competencia_ativa",
@@ -925,51 +925,51 @@
             }
           ],
           "isUnique": true,
-          "where": "\"ciap_apropriacoes\".\"ativa\"",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"ciap_apropriacoes\".\"ativa\"",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "ciap_apropriacoes_cliente_id_clientes_id_fk": {
           "name": "ciap_apropriacoes_cliente_id_clientes_id_fk",
           "tableFrom": "ciap_apropriacoes",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "ciap_apropriacoes_bem_id_ciap_ativo_permanente_id_fk": {
           "name": "ciap_apropriacoes_bem_id_ciap_ativo_permanente_id_fk",
           "tableFrom": "ciap_apropriacoes",
-          "tableTo": "ciap_ativo_permanente",
           "columnsFrom": [
             "bem_id"
           ],
+          "tableTo": "ciap_ativo_permanente",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "ciap_apropriacoes_movimento_id_ciap_movimentos_id_fk": {
           "name": "ciap_apropriacoes_movimento_id_ciap_movimentos_id_fk",
           "tableFrom": "ciap_apropriacoes",
-          "tableTo": "ciap_movimentos",
           "columnsFrom": [
             "movimento_id"
           ],
+          "tableTo": "ciap_movimentos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1148,9 +1148,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_ciap_status": {
           "name": "idx_ciap_status",
@@ -1163,9 +1163,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_ciap_cliente_codigo_bem": {
           "name": "uidx_ciap_cliente_codigo_bem",
@@ -1184,9 +1184,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_ciap_cliente_chave_aquisicao": {
           "name": "uidx_ciap_cliente_chave_aquisicao",
@@ -1205,51 +1205,51 @@
             }
           ],
           "isUnique": true,
-          "where": "\"ciap_ativo_permanente\".\"chave_aquisicao\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"ciap_ativo_permanente\".\"chave_aquisicao\" IS NOT NULL",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "ciap_ativo_permanente_cliente_id_clientes_id_fk": {
           "name": "ciap_ativo_permanente_cliente_id_clientes_id_fk",
           "tableFrom": "ciap_ativo_permanente",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_ciap_ativo_documento": {
           "name": "fk_ciap_ativo_documento",
           "tableFrom": "ciap_ativo_permanente",
-          "tableTo": "documentos_fiscais",
           "columnsFrom": [
             "documento_fiscal_id"
           ],
+          "tableTo": "documentos_fiscais",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "fk_ciap_ativo_item": {
           "name": "fk_ciap_ativo_item",
           "tableFrom": "ciap_ativo_permanente",
-          "tableTo": "documentos_fiscais_itens",
           "columnsFrom": [
             "documento_fiscal_item_id"
           ],
+          "tableTo": "documentos_fiscais_itens",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1336,9 +1336,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_ciap_competencia_cliente": {
           "name": "idx_ciap_competencia_cliente",
@@ -1357,37 +1357,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "ciap_competencias_apropriadas_cliente_id_clientes_id_fk": {
           "name": "ciap_competencias_apropriadas_cliente_id_clientes_id_fk",
           "tableFrom": "ciap_competencias_apropriadas",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_ciap_competencia_bem": {
           "name": "fk_ciap_competencia_bem",
           "tableFrom": "ciap_competencias_apropriadas",
-          "tableTo": "ciap_ativo_permanente",
           "columnsFrom": [
             "bem_id"
           ],
+          "tableTo": "ciap_ativo_permanente",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1487,9 +1487,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_ciap_mov_bem": {
           "name": "idx_ciap_mov_bem",
@@ -1502,9 +1502,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_ciap_mov_bem_data": {
           "name": "idx_ciap_mov_bem_data",
@@ -1523,76 +1523,76 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "ciap_movimentos_cliente_id_clientes_id_fk": {
           "name": "ciap_movimentos_cliente_id_clientes_id_fk",
           "tableFrom": "ciap_movimentos",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "ciap_movimentos_bem_id_ciap_ativo_permanente_id_fk": {
           "name": "ciap_movimentos_bem_id_ciap_ativo_permanente_id_fk",
           "tableFrom": "ciap_movimentos",
-          "tableTo": "ciap_ativo_permanente",
           "columnsFrom": [
             "bem_id"
           ],
+          "tableTo": "ciap_ativo_permanente",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "ciap_movimentos_documento_fiscal_id_documentos_fiscais_id_fk": {
           "name": "ciap_movimentos_documento_fiscal_id_documentos_fiscais_id_fk",
           "tableFrom": "ciap_movimentos",
-          "tableTo": "documentos_fiscais",
           "columnsFrom": [
             "documento_fiscal_id"
           ],
+          "tableTo": "documentos_fiscais",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "fk_ciap_movimento_item": {
           "name": "fk_ciap_movimento_item",
           "tableFrom": "ciap_movimentos",
-          "tableTo": "documentos_fiscais_itens",
           "columnsFrom": [
             "documento_fiscal_item_id"
           ],
+          "tableTo": "documentos_fiscais_itens",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "ciap_movimentos_movimento_anterior_id_fk": {
           "name": "ciap_movimentos_movimento_anterior_id_fk",
           "tableFrom": "ciap_movimentos",
-          "tableTo": "ciap_movimentos",
           "columnsFrom": [
             "movimento_anterior_id"
           ],
+          "tableTo": "ciap_movimentos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -1692,37 +1692,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "classificacao_destinacao_aprendizado_cliente_id_clientes_id_fk": {
           "name": "classificacao_destinacao_aprendizado_cliente_id_clientes_id_fk",
           "tableFrom": "classificacao_destinacao_aprendizado",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_classif_destinacao_item": {
           "name": "fk_classif_destinacao_item",
           "tableFrom": "classificacao_destinacao_aprendizado",
-          "tableTo": "documentos_fiscais_itens",
           "columnsFrom": [
             "item_id"
           ],
+          "tableTo": "documentos_fiscais_itens",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1736,6 +1736,165 @@
         "chk_aprendizado_ncm": {
           "name": "chk_aprendizado_ncm",
           "value": "\"classificacao_destinacao_aprendizado\".\"ncm\" ~ '^[0-9]{8}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.clientes_perfis_fiscais": {
+      "name": "clientes_perfis_fiscais",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vigencia_inicio": {
+          "name": "vigencia_inicio",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vigencia_fim": {
+          "name": "vigencia_fim",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uf": {
+          "name": "uf",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricao_estadual": {
+          "name": "inscricao_estadual",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "regime_tributario": {
+          "name": "regime_tributario",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origem": {
+          "name": "origem",
+          "type": "varchar(30)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fonte": {
+          "name": "fonte",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "justificativa": {
+          "name": "justificativa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_por": {
+          "name": "criado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "substituido_por": {
+          "name": "substituido_por",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_clientes_perfil_fiscal_inicio": {
+          "name": "uidx_clientes_perfil_fiscal_inicio",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "vigencia_inicio",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"clientes_perfis_fiscais\".\"ativo\"",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "clientes_perfis_fiscais_cliente_id_clientes_id_fk": {
+          "name": "clientes_perfis_fiscais_cliente_id_clientes_id_fk",
+          "tableFrom": "clientes_perfis_fiscais",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "tableTo": "clientes",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "clientes_perfis_fiscais_criado_por_user_id_fk": {
+          "name": "clientes_perfis_fiscais_criado_por_user_id_fk",
+          "tableFrom": "clientes_perfis_fiscais",
+          "columnsFrom": [
+            "criado_por"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_clientes_perfil_fiscal_vigencia": {
+          "name": "chk_clientes_perfil_fiscal_vigencia",
+          "value": "\"clientes_perfis_fiscais\".\"vigencia_fim\" IS NULL OR \"clientes_perfis_fiscais\".\"vigencia_fim\" >= \"clientes_perfis_fiscais\".\"vigencia_inicio\""
+        },
+        "chk_clientes_perfil_fiscal_origem": {
+          "name": "chk_clientes_perfil_fiscal_origem",
+          "value": "\"clientes_perfis_fiscais\".\"origem\" IN ('CADASTRO_INICIAL', 'ANTERIOR_A_ALTERACAO', 'ALTERACAO_CADASTRAL', 'MANUAL')"
         }
       },
       "isRLSEnabled": false
@@ -1876,6 +2035,42 @@
           "primaryKey": false,
           "notNull": false
         },
+        "inscricao_municipal": {
+          "name": "inscricao_municipal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nome_fantasia": {
+          "name": "nome_fantasia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_nome": {
+          "name": "responsavel_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cpf": {
+          "name": "responsavel_cpf",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cod_assinante": {
+          "name": "responsavel_cod_assinante",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "tipo_contribuinte_icms": {
           "name": "tipo_contribuinte_icms",
           "type": "text",
@@ -1958,9 +2153,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_clientes_regime_tributario": {
           "name": "idx_clientes_regime_tributario",
@@ -1973,10 +2168,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"clientes\".\"regime_tributario\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"clientes\".\"regime_tributario\" IS NOT NULL",
+          "concurrently": false
         },
         "idx_clientes_contador_id": {
           "name": "idx_clientes_contador_id",
@@ -1989,58 +2184,70 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "clientes_user_id_user_id_fk": {
           "name": "clientes_user_id_user_id_fk",
           "tableFrom": "clientes",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "clientes_contador_id_contadores_id_fk": {
           "name": "clientes_contador_id_contadores_id_fk",
           "tableFrom": "clientes",
-          "tableTo": "contadores",
           "columnsFrom": [
             "contador_id"
           ],
+          "tableTo": "contadores",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "clientes_cnpj_unique": {
           "name": "clientes_cnpj_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "cnpj"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "clientes_cpf_unique": {
           "name": "clientes_cpf_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "cpf"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
       "checkConstraints": {
+        "chk_clientes_codigo_municipio_ibge": {
+          "name": "chk_clientes_codigo_municipio_ibge",
+          "value": "\"clientes\".\"codigo_municipio_ibge\" IS NULL OR \"clientes\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        },
+        "chk_clientes_responsavel_cpf": {
+          "name": "chk_clientes_responsavel_cpf",
+          "value": "\"clientes\".\"responsavel_cpf\" IS NULL OR \"clientes\".\"responsavel_cpf\" ~ '^[0-9]{11}$'"
+        },
+        "chk_clientes_responsavel_cod_assinante": {
+          "name": "chk_clientes_responsavel_cod_assinante",
+          "value": "\"clientes\".\"responsavel_cod_assinante\" IS NULL OR \"clientes\".\"responsavel_cod_assinante\" ~ '^[0-9]{3}$'"
+        },
         "chk_clientes_tipo_pessoa": {
           "name": "chk_clientes_tipo_pessoa",
           "value": "\"clientes\".\"tipo_pessoa\" IN ('PF', 'PJ')"
@@ -2069,6 +2276,10 @@
           "name": "chk_clientes_tipo_contribuinte_icms",
           "value": "\"clientes\".\"tipo_contribuinte_icms\" IS NULL OR \"clientes\".\"tipo_contribuinte_icms\" IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')"
         },
+        "chk_clientes_inscricao_municipal": {
+          "name": "chk_clientes_inscricao_municipal",
+          "value": "\"clientes\".\"inscricao_municipal\" IS NULL OR \"clientes\".\"inscricao_municipal\" ~ '^[0-9A-Z./-]{2,20}$'"
+        },
         "chk_clientes_inscricao_estadual": {
           "name": "chk_clientes_inscricao_estadual",
           "value": "\"clientes\".\"inscricao_estadual\" IS NULL OR \"clientes\".\"inscricao_estadual\" ~ '^[0-9A-Z./-]{2,20}$'"
@@ -2088,6 +2299,142 @@
         "chk_clientes_suspensao_coerencia": {
           "name": "chk_clientes_suspensao_coerencia",
           "value": "(\"clientes\".\"suspenso\" = true AND \"clientes\".\"suspenso_em\" IS NOT NULL) OR (\"clientes\".\"suspenso\" = false AND \"clientes\".\"suspenso_em\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.contadores_certificados": {
+      "name": "contadores_certificados",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contador_id": {
+          "name": "contador_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "senha_criptografada": {
+          "name": "senha_criptografada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "titular": {
+          "name": "titular",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "documento": {
+          "name": "documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thumbprint": {
+          "name": "thumbprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "validade_inicio": {
+          "name": "validade_inicio",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "validade_fim": {
+          "name": "validade_fim",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "autorizado_assinar": {
+          "name": "autorizado_assinar",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'SIM'"
+        },
+        "uploadado_por": {
+          "name": "uploadado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_contadores_certificados_contador": {
+          "name": "uidx_contadores_certificados_contador",
+          "columns": [
+            {
+              "expression": "contador_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "contadores_certificados_contador_id_contadores_id_fk": {
+          "name": "contadores_certificados_contador_id_contadores_id_fk",
+          "tableFrom": "contadores_certificados",
+          "columnsFrom": [
+            "contador_id"
+          ],
+          "tableTo": "contadores",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "contadores_certificados_uploadado_por_user_id_fk": {
+          "name": "contadores_certificados_uploadado_por_user_id_fk",
+          "tableFrom": "contadores_certificados",
+          "columnsFrom": [
+            "uploadado_por"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_contadores_certificados_autorizado": {
+          "name": "chk_contadores_certificados_autorizado",
+          "value": "\"contadores_certificados\".\"autorizado_assinar\" IN ('SIM', 'NAO')"
         }
       },
       "isRLSEnabled": false
@@ -2220,10 +2567,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"contadores\".\"cpf\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"contadores\".\"cpf\" IS NOT NULL",
+          "concurrently": false
         },
         "uidx_contadores_cnpj_crc": {
           "name": "uidx_contadores_cnpj_crc",
@@ -2242,10 +2589,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"contadores\".\"cnpj\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"contadores\".\"cnpj\" IS NOT NULL",
+          "concurrently": false
         },
         "idx_contadores_nome": {
           "name": "idx_contadores_nome",
@@ -2258,24 +2605,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "contadores_atualizado_por_user_id_fk": {
           "name": "contadores_atualizado_por_user_id_fk",
           "tableFrom": "contadores",
-          "tableTo": "user",
           "columnsFrom": [
             "atualizado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -2417,9 +2764,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_controle_nsu_cliente_id": {
           "name": "idx_controle_nsu_cliente_id",
@@ -2432,24 +2779,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "controle_nsu_cliente_id_clientes_id_fk": {
           "name": "controle_nsu_cliente_id_clientes_id_fk",
           "tableFrom": "controle_nsu",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -2471,6 +2818,398 @@
         "chk_controle_nsu_sincronizacao_coerencia": {
           "name": "chk_controle_nsu_sincronizacao_coerencia",
           "value": "(\"controle_nsu\".\"sincronizacao_id\" IS NULL AND \"controle_nsu\".\"sincronizacao_iniciada_em\" IS NULL) OR (\"controle_nsu\".\"sincronizacao_id\" IS NOT NULL AND \"controle_nsu\".\"sincronizacao_iniciada_em\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.destda_arquivos_gerados": {
+      "name": "destda_arquivos_gerados",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia": {
+          "name": "competencia",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finalidade": {
+          "name": "finalidade",
+          "type": "varchar(1)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cod_versao": {
+          "name": "cod_versao",
+          "type": "varchar(4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hash_sha256": {
+          "name": "hash_sha256",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_key": {
+          "name": "arquivo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arquivo_nome": {
+          "name": "arquivo_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tamanho_bytes": {
+          "name": "tamanho_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contadores": {
+          "name": "contadores",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "totais": {
+          "name": "totais",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inconsistencias": {
+          "name": "inconsistencias",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "erro": {
+          "name": "erro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gerado_por": {
+          "name": "gerado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "concluido_em": {
+          "name": "concluido_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_destda_arquivo_cliente_competencia": {
+          "name": "idx_destda_arquivo_cliente_competencia",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "competencia",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "idx_destda_arquivo_status": {
+          "name": "idx_destda_arquivo_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "destda_arquivos_gerados_cliente_id_clientes_id_fk": {
+          "name": "destda_arquivos_gerados_cliente_id_clientes_id_fk",
+          "tableFrom": "destda_arquivos_gerados",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "tableTo": "clientes",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "destda_arquivos_gerados_gerado_por_user_id_fk": {
+          "name": "destda_arquivos_gerados_gerado_por_user_id_fk",
+          "tableFrom": "destda_arquivos_gerados",
+          "columnsFrom": [
+            "gerado_por"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_destda_arquivo_finalidade": {
+          "name": "chk_destda_arquivo_finalidade",
+          "value": "\"destda_arquivos_gerados\".\"finalidade\" IN ('0', '1')"
+        },
+        "chk_destda_arquivo_status": {
+          "name": "chk_destda_arquivo_status",
+          "value": "\"destda_arquivos_gerados\".\"status\" IN ('PROCESSANDO', 'GERADO', 'FALHOU')"
+        },
+        "chk_destda_arquivo_hash": {
+          "name": "chk_destda_arquivo_hash",
+          "value": "\"destda_arquivos_gerados\".\"hash_sha256\" IS NULL OR \"destda_arquivos_gerados\".\"hash_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "chk_destda_arquivo_tamanho": {
+          "name": "chk_destda_arquivo_tamanho",
+          "value": "\"destda_arquivos_gerados\".\"tamanho_bytes\" IS NULL OR \"destda_arquivos_gerados\".\"tamanho_bytes\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.destda_configuracoes": {
+      "name": "destda_configuracoes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "codigo_municipio_ibge": {
+          "name": "codigo_municipio_ibge",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nome_fantasia": {
+          "name": "nome_fantasia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricao_municipal": {
+          "name": "inscricao_municipal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suframa": {
+          "name": "suframa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nire": {
+          "name": "nire",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telefone": {
+          "name": "telefone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fax": {
+          "name": "fax",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_nome": {
+          "name": "responsavel_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cpf": {
+          "name": "responsavel_cpf",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "responsavel_cod_assinante": {
+          "name": "responsavel_cod_assinante",
+          "type": "varchar(3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inscricoes_substituto": {
+          "name": "inscricoes_substituto",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "perfil": {
+          "name": "perfil",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "atualizado_por": {
+          "name": "atualizado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uidx_destda_config_cliente": {
+          "name": "uidx_destda_config_cliente",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "destda_configuracoes_cliente_id_clientes_id_fk": {
+          "name": "destda_configuracoes_cliente_id_clientes_id_fk",
+          "tableFrom": "destda_configuracoes",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "tableTo": "clientes",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "destda_configuracoes_atualizado_por_user_id_fk": {
+          "name": "destda_configuracoes_atualizado_por_user_id_fk",
+          "tableFrom": "destda_configuracoes",
+          "columnsFrom": [
+            "atualizado_por"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_destda_config_codigo_municipio": {
+          "name": "chk_destda_config_codigo_municipio",
+          "value": "\"destda_configuracoes\".\"codigo_municipio_ibge\" IS NULL OR \"destda_configuracoes\".\"codigo_municipio_ibge\" ~ '^[0-9]{7}$'"
+        },
+        "chk_destda_config_nire": {
+          "name": "chk_destda_config_nire",
+          "value": "\"destda_configuracoes\".\"nire\" IS NULL OR \"destda_configuracoes\".\"nire\" ~ '^[0-9]{11}$'"
+        },
+        "chk_destda_config_resp_cpf": {
+          "name": "chk_destda_config_resp_cpf",
+          "value": "\"destda_configuracoes\".\"responsavel_cpf\" IS NULL OR \"destda_configuracoes\".\"responsavel_cpf\" ~ '^[0-9]{11}$'"
+        },
+        "chk_destda_config_cod_assinante": {
+          "name": "chk_destda_config_cod_assinante",
+          "value": "\"destda_configuracoes\".\"responsavel_cod_assinante\" IS NULL OR \"destda_configuracoes\".\"responsavel_cod_assinante\" ~ '^[0-9]{3}$'"
+        },
+        "chk_destda_config_inscricoes": {
+          "name": "chk_destda_config_inscricoes",
+          "value": "jsonb_typeof(\"destda_configuracoes\".\"inscricoes_substituto\") = 'array'"
+        },
+        "chk_destda_config_perfil": {
+          "name": "chk_destda_config_perfil",
+          "value": "jsonb_typeof(\"destda_configuracoes\".\"perfil\") = 'object'"
         }
       },
       "isRLSEnabled": false
@@ -2673,9 +3412,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_cte_escrituracao_cliente": {
           "name": "idx_cte_escrituracao_cliente",
@@ -2688,9 +3427,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_cte_escrituracao_cfop": {
           "name": "idx_cte_escrituracao_cfop",
@@ -2703,9 +3442,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_cte_escrituracao_apuracao": {
           "name": "idx_cte_escrituracao_apuracao",
@@ -2730,9 +3469,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_cte_escrituracao_referencia": {
           "name": "idx_cte_escrituracao_referencia",
@@ -2745,37 +3484,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "documentos_fiscais_cte_escrituracao_cliente_id_clientes_id_fk": {
           "name": "documentos_fiscais_cte_escrituracao_cliente_id_clientes_id_fk",
           "tableFrom": "documentos_fiscais_cte_escrituracao",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_cte_escrituracao_documento": {
           "name": "fk_cte_escrituracao_documento",
           "tableFrom": "documentos_fiscais_cte_escrituracao",
-          "tableTo": "documentos_fiscais",
           "columnsFrom": [
             "documento_fiscal_id"
           ],
+          "tableTo": "documentos_fiscais",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -3613,9 +4352,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_cliente_id": {
           "name": "idx_item_cliente_id",
@@ -3628,9 +4367,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_cfop": {
           "name": "idx_item_cfop",
@@ -3643,9 +4382,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_cfop_xml": {
           "name": "idx_item_cfop_xml",
@@ -3658,9 +4397,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_operacao_escriturada": {
           "name": "idx_item_operacao_escriturada",
@@ -3673,9 +4412,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_cst_icms": {
           "name": "idx_item_cst_icms",
@@ -3688,9 +4427,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_csosn_icms": {
           "name": "idx_item_csosn_icms",
@@ -3703,9 +4442,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_cst_pis": {
           "name": "idx_item_cst_pis",
@@ -3718,9 +4457,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_cst_cofins": {
           "name": "idx_item_cst_cofins",
@@ -3733,9 +4472,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_ncm": {
           "name": "idx_item_ncm",
@@ -3748,9 +4487,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_servico_lc116": {
           "name": "idx_item_servico_lc116",
@@ -3763,9 +4502,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_item_cnae": {
           "name": "idx_item_cnae",
@@ -3778,37 +4517,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fk_df_itens_documento_fiscal": {
           "name": "fk_df_itens_documento_fiscal",
           "tableFrom": "documentos_fiscais_itens",
-          "tableTo": "documentos_fiscais",
           "columnsFrom": [
             "documento_fiscal_id"
           ],
+          "tableTo": "documentos_fiscais",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_df_itens_cliente": {
           "name": "fk_df_itens_cliente",
           "tableFrom": "documentos_fiscais_itens",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -4211,9 +4950,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_cliente_id": {
           "name": "idx_docs_fiscais_cliente_id",
@@ -4226,9 +4965,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_tipo": {
           "name": "idx_docs_fiscais_tipo",
@@ -4241,9 +4980,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_data_emissao": {
           "name": "idx_docs_fiscais_data_emissao",
@@ -4256,9 +4995,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_cliente_competencia": {
           "name": "idx_docs_fiscais_cliente_competencia",
@@ -4283,9 +5022,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_cliente_competencia_nfse": {
           "name": "idx_docs_fiscais_cliente_competencia_nfse",
@@ -4310,9 +5049,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_nsu": {
           "name": "idx_docs_fiscais_nsu",
@@ -4325,9 +5064,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_destinatario": {
           "name": "idx_docs_fiscais_destinatario",
@@ -4340,9 +5079,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_docs_fiscais_emitente": {
           "name": "idx_docs_fiscais_emitente",
@@ -4355,24 +5094,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "documentos_fiscais_cliente_id_clientes_id_fk": {
           "name": "documentos_fiscais_cliente_id_clientes_id_fk",
           "tableFrom": "documentos_fiscais",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -4532,9 +5271,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_eventos_auditoria_ator": {
           "name": "idx_eventos_auditoria_ator",
@@ -4553,24 +5292,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "eventos_auditoria_ator_user_id_user_id_fk": {
           "name": "eventos_auditoria_ator_user_id_user_id_fk",
           "tableFrom": "eventos_auditoria",
-          "tableTo": "user",
           "columnsFrom": [
             "ator_user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -4672,9 +5411,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_eventos_fiscais_tipo": {
           "name": "idx_eventos_fiscais_tipo",
@@ -4687,9 +5426,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_eventos_fiscais_data": {
           "name": "idx_eventos_fiscais_data",
@@ -4702,24 +5441,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk": {
           "name": "eventos_fiscais_documento_fiscal_id_documentos_fiscais_id_fk",
           "tableFrom": "eventos_fiscais",
-          "tableTo": "documentos_fiscais",
           "columnsFrom": [
             "documento_fiscal_id"
           ],
+          "tableTo": "documentos_fiscais",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -4862,9 +5601,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_baixas_data_pagamento": {
           "name": "idx_fin_baixas_data_pagamento",
@@ -4877,9 +5616,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_baixas_estornado": {
           "name": "idx_fin_baixas_estornado",
@@ -4892,50 +5631,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "financeiro_baixas_fatura_id_financeiro_faturas_id_fk": {
           "name": "financeiro_baixas_fatura_id_financeiro_faturas_id_fk",
           "tableFrom": "financeiro_baixas",
-          "tableTo": "financeiro_faturas",
           "columnsFrom": [
             "fatura_id"
           ],
+          "tableTo": "financeiro_faturas",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "financeiro_baixas_registrado_por_user_id_fk": {
           "name": "financeiro_baixas_registrado_por_user_id_fk",
           "tableFrom": "financeiro_baixas",
-          "tableTo": "user",
           "columnsFrom": [
             "registrado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "financeiro_baixas_estornado_por_user_id_fk": {
           "name": "financeiro_baixas_estornado_por_user_id_fk",
           "tableFrom": "financeiro_baixas",
-          "tableTo": "user",
           "columnsFrom": [
             "estornado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -4957,6 +5696,246 @@
         "chk_fin_baixas_estorno_coerencia": {
           "name": "chk_fin_baixas_estorno_coerencia",
           "value": "(\"financeiro_baixas\".\"estornado\" = false AND \"financeiro_baixas\".\"estornado_em\" IS NULL AND \"financeiro_baixas\".\"estornado_por\" IS NULL) OR (\"financeiro_baixas\".\"estornado\" = true AND \"financeiro_baixas\".\"estornado_em\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_contrato_preferencias": {
+      "name": "financeiro_contrato_preferencias",
+      "schema": "",
+      "columns": {
+        "usuario_id": {
+          "name": "usuario_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "local_assinatura": {
+          "name": "local_assinatura",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "dia_vencimento": {
+          "name": "dia_vencimento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "dia_fechamento": {
+          "name": "dia_fechamento",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 25
+        },
+        "aviso_previo_dias": {
+          "name": "aviso_previo_dias",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 30
+        },
+        "gera_13o": {
+          "name": "gera_13o",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "mes_13o": {
+          "name": "mes_13o",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 12
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "financeiro_contrato_preferencias_usuario_id_user_id_fk": {
+          "name": "financeiro_contrato_preferencias_usuario_id_user_id_fk",
+          "tableFrom": "financeiro_contrato_preferencias",
+          "columnsFrom": [
+            "usuario_id"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_contrato_pref_venc": {
+          "name": "chk_fin_contrato_pref_venc",
+          "value": "\"financeiro_contrato_preferencias\".\"dia_vencimento\" BETWEEN 1 AND 31"
+        },
+        "chk_fin_contrato_pref_fech": {
+          "name": "chk_fin_contrato_pref_fech",
+          "value": "\"financeiro_contrato_preferencias\".\"dia_fechamento\" BETWEEN 1 AND 31"
+        },
+        "chk_fin_contrato_pref_aviso": {
+          "name": "chk_fin_contrato_pref_aviso",
+          "value": "\"financeiro_contrato_preferencias\".\"aviso_previo_dias\" BETWEEN 0 AND 365"
+        },
+        "chk_fin_contrato_pref_mes13": {
+          "name": "chk_fin_contrato_pref_mes13",
+          "value": "\"financeiro_contrato_preferencias\".\"mes_13o\" BETWEEN 1 AND 12"
+        },
+        "chk_fin_contrato_pref_local": {
+          "name": "chk_fin_contrato_pref_local",
+          "value": "char_length(\"financeiro_contrato_preferencias\".\"local_assinatura\") <= 120"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.financeiro_contratos_itens": {
+      "name": "financeiro_contratos_itens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contrato_id": {
+          "name": "contrato_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo_lancamento_id": {
+          "name": "tipo_lancamento_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valor": {
+          "name": "valor",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "competencia_inicio": {
+          "name": "competencia_inicio",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "competencia_fim": {
+          "name": "competencia_fim",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ativo": {
+          "name": "ativo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "atualizado_em": {
+          "name": "atualizado_em",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_fin_contr_itens_contrato": {
+          "name": "idx_fin_contr_itens_contrato",
+          "columns": [
+            {
+              "expression": "contrato_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "fin_contr_itens_contrato_id_fk": {
+          "name": "fin_contr_itens_contrato_id_fk",
+          "tableFrom": "financeiro_contratos_itens",
+          "columnsFrom": [
+            "contrato_id"
+          ],
+          "tableTo": "financeiro_contratos",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "fin_contr_itens_tipo_id_fk": {
+          "name": "fin_contr_itens_tipo_id_fk",
+          "tableFrom": "financeiro_contratos_itens",
+          "columnsFrom": [
+            "tipo_lancamento_id"
+          ],
+          "tableTo": "financeiro_tipos_lancamento",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_fin_contr_itens_valor": {
+          "name": "chk_fin_contr_itens_valor",
+          "value": "\"financeiro_contratos_itens\".\"valor\" > 0"
+        },
+        "chk_fin_contr_itens_descricao": {
+          "name": "chk_fin_contr_itens_descricao",
+          "value": "btrim(\"financeiro_contratos_itens\".\"descricao\") <> ''"
+        },
+        "chk_fin_contr_itens_inicio": {
+          "name": "chk_fin_contr_itens_inicio",
+          "value": "\"financeiro_contratos_itens\".\"competencia_inicio\" IS NULL OR \"financeiro_contratos_itens\".\"competencia_inicio\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
+        },
+        "chk_fin_contr_itens_fim": {
+          "name": "chk_fin_contr_itens_fim",
+          "value": "\"financeiro_contratos_itens\".\"competencia_fim\" IS NULL OR \"financeiro_contratos_itens\".\"competencia_fim\" ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'"
         }
       },
       "isRLSEnabled": false
@@ -5026,6 +6005,50 @@
           "primaryKey": false,
           "notNull": false
         },
+        "servicos_contratados": {
+          "name": "servicos_contratados",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "contratante_representante": {
+          "name": "contratante_representante",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_inicio": {
+          "name": "data_inicio",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "local_assinatura": {
+          "name": "local_assinatura",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "data_assinatura": {
+          "name": "data_assinatura",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aviso_previo_dias": {
+          "name": "aviso_previo_dias",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 30
+        },
+        "condicoes_contratuais": {
+          "name": "condicoes_contratuais",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "atualizado_por": {
           "name": "atualizado_por",
           "type": "text",
@@ -5059,9 +6082,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_contratos_ativo": {
           "name": "idx_fin_contratos_ativo",
@@ -5074,37 +6097,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "financeiro_contratos_cliente_id_clientes_id_fk": {
           "name": "financeiro_contratos_cliente_id_clientes_id_fk",
           "tableFrom": "financeiro_contratos",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "financeiro_contratos_atualizado_por_user_id_fk": {
           "name": "financeiro_contratos_atualizado_por_user_id_fk",
           "tableFrom": "financeiro_contratos",
-          "tableTo": "user",
           "columnsFrom": [
             "atualizado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -5126,6 +6149,10 @@
         "chk_fin_contratos_mes_13o": {
           "name": "chk_fin_contratos_mes_13o",
           "value": "\"financeiro_contratos\".\"mes_13o\" BETWEEN 1 AND 12"
+        },
+        "chk_fin_contratos_aviso": {
+          "name": "chk_fin_contratos_aviso",
+          "value": "\"financeiro_contratos\".\"aviso_previo_dias\" BETWEEN 0 AND 365"
         }
       },
       "isRLSEnabled": false
@@ -5264,9 +6291,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_fin_faturas_cliente_competencia": {
           "name": "uidx_fin_faturas_cliente_competencia",
@@ -5285,10 +6312,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"financeiro_faturas\".\"status\" <> 'CANCELADA'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"financeiro_faturas\".\"status\" <> 'CANCELADA'",
+          "concurrently": false
         },
         "idx_fin_faturas_cliente_id": {
           "name": "idx_fin_faturas_cliente_id",
@@ -5301,9 +6328,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_faturas_competencia": {
           "name": "idx_fin_faturas_competencia",
@@ -5316,9 +6343,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_faturas_status": {
           "name": "idx_fin_faturas_status",
@@ -5331,9 +6358,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_faturas_vencimento": {
           "name": "idx_fin_faturas_vencimento",
@@ -5346,37 +6373,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "financeiro_faturas_cliente_id_clientes_id_fk": {
           "name": "financeiro_faturas_cliente_id_clientes_id_fk",
           "tableFrom": "financeiro_faturas",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "financeiro_faturas_criado_por_user_id_fk": {
           "name": "financeiro_faturas_criado_por_user_id_fk",
           "tableFrom": "financeiro_faturas",
-          "tableTo": "user",
           "columnsFrom": [
             "criado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -5420,6 +6447,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "contrato_item_id": {
+          "name": "contrato_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "fatura_id": {
           "name": "fatura_id",
@@ -5498,9 +6531,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_lanc_fatura_id": {
           "name": "idx_fin_lanc_fatura_id",
@@ -5513,9 +6546,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_lanc_competencia": {
           "name": "idx_fin_lanc_competencia",
@@ -5528,9 +6561,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_lanc_status": {
           "name": "idx_fin_lanc_status",
@@ -5543,63 +6576,76 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "financeiro_lancamentos_cliente_id_clientes_id_fk": {
           "name": "financeiro_lancamentos_cliente_id_clientes_id_fk",
           "tableFrom": "financeiro_lancamentos",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "financeiro_lancamentos_fatura_id_financeiro_faturas_id_fk": {
           "name": "financeiro_lancamentos_fatura_id_financeiro_faturas_id_fk",
           "tableFrom": "financeiro_lancamentos",
-          "tableTo": "financeiro_faturas",
           "columnsFrom": [
             "fatura_id"
           ],
+          "tableTo": "financeiro_faturas",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "financeiro_lancamentos_criado_por_user_id_fk": {
           "name": "financeiro_lancamentos_criado_por_user_id_fk",
           "tableFrom": "financeiro_lancamentos",
-          "tableTo": "user",
           "columnsFrom": [
             "criado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "fin_lanc_tipo_lancamento_id_fk": {
           "name": "fin_lanc_tipo_lancamento_id_fk",
           "tableFrom": "financeiro_lancamentos",
-          "tableTo": "financeiro_tipos_lancamento",
           "columnsFrom": [
             "tipo_lancamento_id"
           ],
+          "tableTo": "financeiro_tipos_lancamento",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "fin_lanc_contrato_item_id_fk": {
+          "name": "fin_lanc_contrato_item_id_fk",
+          "tableFrom": "financeiro_lancamentos",
+          "columnsFrom": [
+            "contrato_item_id"
+          ],
+          "tableTo": "financeiro_contratos_itens",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -5712,9 +6758,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fin_tipos_ativo": {
           "name": "idx_fin_tipos_ativo",
@@ -5727,9 +6773,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -5967,9 +7013,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_guias_status": {
           "name": "idx_fiscal_guias_status",
@@ -5982,9 +7028,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_guias_fechamento": {
           "name": "idx_fiscal_guias_fechamento",
@@ -5997,9 +7043,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_fiscal_guias_guia_upload": {
           "name": "uidx_fiscal_guias_guia_upload",
@@ -6012,10 +7058,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"fiscal_apuracoes_guias\".\"guia_upload_id\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"fiscal_apuracoes_guias\".\"guia_upload_id\" IS NOT NULL",
+          "concurrently": false
         },
         "uidx_fiscal_guias_cliente_idempotency": {
           "name": "uidx_fiscal_guias_cliente_idempotency",
@@ -6034,51 +7080,51 @@
             }
           ],
           "isUnique": true,
-          "where": "\"fiscal_apuracoes_guias\".\"idempotency_key\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"fiscal_apuracoes_guias\".\"idempotency_key\" IS NOT NULL",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_apuracoes_guias_cliente_id_clientes_id_fk": {
           "name": "fiscal_apuracoes_guias_cliente_id_clientes_id_fk",
           "tableFrom": "fiscal_apuracoes_guias",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fiscal_apuracoes_guias_guia_upload_id_guias_id_fk": {
           "name": "fiscal_apuracoes_guias_guia_upload_id_guias_id_fk",
           "tableFrom": "fiscal_apuracoes_guias",
-          "tableTo": "guias",
           "columnsFrom": [
             "guia_upload_id"
           ],
+          "tableTo": "guias",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "fiscal_apuracoes_guias_fechamento_id_fiscal_fechamentos_id_fk": {
           "name": "fiscal_apuracoes_guias_fechamento_id_fiscal_fechamentos_id_fk",
           "tableFrom": "fiscal_apuracoes_guias",
-          "tableTo": "fiscal_fechamentos",
           "columnsFrom": [
             "fechamento_id"
           ],
+          "tableTo": "fiscal_fechamentos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -6266,9 +7312,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_catalogo_tipo_uf": {
           "name": "idx_fiscal_catalogo_tipo_uf",
@@ -6287,24 +7333,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_catalogos_versoes_aprovado_por_user_id_fk": {
           "name": "fiscal_catalogos_versoes_aprovado_por_user_id_fk",
           "tableFrom": "fiscal_catalogos_versoes",
-          "tableTo": "user",
           "columnsFrom": [
             "aprovado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -6407,37 +7453,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_decisoes_item_item_id_documentos_fiscais_itens_id_fk": {
           "name": "fiscal_decisoes_item_item_id_documentos_fiscais_itens_id_fk",
           "tableFrom": "fiscal_decisoes_item",
-          "tableTo": "documentos_fiscais_itens",
           "columnsFrom": [
             "item_id"
           ],
+          "tableTo": "documentos_fiscais_itens",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fiscal_decisoes_item_cliente_id_clientes_id_fk": {
           "name": "fiscal_decisoes_item_cliente_id_clientes_id_fk",
           "tableFrom": "fiscal_decisoes_item",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -6640,9 +7686,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_entrega_fechamento": {
           "name": "idx_fiscal_entrega_fechamento",
@@ -6655,9 +7701,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_entrega_original": {
           "name": "idx_fiscal_entrega_original",
@@ -6670,50 +7716,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_entregas_cliente_id_clientes_id_fk": {
           "name": "fiscal_entregas_cliente_id_clientes_id_fk",
           "tableFrom": "fiscal_entregas",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fiscal_entregas_fechamento_id_fiscal_fechamentos_id_fk": {
           "name": "fiscal_entregas_fechamento_id_fiscal_fechamentos_id_fk",
           "tableFrom": "fiscal_entregas",
-          "tableTo": "fiscal_fechamentos",
           "columnsFrom": [
             "fechamento_id"
           ],
+          "tableTo": "fiscal_fechamentos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "fiscal_entregas_original_fk": {
           "name": "fiscal_entregas_original_fk",
           "tableFrom": "fiscal_entregas",
-          "tableTo": "fiscal_entregas",
           "columnsFrom": [
             "entrega_original_id"
           ],
+          "tableTo": "fiscal_entregas",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -6901,9 +7947,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_fiscal_fechamento_corrente": {
           "name": "uidx_fiscal_fechamento_corrente",
@@ -6928,10 +7974,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"fiscal_fechamentos\".\"corrente\" = true",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"fiscal_fechamentos\".\"corrente\" = true",
+          "concurrently": false
         },
         "idx_fiscal_fechamento_competencia": {
           "name": "idx_fiscal_fechamento_competencia",
@@ -6956,37 +8002,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_fechamentos_cliente_id_clientes_id_fk": {
           "name": "fiscal_fechamentos_cliente_id_clientes_id_fk",
           "tableFrom": "fiscal_fechamentos",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fiscal_fechamentos_aprovado_por_user_id_fk": {
           "name": "fiscal_fechamentos_aprovado_por_user_id_fk",
           "tableFrom": "fiscal_fechamentos",
-          "tableTo": "user",
           "columnsFrom": [
             "aprovado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -7148,9 +8194,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_pagamento_evento_fechamento": {
           "name": "idx_fiscal_pagamento_evento_fechamento",
@@ -7163,9 +8209,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_pagamento_evento_cliente": {
           "name": "idx_fiscal_pagamento_evento_cliente",
@@ -7184,63 +8230,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_pagamentos_eventos_cliente_id_clientes_id_fk": {
           "name": "fiscal_pagamentos_eventos_cliente_id_clientes_id_fk",
           "tableFrom": "fiscal_pagamentos_eventos",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fiscal_pagamentos_eventos_guia_id_fiscal_apuracoes_guias_id_fk": {
           "name": "fiscal_pagamentos_eventos_guia_id_fiscal_apuracoes_guias_id_fk",
           "tableFrom": "fiscal_pagamentos_eventos",
-          "tableTo": "fiscal_apuracoes_guias",
           "columnsFrom": [
             "guia_id"
           ],
+          "tableTo": "fiscal_apuracoes_guias",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_fiscal_pagamento_fechamento": {
           "name": "fk_fiscal_pagamento_fechamento",
           "tableFrom": "fiscal_pagamentos_eventos",
-          "tableTo": "fiscal_fechamentos",
           "columnsFrom": [
             "fechamento_id"
           ],
+          "tableTo": "fiscal_fechamentos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "fiscal_pagamentos_eventos_estornado_fk": {
           "name": "fiscal_pagamentos_eventos_estornado_fk",
           "tableFrom": "fiscal_pagamentos_eventos",
-          "tableTo": "fiscal_pagamentos_eventos",
           "columnsFrom": [
             "evento_estornado_id"
           ],
+          "tableTo": "fiscal_pagamentos_eventos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -7356,6 +8402,24 @@
           "notNull": true,
           "default": true
         },
+        "escopo_aprovado": {
+          "name": "escopo_aprovado",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aprovado_por": {
+          "name": "aprovado_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aprovado_em": {
+          "name": "aprovado_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "criado_em": {
           "name": "criado_em",
           "type": "timestamp with time zone",
@@ -7388,9 +8452,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_fiscal_regra_lookup": {
           "name": "idx_fiscal_regra_lookup",
@@ -7415,37 +8479,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_regras_versoes_responsavel_por_user_id_fk": {
           "name": "fiscal_regras_versoes_responsavel_por_user_id_fk",
           "tableFrom": "fiscal_regras_versoes",
-          "tableTo": "user",
           "columnsFrom": [
             "responsavel_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "fiscal_regras_versoes_aprovado_por_user_id_fk": {
+          "name": "fiscal_regras_versoes_aprovado_por_user_id_fk",
+          "tableFrom": "fiscal_regras_versoes",
+          "columnsFrom": [
+            "aprovado_por"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "fk_fiscal_regra_catalogo": {
           "name": "fk_fiscal_regra_catalogo",
           "tableFrom": "fiscal_regras_versoes",
-          "tableTo": "fiscal_catalogos_versoes",
           "columnsFrom": [
             "catalogo_versao_id"
           ],
+          "tableTo": "fiscal_catalogos_versoes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -7532,35 +8609,35 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_simples_anexos_tabela_id_fiscal_simples_tabelas_id_fk": {
           "name": "fiscal_simples_anexos_tabela_id_fiscal_simples_tabelas_id_fk",
           "tableFrom": "fiscal_simples_anexos",
-          "tableTo": "fiscal_simples_tabelas",
           "columnsFrom": [
             "tabela_id"
           ],
+          "tableTo": "fiscal_simples_tabelas",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_simples_anexos_tabela_anexo": {
           "name": "uq_simples_anexos_tabela_anexo",
-          "nullsNotDistinct": false,
           "columns": [
             "tabela_id",
             "anexo"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -7668,24 +8745,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fk_simples_apuracao_item": {
           "name": "fk_simples_apuracao_item",
           "tableFrom": "fiscal_simples_apuracao_itens",
-          "tableTo": "fiscal_simples_apuracoes",
           "columnsFrom": [
             "apuracao_id"
           ],
+          "tableTo": "fiscal_simples_apuracoes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -7864,9 +8941,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_simples_apuracao_corrente": {
           "name": "uidx_simples_apuracao_corrente",
@@ -7885,10 +8962,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"fiscal_simples_apuracoes\".\"corrente\" = true",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"fiscal_simples_apuracoes\".\"corrente\" = true",
+          "concurrently": false
         },
         "idx_simples_apuracao_competencia": {
           "name": "idx_simples_apuracao_competencia",
@@ -7907,63 +8984,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_simples_apuracoes_cliente_id_clientes_id_fk": {
           "name": "fiscal_simples_apuracoes_cliente_id_clientes_id_fk",
           "tableFrom": "fiscal_simples_apuracoes",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fiscal_simples_apuracoes_tabela_id_fiscal_simples_tabelas_id_fk": {
           "name": "fiscal_simples_apuracoes_tabela_id_fiscal_simples_tabelas_id_fk",
           "tableFrom": "fiscal_simples_apuracoes",
-          "tableTo": "fiscal_simples_tabelas",
           "columnsFrom": [
             "tabela_id"
           ],
+          "tableTo": "fiscal_simples_tabelas",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "fiscal_simples_apuracoes_fechamento_id_fiscal_fechamentos_id_fk": {
           "name": "fiscal_simples_apuracoes_fechamento_id_fiscal_fechamentos_id_fk",
           "tableFrom": "fiscal_simples_apuracoes",
-          "tableTo": "fiscal_fechamentos",
           "columnsFrom": [
             "fechamento_id"
           ],
+          "tableTo": "fiscal_fechamentos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "fiscal_simples_apuracoes_guia_id_fiscal_apuracoes_guias_id_fk": {
           "name": "fiscal_simples_apuracoes_guia_id_fiscal_apuracoes_guias_id_fk",
           "tableFrom": "fiscal_simples_apuracoes",
-          "tableTo": "fiscal_apuracoes_guias",
           "columnsFrom": [
             "guia_id"
           ],
+          "tableTo": "fiscal_apuracoes_guias",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -8125,35 +9202,35 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_simples_faixas_anexo_id_fiscal_simples_anexos_id_fk": {
           "name": "fiscal_simples_faixas_anexo_id_fiscal_simples_anexos_id_fk",
           "tableFrom": "fiscal_simples_faixas",
-          "tableTo": "fiscal_simples_anexos",
           "columnsFrom": [
             "anexo_id"
           ],
+          "tableTo": "fiscal_simples_anexos",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_simples_faixa_anexo": {
           "name": "uq_simples_faixa_anexo",
-          "nullsNotDistinct": false,
           "columns": [
             "anexo_id",
             "faixa"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -8257,48 +9334,48 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "fiscal_simples_historicos_mensais_cliente_id_clientes_id_fk": {
           "name": "fiscal_simples_historicos_mensais_cliente_id_clientes_id_fk",
           "tableFrom": "fiscal_simples_historicos_mensais",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fiscal_simples_historicos_mensais_informado_por_user_id_fk": {
           "name": "fiscal_simples_historicos_mensais_informado_por_user_id_fk",
           "tableFrom": "fiscal_simples_historicos_mensais",
-          "tableTo": "user",
           "columnsFrom": [
             "informado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_simples_historico_cliente_competencia": {
           "name": "uq_simples_historico_cliente_competencia",
-          "nullsNotDistinct": false,
           "columns": [
             "cliente_id",
             "competencia"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -8362,11 +9439,11 @@
       "uniqueConstraints": {
         "uq_simples_sublimite_uf_ano": {
           "name": "uq_simples_sublimite_uf_ano",
-          "nullsNotDistinct": false,
           "columns": [
             "uf",
             "ano_vigencia"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -8450,9 +9527,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -8460,10 +9537,10 @@
       "uniqueConstraints": {
         "uq_simples_tabelas_versao": {
           "name": "uq_simples_tabelas_versao",
-          "nullsNotDistinct": false,
           "columns": [
             "versao"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -8644,10 +9721,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"folhas_pagamento\".\"tipo\" = 'FOLHA_MENSAL'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"folhas_pagamento\".\"tipo\" = 'FOLHA_MENSAL'",
+          "concurrently": false
         },
         "idx_folhas_cliente_id": {
           "name": "idx_folhas_cliente_id",
@@ -8660,9 +9737,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_folhas_competencia": {
           "name": "idx_folhas_competencia",
@@ -8675,61 +9752,61 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "folhas_pagamento_cliente_id_clientes_id_fk": {
           "name": "folhas_pagamento_cliente_id_clientes_id_fk",
           "tableFrom": "folhas_pagamento",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "folhas_pagamento_documento_id_guias_id_fk": {
           "name": "folhas_pagamento_documento_id_guias_id_fk",
           "tableFrom": "folhas_pagamento",
-          "tableTo": "guias",
           "columnsFrom": [
             "documento_id"
           ],
+          "tableTo": "guias",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "folhas_pagamento_uploadado_por_user_id_fk": {
           "name": "folhas_pagamento_uploadado_por_user_id_fk",
           "tableFrom": "folhas_pagamento",
-          "tableTo": "user",
           "columnsFrom": [
             "uploadado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_folhas_id_cliente": {
           "name": "uq_folhas_id_cliente",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "cliente_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -8874,9 +9951,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_funcionarios_cliente_id": {
           "name": "idx_funcionarios_cliente_id",
@@ -8889,35 +9966,35 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "funcionarios_rh_cliente_id_clientes_id_fk": {
           "name": "funcionarios_rh_cliente_id_clientes_id_fk",
           "tableFrom": "funcionarios_rh",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_funcionarios_id_cliente": {
           "name": "uq_funcionarios_id_cliente",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "cliente_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9060,9 +10137,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_guias_tipo": {
           "name": "idx_guias_tipo",
@@ -9075,9 +10152,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_guias_periodo": {
           "name": "idx_guias_periodo",
@@ -9090,9 +10167,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_guias_status": {
           "name": "idx_guias_status",
@@ -9105,9 +10182,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_guias_pagamento_confirmado_por": {
           "name": "idx_guias_pagamento_confirmado_por",
@@ -9120,50 +10197,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "guias_cliente_id_clientes_id_fk": {
           "name": "guias_cliente_id_clientes_id_fk",
           "tableFrom": "guias",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "guias_pagamento_confirmado_por_user_id_fk": {
           "name": "guias_pagamento_confirmado_por_user_id_fk",
           "tableFrom": "guias",
-          "tableTo": "user",
           "columnsFrom": [
             "pagamento_confirmado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_guias_identidade": {
           "name": "uq_guias_identidade",
-          "nullsNotDistinct": true,
           "columns": [
             "cliente_id",
             "tipo",
             "periodo",
             "numero_parcelamento"
-          ]
+          ],
+          "nullsNotDistinct": true
         }
       },
       "policies": {},
@@ -9361,9 +10438,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_itens_folha_id": {
           "name": "idx_itens_folha_id",
@@ -9376,9 +10453,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_itens_funcionario_id": {
           "name": "idx_itens_funcionario_id",
@@ -9391,9 +10468,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_itens_cliente_id": {
           "name": "idx_itens_cliente_id",
@@ -9406,80 +10483,80 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "itens_folha_pagamento_folha_id_folhas_pagamento_id_fk": {
           "name": "itens_folha_pagamento_folha_id_folhas_pagamento_id_fk",
           "tableFrom": "itens_folha_pagamento",
-          "tableTo": "folhas_pagamento",
           "columnsFrom": [
             "folha_id"
           ],
+          "tableTo": "folhas_pagamento",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "itens_folha_pagamento_funcionario_id_funcionarios_rh_id_fk": {
           "name": "itens_folha_pagamento_funcionario_id_funcionarios_rh_id_fk",
           "tableFrom": "itens_folha_pagamento",
-          "tableTo": "funcionarios_rh",
           "columnsFrom": [
             "funcionario_id"
           ],
+          "tableTo": "funcionarios_rh",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "itens_folha_pagamento_cliente_id_clientes_id_fk": {
           "name": "itens_folha_pagamento_cliente_id_clientes_id_fk",
           "tableFrom": "itens_folha_pagamento",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_itens_folha_cliente": {
           "name": "fk_itens_folha_cliente",
           "tableFrom": "itens_folha_pagamento",
-          "tableTo": "folhas_pagamento",
           "columnsFrom": [
             "folha_id",
             "cliente_id"
           ],
+          "tableTo": "folhas_pagamento",
           "columnsTo": [
             "id",
             "cliente_id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_itens_funcionario_cliente": {
           "name": "fk_itens_funcionario_cliente",
           "tableFrom": "itens_folha_pagamento",
-          "tableTo": "funcionarios_rh",
           "columnsFrom": [
             "funcionario_id",
             "cliente_id"
           ],
+          "tableTo": "funcionarios_rh",
           "columnsTo": [
             "id",
             "cliente_id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -9686,9 +10763,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_regras_fiscais_match": {
           "name": "idx_regras_fiscais_match",
@@ -9713,9 +10790,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_regras_fiscais_ncm": {
           "name": "idx_regras_fiscais_ncm",
@@ -9728,37 +10805,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "regras_fiscais_cliente_id_clientes_id_fk": {
           "name": "regras_fiscais_cliente_id_clientes_id_fk",
           "tableFrom": "regras_fiscais",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "regras_fiscais_cfop_destino_cfops_codigo_fk": {
           "name": "regras_fiscais_cfop_destino_cfops_codigo_fk",
           "tableFrom": "regras_fiscais",
-          "tableTo": "cfops",
           "columnsFrom": [
             "cfop_destino"
           ],
+          "tableTo": "cfops",
           "columnsTo": [
             "codigo"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -9776,6 +10853,261 @@
         "chk_regras_fiscais_prioridade": {
           "name": "chk_regras_fiscais_prioridade",
           "value": "\"regras_fiscais\".\"prioridade\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.relatorios_faturamento": {
+      "name": "relatorios_faturamento",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "numero": {
+          "name": "numero",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "name": "relatorios_faturamento_numero_seq",
+            "increment": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "startWith": "1",
+            "cache": "1",
+            "cycle": false,
+            "schema": "public",
+            "type": "always"
+          }
+        },
+        "codigo": {
+          "name": "codigo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cliente_id": {
+          "name": "cliente_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contador_id": {
+          "name": "contador_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "periodo_inicio": {
+          "name": "periodo_inicio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "periodo_fim": {
+          "name": "periodo_fim",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "empresa_nome": {
+          "name": "empresa_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "empresa_documento": {
+          "name": "empresa_documento",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contador_nome": {
+          "name": "contador_nome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contador_crc": {
+          "name": "contador_crc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "meses": {
+          "name": "meses",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total": {
+          "name": "total",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf_key": {
+          "name": "pdf_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_sha256": {
+          "name": "pdf_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assinatura_status": {
+          "name": "assinatura_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'SEM_CERTIFICADO'"
+        },
+        "assinatura_thumbprint": {
+          "name": "assinatura_thumbprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PROCESSANDO'"
+        },
+        "emitido_por": {
+          "name": "emitido_por",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "criado_em": {
+          "name": "criado_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "emitido_em": {
+          "name": "emitido_em",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uidx_relat_faturamento_numero": {
+          "name": "uidx_relat_faturamento_numero",
+          "columns": [
+            {
+              "expression": "numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "uidx_relat_faturamento_codigo": {
+          "name": "uidx_relat_faturamento_codigo",
+          "columns": [
+            {
+              "expression": "codigo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "idx_relat_faturamento_cliente_data": {
+          "name": "idx_relat_faturamento_cliente_data",
+          "columns": [
+            {
+              "expression": "cliente_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "criado_em",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "relatorios_faturamento_cliente_id_clientes_id_fk": {
+          "name": "relatorios_faturamento_cliente_id_clientes_id_fk",
+          "tableFrom": "relatorios_faturamento",
+          "columnsFrom": [
+            "cliente_id"
+          ],
+          "tableTo": "clientes",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "relatorios_faturamento_contador_id_contadores_id_fk": {
+          "name": "relatorios_faturamento_contador_id_contadores_id_fk",
+          "tableFrom": "relatorios_faturamento",
+          "columnsFrom": [
+            "contador_id"
+          ],
+          "tableTo": "contadores",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "relatorios_faturamento_emitido_por_user_id_fk": {
+          "name": "relatorios_faturamento_emitido_por_user_id_fk",
+          "tableFrom": "relatorios_faturamento",
+          "columnsFrom": [
+            "emitido_por"
+          ],
+          "tableTo": "user",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_relat_faturamento_status": {
+          "name": "chk_relat_faturamento_status",
+          "value": "\"relatorios_faturamento\".\"status\" IN ('PROCESSANDO', 'EMITIDO', 'FALHOU')"
+        },
+        "chk_relat_faturamento_assinatura": {
+          "name": "chk_relat_faturamento_assinatura",
+          "value": "\"relatorios_faturamento\".\"assinatura_status\" IN ('ASSINADO', 'SEM_CERTIFICADO')"
         }
       },
       "isRLSEnabled": false
@@ -9840,25 +11172,25 @@
         "session_user_id_user_id_fk": {
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "session_token_unique": {
           "name": "session_token_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "token"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9969,37 +11301,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_ajustes_apuracao_cliente_id_clientes_id_fk": {
           "name": "sped_ajustes_apuracao_cliente_id_clientes_id_fk",
           "tableFrom": "sped_ajustes_apuracao",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_ajustes_apuracao_atualizado_por_user_id_fk": {
           "name": "sped_ajustes_apuracao_atualizado_por_user_id_fk",
           "tableFrom": "sped_ajustes_apuracao",
-          "tableTo": "user",
           "columnsFrom": [
             "atualizado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -10166,9 +11498,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_sped_arquivo_status": {
           "name": "idx_sped_arquivo_status",
@@ -10181,37 +11513,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_arquivos_gerados_cliente_id_clientes_id_fk": {
           "name": "sped_arquivos_gerados_cliente_id_clientes_id_fk",
           "tableFrom": "sped_arquivos_gerados",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_arquivos_gerados_gerado_por_user_id_fk": {
           "name": "sped_arquivos_gerados_gerado_por_user_id_fk",
           "tableFrom": "sped_arquivos_gerados",
-          "tableTo": "user",
           "columnsFrom": [
             "gerado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -10387,37 +11719,37 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_configuracoes_cliente_id_clientes_id_fk": {
           "name": "sped_configuracoes_cliente_id_clientes_id_fk",
           "tableFrom": "sped_configuracoes",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_configuracoes_atualizado_por_user_id_fk": {
           "name": "sped_configuracoes_atualizado_por_user_id_fk",
           "tableFrom": "sped_configuracoes",
-          "tableTo": "user",
           "columnsFrom": [
             "atualizado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -10560,63 +11892,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_inventario_itens_inventario_id_sped_inventarios_id_fk": {
           "name": "sped_inventario_itens_inventario_id_sped_inventarios_id_fk",
           "tableFrom": "sped_inventario_itens",
-          "tableTo": "sped_inventarios",
           "columnsFrom": [
             "inventario_id"
           ],
+          "tableTo": "sped_inventarios",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_inventario_itens_sped_item_id_sped_itens_id_fk": {
           "name": "sped_inventario_itens_sped_item_id_sped_itens_id_fk",
           "tableFrom": "sped_inventario_itens",
-          "tableTo": "sped_itens",
           "columnsFrom": [
             "sped_item_id"
           ],
+          "tableTo": "sped_itens",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "sped_inventario_itens_participante_id_sped_participantes_id_fk": {
           "name": "sped_inventario_itens_participante_id_sped_participantes_id_fk",
           "tableFrom": "sped_inventario_itens",
-          "tableTo": "sped_participantes",
           "columnsFrom": [
             "participante_id"
           ],
+          "tableTo": "sped_participantes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_sped_inventario_item_participante": {
           "name": "uq_sped_inventario_item_participante",
-          "nullsNotDistinct": true,
           "columns": [
             "inventario_id",
             "sped_item_id",
             "indicador_propriedade",
             "participante_id"
-          ]
+          ],
+          "nullsNotDistinct": true
         }
       },
       "policies": {},
@@ -10743,9 +12075,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_sped_inventario_cliente_data": {
           "name": "idx_sped_inventario_cliente_data",
@@ -10764,37 +12096,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_inventarios_cliente_id_clientes_id_fk": {
           "name": "sped_inventarios_cliente_id_clientes_id_fk",
           "tableFrom": "sped_inventarios",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_inventarios_atualizado_por_user_id_fk": {
           "name": "sped_inventarios_atualizado_por_user_id_fk",
           "tableFrom": "sped_inventarios",
-          "tableTo": "user",
           "columnsFrom": [
             "atualizado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -10959,9 +12291,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_sped_item_cliente": {
           "name": "idx_sped_item_cliente",
@@ -10974,62 +12306,62 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_itens_cliente_id_clientes_id_fk": {
           "name": "sped_itens_cliente_id_clientes_id_fk",
           "tableFrom": "sped_itens",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_itens_participante_origem_id_sped_participantes_id_fk": {
           "name": "sped_itens_participante_origem_id_sped_participantes_id_fk",
           "tableFrom": "sped_itens",
-          "tableTo": "sped_participantes",
           "columnsFrom": [
             "participante_origem_id"
           ],
+          "tableTo": "sped_participantes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "sped_itens_unidade_id_sped_unidades_id_fk": {
           "name": "sped_itens_unidade_id_sped_unidades_id_fk",
           "tableFrom": "sped_itens",
-          "tableTo": "sped_unidades",
           "columnsFrom": [
             "unidade_id"
           ],
+          "tableTo": "sped_unidades",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_sped_item_origem_externo": {
           "name": "uq_sped_item_origem_externo",
-          "nullsNotDistinct": true,
           "columns": [
             "cliente_id",
             "participante_origem_id",
             "codigo_externo"
-          ]
+          ],
+          "nullsNotDistinct": true
         }
       },
       "policies": {},
@@ -11177,50 +12509,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_obrigacoes_recolhimento_cliente_id_clientes_id_fk": {
           "name": "sped_obrigacoes_recolhimento_cliente_id_clientes_id_fk",
           "tableFrom": "sped_obrigacoes_recolhimento",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_obrigacoes_recolhimento_atualizado_por_user_id_fk": {
           "name": "sped_obrigacoes_recolhimento_atualizado_por_user_id_fk",
           "tableFrom": "sped_obrigacoes_recolhimento",
-          "tableTo": "user",
           "columnsFrom": [
             "atualizado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_sped_obrigacao_competencia": {
           "name": "uq_sped_obrigacao_competencia",
-          "nullsNotDistinct": true,
           "columns": [
             "cliente_id",
             "competencia",
             "tipo",
             "uf"
-          ]
+          ],
+          "nullsNotDistinct": true
         }
       },
       "policies": {},
@@ -11379,9 +12711,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_sped_participante_documento": {
           "name": "uidx_sped_participante_documento",
@@ -11400,9 +12732,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_sped_participante_cliente": {
           "name": "idx_sped_participante_cliente",
@@ -11415,37 +12747,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_participantes_cliente_id_clientes_id_fk": {
           "name": "sped_participantes_cliente_id_clientes_id_fk",
           "tableFrom": "sped_participantes",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "fk_sped_part_fonte_documento": {
           "name": "fk_sped_part_fonte_documento",
           "tableFrom": "sped_participantes",
-          "tableTo": "documentos_fiscais",
           "columnsFrom": [
             "fonte_ultimo_documento_id"
           ],
+          "tableTo": "documentos_fiscais",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -11564,9 +12896,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_sped_responsabilidade_cliente": {
           "name": "idx_sped_responsabilidade_cliente",
@@ -11579,24 +12911,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_responsabilidades_tributarias_cliente_id_clientes_id_fk": {
           "name": "sped_responsabilidades_tributarias_cliente_id_clientes_id_fk",
           "tableFrom": "sped_responsabilidades_tributarias",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -11699,50 +13031,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_saldos_apuracao_cliente_id_clientes_id_fk": {
           "name": "sped_saldos_apuracao_cliente_id_clientes_id_fk",
           "tableFrom": "sped_saldos_apuracao",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "sped_saldos_apuracao_atualizado_por_user_id_fk": {
           "name": "sped_saldos_apuracao_atualizado_por_user_id_fk",
           "tableFrom": "sped_saldos_apuracao",
-          "tableTo": "user",
           "columnsFrom": [
             "atualizado_por"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "uq_sped_saldo_competencia": {
           "name": "uq_sped_saldo_competencia",
-          "nullsNotDistinct": true,
           "columns": [
             "cliente_id",
             "competencia",
             "tipo",
             "uf"
-          ]
+          ],
+          "nullsNotDistinct": true
         }
       },
       "policies": {},
@@ -11824,9 +13156,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_sped_unidade_cliente": {
           "name": "idx_sped_unidade_cliente",
@@ -11839,24 +13171,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "sped_unidades_cliente_id_clientes_id_fk": {
           "name": "sped_unidades_cliente_id_clientes_id_fk",
           "tableFrom": "sped_unidades",
-          "tableTo": "clientes",
           "columnsFrom": [
             "cliente_id"
           ],
+          "tableTo": "clientes",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -11958,9 +13290,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -11968,10 +13300,10 @@
       "uniqueConstraints": {
         "storage_cleanup_jobs_object_key_unique": {
           "name": "storage_cleanup_jobs_object_key_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "object_key"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -12058,10 +13390,10 @@
       "uniqueConstraints": {
         "user_email_unique": {
           "name": "user_email_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -12128,9 +13460,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "uidx_verification_value": {
           "name": "uidx_verification_value",
@@ -12143,9 +13475,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -12198,9 +13530,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_visualizacoes_folha_user": {
           "name": "idx_visualizacoes_folha_user",
@@ -12213,37 +13545,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "visualizacoes_folhas_folha_id_folhas_pagamento_id_fk": {
           "name": "visualizacoes_folhas_folha_id_folhas_pagamento_id_fk",
           "tableFrom": "visualizacoes_folhas",
-          "tableTo": "folhas_pagamento",
           "columnsFrom": [
             "folha_id"
           ],
+          "tableTo": "folhas_pagamento",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "visualizacoes_folhas_user_id_user_id_fk": {
           "name": "visualizacoes_folhas_user_id_user_id_fk",
           "tableFrom": "visualizacoes_folhas",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -12295,9 +13627,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_visualizacoes_guia_user": {
           "name": "idx_visualizacoes_guia_user",
@@ -12310,37 +13642,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "visualizacoes_guias_guia_id_guias_id_fk": {
           "name": "visualizacoes_guias_guia_id_guias_id_fk",
           "tableFrom": "visualizacoes_guias",
-          "tableTo": "guias",
           "columnsFrom": [
             "guia_id"
           ],
+          "tableTo": "guias",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "visualizacoes_guias_user_id_user_id_fk": {
           "name": "visualizacoes_guias_user_id_user_id_fk",
           "tableFrom": "visualizacoes_guias",
-          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -12352,10 +13684,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

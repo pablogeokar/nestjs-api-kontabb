@@ -194,8 +194,10 @@ pasta pelo padrão `schemas/*.ts`; depois de alterar uma definição, execute
 migration. Esse comando valida os arquivos e exports, gera a migration e
 verifica o histórico com `drizzle-kit check`.
 
-Novos ambientes começam pela baseline `drizzle/0000_silent_warbird.sql`,
-registrada em `drizzle/meta/_journal.json`. Ela cria diretamente as 54 tabelas
+Novos ambientes começam pela baseline `drizzle/0000_mute_dark_beast.sql`,
+registrada em `drizzle/meta/_journal.json`, seguida de
+`0001_clientes_perfis_fiscais_trigger.sql` (função e trigger do histórico de
+perfis fiscais). A baseline cria diretamente as 66 tabelas
 atuais e só pode ser aplicada a um banco vazio. O procedimento de recriação,
 restore e validação está em `docs/database-rebuild.md`. Backups históricos com
 as três tabelas removidas precisam do helper `backup-restore` v1.2 e da opção

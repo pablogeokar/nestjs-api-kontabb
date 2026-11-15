@@ -17,12 +17,12 @@ const baselineSnapshot = JSON.parse(
 ) as { tables: Record<string, { name: string }> };
 
 describe('nova baseline do banco', () => {
-  it('cria as 54 tabelas atuais em banco vazio', () => {
+  it('cria as 66 tabelas atuais em banco vazio', () => {
     expect(journal.entries[0].idx).toBe(0);
     const tables = Object.values(baselineSnapshot.tables).map(
       (table) => table.name,
     );
-    expect(tables).toHaveLength(54);
+    expect(tables).toHaveLength(66);
     for (const table of tables) {
       expect(baselineSql).toContain(`CREATE TABLE "${table}"`);
     }
@@ -57,7 +57,7 @@ describe('nova baseline do banco', () => {
       baselineSql.matchAll(/ADD CONSTRAINT "([^"]+)" FOREIGN KEY/g),
       (match) => match[1],
     );
-    expect(names).toHaveLength(98);
+    expect(names).toHaveLength(125);
     expect(new Set(names).size).toBe(names.length);
     for (const name of names) {
       expect(Buffer.byteLength(name, 'utf8')).toBeLessThanOrEqual(63);
