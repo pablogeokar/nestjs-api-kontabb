@@ -30,6 +30,10 @@ import {
 } from './fiscal-guias-vinculo';
 import { compararGuiaComObrigacao } from './fiscal-guias-divergencia';
 import {
+  renderEspelhoRecolhimentoPdf,
+  type EspelhoRecolhimento,
+} from './espelho-recolhimento.pdf';
+import {
   projetarSaldoObrigacao,
   sinalDoEvento,
   type EventoPagamentoTrilha,
@@ -367,6 +371,150 @@ export class FiscalGuiasService {
     return { data: rows.map((row) => this.toGuiaResponse(row)) };
   }
 
+  /** Espelho auxiliar de uma obrigação já registrada, sempre escopada pelo cliente. */
+  async gerarEspelho(input: {
+    clienteId: string;
+    guiaId: string;
+  }): Promise<Buffer> {
+    const guia = await this.carregarGuiaDoCliente(
+      input.clienteId,
+      input.guiaId,
+    );
+    if (guia.cancelada) {
+      throw new BadRequestException(
+        'Obrigação cancelada não possui espelho de recolhimento.',
+      );
+    }
+    const [cliente] = await this.database.db
+      .select({
+        razaoSocial: clientes.razaoSocial,
+        documento: clientes.cnpj,
+        inscricaoEstadual: clientes.inscricaoEstadual,
+        logradouro: clientes.logradouro,
+        numero: clientes.numero,
+        bairro: clientes.bairro,
+        municipio: clientes.municipio,
+        uf: clientes.uf,
+        cep: clientes.cep,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, input.clienteId))
+      .limit(1);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+
+    const dados: EspelhoRecolhimento = {
+      referenciaInterna: guia.id,
+      ufFavorecida: guia.ufFavorecida,
+      tributo: guia.tributo.replaceAll('_', ' '),
+      tipoDocumentoSugerido: guia.tipoGuia,
+      codigoReceita: guia.codigoReceita,
+      competencia: `${guia.competencia.slice(5, 7)}/${guia.competencia.slice(0, 4)}`,
+      vencimento: guia.dataVencimento,
+      contribuinte: {
+        nome: cliente.razaoSocial,
+        documento: cliente.documento,
+        inscricaoEstadual: cliente.inscricaoEstadual,
+        logradouro: cliente.logradouro,
+        numero: cliente.numero,
+        bairro: cliente.bairro,
+        municipio: cliente.municipio,
+        uf: cliente.uf,
+        cep: cliente.cep,
+      },
+      valores: {
+        principal: guia.valorPrincipal,
+        multa: guia.valorMulta ?? '0',
+        juros: guia.valorJuros ?? '0',
+        total: guia.valorTotal,
+      },
+      origem:
+        guia.origem === 'APURACAO' ? 'Apuração fechada' : 'Registro manual',
+      observacoes: [
+        'Confirme código de receita, vencimento e acréscimos no portal oficial antes de emitir a guia.',
+        ...(guia.divergenteObrigacao
+          ? [
+              'O valor registrado diverge da obrigação apurada. Confira a diferença antes da emissão.',
+            ]
+          : []),
+        ...(guia.emitidaOrgao
+          ? [
+              'Há emissão no órgão registrada no sistema; este espelho não substitui o documento oficial.',
+            ]
+          : []),
+      ],
+      geradoEm: new Date(),
+    };
+    return renderEspelhoRecolhimentoPdf(dados);
+  }
+
+  /** Prévia da antecipação BA: total apenas dos itens calculados e homologados. */
+  async gerarEspelhoPreviaAntecipacao(input: {
+    clienteId: string;
+    competencia: string;
+    totalApurado: string;
+    itensEmConferencia: number;
+  }): Promise<Buffer> {
+    this.competenciaRange(input.competencia);
+    if (toScaledInteger(input.totalApurado) <= 0n) {
+      throw new BadRequestException(
+        'Não há valor homologado para gerar o espelho.',
+      );
+    }
+    const [cliente] = await this.database.db
+      .select({
+        razaoSocial: clientes.razaoSocial,
+        documento: clientes.cnpj,
+        inscricaoEstadual: clientes.inscricaoEstadual,
+        logradouro: clientes.logradouro,
+        numero: clientes.numero,
+        bairro: clientes.bairro,
+        municipio: clientes.municipio,
+        uf: clientes.uf,
+        cep: clientes.cep,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, input.clienteId))
+      .limit(1);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const competencia = `${input.competencia.slice(5, 7)}/${input.competencia.slice(0, 4)}`;
+    return renderEspelhoRecolhimentoPdf({
+      referenciaInterna: `Prévia de antecipação parcial ${competencia}`,
+      ufFavorecida: 'BA',
+      tributo: 'ICMS ANTECIPAÇÃO PARCIAL',
+      tipoDocumentoSugerido: 'DAE',
+      codigoReceita: '2175',
+      competencia,
+      vencimento: 'A confirmar no portal oficial',
+      contribuinte: {
+        nome: cliente.razaoSocial,
+        documento: cliente.documento,
+        inscricaoEstadual: cliente.inscricaoEstadual,
+        logradouro: cliente.logradouro,
+        numero: cliente.numero,
+        bairro: cliente.bairro,
+        municipio: cliente.municipio,
+        uf: cliente.uf,
+        cep: cliente.cep,
+      },
+      valores: {
+        principal: input.totalApurado,
+        multa: '0',
+        juros: '0',
+        total: input.totalApurado,
+      },
+      origem: 'Prévia da apuração; obrigação ainda não registrada',
+      observacoes: [
+        'Valor preliminar: confirme receita, vencimento, acréscimos e reduções no portal da SEFAZ.',
+        ...(input.itensEmConferencia > 0
+          ? [
+              `${input.itensEmConferencia} ${input.itensEmConferencia === 1 ? 'item ficou' : 'itens ficaram'} fora do total por pendência, simulação ou ST.`,
+            ]
+          : []),
+      ],
+      geradoEm: new Date(),
+    });
+  }
+
   /**
    * Visão operacional única da obrigação calculada e do PDF enviado. Pares
    * vinculados são uma única linha; uploads legados sem vínculo continuam
@@ -455,6 +603,10 @@ export class FiscalGuiasService {
     const linhasFiscais = guiasFiscais.map((guia) => ({
       id: guia.id,
       origem: 'APURACAO' as const,
+      registro_origem:
+        guia.origem === 'APURACAO'
+          ? ('APURACAO' as const)
+          : ('MANUAL' as const),
       tipo: guia.tipoGuia,
       tributo: guia.tributo,
       competencia: input.competencia,
@@ -483,6 +635,7 @@ export class FiscalGuiasService {
       .map((guia) => ({
         id: guia.id,
         origem: 'UPLOAD' as const,
+        registro_origem: null,
         tipo: guia.tipo,
         tributo: null,
         competencia: input.competencia,

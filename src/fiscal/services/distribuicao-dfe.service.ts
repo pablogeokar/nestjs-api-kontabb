@@ -571,9 +571,9 @@ export class DistribuicaoDfeService {
   }
 
   /**
-   * Lista as empresas que possuem documentos fiscais importados.
-   * O resumo é usado pelo painel administrativo para manter a listagem
-   * explicitamente separada por cliente, sem depender da página atual.
+   * Lista as empresas do módulo fiscal para o seletor do painel
+   * administrativo. Não conta documentos: a contagem por cliente varre
+   * `documentos_fiscais` inteira e a tela não a utiliza.
    */
   async listClientesComDocumentosFiscais() {
     const rows = await this.database.db
@@ -588,23 +588,9 @@ export class DistribuicaoDfeService {
         apuraIcms: clientes.apuraIcms,
         optanteSimplesNacional: clientes.optanteSimplesNacional,
         obrigadoEfdIcmsIpi: sql<boolean>`coalesce(${spedConfiguracoes.obrigadoEfdIcmsIpi}, false)`,
-        totalDocumentos: sql<number>`count(${documentosFiscais.id})`,
       })
       .from(clientes)
-      .leftJoin(documentosFiscais, eq(documentosFiscais.clienteId, clientes.id))
       .leftJoin(spedConfiguracoes, eq(spedConfiguracoes.clienteId, clientes.id))
-      .groupBy(
-        clientes.id,
-        clientes.razaoSocial,
-        clientes.cnpj,
-        clientes.inscricaoEstadual,
-        clientes.municipio,
-        clientes.uf,
-        clientes.regimeTributario,
-        clientes.apuraIcms,
-        clientes.optanteSimplesNacional,
-        spedConfiguracoes.obrigadoEfdIcmsIpi,
-      )
       .orderBy(asc(clientes.razaoSocial));
 
     return rows.map((row) => ({
@@ -618,7 +604,6 @@ export class DistribuicaoDfeService {
       apura_icms: row.apuraIcms,
       optante_simples_nacional: row.optanteSimplesNacional,
       obrigado_efd_icms_ipi: row.obrigadoEfdIcmsIpi,
-      total_documentos: Number(row.totalDocumentos),
     }));
   }
 

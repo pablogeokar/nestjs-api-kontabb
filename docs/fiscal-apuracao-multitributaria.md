@@ -156,6 +156,18 @@ SEFAZ-BA com o código de receita **2175** e mostra somente o total calculado
 com regra homologada. A emissão, o vencimento e o valor final são confirmados
 no portal estadual; o demonstrativo interno não é um DAE emitido.
 
+O staff pode baixar um **espelho de recolhimento sem valor fiscal** diretamente
+da prévia de Antecipação Parcial (somente se houver total homologado positivo)
+ou de uma obrigação já registrada na Central de guias. A prévia não inventa
+vencimento: exibe “A confirmar no portal oficial” e indica quantos itens ficaram
+fora do total por pendência, simulação ou ST. O espelho de obrigação registrada
+usa os valores, receita, competência e vencimento armazenados; não recalcula nem
+altera a obrigação. Ambos usam o mesmo contrato de renderização, independente
+de UF, em `espelho-recolhimento.pdf.ts`. O PDF não contém marca oficial, código
+de barras, linha digitável, PIX ou autenticação e não é gravado como guia emitida
+ou documento oficial. A emissão real e o vínculo do PDF oficial continuam sendo
+etapas distintas.
+
 ## Endpoints
 
 Cliente (`/api/fiscal/apuracao/...`):
@@ -183,6 +195,9 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`):
 | POST | `/admin/fiscal/apuracao/ciap/apropriar` | Efetivar 1/48 + ajuste E111 |
 | PATCH | `/admin/fiscal/apuracao/ciap/bens/:id/baixa` | Baixar bem |
 | POST | `/admin/fiscal/apuracao/guias` | Criar guia |
+| GET | `/admin/fiscal/apuracao/guias/central?clienteId=UUID&competencia=AAAA-MM` | Central de obrigações e PDFs oficiais |
+| GET | `/admin/fiscal/apuracao/guias/:id/espelho?clienteId=UUID` | PDF auxiliar da obrigação registrada |
+| GET | `/admin/fiscal/apuracao/antecipacao-parcial/espelho?clienteId=UUID&competencia=AAAA-MM` | PDF auxiliar da prévia homologada da BA |
 | PATCH | `/admin/fiscal/apuracao/guias/:id/pagamento` | Atualizar pagamento |
 | DELETE | `/admin/fiscal/apuracao/guias/:id?clienteId=UUID` | Remover guia |
 

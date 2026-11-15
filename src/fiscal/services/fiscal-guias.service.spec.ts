@@ -121,6 +121,80 @@ function baseInput(overrides: Partial<CriarGuiaInput> = {}): CriarGuiaInput {
   };
 }
 
+describe('FiscalGuiasService — espelho sem valor fiscal', () => {
+  const cliente = {
+    razaoSocial: 'EMPRESA EXEMPLO LTDA',
+    documento: '00000000000100',
+    inscricaoEstadual: '123456789',
+    logradouro: 'Rua Exemplo',
+    numero: '10',
+    bairro: 'Centro',
+    municipio: 'Salvador',
+    uf: 'BA',
+    cep: '40000000',
+  };
+
+  it('gera uma única página PDF a partir da obrigação registrada', async () => {
+    const db = createCriarGuiaDb({
+      clienteRows: [defaultGuiaRow()],
+      fechamentoRows: [cliente],
+    });
+    const buffer = await new FiscalGuiasService(db as never).gerarEspelho({
+      clienteId: 'c1',
+      guiaId: 'guia-1',
+    });
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(
+      buffer.toString('latin1').match(/\/Type \/Page\b/g) ?? [],
+    ).toHaveLength(1);
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('não gera espelho de obrigação inexistente ou cancelada', async () => {
+    const inexistente = createCriarGuiaDb({ clienteRows: [] });
+    await expect(
+      new FiscalGuiasService(inexistente as never).gerarEspelho({
+        clienteId: 'c1',
+        guiaId: 'guia-1',
+      }),
+    ).rejects.toThrow('Guia não encontrada.');
+
+    const cancelada = createCriarGuiaDb({
+      clienteRows: [defaultGuiaRow({ cancelada: true })],
+      fechamentoRows: [cliente],
+    });
+    await expect(
+      new FiscalGuiasService(cancelada as never).gerarEspelho({
+        clienteId: 'c1',
+        guiaId: 'guia-1',
+      }),
+    ).rejects.toThrow('Obrigação cancelada');
+    expect(cancelada.db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('só gera prévia da antecipação quando há total homologado positivo', async () => {
+    const db = createCriarGuiaDb({ clienteRows: [cliente] });
+    const service = new FiscalGuiasService(db as never);
+    const input = {
+      clienteId: 'c1',
+      competencia: '2026-10',
+      totalApurado: '135.37',
+      itensEmConferencia: 2,
+    };
+    const buffer = await service.gerarEspelhoPreviaAntecipacao(input);
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(
+      buffer.toString('latin1').match(/\/Type \/Page\b/g) ?? [],
+    ).toHaveLength(1);
+    await expect(
+      service.gerarEspelhoPreviaAntecipacao({
+        ...input,
+        totalApurado: '0',
+      }),
+    ).rejects.toThrow('Não há valor homologado');
+  });
+});
+
 describe('FiscalGuiasService — invariantes fora do HTTP (R6.4)', () => {
   it('cria a guia quando os valores são válidos (caminho feliz)', async () => {
     const db = createCriarGuiaDb({});

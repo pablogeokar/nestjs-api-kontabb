@@ -239,6 +239,8 @@ export class DifalEntradaService {
         itemId: documentosFiscaisItens.id,
         numeroItem: documentosFiscaisItens.numeroItem,
         numeroDocumento: documentosFiscais.numeroDocumento,
+        serieDocumento: documentosFiscais.serie,
+        chaveAcesso: documentosFiscais.chaveAcesso,
         competenciaEmissao: COMPETENCIA_EMISSAO_NFE,
         dataFato: DATA_FATO_ITEM,
         ncm: documentosFiscaisItens.ncm,

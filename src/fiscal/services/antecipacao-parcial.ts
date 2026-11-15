@@ -65,6 +65,8 @@ export function calcularAntecipacaoParcial(
 interface ItemAntecipacaoParcial {
   documentoFiscalId: string;
   numeroDocumento: string;
+  serieDocumento?: string | null;
+  chaveAcesso?: string | null;
   competenciaEmissao: string;
   itemId: string;
   numeroItem: number;
@@ -101,6 +103,8 @@ export function apurarItemAntecipacaoParcial(
   const identificacao = {
     documento_fiscal_id: item.documentoFiscalId,
     numero_documento: item.numeroDocumento,
+    serie_documento: item.serieDocumento ?? null,
+    chave_acesso: item.chaveAcesso ?? null,
     competencia_emissao: item.competenciaEmissao,
     item_id: item.itemId,
     numero_item: item.numeroItem,
@@ -308,6 +312,14 @@ export function apurarItemAntecipacaoParcial(
       ? ('CALCULADO' as const)
       : ('SIMULACAO' as const),
     motivo: regra.fonte,
+    regra_aplicada: {
+      chave: regra.chave,
+      revisao: regra.revisao,
+      fonte: regra.fonte,
+      vigencia_inicio: regra.vigenciaInicio,
+      vigencia_fim: regra.vigenciaFim,
+      tratamento: enquadramento.tratamento,
+    },
     tratamento_ipi: valorIpi > 0n ? ipiNaBase : null,
     fundamento_ipi: valorIpi > 0n ? fundamentoIpi : null,
     // Sem comprovação do recolhimento tempestivo, o total e a DeSTDA usam o
