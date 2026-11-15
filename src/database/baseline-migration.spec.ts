@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { E111_CIAP_DEFAULT_SEED } from './seeds/fiscal-catalogos.seed';
 
 const journal = JSON.parse(
   readFileSync(resolve(process.cwd(), 'drizzle/meta/_journal.json'), 'utf8'),
@@ -69,18 +68,15 @@ describe('nova baseline do banco', () => {
     expect(baselineSql).not.toMatch(/^\s*(INSERT|UPDATE|DELETE|DROP)\b/im);
   });
 
-  it('mantém o catálogo E111 inicial em seed idempotente', () => {
-    expect(E111_CIAP_DEFAULT_SEED).toHaveLength(27);
-    expect(E111_CIAP_DEFAULT_SEED).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          tipo: 'E111_CIAP',
-          uf: 'BA',
-          codigo: 'BA02CIAP',
-          vigenciaInicio: '2026-01-01',
-          fonte: 'default_pendente_confirmacao',
-        }),
-      ]),
+  it('não semeia códigos E111 do CIAP provisórios', () => {
+    const seedsDir = resolve(process.cwd(), 'src/database/seeds');
+    const arquivos = readdirSync(seedsDir).filter(
+      (nome) => nome.endsWith('.seed.ts') || nome === 'required.seed.ts',
     );
+    for (const nome of arquivos) {
+      const conteudo = readFileSync(resolve(seedsDir, nome), 'utf8');
+      expect(conteudo).not.toContain('default_pendente_confirmacao');
+      expect(conteudo).not.toContain('02CIAP');
+    }
   });
 });

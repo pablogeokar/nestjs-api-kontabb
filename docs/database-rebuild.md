@@ -84,11 +84,13 @@ DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -validate -database-url-from-e
 
 ```bash
 cd ../api
-DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:seed:required
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:seed:required:restore
 ```
 
-Confira o conteúdo do backup escolhido. Se ele já incluir usuários ADMIN e
-CFOPs, não execute `db:seed:admin` nem `db:seed:cfops` como parte do restore.
+Esse modo só grava os catálogos que ficam fora do backup. Não execute
+`db:seed:required` (sem `:restore`) após um restore: ele regrava ADMIN, CFOPs,
+tipos financeiros e regras ICMS-BA, sobrescrevendo edições vindas do backup.
+Para uma base nova sem restore, veja `docs/database-new.md`.
 
 7. Execute os diagnósticos de domínio:
 
