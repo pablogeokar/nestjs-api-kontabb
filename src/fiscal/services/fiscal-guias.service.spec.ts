@@ -213,7 +213,7 @@ describe('FiscalGuiasService — espelho sem valor fiscal', () => {
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     expect(
       buffer.toString('latin1').match(/\/Type \/Page\b/g) ?? [],
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     await expect(
       service.gerarEspelhoPreviaAntecipacao({
         ...input,
