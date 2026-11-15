@@ -60,6 +60,12 @@ export interface EspelhoMemoria {
   quantidadeNotas: number;
   quantidadeNotasCalculadas: number;
   valorIntegralSemReducao20: string;
+  valorComReducaoCondicionada?: string | null;
+  valorReducaoCondicionada?: string | null;
+  quantidadeItensComReducao?: number;
+  percentualReducaoCondicionada?: string | null;
+  fundamentoReducaoCondicionada?: string | null;
+  condicaoReducaoCondicionada?: string | null;
   notas: EspelhoNotaMemoria[];
 }
 
@@ -291,8 +297,8 @@ export async function renderEspelhoRecolhimentoPdf(
     ['Total para conferência', input.valores.total],
   ] as const;
   amounts.forEach(([label, value], index) => {
-    const y = 526 + index * 28;
-    if (index === 3) pdf.rect(left, y - 5, width, 27).fill('#eaf3fc');
+    const y = (input.memoria ? 522 : 526) + index * (input.memoria ? 23 : 28);
+    if (index === 3) pdf.rect(left, y - 4, width, 25).fill('#eaf3fc');
     pdf
       .font(index === 3 ? 'Helvetica-Bold' : 'Helvetica')
       .fontSize(index === 3 ? 11 : 9.5)
@@ -305,33 +311,59 @@ export async function renderEspelhoRecolhimentoPdf(
   });
 
   if (input.memoria) {
-    pdf.rect(left, 631, width, 22).fill('#edf5ff');
+    const memoria = input.memoria;
+    pdf.rect(left, 618, width, 51).fill('#edf5ff');
     pdf
       .font('Helvetica-Bold')
       .fontSize(8.5)
       .fillColor(BLUE)
       .text(
-        `NF-e analisadas: ${input.memoria.quantidadeNotas}  •  Com cálculo: ${input.memoria.quantidadeNotasCalculadas}`,
+        `NF-e analisadas: ${memoria.quantidadeNotas}  •  Com cálculo: ${memoria.quantidadeNotasCalculadas}`,
         left + 9,
-        637,
+        625,
         { width: 220 },
       );
     pdf.text(
-      `Sem redução de 20%: ${money(input.memoria.valorIntegralSemReducao20)}`,
+      `Valor integral: ${money(memoria.valorIntegralSemReducao20)}`,
       left + 229,
-      637,
+      625,
       { width: width - 238, align: 'right' },
     );
+    pdf
+      .font('Helvetica-Bold')
+      .fontSize(9)
+      .fillColor(INK)
+      .text(
+        memoria.valorComReducaoCondicionada
+          ? `${input.ufFavorecida === 'BA' && memoria.percentualReducaoCondicionada === '20' ? 'Cenário no prazo com redução de 20%' : 'Cenário com redução condicionada'}: ${money(memoria.valorComReducaoCondicionada)}`
+          : 'Sem redução condicionada parametrizada para os itens calculados.',
+        left + 9,
+        643,
+        { width: width - 18 },
+      );
+    if (memoria.valorReducaoCondicionada) {
+      pdf
+        .font('Helvetica')
+        .fontSize(7.5)
+        .fillColor(MUTED)
+        .text(
+          `Redução potencial: ${money(memoria.valorReducaoCondicionada)} em ${memoria.quantidadeItensComReducao ?? 0} itens • sujeita à conferência no portal`,
+          left + 9,
+          656,
+          { width: width - 18 },
+        );
+    }
   }
 
+  const originY = input.memoria ? 680 : 657;
   pdf
     .font('Helvetica-Bold')
     .fontSize(9)
     .fillColor(BLUE)
-    .text('ORIGEM E CONFERÊNCIA', left, 657);
+    .text('ORIGEM E CONFERÊNCIA', left, originY);
   pdf
-    .moveTo(left, 672)
-    .lineTo(left + width, 672)
+    .moveTo(left, originY + 15)
+    .lineTo(left + width, originY + 15)
     .strokeColor(BORDER)
     .stroke();
   pdf
@@ -341,22 +373,27 @@ export async function renderEspelhoRecolhimentoPdf(
     .text(
       `Referência interna: ${text(input.referenciaInterna)}  •  Origem: ${text(input.origem)}`,
       left,
-      682,
-      { width },
+      originY + 25,
+      { width, height: 19, ellipsis: true },
     );
   const notes = input.observacoes.length
     ? input.observacoes
     : ['Confira os dados no portal oficial antes do pagamento.'];
   pdf
     .font('Helvetica')
-    .fontSize(8)
+    .fontSize(input.memoria ? 7.5 : 8)
     .fillColor(MUTED)
-    .text(notes.map((item) => `• ${text(item)}`).join('\n'), left, 702, {
-      width,
-      height: 45,
-      ellipsis: true,
-      lineGap: 2,
-    });
+    .text(
+      notes.map((item) => `• ${text(item)}`).join('\n'),
+      left,
+      originY + 45,
+      {
+        width,
+        height: input.memoria ? 27 : 45,
+        ellipsis: true,
+        lineGap: 2,
+      },
+    );
   pdf
     .moveTo(left, 755)
     .lineTo(left + width, 755)
@@ -387,11 +424,13 @@ export async function renderEspelhoRecolhimentoPdf(
   return completed;
 }
 
-function memoryLines(item: EspelhoItemMemoria): string[] {
+function memoryLines(
+  item: EspelhoItemMemoria,
+  memoria: EspelhoMemoria,
+): string[] {
   const lines = [
-    `Item ${item.numero} • NCM ${text(item.ncm)} • CEST ${text(item.cest)} • ${text(item.situacao)}`,
-    `CFOP ${text(item.cfop)} • Regime ${text(item.regimeTributario)} • Origem mercadoria ${text(item.origemMercadoria)}`,
-    `Operação: ${money(item.valorOperacao)} • IPI destacado: ${money(item.valorIpi)}`,
+    `Item ${item.numero}  •  NCM ${text(item.ncm)} / CEST ${text(item.cest)}  •  ${text(item.situacao)}`,
+    `CFOP ${text(item.cfop)}  •  ${text(item.regimeTributario)}  •  origem mercadoria ${text(item.origemMercadoria)}  •  operação ${money(item.valorOperacao)}  •  IPI ${money(item.valorIpi)}`,
   ];
   if (item.composicaoOperacao) {
     const c = item.composicaoOperacao;
@@ -401,37 +440,41 @@ function memoryLines(item: EspelhoItemMemoria): string[] {
   }
   if (item.calculo) {
     const calc = item.calculo;
-    lines.push(
-      `Base BA: ${money(calc.baseCalculo)} • Base de origem: ${money(calc.baseCalculoOrigem ?? calc.baseCalculo)}`,
-      `Alíquota interna: ${calc.aliquotaInterna}% • Interestadual: ${calc.aliquotaInterestadual == null ? 'ICMS destacado na NF-e' : `${calc.aliquotaInterestadual}%`}`,
+    const deducao =
       calc.aliquotaInterestadual == null
-        ? 'Método: ICMS interno menos ICMS de origem destacado na NF-e.'
-        : calc.baseCalculoOrigem == null
-          ? 'Método: base BA × diferença das alíquotas; arredondamento em centavos.'
-          : 'Método: ICMS interno menos (base de origem × alíquota interestadual).',
-      `ICMS interno: ${money(calc.icmsInterno)} • Dedução origem: ${money(calc.deducaoOrigem)}`,
-      `Imposto integral sem redução de 20%: ${money(calc.impostoIntegral)}`,
+        ? `ICMS de origem destacado na NF-e = dedução ${money(calc.deducaoOrigem)}`
+        : `origem ${money(calc.baseCalculoOrigem ?? calc.baseCalculo)} × ${calc.aliquotaInterestadual}% = dedução ${money(calc.deducaoOrigem)}`;
+    const metodo =
+      calc.aliquotaInterestadual == null || calc.baseCalculoOrigem != null
+        ? 'ICMS interno - dedução'
+        : 'base destino × diferença das alíquotas';
+    lines.push(
+      `Destino ${money(calc.baseCalculo)} × ${calc.aliquotaInterna}% = ICMS ${money(calc.icmsInterno)}  •  ${deducao}`,
+      `Integral ${money(calc.impostoIntegral)} (${metodo})${item.reducaoCondicionada ? `  •  redução ${item.reducaoCondicionada.percentual}% ${money(item.reducaoCondicionada.valorReducao)} = cenário no prazo ${money(item.reducaoCondicionada.valorComReducao)}` : ''}`,
     );
   } else {
     lines.push(`Fora do total: ${text(item.motivo)}`);
   }
   if (item.regra) {
     lines.push(
-      `Regra: ${text(item.regra.chave)} · revisão ${item.regra.revisao} · ${text(item.regra.tratamento)} · vigência ${date(item.regra.vigenciaInicio)} a ${item.regra.vigenciaFim ? date(item.regra.vigenciaFim) : 'em aberto'}`,
-      `Fonte normativa: ${text(item.regra.fonte)}`,
+      `Regra ${text(item.regra.chave)} rev. ${item.regra.revisao} (${text(item.regra.tratamento)}), vig. ${date(item.regra.vigenciaInicio)}-${item.regra.vigenciaFim ? date(item.regra.vigenciaFim) : 'aberta'}  •  ${text(item.regra.fonte)}`,
     );
   }
   if (item.tratamentoIpi) {
     lines.push(
-      `IPI na base: ${item.tratamentoIpi} • Fundamento: ${text(item.fundamentoIpi)}`,
+      `IPI na base: ${item.tratamentoIpi}  •  fundamento: ${text(item.fundamentoIpi)}`,
     );
   }
   if (item.reducaoCondicionada) {
     const r = item.reducaoCondicionada;
-    lines.push(
-      `Cenário condicionado: redução ${r.percentual}% de ${money(r.valorReducao)}; valor com redução ${money(r.valorComReducao)}. NÃO APLICADO AO TOTAL.`,
-      `Condição: ${text(r.condicao)} • Fundamento: ${text(r.fundamento)}`,
-    );
+    if (
+      r.condicao !== memoria.condicaoReducaoCondicionada ||
+      r.fundamento !== memoria.fundamentoReducaoCondicionada
+    ) {
+      lines.push(
+        `Redução condicionada: ${text(r.condicao)}  •  fundamento: ${text(r.fundamento)}`,
+      );
+    }
   }
   if (item.cenariosIpi) {
     lines.push(
@@ -447,19 +490,19 @@ function drawMemoryPages(pdf: PDFKit.PDFDocument, memoria: EspelhoMemoria) {
   let y = 0;
   const newPage = () => {
     pdf.addPage();
-    pdf.rect(left, 40, width, 65).fill(BLUE);
+    pdf.rect(left, 40, width, 49).fill(BLUE);
     pdf
       .font('Helvetica-Bold')
-      .fontSize(16)
+      .fontSize(13)
       .fillColor('#ffffff')
-      .text('Notas fiscais e memória de cálculo', left + 15, 55, {
+      .text('Notas fiscais e memória de cálculo', left + 13, 50, {
         width: width - 30,
       });
     pdf
       .font('Helvetica')
-      .fontSize(8)
+      .fontSize(7)
       .fillColor('#e6f1ff')
-      .text('ANEXO AO ESPELHO • SEM VALOR FISCAL', left + 15, 82, {
+      .text('ANEXO AO ESPELHO • SEM VALOR FISCAL', left + 13, 70, {
         width: width - 30,
       });
     pdf
@@ -474,117 +517,119 @@ function drawMemoryPages(pdf: PDFKit.PDFDocument, memoria: EspelhoMemoria) {
       .text('SEM VALOR FISCAL • NÃO UTILIZAR PARA PAGAMENTO', left, 780, {
         width,
       });
-    y = 124;
+    y = 102;
   };
   newPage();
   pdf
     .font('Helvetica-Bold')
-    .fontSize(10)
+    .fontSize(8.5)
     .fillColor(INK)
     .text(
-      `${memoria.quantidadeNotas} NF-e analisadas • ${memoria.quantidadeNotasCalculadas} com itens calculados`,
+      `${memoria.quantidadeNotas} NF-e analisadas  •  ${memoria.quantidadeNotasCalculadas} com cálculo  •  integral ${money(memoria.valorIntegralSemReducao20)}`,
       left,
       y,
       { width },
     );
-  y += 21;
+  y += 15;
+  if (memoria.valorComReducaoCondicionada) {
+    pdf
+      .font('Helvetica-Bold')
+      .fontSize(8.5)
+      .fillColor(BLUE)
+      .text(
+        `${memoria.percentualReducaoCondicionada === '20' ? 'Cenário com redução de 20% no prazo' : 'Cenário com redução condicionada'}: ${money(memoria.valorComReducaoCondicionada)}  •  redução potencial ${money(memoria.valorReducaoCondicionada ?? '0')}`,
+        left,
+        y,
+        { width },
+      );
+    y += 15;
+  }
   pdf
-    .font('Helvetica-Bold')
-    .fontSize(10)
-    .fillColor(BLUE)
+    .font('Helvetica')
+    .fontSize(7)
+    .fillColor(MUTED)
     .text(
-      `Valor integral sem redução de 20%: ${money(memoria.valorIntegralSemReducao20)}`,
+      memoria.valorComReducaoCondicionada
+        ? `Cenário não aplicado ao total integral; confirme prazo e valor no portal. ${memoria.condicaoReducaoCondicionada ?? ''}${memoria.fundamentoReducaoCondicionada ? ` • ${memoria.fundamentoReducaoCondicionada}` : ''}`
+        : 'Valores integrais dos itens calculados; pendências e simulações ficam fora do total.',
       left,
       y,
       { width },
     );
   y += 23;
-  pdf
-    .font('Helvetica')
-    .fontSize(8)
-    .fillColor(MUTED)
-    .text(
-      'A redução de 20% é apenas um cenário condicionado quando indicada para o item; confirme enquadramento e pagamento tempestivo no portal.',
-      left,
-      y,
-      { width },
-    );
-  y += 36;
 
   const noteHeader = (nota: EspelhoNotaMemoria, continued = false) => {
-    if (y + 52 > 754) newPage();
-    pdf.rect(left, y, width, 43).fill('#eaf3fc');
+    if (y + 34 > 754) newPage();
+    pdf.rect(left, y, width, 30).fill('#eaf3fc');
     pdf
       .font('Helvetica-Bold')
-      .fontSize(10)
+      .fontSize(8.5)
       .fillColor(INK)
       .text(
         `NF-e ${text(nota.numero)} · Série ${text(nota.serie)} · Origem ${text(nota.ufOrigem)}${continued ? ' (continuação)' : ''}`,
-        left + 9,
-        y + 7,
-        { width: width - 18 },
+        left + 7,
+        y + 4,
+        { width: width - 14 },
       );
     pdf
       .font('Helvetica')
-      .fontSize(7.5)
+      .fontSize(7)
       .fillColor(MUTED)
       .text(
         `Chave de acesso: ${text(nota.chaveAcesso)}  •  ${nota.itens.length} ${nota.itens.length === 1 ? 'item analisado' : 'itens analisados'}`,
-        left + 9,
-        y + 25,
-        { width: width - 18 },
+        left + 7,
+        y + 17,
+        { width: width - 14 },
       );
-    y += 50;
+    y += 34;
   };
+
+  const lineHeight = (line: string, heading: boolean) =>
+    pdf
+      .font(heading ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(7.3)
+      .heightOfString(text(line), { width: width - 14, lineGap: 0 });
+  const itemHeight = (lines: string[]) =>
+    7 +
+    lines.reduce(
+      (sum, line, index) => sum + lineHeight(line, index === 0) + 1,
+      0,
+    );
 
   for (const nota of memoria.notas) {
     const firstItem = nota.itens[0];
-    if (firstItem) {
-      const firstLines = memoryLines(firstItem);
-      pdf.font('Helvetica').fontSize(8);
-      const firstHeight =
-        13 +
-        firstLines.reduce(
-          (sum, line) =>
-            sum +
-            pdf.heightOfString(text(line), { width: width - 22, lineGap: 1 }) +
-            4,
-          0,
-        );
-      if (y + 50 + firstHeight > 754) newPage();
-    }
+    if (firstItem && y + 34 + itemHeight(memoryLines(firstItem, memoria)) > 754)
+      newPage();
     noteHeader(nota);
     for (const item of nota.itens) {
-      const lines = memoryLines(item);
-      pdf.font('Helvetica').fontSize(8);
-      const heights = lines.map((line) =>
-        pdf.heightOfString(text(line), { width: width - 22, lineGap: 1 }),
-      );
-      const height =
-        13 + heights.reduce((sum, lineHeight) => sum + lineHeight + 4, 0);
+      const lines = memoryLines(item, memoria);
+      const heights = lines.map((line, index) => lineHeight(line, index === 0));
+      const height = itemHeight(lines);
       if (y + height > 754) {
         newPage();
         noteHeader(nota, true);
       }
+      pdf.rect(left, y, width, height).fill('#f8fafc');
       pdf
-        .rect(left, y, width, height)
+        .moveTo(left, y + height)
+        .lineTo(left + width, y + height)
         .strokeColor(BORDER)
         .lineWidth(0.5)
         .stroke();
-      let lineY = y + 7;
+      let lineY = y + 3;
       lines.forEach((line, index) => {
         pdf
           .font(index === 0 ? 'Helvetica-Bold' : 'Helvetica')
-          .fontSize(8)
+          .fontSize(7.3)
           .fillColor(index === 0 ? INK : MUTED)
-          .text(text(line), left + 10, lineY, {
-            width: width - 22,
-            lineGap: 1,
+          .text(text(line), left + 7, lineY, {
+            width: width - 14,
+            lineGap: 0,
           });
-        lineY += heights[index] + 4;
+        lineY += heights[index] + 1;
       });
-      y += height + 8;
+      y += height + 3;
     }
-    y += 7;
+    y += 4;
   }
 }

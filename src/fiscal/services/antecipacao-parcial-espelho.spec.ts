@@ -74,11 +74,57 @@ describe('Memória do espelho de Antecipação Parcial', () => {
     expect(result.quantidadeNotas).toBe(2);
     expect(result.quantidadeNotasCalculadas).toBe(1);
     expect(result.valorIntegralSemReducao20).toBe('85.00');
+    expect(result.valorComReducaoCondicionada).toBe('68.00');
+    expect(result.valorReducaoCondicionada).toBe('17.00');
+    expect(result.quantidadeItensComReducao).toBe(1);
+    expect(result.percentualReducaoCondicionada).toBe('20');
     expect(result.notas[0].itens).toHaveLength(2);
     expect(result.notas[0].itens[0]).toMatchObject({
       regra: { chave: 'ANTECIPACAO_PARCIAL', revisao: 2 },
       reducaoCondicionada: { valorComReducao: '68.00' },
     });
     expect(result.notas[1].itens[0].calculo).toBeNull();
+  });
+
+  it('soma o valor no prazo por item, preservando o arredondamento e o integral dos demais', () => {
+    const calculado = (id: string, imposto: string, reduzido?: string) => ({
+      documento_fiscal_id: id,
+      numero_documento: id,
+      uf_origem: 'SE',
+      numero_item: 1,
+      ncm: '19053100',
+      cest: '1705301',
+      valor_operacao: '100.00',
+      valor_ipi: '0',
+      situacao: 'CALCULADO',
+      motivo: 'Regra aprovada',
+      calculo: {
+        base_calculo: '100.00',
+        aliquota_interna: '20.5',
+        aliquota_interestadual: '12',
+        icms_interno: imposto,
+        deducao_origem: '0.00',
+        imposto_apurado: imposto,
+      },
+      reducao_condicionada: reduzido
+        ? {
+            percentual: '20',
+            fundamento: 'RICMS-BA, art. 274',
+            condicao: 'Pagamento no prazo regulamentar',
+            valor_reducao: '0.01',
+            valor_com_reducao: reduzido,
+          }
+        : null,
+    });
+    const memoria = montarMemoriaAntecipacaoParcial([
+      calculado('1', '0.03', '0.02'),
+      calculado('2', '0.03', '0.02'),
+      calculado('3', '1.00'),
+    ] as never);
+
+    expect(memoria.valorIntegralSemReducao20).toBe('1.06');
+    expect(memoria.valorComReducaoCondicionada).toBe('1.04');
+    expect(memoria.valorReducaoCondicionada).toBe('0.02');
+    expect(memoria.quantidadeItensComReducao).toBe(2);
   });
 });

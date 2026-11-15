@@ -13,6 +13,11 @@ type Item = Awaited<
 export function montarMemoriaAntecipacaoParcial(itens: Item[]): EspelhoMemoria {
   const notas = new Map<string, EspelhoNotaMemoria>();
   let valorIntegral = 0n;
+  let valorComReducaoCondicionada = 0n;
+  let quantidadeItensComReducao = 0;
+  const percentuaisReducao = new Set<string>();
+  const fundamentosReducao = new Set<string>();
+  const condicoesReducao = new Set<string>();
 
   for (const item of itens) {
     let nota = notas.get(item.documento_fiscal_id);
@@ -31,6 +36,19 @@ export function montarMemoriaAntecipacaoParcial(itens: Item[]): EspelhoMemoria {
     if (calculo) valorIntegral += toScaledInteger(calculo.imposto_apurado);
     const reducao =
       'reducao_condicionada' in item ? item.reducao_condicionada : null;
+    if (calculo) {
+      if (reducao) {
+        valorComReducaoCondicionada += toScaledInteger(
+          reducao.valor_com_reducao,
+        );
+        quantidadeItensComReducao++;
+        percentuaisReducao.add(reducao.percentual);
+        fundamentosReducao.add(reducao.fundamento);
+        if (reducao.condicao) condicoesReducao.add(reducao.condicao);
+      } else {
+        valorComReducaoCondicionada += toScaledInteger(calculo.imposto_apurado);
+      }
+    }
     const regra = 'regra_aplicada' in item ? item.regra_aplicada : null;
     const cenariosIpi = 'cenarios_ipi' in item ? item.cenarios_ipi : null;
     nota.itens.push({
@@ -101,6 +119,21 @@ export function montarMemoriaAntecipacaoParcial(itens: Item[]): EspelhoMemoria {
       nota.itens.some((item) => item.situacao === 'CALCULADO'),
     ).length,
     valorIntegralSemReducao20: fromScaledInteger(valorIntegral),
+    valorComReducaoCondicionada:
+      quantidadeItensComReducao > 0
+        ? fromScaledInteger(valorComReducaoCondicionada)
+        : null,
+    valorReducaoCondicionada:
+      quantidadeItensComReducao > 0
+        ? fromScaledInteger(valorIntegral - valorComReducaoCondicionada)
+        : null,
+    quantidadeItensComReducao,
+    percentualReducaoCondicionada:
+      percentuaisReducao.size === 1 ? [...percentuaisReducao][0] : null,
+    fundamentoReducaoCondicionada:
+      fundamentosReducao.size === 1 ? [...fundamentosReducao][0] : null,
+    condicaoReducaoCondicionada:
+      condicoesReducao.size === 1 ? [...condicoesReducao][0] : null,
     notas: lista,
   };
 }
