@@ -49,7 +49,7 @@ O item mantém `valor_antecipacao` e o total da apuração pelo imposto integral
 
 ## IPI destacado na aquisição
 
-A base da antecipação parcial é o valor da operação interestadual no documento (Lei 7.014/96, arts. 12-A e 23, III). A exclusão do IPI depende dos requisitos do art. 17, § 2º; um CEST/NCM ou o simples fato de haver IPI destacado não demonstram todos eles. Por isso, cada enquadramento pode registrar `ipi_na_base` (`INCLUIR` ou `EXCLUIR`) e `fundamento_ipi`. A decisão é validada no cadastro e fica sujeita à confirmação fiscal. Sem decisão fundamentada, o item com IPI mostra os valores **com** e **sem** IPI, permanece `PENDENTE` e não compõe o total ou a DeSTDA. Quando o IPI é incluído para adquirente do Simples, o motor calcula o ICMS interno sobre a base com IPI e a parcela interestadual sobre a operação sem IPI; o detalhe expõe `base_calculo_origem`, `base_calculo` e `deducao_origem`. Com decisão e regra homologada, a base adotada e o tratamento do IPI aparecem no detalhe.
+A base da antecipação parcial é o valor da operação interestadual no documento (Lei 7.014/96, arts. 12-A e 23, III). A exclusão do IPI depende dos requisitos do art. 17, § 2º; um CEST/NCM ou o simples fato de haver IPI destacado não demonstram todos eles. Por isso, cada enquadramento pode registrar `ipi_na_base` (`INCLUIR` ou `EXCLUIR`) e `fundamento_ipi`. A decisão é validada no cadastro e fica sujeita à confirmação fiscal. Sem decisão fundamentada, o item com IPI mostra os valores **com** e **sem** IPI, permanece `PENDENTE` e não compõe o total ou a DeSTDA. Quando o IPI é incluído para adquirente do Simples, o motor calcula o ICMS interno sobre a base com IPI e a parcela interestadual sobre a operação sem IPI; o detalhe expõe `base_calculo_origem`, `base_calculo` e `deducao_origem`. Com decisão e enquadramento aprovado, a base adotada e o tratamento do IPI aparecem no detalhe.
 
 O [Acórdão CJF 0042-11/25-VD](https://mbusca.sefaz.ba.gov.br/consef/2025%20-%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0042-11.25-VD.pdf) registra base com IPI em compras de optante do Simples. O [Acórdão JJF 0007-05/17](https://mbusca.sefaz.ba.gov.br/consef/2017%20ac%C3%B3rd%C3%A3os%20juntas/A-0007-05.17.pdf) distingue a base paga pelo comerciante da base do ICMS na origem. O [Acórdão CJF 0239-12/18](https://mbusca.sefaz.ba.gov.br/consef/2019%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0239-12.18.pdf) trata da exclusão condicionada do IPI. Esses precedentes motivam a decisão explícita por enquadramento, sujeita à verificação das circunstâncias da operação.
 
@@ -79,7 +79,7 @@ Pontos a confirmar antes de homologar:
 
 1. **IPI:** itens com IPI destacado ficam pendentes até a decisão fiscal fundamentada por enquadramento; os dois cenários são apresentados para conferência.
 2. **CFOP escriturado:** o motor só lê itens escriturados com CFOP 2102 (antecipação) e 2551/2556 (DIFAL). Das 293 entradas interestaduais, só 7 estão com 2102.
-3. **Homologação na tela:** a tela homologa apenas a regra `ANTECIPACAO_PARCIAL`. A regra de DIFAL ainda não tem tela de revisão.
+3. **Aprovação na tela:** cada enquadramento de `ANTECIPACAO_PARCIAL` é confirmado e salvo separadamente dos demais. A regra de DIFAL ainda não tem tela de revisão.
 4. **ST no relatório de DIFAL:** o fluxo de CFOP 2406/2407 e sinais de ST no XML evita recolhimento próprio em duplicidade, mas ainda não cruza cada item com uma regra `ST_FCP` estadual homologada. Essa classificação permanece sujeita à conferência do recolhimento e da responsabilidade tributária.
 
 ## Evidências (SHA-256 do arquivo baixado em 14/11/2026)
@@ -96,8 +96,8 @@ Os textos das fontes foram resumidos, não transcritos.
 
 1. Prévia: `pnpm db:seed:icms-ba --preview`
 2. Gravar: `pnpm db:seed:icms-ba`. O script é idempotente e aborta se houver outra vigência de Antecipação Parcial BA sobreposta a 2026.
-3. Na tela, abrir **Cadastros → Fiscal → ICMS** com UF BA e competência **2026-01**. Salvar e homologar só funcionam na competência em que a vigência começa.
-4. Para homologar, cada linha precisa de `confirmado_fiscalmente` e nenhuma pode estar em CONFERIR. Até lá, o cálculo sai como SIMULACAO e não entra no total, na guia nem na DeSTDA.
+3. Na tela, abrir **Cadastros → Fiscal → ICMS** com UF BA e a competência da nota. O atalho na apuração já filtra a combinação da NF-e.
+4. Conferir uma linha, marcar sua aprovação e salvar. Ela passa a compor a apuração se os parâmetros do item estiverem completos; linhas ainda não confirmadas continuam em `SIMULACAO` ou `PENDENTE` e ficam fora do total, do espelho e da DeSTDA.
 
 ## Tabela dos enquadramentos
 

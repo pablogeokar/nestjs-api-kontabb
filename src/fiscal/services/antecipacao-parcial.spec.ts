@@ -136,6 +136,11 @@ describe('Antecipação Parcial', () => {
       situacao: 'PENDENTE',
       valor_ipi: '20.00',
       calculo: null,
+      regra_aplicada: {
+        id: 'regra-teste',
+        revisao: 1,
+        tratamento: 'APLICAVEL',
+      },
       cenarios_ipi: {
         sem_ipi: { base_calculo: '1000.00', valor_antecipacao: '85.00' },
         com_ipi: {
@@ -193,6 +198,61 @@ describe('Antecipação Parcial', () => {
         regra(true),
       ).situacao,
     ).toBe('PENDENTE');
+  });
+
+  it('aplica cada enquadramento conferido sem liberar os vizinhos pendentes', () => {
+    const r = regra(false);
+    r.fonteUrl = 'https://example.gov.br/norma';
+    const original = (
+      r.conteudo.enquadramentos as Array<Record<string, unknown>>
+    )[0];
+    r.conteudo.enquadramentos = [
+      {
+        ...original,
+        confirmado_fiscalmente: true,
+        fundamento: 'Fundamento conferido para este CEST',
+      },
+      {
+        ...original,
+        cest: '2804101',
+        confirmado_fiscalmente: false,
+      },
+    ];
+
+    expect(
+      apurarItemAntecipacaoParcial(item, 'SIMPLES_NACIONAL', r).situacao,
+    ).toBe('CALCULADO');
+    expect(
+      apurarItemAntecipacaoParcial(
+        { ...item, valorIpi: '20.00' },
+        'SIMPLES_NACIONAL',
+        r,
+      ).situacao,
+    ).toBe('PENDENTE');
+    expect(
+      apurarItemAntecipacaoParcial(
+        { ...item, cest: '2804101' },
+        'SIMPLES_NACIONAL',
+        r,
+      ).situacao,
+    ).toBe('SIMULACAO');
+  });
+
+  it('não aplica uma confirmação individual sem fundamento ou fonte oficial', () => {
+    const r = regra(false);
+    const row = (
+      r.conteudo.enquadramentos as Array<Record<string, unknown>>
+    )[0];
+    row.confirmado_fiscalmente = true;
+    row.fundamento = 'Fundamento conferido';
+    expect(
+      apurarItemAntecipacaoParcial(item, 'SIMPLES_NACIONAL', r).situacao,
+    ).toBe('SIMULACAO');
+    r.fonteUrl = 'https://example.gov.br/norma';
+    row.fundamento = '';
+    expect(
+      apurarItemAntecipacaoParcial(item, 'SIMPLES_NACIONAL', r).situacao,
+    ).toBe('SIMULACAO');
   });
 
   it('mantém em conferência o ICMS-ST indicado pelo XML sem enquadramento aprovado compatível', () => {

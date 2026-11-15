@@ -36,6 +36,7 @@ export function validarEnquadramentosIcms(
 ) {
   const keys = new Set<string>();
   for (const [index, row] of rows.entries()) {
+    const aprovarLinha = homologar || row.confirmado_fiscalmente === true;
     const key = [
       row.ncm,
       row.cest ?? '',
@@ -52,15 +53,11 @@ export function validarEnquadramentosIcms(
       throw new BadRequestException(
         `Linha ${index + 1}: origem deve ser interestadual.`,
       );
-    if (row.tratamento === 'CONFERIR' && homologar)
+    if (row.tratamento === 'CONFERIR' && aprovarLinha)
       throw new BadRequestException(
-        `Linha ${index + 1}: resolva a conferência fiscal antes de homologar.`,
+        `Linha ${index + 1}: resolva a conferência fiscal antes de aprovar o enquadramento.`,
       );
-    if (row.tratamento === 'CONFERIR' && !row.motivo?.trim())
-      throw new BadRequestException(
-        `Linha ${index + 1}: informe o motivo da conferência.`,
-      );
-    if (homologar && !row.fundamento?.trim())
+    if (aprovarLinha && !row.fundamento?.trim())
       throw new BadRequestException(
         `Linha ${index + 1}: informe o fundamento normativo.`,
       );
@@ -68,18 +65,20 @@ export function validarEnquadramentosIcms(
       throw new BadRequestException(
         `Linha ${index + 1}: confirme a revisão fiscal do enquadramento.`,
       );
-    if (row.tratamento === 'ICMS_ST' && !row.cest)
+    if (aprovarLinha && row.tratamento === 'ICMS_ST' && !row.cest)
       throw new BadRequestException(
         `Linha ${index + 1}: informe o CEST para o enquadramento de ICMS-ST.`,
       );
-    if (row.ipi_na_base && !row.fundamento_ipi?.trim())
+    if (aprovarLinha && row.ipi_na_base && !row.fundamento_ipi?.trim())
       throw new BadRequestException(
         `Linha ${index + 1}: fundamente a decisão sobre o IPI na base.`,
       );
     if (row.tratamento === 'APLICAVEL') {
       if (
-        !row.aliquota_interna ||
-        (row.regime === 'SIMPLES_NACIONAL' && !row.aliquota_interestadual)
+        (aprovarLinha && !row.aliquota_interna) ||
+        (aprovarLinha &&
+          row.regime === 'SIMPLES_NACIONAL' &&
+          !row.aliquota_interestadual)
       )
         throw new BadRequestException(
           `Linha ${index + 1}: informe a alíquota interna e, para o Simples Nacional, a interestadual.`,
@@ -165,6 +164,7 @@ export class IcmsRegrasService {
       },
       regra: regra
         ? {
+            id: regra.id,
             revisao: regra.revisao,
             fonte: regra.fonte,
             fonteUrl: regra.fonteUrl,
@@ -182,6 +182,13 @@ export class IcmsRegrasService {
     validarEnquadramentosIcms(input.enquadramentos);
     if (!input.fonte.trim())
       throw new BadRequestException('Informe a fonte normativa.');
+    if (
+      input.enquadramentos.some((row) => row.confirmado_fiscalmente) &&
+      !input.fonteUrl?.trim()
+    )
+      throw new BadRequestException(
+        'Informe a URL oficial da fonte antes de aprovar um enquadramento.',
+      );
     return this.database.db.transaction(async (tx) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`icms:${input.uf}`}))`,
@@ -234,6 +241,27 @@ export class IcmsRegrasService {
         throw new ConflictException(
           'O rascunho foi alterado por outro usuário. Recarregue antes de salvar.',
         );
+      // A interface edita apenas os enquadramentos. Revisões feitas antes da
+      // preservação do conteúdo podem ter perdido a redução e as fontes da
+      // seed; recupera os parâmetros da revisão histórica mais recente.
+      const [conteudoComParametros] =
+        previous && !('reducao_me_epp' in previous.conteudo)
+          ? await tx
+              .select({ conteudo: fiscalRegrasVersoes.conteudo })
+              .from(fiscalRegrasVersoes)
+              .where(
+                and(
+                  eq(
+                    fiscalRegrasVersoes.catalogoVersaoId,
+                    previous.catalogoVersaoId,
+                  ),
+                  eq(fiscalRegrasVersoes.chave, CHAVE),
+                  sql`jsonb_exists(${fiscalRegrasVersoes.conteudo}, 'reducao_me_epp')`,
+                ),
+              )
+              .orderBy(desc(fiscalRegrasVersoes.revisao))
+              .limit(1)
+          : [];
       const [savedCatalogo] = catalogo
         ? [catalogo]
         : await tx
@@ -257,7 +285,11 @@ export class IcmsRegrasService {
         catalogoVersaoId: savedCatalogo.id,
         chave: CHAVE,
         revisao: revisao + 1,
-        conteudo: { enquadramentos: input.enquadramentos },
+        conteudo: {
+          ...conteudoComParametros?.conteudo,
+          ...previous?.conteudo,
+          enquadramentos: input.enquadramentos,
+        },
         fonte: input.fonte,
         fonteUrl: input.fonteUrl ?? null,
         responsavelPor: userId,

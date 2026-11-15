@@ -15,10 +15,9 @@ import { ENQUADRAMENTOS_ANTECIPACAO_BA_2026 } from './data/antecipacao-parcial-b
  * Uso: pnpm db:seed:icms-ba            (grava)
  *      pnpm db:seed:icms-ba --preview  (só mostra o resumo)
  *
- * Idempotente. Aborta se houver catálogo homologado, revisão homologada a
- * alterar ou outra vigência de Antecipação Parcial BA sobreposta a 2026. Se o
- * conteúdo mudar e a última revisão não estiver aprovada, grava a revisão
- * seguinte.
+ * Idempotente. Aborta se houver catálogo homologado, enquadramento confirmado
+ * a substituir ou outra vigência de Antecipação Parcial BA sobreposta a 2026.
+ * Se o conteúdo mudar e a última revisão não tiver aprovações, grava a próxima.
  */
 const ANEXO_1_2026 =
   'https://mbusca.sefaz.ba.gov.br/ditri/normas_complementares/decretos/decreto_2012_13780_ricms_anexo_1_vigente_2026.pdf';
@@ -127,7 +126,8 @@ function resumo() {
 /**
  * Grava a regra se ainda não existe. Se a última revisão ativa tem o mesmo
  * conteúdo, não faz nada. Se difere e NÃO está aprovada, cria a revisão
- * seguinte (a anterior fica no histórico). Revisão aprovada nunca é alterada.
+ * seguinte (a anterior fica no histórico). Revisões com linha aprovada não são
+ * substituídas pela seed.
  */
 async function upsertRegra(
   sql: postgres.TransactionSql,
@@ -140,9 +140,20 @@ async function upsertRegra(
   revisao: number;
 }> {
   const [ultima] = await sql<
-    { id: string; revisao: number; aprovada: boolean; igual: boolean }[]
+    {
+      id: string;
+      revisao: number;
+      aprovada: boolean;
+      aprovadaIndividualmente: boolean;
+      igual: boolean;
+    }[]
   >`
     select id, revisao, coalesce(escopo_aprovado, false) as aprovada,
+           exists (
+             select 1
+               from jsonb_array_elements(coalesce(conteudo->'enquadramentos', '[]'::jsonb)) as linha
+              where linha->>'confirmado_fiscalmente' = 'true'
+           ) as "aprovadaIndividualmente",
            conteudo = ${sql.json(conteudoRegra as postgres.JSONValue)}::jsonb as igual
       from fiscal_regras_versoes
      where catalogo_versao_id = ${catalogoId} and chave = ${chave} and ativo = true
@@ -150,9 +161,9 @@ async function upsertRegra(
      limit 1
   `;
   if (ultima?.igual) return { acao: 'inalterada', revisao: ultima.revisao };
-  if (ultima?.aprovada) {
+  if (ultima?.aprovada || ultima?.aprovadaIndividualmente) {
     throw new Error(
-      `A regra ${chave} revisão ${ultima.revisao} já foi homologada; abra nova vigência para alterá-la.`,
+      `A regra ${chave} revisão ${ultima.revisao} contém enquadramentos aprovados; a seed não pode substituí-los. Revise pela interface fiscal.`,
     );
   }
   const revisao = (ultima?.revisao ?? 0) + 1;

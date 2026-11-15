@@ -99,4 +99,28 @@ describe('cadastro de regras de ICMS', () => {
     ).toThrow(BadRequestException);
     expect(() => validarEnquadramentosIcms([row], true)).not.toThrow();
   });
+
+  it('aprova uma linha completa sem exigir que outra linha esteja pronta', () => {
+    expect(() =>
+      validarEnquadramentosIcms([
+        row,
+        {
+          ...row,
+          cest: '1705301',
+          tratamento: 'CONFERIR',
+          motivo: '',
+          fundamento: '',
+          confirmado_fiscalmente: false,
+        },
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      validarEnquadramentosIcms([{ ...row, fundamento: '' }]),
+    ).toThrow('informe o fundamento normativo');
+    expect(() =>
+      validarEnquadramentosIcms([
+        { ...row, tratamento: 'CONFERIR', motivo: '' },
+      ]),
+    ).toThrow('resolva a conferência fiscal');
+  });
 });

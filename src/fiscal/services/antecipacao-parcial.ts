@@ -65,6 +65,7 @@ export function calcularAntecipacaoParcial(
 interface ItemAntecipacaoParcial {
   documentoFiscalId: string;
   numeroDocumento: string;
+  dataFato?: string | null;
   serieDocumento?: string | null;
   chaveAcesso?: string | null;
   competenciaEmissao: string;
@@ -104,6 +105,7 @@ export function apurarItemAntecipacaoParcial(
   const identificacao = {
     documento_fiscal_id: item.documentoFiscalId,
     numero_documento: item.numeroDocumento,
+    data_fato: item.dataFato ?? null,
     serie_documento: item.serieDocumento ?? null,
     chave_acesso: item.chaveAcesso ?? null,
     competencia_emissao: item.competenciaEmissao,
@@ -191,8 +193,32 @@ export function apurarItemAntecipacaoParcial(
     );
   }
 
+  const regraAplicada = {
+    id: regra.id,
+    chave: regra.chave,
+    revisao: regra.revisao,
+    fonte: regra.fonte,
+    vigencia_inicio: regra.vigenciaInicio,
+    vigencia_fim: regra.vigenciaFim,
+    tratamento:
+      typeof enquadramento.tratamento === 'string'
+        ? enquadramento.tratamento
+        : 'CONFERIR',
+  };
+  const pendenteComRegra = (motivo: string) => ({
+    ...pendente(motivo),
+    regra_aplicada: regraAplicada,
+  });
+  const enquadramentoAprovado =
+    regra.escopoAprovado ||
+    (enquadramento.confirmado_fiscalmente === true &&
+      typeof enquadramento.fundamento === 'string' &&
+      Boolean(enquadramento.fundamento.trim()) &&
+      Boolean(regra.fonteUrl) &&
+      (enquadramento.tratamento !== 'ICMS_ST' || Boolean(enquadramento.cest)));
+
   if (enquadramento.tratamento === 'CONFERIR') {
-    return pendente(
+    return pendenteComRegra(
       typeof enquadramento.motivo === 'string' && enquadramento.motivo.trim()
         ? enquadramento.motivo
         : 'O enquadramento exige revisão fiscal antes do cálculo.',
@@ -202,12 +228,12 @@ export function apurarItemAntecipacaoParcial(
   // O XML é evidência da tributação declarada pelo fornecedor, não substitui
   // a classificação fiscal aprovada para o produto e a operação.
   if (sinalStXml && enquadramento.tratamento !== 'ICMS_ST') {
-    return pendente(
+    return pendenteComRegra(
       'O XML indica ICMS-ST, mas o enquadramento cadastrado diverge. Confira NCM, CEST e recolhimento antes de apurar.',
     );
   }
   if (enquadramento.tratamento === 'ICMS_ST' && !sinalStXml) {
-    return pendente(
+    return pendenteComRegra(
       'A regra indica ICMS-ST, mas o XML não comprova retenção. Confira a responsabilidade pelo recolhimento.',
     );
   }
@@ -216,7 +242,7 @@ export function apurarItemAntecipacaoParcial(
     enquadramento.tratamento === 'DISPENSADO' ||
     enquadramento.tratamento === 'ICMS_ST'
   ) {
-    return regra.escopoAprovado
+    return enquadramentoAprovado
       ? {
           ...identificacao,
           situacao: enquadramento.tratamento,
@@ -225,8 +251,11 @@ export function apurarItemAntecipacaoParcial(
               ? `Regra homologada e XML indicam ICMS-ST (${regra.fonte}). Confira a retenção e o responsável pelo recolhimento.`
               : regra.fonte,
           calculo: null,
+          regra_aplicada: regraAplicada,
         }
-      : pendente('O enquadramento ainda aguarda homologação.');
+      : pendenteComRegra(
+          'Este enquadramento ainda aguarda conferência e aprovação individual.',
+        );
   }
 
   const aliquotaInterna = enquadramento.aliquota_interna;
@@ -234,14 +263,18 @@ export function apurarItemAntecipacaoParcial(
     enquadramento.tratamento !== 'APLICAVEL' ||
     !percentualValido(aliquotaInterna)
   ) {
-    return pendente('O enquadramento tem parâmetros de cálculo incompletos.');
+    return pendenteComRegra(
+      'O enquadramento tem parâmetros de cálculo incompletos.',
+    );
   }
 
   if (valorOperacao <= 0n || item.valorBrutoProduto == null)
-    return pendente('Confira a base de cálculo da operação.');
+    return pendenteComRegra('Confira a base de cálculo da operação.');
   const valorIpi = toScaledInteger(item.valorIpi);
   if (valorIpi < 0n)
-    return pendente('O valor de IPI do XML é negativo; confira o documento.');
+    return pendenteComRegra(
+      'O valor de IPI do XML é negativo; confira o documento.',
+    );
 
   const simples = regime === 'SIMPLES_NACIONAL';
   const aliquotaDaRegra =
@@ -258,14 +291,14 @@ export function apurarItemAntecipacaoParcial(
       ? item.valorIcms
       : undefined;
   if (aliquotaInterestadual == null && deducaoOrigem == null) {
-    return pendente(
+    return pendenteComRegra(
       'Confira a alíquota interestadual aplicável ou o ICMS de origem, conforme o regime.',
     );
   }
 
   const reducao = reducaoMeEppDaRegra(regra.conteudo);
   if (reducao === 'INVALIDA') {
-    return pendente(
+    return pendenteComRegra(
       'A regra vigente traz a redução para ME/EPP com parâmetros inválidos (percentual e fundamento).',
     );
   }
@@ -302,6 +335,7 @@ export function apurarItemAntecipacaoParcial(
       motivo:
         'O XML contém IPI. Defina e fundamente, na regra do item, se o IPI integra a base da antecipação (Lei 7.014/96, arts. 17, § 2º, e 23, III).',
       calculo: null,
+      regra_aplicada: regraAplicada,
       cenarios_ipi: {
         sem_ipi: calcularComBase(valorOperacao),
         com_ipi: calcularComBase(valorOperacao + valorIpi),
@@ -321,18 +355,11 @@ export function apurarItemAntecipacaoParcial(
 
   return {
     ...identificacao,
-    situacao: regra.escopoAprovado
+    situacao: enquadramentoAprovado
       ? ('CALCULADO' as const)
       : ('SIMULACAO' as const),
     motivo: regra.fonte,
-    regra_aplicada: {
-      chave: regra.chave,
-      revisao: regra.revisao,
-      fonte: regra.fonte,
-      vigencia_inicio: regra.vigenciaInicio,
-      vigencia_fim: regra.vigenciaFim,
-      tratamento: enquadramento.tratamento,
-    },
+    regra_aplicada: regraAplicada,
     tratamento_ipi: valorIpi > 0n ? ipiNaBase : null,
     fundamento_ipi: valorIpi > 0n ? fundamentoIpi : null,
     // Sem comprovação do recolhimento tempestivo, o total e a DeSTDA usam o

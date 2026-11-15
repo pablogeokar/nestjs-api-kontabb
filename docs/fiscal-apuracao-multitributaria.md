@@ -100,23 +100,22 @@ higiene/pulverizador e eventuais benefícios. Depois da análise, crie nova
 revisão com a fonte e a vigência corretas; não altere a revisão existente
 nem aprove o catálogo em bloco enquanto houver combinações pendentes.
 
-### Cadastro e homologação
+### Cadastro e aprovação individual
 
 O administrador acessa **Cadastros → Fiscal → ICMS** e seleciona a competência.
 O cadastro de Antecipação Parcial atualmente atende à UF de apuração **BA**.
 Cada salvamento cria uma revisão da chave `ANTECIPACAO_PARCIAL`, preservando as
-anteriores. A API exige combinação única de NCM, CEST, regime, UF de origem e
-origem da mercadoria, valida as alíquotas e rejeita revisões concorrentes.
-Enquanto o catálogo for rascunho, o motor mostra apenas simulação e pendência.
+anteriores e os parâmetros gerais da regra. A API exige combinação única de NCM,
+CEST, regime, UF de origem e origem da mercadoria, e rejeita revisões concorrentes.
+Uma linha marcada como `confirmado_fiscalmente` só é salva com tratamento definido,
+parâmetros válidos, fundamento e URL da fonte normativa. Ao salvar, essa linha
+passa a valer individualmente; as demais continuam em simulação ou conferência.
+O administrador pode retirar a confirmação de uma linha e salvar nova revisão.
+Itens com IPI sem decisão fundamentada, dados incompletos, ST divergente no XML
+ou sem combinação exata continuam pendentes mesmo quando a linha foi aprovada.
+Revisões antigas homologadas em bloco permanecem compatíveis e imutáveis.
 
-A homologação exige revisão salva, URL da fonte normativa, fundamento e
-confirmação fiscal explícita por enquadramento, e nenhuma linha `CONFERIR`.
-A aprovação registra o usuário e o
-hash do conteúdo. Mesmo após a homologação, itens com IPI, dados incompletos,
-ST no XML ou sem combinação exata continuam sujeitos à conferência. Um catálogo
-homologado não é editado: alterações exigem nova vigência.
-
-O total da competência considera cálculos com regra homologada antes de
+O total da competência considera cálculos com enquadramento aprovado antes de
 reduções condicionadas ao pagamento. O simulador administrativo recebe a
 base, a alíquota interna e a alíquota interestadual ou o ICMS de origem
 dedutível, além de uma redução opcional sobre o imposto. A simulação fica
@@ -153,11 +152,11 @@ As guias ainda são criadas manualmente via endpoint; a emissão automática de
 DAE/GNRE a partir das apurações depende de integração homologada com cada UF.
 Na Antecipação Parcial da BA, a interface encaminha ao serviço oficial da
 SEFAZ-BA com o código de receita **2175** e mostra somente o total calculado
-com regra homologada. A emissão, o vencimento e o valor final são confirmados
+com enquadramento aprovado. A emissão, o vencimento e o valor final são confirmados
 no portal estadual; o demonstrativo interno não é um DAE emitido.
 
 O staff pode baixar um **espelho de recolhimento sem valor fiscal** diretamente
-da prévia de Antecipação Parcial (somente se houver total homologado positivo)
+da prévia de Antecipação Parcial (somente se houver total aprovado positivo)
 ou de uma obrigação já registrada na Central de guias. A prévia não inventa
 vencimento: exibe “A confirmar no portal oficial” e indica quantos itens ficaram
 fora do total por pendência, simulação ou ST. O espelho de obrigação registrada
@@ -199,8 +198,8 @@ Admin/staff (`/api/admin/fiscal/apuracao/...`):
 | --- | --- | --- |
 | GET | `/admin/fiscal/apuracao/difal-entrada?clienteId=UUID&competencia=AAAA-MM` | DIFAL de entrada e Antecipação Parcial da empresa |
 | GET | `/admin/fiscal/icms/regras?uf=BA&competencia=AAAA-MM` | Consultar a revisão vigente (staff) |
-| PUT | `/admin/fiscal/icms/regras` | Salvar nova revisão em rascunho (admin) |
-| POST | `/admin/fiscal/icms/regras/homologar` | Homologar revisão salva (admin) |
+| PUT | `/admin/fiscal/icms/regras` | Salvar nova revisão; linhas confirmadas passam a valer individualmente (admin) |
+| POST | `/admin/fiscal/icms/regras/homologar` | Homologação em bloco legada (admin; não usada pela tela) |
 | POST | `/admin/fiscal/apuracao/antecipacao-parcial/simular` | Simular com parâmetros informados |
 | POST | `/admin/fiscal/apuracao/ciap/importar` | Importar bens de ativo |
 | POST | `/admin/fiscal/apuracao/ciap/bens` | Registrar bem manualmente |
