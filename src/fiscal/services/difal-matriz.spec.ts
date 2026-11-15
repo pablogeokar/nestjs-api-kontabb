@@ -31,19 +31,39 @@
  * cobrem a aritmética pura de cada peça. Decimais permanecem strings.
  */
 import { DifalEntradaService } from './difal-entrada.service';
+import { createCatalogo } from './catalogo-test-helpers';
 import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
 
 // DB falso: getCliente resolve por .limit (devolvendo também o regime do
 // adquirente, exigido pela tarefa 2.7); a busca de itens resolve por .where.
+// Itens de teste sem `emitenteUf` explícito recebem uma UF de origem diferente
+// da UF do adquirente (operação interestadual conhecida). Para testar origem
+// ausente, informe `emitenteUf: null`.
+function comOrigem(itens: unknown[], ufDestino: string): unknown[] {
+  return itens.map((i) => {
+    const item = i as Record<string, unknown>;
+    return 'emitenteUf' in item
+      ? item
+      : { ...item, emitenteUf: ufDestino === 'MG' ? 'SP' : 'MG' };
+  });
+}
 function createDb(
   cliente: { uf: string; regimeTributario?: string | null },
   itens: unknown[],
+  perfisHistorico: unknown[] = [],
 ) {
   return {
     db: {
       select: jest
         .fn()
         .mockImplementation((selection: Record<string, unknown>) => {
+          if ('vigenciaInicio' in selection) {
+            return {
+              from: jest.fn().mockReturnValue({
+                where: jest.fn().mockResolvedValue(perfisHistorico),
+              }),
+            };
+          }
           if ('uf' in selection) {
             return {
               from: jest.fn().mockReturnValue({
@@ -62,41 +82,20 @@ function createDb(
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockResolvedValue(itens),
+                where: jest.fn().mockImplementation(() =>
+                  'numero_documento' in selection
+                    ? {
+                        groupBy: () => ({
+                          orderBy: () => Promise.resolve([]),
+                        }),
+                      }
+                    : Promise.resolve(comOrigem(itens, cliente.uf)),
+                ),
               }),
             }),
           };
         }),
     },
-  };
-}
-
-// Catálogo falso: devolve uma regra de DIFAL homologada por hipótese/UF/
-// competência (fonte do cálculo, N12), ou `null` quando não há regra vigente.
-function createCatalogo(regra: Partial<RegraVersaoResolvida> | null): {
-  resolverRegraVigente: jest.Mock;
-} {
-  return {
-    resolverRegraVigente: jest.fn().mockResolvedValue(
-      regra == null
-        ? null
-        : {
-            id: 'reg-1',
-            catalogoVersaoId: 'cat-1',
-            chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
-            revisao: 1,
-            conteudo: {},
-            fonte: 'LC190/2022',
-            fonteUrl: null,
-            responsavelPor: null,
-            vigenciaInicio: '2026-01-01',
-            vigenciaFim: null,
-            competencia: '2026-09-01',
-            escopoAprovado: true,
-            pendente: false,
-            ...regra,
-          },
-    ),
   };
 }
 
@@ -184,7 +183,7 @@ describe('DIFAL — matriz de risco (Fase 4 / tarefa 2.7 — R1.6, N09–N12)', 
     // base 1000 → redução 10% (900) → benefício 20% (720).
     const r = await apurar(
       { uf: 'SP' },
-      [item({ percentualReducaoBcIcms: '10.0000' })],
+      [item({ valorBcIcms: null, percentualReducaoBcIcms: '10.0000' })],
       { aliquota_interna: '18.0000', percentual_beneficio: '20.0000' },
     );
     const d = r.itens[0];

@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import {
   fiscalSimplesAnexos,
@@ -8,9 +8,10 @@ import {
   fiscalSimplesTabelas,
 } from '../schema';
 
-// Nova versão preserva a tabela antiga para apurações já registradas.
-export const SIMPLES_TABELA_VERSAO = 'LC_155_2016_REV_2026_11';
-const SIMPLES_TABELA_VERSAO_ANTERIOR = 'LC_155_2016_VIGENTE';
+// Uma nova versão preserva as tabelas referenciadas por apurações históricas.
+export const SIMPLES_TABELA_VERSAO = 'LC_155_2016_REV_2026_11_R2';
+const DESCRICAO_TABELA =
+  'Tabelas do Simples Nacional vigentes a partir de 2018 (LC 123/2006, redação da LC 155/2016)';
 
 type Anexo = 'ANEXO_I' | 'ANEXO_II' | 'ANEXO_III' | 'ANEXO_IV' | 'ANEXO_V';
 type Tributo =
@@ -376,7 +377,7 @@ const LIMITES = [
   ['3600000.01', '4800000.00'],
 ] as const;
 
-const UFS = [
+export const SIMPLES_UFS = [
   'AC',
   'AL',
   'AP',
@@ -415,18 +416,99 @@ export async function seedSimplesNacional(
   const database = drizzle(client);
   try {
     await database.transaction(async (tx) => {
-      // A versão anterior tinha a partilha da 1ª faixa repetida nas faixas
-      // 2ª a 4ª. Desativá-la mantém intactas as apurações que a referenciam.
-      await tx
-        .update(fiscalSimplesTabelas)
-        .set({ ativo: false })
-        .where(eq(fiscalSimplesTabelas.versao, SIMPLES_TABELA_VERSAO_ANTERIOR));
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('simples-tabelas-normativas', 0))`,
+      );
+      const [existente] = await tx
+        .select()
+        .from(fiscalSimplesTabelas)
+        .where(eq(fiscalSimplesTabelas.versao, SIMPLES_TABELA_VERSAO))
+        .limit(1);
+      if (existente) {
+        if (
+          existente.descricao !== DESCRICAO_TABELA ||
+          existente.vigenciaInicio !== '2018-01-01' ||
+          existente.vigenciaFim !== null
+        ) {
+          throw new Error(
+            `A versão ${SIMPLES_TABELA_VERSAO} já existe com metadados diferentes. Crie uma nova versão para preservar as apurações históricas.`,
+          );
+        }
+        const anexosAtuais = await tx
+          .select()
+          .from(fiscalSimplesAnexos)
+          .where(eq(fiscalSimplesAnexos.tabelaId, existente.id));
+        if (anexosAtuais.length !== SIMPLES_ANEXOS_SEED.length) {
+          throw new Error(
+            `A versão ${SIMPLES_TABELA_VERSAO} já existe com anexos incompletos ou extras.`,
+          );
+        }
+        for (const anexoSeed of SIMPLES_ANEXOS_SEED) {
+          const anexoAtual = anexosAtuais.find(
+            (item) => item.anexo === anexoSeed.anexo,
+          );
+          if (
+            !anexoAtual ||
+            anexoAtual.descricao !== anexoSeed.descricao ||
+            anexoAtual.tipoAtividade !== anexoSeed.tipoAtividade ||
+            anexoAtual.permiteFatorR !== anexoSeed.permiteFatorR ||
+            anexoAtual.recolheCppNoDas !== anexoSeed.recolheCppNoDas
+          ) {
+            throw new Error(
+              `O ${anexoSeed.anexo} da versão ${SIMPLES_TABELA_VERSAO} difere da seed.`,
+            );
+          }
+          const faixasAtuais = await tx
+            .select()
+            .from(fiscalSimplesFaixas)
+            .where(eq(fiscalSimplesFaixas.anexoId, anexoAtual.id));
+          if (faixasAtuais.length !== anexoSeed.faixas.length) {
+            throw new Error(
+              `As faixas do ${anexoSeed.anexo} da versão ${SIMPLES_TABELA_VERSAO} estão incompletas.`,
+            );
+          }
+          for (const [index, faixaSeed] of anexoSeed.faixas.entries()) {
+            const faixaAtual = faixasAtuais.find(
+              (item) => item.faixa === index + 1,
+            );
+            const [rbt12De, rbt12Ate] = LIMITES[index];
+            const esperado = [
+              rbt12De,
+              rbt12Ate,
+              faixaSeed.aliquota,
+              faixaSeed.deducao,
+              ...Object.values(faixaSeed.partilha),
+            ];
+            const atual = faixaAtual
+              ? [
+                  faixaAtual.rbt12De,
+                  faixaAtual.rbt12Ate,
+                  faixaAtual.aliquotaNominal,
+                  faixaAtual.parcelaDeduzir,
+                  faixaAtual.percentualIrpj,
+                  faixaAtual.percentualCsll,
+                  faixaAtual.percentualCofins,
+                  faixaAtual.percentualPis,
+                  faixaAtual.percentualCpp,
+                  faixaAtual.percentualIpi,
+                  faixaAtual.percentualIcms,
+                  faixaAtual.percentualIss,
+                ]
+              : [];
+            if (JSON.stringify(atual) !== JSON.stringify(esperado)) {
+              throw new Error(
+                `A faixa ${index + 1} do ${anexoSeed.anexo} da versão ${SIMPLES_TABELA_VERSAO} difere da seed.`,
+              );
+            }
+          }
+        }
+      }
       const [tabela] = await tx
         .insert(fiscalSimplesTabelas)
         .values({
           versao: SIMPLES_TABELA_VERSAO,
-          descricao:
-            'Tabelas do Simples Nacional vigentes a partir de 2018 (LC 123/2006, redação da LC 155/2016)',
+          descricao: DESCRICAO_TABELA,
           vigenciaInicio: '2018-01-01',
           ativo: true,
         })
@@ -439,6 +521,20 @@ export async function seedSimplesNacional(
           },
         })
         .returning({ id: fiscalSimplesTabelas.id });
+
+      // Limpeza lógica: as versões antigas continuam vinculadas às apurações
+      // históricas, mas deixam de ser selecionadas em novos cálculos.
+      await tx
+        .update(fiscalSimplesTabelas)
+        .set({ ativo: false })
+        .where(
+          and(
+            ne(fiscalSimplesTabelas.id, tabela.id),
+            eq(fiscalSimplesTabelas.ativo, true),
+            sql`${fiscalSimplesTabelas.vigenciaInicio} <= '2026-12-31'::date`,
+            sql`coalesce(${fiscalSimplesTabelas.vigenciaFim}, 'infinity'::date) >= '2018-01-01'::date`,
+          ),
+        );
 
       for (const anexoSeed of SIMPLES_ANEXOS_SEED) {
         const [anexo] = await tx
@@ -503,7 +599,7 @@ export async function seedSimplesNacional(
       }
 
       for (const ano of anos) {
-        for (const uf of UFS) {
+        for (const uf of SIMPLES_UFS) {
           await tx
             .insert(fiscalSimplesSublimites)
             .values({
@@ -512,11 +608,12 @@ export async function seedSimplesNacional(
               valorSublimite: '3600000.00',
               ativo: true,
             })
-            .onConflictDoNothing({
+            .onConflictDoUpdate({
               target: [
                 fiscalSimplesSublimites.uf,
                 fiscalSimplesSublimites.anoVigencia,
               ],
+              set: { valorSublimite: '3600000.00', ativo: true },
             });
         }
       }

@@ -66,6 +66,14 @@ export const fiscalRegrasVersoes = pgTable(
     vigenciaInicio: date('vigencia_inicio').notNull(),
     vigenciaFim: date('vigencia_fim'),
     ativo: boolean('ativo').notNull().default(true),
+    // Aprovação POR REGRA (ICMS nacional, A2). `null` = herda a aprovação do
+    // catálogo (comportamento legado, consumidores CIAP/PIS inalterados).
+    // `true`/`false` decide sozinho, sem liberar regras vizinhas do catálogo.
+    escopoAprovado: boolean('escopo_aprovado'),
+    aprovadoPor: text('aprovado_por').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    aprovadoEm: timestamp('aprovado_em', { withTimezone: true }),
     criadoEm: timestamp('criado_em', { withTimezone: true })
       .notNull()
       .defaultNow(),

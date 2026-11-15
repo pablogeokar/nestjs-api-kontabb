@@ -5,9 +5,10 @@ frontend ainda mostra apenas um aviso; ela não inicia restore PostgreSQL.
 Use o Backup Drive ou o helper `backup-restore` em um banco de destino
 separado e autorizado.
 
-O histórico atual começa em `drizzle/0000_silent_warbird.sql`, que cria
-diretamente as 54 tabelas atuais em banco vazio. O histórico antigo `0000`–`0004`
-foi substituído; não aplique a nova baseline sobre um banco existente. O nome
+O histórico atual começa em `drizzle/0000_mute_dark_beast.sql`, que cria
+diretamente as 66 tabelas atuais em banco vazio, seguida de
+`0001_clientes_perfis_fiscais_trigger.sql` (função e trigger de perfis fiscais).
+O histórico anterior (`0000`–`0012`) foi substituído; não aplique a nova baseline sobre um banco existente. O nome
 das foreign keys longas agora é explícito para evitar truncamento no PostgreSQL.
 
 O backup data-only contém somente dados. O schema, constraints e índices sempre
@@ -84,11 +85,13 @@ DATABASE_URL="$KONTABB_NEW_DATABASE_URL" go run . -validate -database-url-from-e
 
 ```bash
 cd ../api
-DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:seed:required
+DATABASE_URL="$KONTABB_NEW_DATABASE_URL" pnpm db:seed:required:restore
 ```
 
-Confira o conteúdo do backup escolhido. Se ele já incluir usuários ADMIN e
-CFOPs, não execute `db:seed:admin` nem `db:seed:cfops` como parte do restore.
+Esse modo só grava os catálogos que ficam fora do backup. Não execute
+`db:seed:required` (sem `:restore`) após um restore: ele regrava ADMIN, CFOPs,
+tipos financeiros e regras ICMS-BA, sobrescrevendo edições vindas do backup.
+Para uma base nova sem restore, veja `docs/database-new.md`.
 
 7. Execute os diagnósticos de domínio:
 

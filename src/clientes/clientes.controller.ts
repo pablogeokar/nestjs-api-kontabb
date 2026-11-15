@@ -44,6 +44,7 @@ import {
   CreateClientDto,
   UpdateClientDto,
   BatchClientDto,
+  LookupCepParamsDto,
   LookupCnpjParamsDto,
   type ClientAddressDto,
   type ClientCnaeDto,
@@ -53,6 +54,7 @@ import {
   CnpjLookupService,
   isValidCnpj,
 } from './cnpj-lookup.service';
+import { CepLookupFailure, CepLookupService } from './cep-lookup.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import {
   hasValidFileSignature,
@@ -69,6 +71,7 @@ export class ClientesController {
   constructor(
     private readonly clientesService: ClientesService,
     private readonly cnpjLookupService: CnpjLookupService,
+    private readonly cepLookupService: CepLookupService,
     private readonly rateLimit: RateLimitService,
     private readonly logger: AppLogger,
   ) {}
@@ -111,6 +114,47 @@ export class ClientesController {
     return buildPaginatedResponse(result.data, result.total, pagination);
   }
 
+  @Get('consulta-cep/:cep')
+  @ApiOperation({
+    summary: 'Consultar endereço e código IBGE por CEP',
+    description:
+      'Consulta ViaCEP, BrasilAPI e OpenCEP (nessa ordem) e devolve endereço e código IBGE do município em um contrato único.',
+  })
+  @ApiParam({ name: 'cep', description: 'CEP com 8 dígitos' })
+  @ApiResponse({ status: 200, description: 'Endereço normalizado.' })
+  @ApiResponse({ status: 404, description: 'CEP não encontrado.' })
+  @ApiResponse({
+    status: 503,
+    description: 'Provedores temporariamente indisponíveis.',
+  })
+  async lookupCep(
+    @Param() params: LookupCepParamsDto,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.rateLimit.consume({
+      key: `cep-lookup:${currentUser.id}`,
+      limit: 30,
+      windowMs: 60_000,
+    });
+    try {
+      return await this.cepLookupService.lookup(params.cep, {
+        requestId: this.logger.generateRequestId(),
+        userId: currentUser.id,
+      });
+    } catch (error) {
+      if (error instanceof CepLookupFailure && error.code === 'NOT_FOUND') {
+        throw new NotFoundException({
+          code: 'CEP_NOT_FOUND',
+          message: 'CEP não encontrado nas bases consultadas.',
+        });
+      }
+      throw new ServiceUnavailableException({
+        code: 'CEP_LOOKUP_UNAVAILABLE',
+        message:
+          'Não foi possível consultar o CEP agora. Preencha o endereço manualmente ou tente novamente.',
+      });
+    }
+  }
   @Get('consulta-cnpj/:cnpj')
   @ApiOperation({
     summary: 'Consultar dados de um CNPJ',
@@ -236,6 +280,11 @@ export class ClientesController {
       ),
       optanteSimplesNacional: dto.optante_simples_nacional,
       simplesNacionalFonte: dto.simples_nacional_fonte,
+      codigoMunicipioIbge: dto.codigo_municipio_ibge,
+      nomeFantasia: dto.nome_fantasia,
+      responsavelNome: dto.responsavel_nome,
+      responsavelCpf: dto.responsavel_cpf,
+      responsavelCodAssinante: dto.responsavel_cod_assinante,
       contadorId: dto.contador_id,
     });
 
@@ -354,9 +403,15 @@ export class ClientesController {
       dataAberturaCnpj: dto.data_abertura_cnpj,
       apuraIcms: dto.apura_icms,
       inscricaoEstadual: dto.inscricao_estadual,
+      inscricaoMunicipal: dto.inscricao_municipal,
       tipoContribuinteIcms: dto.tipo_contribuinte_icms,
       optanteSimplesNacional: dto.optante_simples_nacional,
       simplesNacionalFonte: dto.simples_nacional_fonte,
+      codigoMunicipioIbge: dto.codigo_municipio_ibge,
+      nomeFantasia: dto.nome_fantasia,
+      responsavelNome: dto.responsavel_nome,
+      responsavelCpf: dto.responsavel_cpf,
+      responsavelCodAssinante: dto.responsavel_cod_assinante,
       contadorId: dto.contador_id,
     });
     if (!updated) throw new NotFoundException('Cliente não encontrado.');

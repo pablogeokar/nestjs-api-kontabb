@@ -10,8 +10,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/auth.guard';
 import { StaffOnly } from '../../auth/roles.decorator';
@@ -20,6 +22,8 @@ import type { CurrentUser as CurrentUserType } from '../../common/types';
 import { ClientesService } from '../../clientes/clientes.service';
 import { CiapService } from '../services/ciap.service';
 import { DifalEntradaService } from '../services/difal-entrada.service';
+import { calcularAntecipacaoParcial } from '../services/antecipacao-parcial';
+import { SimularAntecipacaoParcialDto } from '../dto/antecipacao-parcial.dto';
 import {
   FiscalGuiasService,
   type TributoGuia,
@@ -352,6 +356,74 @@ export class AdminFiscalApuracaoController {
     private readonly rolloutMetricasService: RolloutMetricasService,
   ) {}
 
+  @Get('difal-entrada')
+  @ApiOperation({
+    summary: 'Consulta o DIFAL de entrada da empresa na competência',
+  })
+  async apurarDifal(
+    @Query('clienteId', ParseUUIDPipe) clienteId: string,
+    @Query('competencia') competencia: string,
+  ) {
+    const data = await this.difalService.apurarCompetencia({
+      clienteId,
+      competencia,
+    });
+    return { data };
+  }
+
+  @Post('antecipacao-parcial/simular')
+  @ApiOperation({
+    summary: 'Simula a antecipação parcial com parâmetros conferidos',
+  })
+  simularAntecipacaoParcial(@Body() body: SimularAntecipacaoParcialDto) {
+    const porAliquotas = body.metodo === 'DIFERENCA_ALIQUOTAS';
+    return {
+      data: calcularAntecipacaoParcial({
+        baseCalculo: body.baseCalculo,
+        aliquotaInterna: body.aliquotaInterna,
+        aliquotaInterestadual: porAliquotas
+          ? body.aliquotaInterestadual
+          : undefined,
+        deducaoOrigem: porAliquotas ? undefined : body.deducaoOrigem,
+        percentualReducao: body.percentualReducao,
+      }),
+    };
+  }
+
+  @Get('antecipacao-parcial/espelho')
+  @ApiOperation({
+    summary: 'Gera prévia sem valor fiscal da antecipação parcial calculada',
+  })
+  async espelhoAntecipacaoParcial(
+    @Query('clienteId', ParseUUIDPipe) clienteId: string,
+    @Query('competencia') competencia: string,
+    @Res() res: Response,
+  ) {
+    try {
+      parseCompetenciaMensal(competencia);
+    } catch {
+      throw new BadRequestException('Competência inválida. Utilize AAAA-MM.');
+    }
+    const apuracao = await this.difalService.apurarCompetencia({
+      clienteId,
+      competencia,
+    });
+    const antecipacao = apuracao.antecipacao_parcial;
+    const buffer = await this.guiasService.gerarEspelhoPreviaAntecipacao({
+      clienteId,
+      competencia,
+      totalApurado: antecipacao.total_apurado,
+      itens: antecipacao.itens,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="espelho-antecipacao-${competencia}.pdf"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(buffer);
+  }
+
   // ── Rollout: inventário read-only antes de ativar correções (R5.2) ─────────
   // Mesma projeção read-only do controller do cliente, escopada por `clienteId`
   // (query) para a operação staff do rollout. Não ativa correção nem decide
@@ -494,6 +566,29 @@ export class AdminFiscalApuracaoController {
     return {
       data: await this.guiasService.listarCentral({ clienteId, competencia }),
     };
+  }
+
+  @Get('guias/:id/espelho')
+  @ApiOperation({
+    summary:
+      'Gera espelho de conferência sem valor fiscal da obrigação registrada',
+  })
+  async espelhoGuia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('clienteId', ParseUUIDPipe) clienteId: string,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.guiasService.gerarEspelho({
+      clienteId,
+      guiaId: id,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="espelho-recolhimento-${id}.pdf"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(buffer);
   }
 
   @Post('guias')

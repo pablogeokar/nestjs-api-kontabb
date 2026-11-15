@@ -51,7 +51,11 @@ function renderWhere(captured: { where?: SQL }): {
 // não apenas a forma da query. A primeira chamada a `select` resolve o
 // catálogo; a segunda (quando houver) resolve as revisões de regra.
 function createDb(opts: { catalogo: CatalogoRow[]; regras?: RegraRow[] }) {
-  const captures: Array<{ where?: SQL; orderByDesc: boolean }> = [];
+  const captures: Array<{
+    where?: SQL;
+    orderByDesc: boolean;
+    orderByCount?: number;
+  }> = [];
 
   // Aplica a MESMA regra do serviço: início <= competência e (fim nulo OU fim
   // >= competência). A competência é o 1º dia do mês ('YYYY-MM-01').
@@ -72,7 +76,14 @@ function createDb(opts: { catalogo: CatalogoRow[]; regras?: RegraRow[] }) {
       return {
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockImplementation((clause: SQL) => {
-            const capture = { where: clause, orderByDesc: false };
+            const capture: {
+              where: SQL;
+              orderByDesc: boolean;
+              orderByCount?: number;
+            } = {
+              where: clause,
+              orderByDesc: false,
+            };
             captures.push(capture);
             const rendered = renderWhere(capture);
             const competencia =
@@ -85,10 +96,19 @@ function createDb(opts: { catalogo: CatalogoRow[]; regras?: RegraRow[] }) {
             const filtradas = source
               .filter((r) => vigente(r, competencia))
               // Mais nova (início desc) que ainda cobre a competência.
-              .sort((a, b) => (a.vigenciaInicio < b.vigenciaInicio ? 1 : -1));
+              .sort((a, b) =>
+                a.vigenciaInicio < b.vigenciaInicio
+                  ? 1
+                  : a.vigenciaInicio > b.vigenciaInicio
+                    ? -1
+                    : 'revisao' in a && 'revisao' in b
+                      ? b.revisao - a.revisao
+                      : 0,
+              );
             return {
-              orderBy: jest.fn().mockImplementation(() => {
+              orderBy: jest.fn().mockImplementation((...clauses: SQL[]) => {
                 capture.orderByDesc = true;
+                capture.orderByCount = clauses.length;
                 return {
                   limit: jest
                     .fn()
@@ -363,6 +383,29 @@ describe('FiscalNormativeCatalogService', () => {
   });
 
   describe('regras versionadas por competência', () => {
+    it('prioriza a revisão mais nova dentro da mesma competência', async () => {
+      const { db, captures } = createDb({
+        catalogo: [CATALOGO_SP_2024()],
+        regras: [1, 2].map((revisao) => ({
+          id: `reg-${revisao}`,
+          catalogoVersaoId: 'cat-2024',
+          chave: 'uso-consumo',
+          revisao,
+          fonte: 'LC190/2022',
+          vigenciaInicio: '2024-01-01',
+        })),
+      });
+      const service = new FiscalNormativeCatalogService(db as never);
+      const regra = await service.resolverRegraVigente({
+        tipo: 'DIFAL',
+        uf: 'SP',
+        competencia: '2024-06',
+        chave: 'uso-consumo',
+      });
+      expect(regra?.revisao).toBe(2);
+      expect(captures[1].orderByCount).toBe(2);
+    });
+
     it('resolve a revisão de regra ancorada na versão de catálogo vigente', async () => {
       const { db } = createDb({
         catalogo: [CATALOGO_SP_2024()],

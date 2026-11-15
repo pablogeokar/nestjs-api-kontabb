@@ -9,6 +9,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { contadores } from './contadores';
@@ -41,6 +42,17 @@ export const clientes = pgTable(
     dataAberturaCnpj: date('data_abertura_cnpj'),
     apuraIcms: boolean('apura_icms').notNull().default(false),
     inscricaoEstadual: text('inscricao_estadual'),
+    inscricaoMunicipal: text('inscricao_municipal'),
+    // Dados exigidos pela DeSTDA (e úteis a outras obrigações): código IBGE do
+    // município, fantasia e responsável pela empresa (nome, CPF e qualificação
+    // conforme a tabela 3.3.2 do leiaute).
+    codigoMunicipioIbge: varchar('codigo_municipio_ibge', { length: 7 }),
+    nomeFantasia: text('nome_fantasia'),
+    responsavelNome: text('responsavel_nome'),
+    responsavelCpf: varchar('responsavel_cpf', { length: 11 }),
+    responsavelCodAssinante: varchar('responsavel_cod_assinante', {
+      length: 3,
+    }),
     tipoContribuinteIcms: text('tipo_contribuinte_icms'),
     optanteSimplesNacional: boolean('optante_simples_nacional'),
     simplesNacionalFonte: text('simples_nacional_fonte'),
@@ -59,6 +71,18 @@ export const clientes = pgTable(
   },
   (table) => [
     uniqueIndex('uidx_clientes_user_id').on(table.userId),
+    check(
+      'chk_clientes_codigo_municipio_ibge',
+      sql`${table.codigoMunicipioIbge} IS NULL OR ${table.codigoMunicipioIbge} ~ '^[0-9]{7}$'`,
+    ),
+    check(
+      'chk_clientes_responsavel_cpf',
+      sql`${table.responsavelCpf} IS NULL OR ${table.responsavelCpf} ~ '^[0-9]{11}$'`,
+    ),
+    check(
+      'chk_clientes_responsavel_cod_assinante',
+      sql`${table.responsavelCodAssinante} IS NULL OR ${table.responsavelCodAssinante} ~ '^[0-9]{3}$'`,
+    ),
     check('chk_clientes_tipo_pessoa', sql`${table.tipoPessoa} IN ('PF', 'PJ')`),
     check(
       'chk_clientes_cep',
@@ -83,6 +107,10 @@ export const clientes = pgTable(
     check(
       'chk_clientes_tipo_contribuinte_icms',
       sql`${table.tipoContribuinteIcms} IS NULL OR ${table.tipoContribuinteIcms} IN ('CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE')`,
+    ),
+    check(
+      'chk_clientes_inscricao_municipal',
+      sql`${table.inscricaoMunicipal} IS NULL OR ${table.inscricaoMunicipal} ~ '^[0-9A-Z./-]{2,20}$'`,
     ),
     check(
       'chk_clientes_inscricao_estadual',

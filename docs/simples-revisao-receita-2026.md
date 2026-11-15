@@ -24,7 +24,7 @@ A declaração oficial também mostra sublimite proporcional de R$ 900.000,00 no
 
 O motor 9 guarda na memória da apuração a receita de CT-e por município e UF de início da prestação, conforme o detalhamento solicitado no PGDAS-D. A ausência do município de origem gera pendência para impedir o fechamento sem essa informação. A política de ICMS próprio usa a mesma regra de receita anual do DAS; RBT12 continua servindo ao enquadramento nas faixas, mas não caracteriza sozinho o impedimento de ICMS/ISS.
 
-Para implantar, aplique a migração de banco, execute `pnpm db:seed:simples` no ambiente de destino e recalcule os rascunhos anteriores ao motor 9. Confira a data de abertura do CNPJ e o histórico de receitas antes do fechamento. Tabelas normativas de anos futuros devem ser cadastradas depois da publicação oficial do CGSN; o seed cadastra 2025 e 2026 sem substituir ajustes administrativos.
+Para atualizar um banco de produção que já contém apurações, siga [o procedimento de reaplicação](./reaplicar-simples-producao.md). A nova versão normativa R2 preserva as tabelas históricas e atualiza os sublimites de 2025/2026 para os valores oficiais. Recalcule os rascunhos anteriores ao motor 9 e confira a data de abertura do CNPJ e o histórico de receitas antes do fechamento. Tabelas normativas de anos futuros devem ser cadastradas depois da publicação oficial do CGSN.
 
 ## Referências oficiais
 

@@ -4,6 +4,8 @@ import { ClientesService } from './clientes.service';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { CnpjLookupService } from './cnpj-lookup.service';
+import { CepLookupService } from './cep-lookup.service';
+import { IbgeMunicipiosService } from './ibge-municipios.service';
 import { CrmModule } from '../crm/crm.module';
 
 @Module({
@@ -13,7 +15,12 @@ import { CrmModule } from '../crm/crm.module';
     forwardRef(() => CrmModule),
   ],
   controllers: [ClientesController],
-  providers: [ClientesService, CnpjLookupService],
+  providers: [
+    ClientesService,
+    CnpjLookupService,
+    IbgeMunicipiosService,
+    CepLookupService,
+  ],
   exports: [ClientesService],
 })
 export class ClientesModule {}

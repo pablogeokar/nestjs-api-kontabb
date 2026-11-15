@@ -23,7 +23,18 @@ import {
 } from './difal-calculador';
 import { projetarResultadoApuracao } from './resultado-apuracao.projector';
 import type { FechamentoSnapshots } from './resultado-apuracao.projector';
+import {
+  dataCalendarioValida,
+  motivoFechamentoInelegivelParaGuia,
+  ufValida,
+} from './fiscal-guias-vinculo';
 import { compararGuiaComObrigacao } from './fiscal-guias-divergencia';
+import { montarMemoriaAntecipacaoParcial } from './antecipacao-parcial-espelho';
+import type { DifalEntradaService } from './difal-entrada.service';
+import {
+  renderEspelhoRecolhimentoPdf,
+  type EspelhoRecolhimento,
+} from './espelho-recolhimento.pdf';
 import {
   projetarSaldoObrigacao,
   sinalDoEvento,
@@ -151,6 +162,19 @@ export class FiscalGuiasService {
     await this.assertCliente(input.clienteId);
     const { competencia } = this.competenciaRange(input.competencia);
 
+    // P0/A1: UF e vencimento são validados também fora do HTTP (calendário e
+    // UF reais), já que o serviço é chamável sem ValidationPipe.
+    if (!ufValida(input.ufFavorecida)) {
+      throw new BadRequestException(
+        `UF favorecida inválida: "${input.ufFavorecida}".`,
+      );
+    }
+    if (!dataCalendarioValida(input.dataVencimento)) {
+      throw new BadRequestException(
+        `Data de vencimento inválida: "${input.dataVencimento}".`,
+      );
+    }
+
     // R1.6 (Fase 5, tarefa 1.6): DEDUPLICAÇÃO POR CHAVE DE IDEMPOTÊNCIA. Quando o
     // chamador fornece uma chave, um RETRY com a MESMA chave (mesmo cliente) NÃO
     // cria uma guia nova — retornamos a já criada. A chave é a FRONTEIRA de
@@ -179,6 +203,7 @@ export class FiscalGuiasService {
       input.clienteId,
       origem,
       input.fechamentoId,
+      { competencia, tributo: input.tributo },
     );
 
     // R1.2 / tarefa 2.3: um DIFAL em SIMULAÇÃO/PENDÊNCIA NUNCA vira guia. Este é
@@ -186,7 +211,7 @@ export class FiscalGuiasService {
     // sem este guard, um chamador poderia criar uma guia DIFAL a partir de um
     // item simulado/pendente. A decisão delega a `difalPodeGerarGuia` (fonte
     // única da regra); a referência legada jamais é fonte de verdade para guia.
-    this.assertDifalElegivel(input);
+    this.assertDifalElegivel(input, origem);
 
     // R6.4/R6.3: reforça as invariantes do CriarGuiaDto no serviço para que um
     // chamador fora do HTTP (sem ValidationPipe) não as burle. Cada componente
@@ -348,6 +373,160 @@ export class FiscalGuiasService {
     return { data: rows.map((row) => this.toGuiaResponse(row)) };
   }
 
+  /** Espelho auxiliar de uma obrigação já registrada, sempre escopada pelo cliente. */
+  async gerarEspelho(input: {
+    clienteId: string;
+    guiaId: string;
+  }): Promise<Buffer> {
+    const guia = await this.carregarGuiaDoCliente(
+      input.clienteId,
+      input.guiaId,
+    );
+    if (guia.cancelada) {
+      throw new BadRequestException(
+        'Obrigação cancelada não possui espelho de recolhimento.',
+      );
+    }
+    const [cliente] = await this.database.db
+      .select({
+        razaoSocial: clientes.razaoSocial,
+        documento: clientes.cnpj,
+        inscricaoEstadual: clientes.inscricaoEstadual,
+        logradouro: clientes.logradouro,
+        numero: clientes.numero,
+        bairro: clientes.bairro,
+        municipio: clientes.municipio,
+        uf: clientes.uf,
+        cep: clientes.cep,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, input.clienteId))
+      .limit(1);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+
+    const dados: EspelhoRecolhimento = {
+      referenciaInterna: guia.id,
+      ufFavorecida: guia.ufFavorecida,
+      tributo: guia.tributo.replaceAll('_', ' '),
+      tipoDocumentoSugerido: guia.tipoGuia,
+      codigoReceita: guia.codigoReceita,
+      competencia: `${guia.competencia.slice(5, 7)}/${guia.competencia.slice(0, 4)}`,
+      vencimento: guia.dataVencimento,
+      contribuinte: {
+        nome: cliente.razaoSocial,
+        documento: cliente.documento,
+        inscricaoEstadual: cliente.inscricaoEstadual,
+        logradouro: cliente.logradouro,
+        numero: cliente.numero,
+        bairro: cliente.bairro,
+        municipio: cliente.municipio,
+        uf: cliente.uf,
+        cep: cliente.cep,
+      },
+      valores: {
+        principal: guia.valorPrincipal,
+        multa: guia.valorMulta ?? '0',
+        juros: guia.valorJuros ?? '0',
+        total: guia.valorTotal,
+      },
+      origem:
+        guia.origem === 'APURACAO' ? 'Apuração fechada' : 'Registro manual',
+      observacoes: [
+        'Confirme código de receita, vencimento e acréscimos no portal oficial antes de emitir a guia.',
+        ...(guia.divergenteObrigacao
+          ? [
+              'O valor registrado diverge da obrigação apurada. Confira a diferença antes da emissão.',
+            ]
+          : []),
+        ...(guia.emitidaOrgao
+          ? [
+              'Há emissão no órgão registrada no sistema; este espelho não substitui o documento oficial.',
+            ]
+          : []),
+      ],
+      geradoEm: new Date(),
+    };
+    return renderEspelhoRecolhimentoPdf(dados);
+  }
+
+  /** Prévia da antecipação BA: total apenas dos itens calculados e homologados. */
+  async gerarEspelhoPreviaAntecipacao(input: {
+    clienteId: string;
+    competencia: string;
+    totalApurado: string;
+    itens: Awaited<
+      ReturnType<DifalEntradaService['apurarCompetencia']>
+    >['antecipacao_parcial']['itens'];
+  }): Promise<Buffer> {
+    this.competenciaRange(input.competencia);
+    if (toScaledInteger(input.totalApurado) <= 0n) {
+      throw new BadRequestException(
+        'Não há valor homologado para gerar o espelho.',
+      );
+    }
+    const [cliente] = await this.database.db
+      .select({
+        razaoSocial: clientes.razaoSocial,
+        documento: clientes.cnpj,
+        inscricaoEstadual: clientes.inscricaoEstadual,
+        logradouro: clientes.logradouro,
+        numero: clientes.numero,
+        bairro: clientes.bairro,
+        municipio: clientes.municipio,
+        uf: clientes.uf,
+        cep: clientes.cep,
+      })
+      .from(clientes)
+      .where(eq(clientes.id, input.clienteId))
+      .limit(1);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const memoria = montarMemoriaAntecipacaoParcial(input.itens);
+    const itensEmConferencia = input.itens.filter(
+      (item) =>
+        item.situacao === 'PENDENTE' ||
+        item.situacao === 'SIMULACAO' ||
+        item.situacao === 'ICMS_ST',
+    ).length;
+    const competencia = `${input.competencia.slice(5, 7)}/${input.competencia.slice(0, 4)}`;
+    return renderEspelhoRecolhimentoPdf({
+      referenciaInterna: `Prévia de antecipação parcial ${competencia}`,
+      ufFavorecida: 'BA',
+      tributo: 'ICMS ANTECIPAÇÃO PARCIAL',
+      tipoDocumentoSugerido: 'DAE',
+      codigoReceita: '2175',
+      competencia,
+      vencimento: 'A confirmar no portal oficial',
+      contribuinte: {
+        nome: cliente.razaoSocial,
+        documento: cliente.documento,
+        inscricaoEstadual: cliente.inscricaoEstadual,
+        logradouro: cliente.logradouro,
+        numero: cliente.numero,
+        bairro: cliente.bairro,
+        municipio: cliente.municipio,
+        uf: cliente.uf,
+        cep: cliente.cep,
+      },
+      valores: {
+        principal: input.totalApurado,
+        multa: '0',
+        juros: '0',
+        total: input.totalApurado,
+      },
+      origem: 'Prévia da apuração; obrigação ainda não registrada',
+      observacoes: [
+        'Valor preliminar: confirme receita, vencimento, acréscimos e reduções no portal da SEFAZ.',
+        ...(itensEmConferencia > 0
+          ? [
+              `${itensEmConferencia} ${itensEmConferencia === 1 ? 'item ficou' : 'itens ficaram'} fora do total por pendência, simulação ou ST.`,
+            ]
+          : []),
+      ],
+      memoria,
+      geradoEm: new Date(),
+    });
+  }
+
   /**
    * Visão operacional única da obrigação calculada e do PDF enviado. Pares
    * vinculados são uma única linha; uploads legados sem vínculo continuam
@@ -436,6 +615,10 @@ export class FiscalGuiasService {
     const linhasFiscais = guiasFiscais.map((guia) => ({
       id: guia.id,
       origem: 'APURACAO' as const,
+      registro_origem:
+        guia.origem === 'APURACAO'
+          ? ('APURACAO' as const)
+          : ('MANUAL' as const),
       tipo: guia.tipoGuia,
       tributo: guia.tributo,
       competencia: input.competencia,
@@ -464,6 +647,7 @@ export class FiscalGuiasService {
       .map((guia) => ({
         id: guia.id,
         origem: 'UPLOAD' as const,
+        registro_origem: null,
         tipo: guia.tipo,
         tributo: null,
         competencia: input.competencia,
@@ -893,6 +1077,7 @@ export class FiscalGuiasService {
     clienteId: string,
     origem: OrigemGuia,
     fechamentoId: string | undefined,
+    guia: { competencia: string; tributo: TributoGuia },
   ): Promise<{ fechamentoId: string | null; valorObrigacao: string | null }> {
     if (origem === 'MANUAL') {
       if (fechamentoId != null) {
@@ -934,6 +1119,24 @@ export class FiscalGuiasService {
         'Versão de apuração (fechamento) não encontrada para esta empresa. A ' +
           'guia calculada só pode vincular-se a um fechamento do próprio cliente ' +
           '(R1.7).',
+      );
+    }
+    // P0/A1: o vínculo precisa demonstrar a obrigação, não só existir. Estado
+    // FECHADO e corrente, mesma competência e obrigação compatível com o tributo.
+    const motivo = motivoFechamentoInelegivelParaGuia(
+      {
+        id: row.id,
+        clienteId: row.clienteId,
+        obrigacao: row.obrigacao,
+        competencia: row.competencia,
+        estado: row.estado,
+        corrente: row.corrente,
+      },
+      { clienteId, competencia: guia.competencia, tributo: guia.tributo },
+    );
+    if (motivo != null) {
+      throw new BadRequestException(
+        `Fechamento não sustenta a guia: ${motivo}`,
       );
     }
     return {
@@ -995,8 +1198,23 @@ export class FiscalGuiasService {
    * - Com estado presente, só `CALCULADO` passa; `SIMULACAO`/`PENDENTE` são
    *   barrados com o motivo auditável (nunca guia a partir de simulação/pendência).
    */
-  private assertDifalElegivel(input: CriarGuiaInput) {
+  private assertDifalElegivel(input: CriarGuiaInput, origem: OrigemGuia) {
     if (!TRIBUTOS_DIFAL.has(input.tributo)) return;
+
+    // P0/A1: com origem APURACAO a autoridade é o fechamento FECHADO validado
+    // em `resolverVinculoApuracao`. O `difalStatus` do cliente não autoriza
+    // nada; só é recusado se o próprio chamador declarar um estado não
+    // calculado. Em MANUAL, o campo é apenas declaração do chamador (registro
+    // de guia externa) e a guia mantém `origem = MANUAL` como proveniência.
+    if (origem === 'APURACAO') {
+      if (input.difalStatus != null && !difalPodeGerarGuia(input.difalStatus)) {
+        throw new BadRequestException(
+          difalMotivoInelegibilidadeGuia(input.difalStatus) ??
+            `DIFAL em estado ${input.difalStatus} não pode gerar guia (R1.2).`,
+        );
+      }
+      return;
+    }
 
     if (input.difalStatus == null) {
       throw new BadRequestException(

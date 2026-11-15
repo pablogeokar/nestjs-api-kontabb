@@ -8,11 +8,17 @@ import {
   HttpStatus,
   NotFoundException,
   Patch,
+  Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
+  InternalServerErrorException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -23,6 +29,11 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { CurrentUser as CurrentUserType } from '../common/types';
 import { RateLimitService } from '../common/rate-limit.service';
+import {
+  hasValidFileSignature,
+  extensionForMime,
+  type AllowedUploadType,
+} from '../common/file-validation';
 
 @ApiTags('Cliente')
 @ApiBearerAuth('session-token')
@@ -61,6 +72,95 @@ export class ClienteController {
     }
     const logoUrl = await this.clientesService.getLogoUrl(client.id);
     return { logo_url: logoUrl };
+  }
+
+  @Get('perfil')
+  @ApiOperation({
+    summary: 'Perfil da empresa (somente leitura)',
+    description:
+      'Retorna os dados cadastrais da empresa do cliente autenticado para consulta.',
+  })
+  @ApiResponse({ status: 200, description: 'Dados cadastrais da empresa.' })
+  @ApiResponse({ status: 403, description: 'Sem permissão — apenas clientes.' })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado.' })
+  async getPerfil(@CurrentUser() currentUser: CurrentUserType) {
+    if (currentUser.role !== 'CLIENTE') {
+      throw new ForbiddenException('Sem permissão.');
+    }
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) throw new NotFoundException('Cliente não encontrado.');
+    return this.clientesService.getClientSummary(client.id);
+  }
+
+  @Post('logo')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Enviar logo da empresa',
+    description:
+      'Permite que o cliente autenticado envie ou substitua a logo da própria empresa (JPEG, PNG ou WebP, máx 2MB). Nenhum dado cadastral é alterado.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Logo enviada com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Arquivo inválido.' })
+  @ApiResponse({ status: 403, description: 'Sem permissão — apenas clientes.' })
+  async uploadLogo(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    if (currentUser.role !== 'CLIENTE') {
+      throw new ForbiddenException('Sem permissão.');
+    }
+    if (!file) {
+      throw new BadRequestException('Nenhum arquivo enviado.');
+    }
+    await this.rateLimit.consume({
+      key: `cliente-logo:${currentUser.id}`,
+      limit: 10,
+      windowMs: 60_000,
+    });
+    const allowedImageTypes: AllowedUploadType[] = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ];
+    if (!allowedImageTypes.includes(file.mimetype as AllowedUploadType)) {
+      throw new BadRequestException(
+        'Formato não suportado. Envie JPEG, PNG ou WebP.',
+      );
+    }
+    if (!hasValidFileSignature(new Uint8Array(file.buffer), file.mimetype)) {
+      throw new BadRequestException(
+        'Conteúdo do arquivo não corresponde ao formato declarado.',
+      );
+    }
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) {
+      throw new BadRequestException('Cliente não encontrado.');
+    }
+    const result = await this.clientesService.uploadLogo({
+      clientId: client.id,
+      actorUserId: currentUser.id,
+      bytes: Buffer.from(file.buffer),
+      mimeType: file.mimetype,
+      extension: extensionForMime(file.mimetype as AllowedUploadType),
+    });
+    if (!result.ok) {
+      if (result.code === 'NOT_FOUND') {
+        throw new NotFoundException('Cliente não encontrado.');
+      }
+      throw new InternalServerErrorException('Falha ao enviar logo.');
+    }
+    return { success: true, logo_url: result.logoUrl };
   }
 
   @Patch('first-login')

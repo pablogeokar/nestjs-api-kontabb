@@ -293,7 +293,7 @@ describe('DistribuicaoDfeService', () => {
     );
   });
 
-  it('respeita uma hora após cStat 137 sem iniciar consulta por chave', async () => {
+  it('respeita uma hora de NSU após cStat 137 e ainda recupera resumos por chave', async () => {
     const { service, nfeWizard, atualizacoes } = createSyncHarness([
       { data: {}, xMotivo: 'Nenhum documento localizado' },
     ]);
@@ -308,7 +308,7 @@ describe('DistribuicaoDfeService', () => {
 
     expect(resultado).toMatchObject({ status: 'OK', cStat: 137, ultimoNsu: 0 });
     expect(nfeWizard.consultarDistribuicaoDFe).toHaveBeenCalledTimes(1);
-    expect(recuperar).not.toHaveBeenCalled();
+    expect(recuperar).toHaveBeenCalledTimes(5);
     const proxima = atualizacoes.find(
       (value) => value.statusSefaz === 137,
     )?.proximaConsultaEm;
@@ -388,7 +388,7 @@ describe('DistribuicaoDfeService', () => {
     ).toBe(true);
   });
 
-  it('retorna o resumo completo de documentos separado por cliente', async () => {
+  it('lista os clientes do módulo fiscal sem contar documentos', async () => {
     const orderBy = jest.fn().mockResolvedValue([
       {
         id: 'cliente-1',
@@ -401,7 +401,6 @@ describe('DistribuicaoDfeService', () => {
         apuraIcms: false,
         optanteSimplesNacional: true,
         obrigadoEfdIcmsIpi: false,
-        totalDocumentos: '105',
       },
       {
         id: 'cliente-2',
@@ -414,15 +413,10 @@ describe('DistribuicaoDfeService', () => {
         apuraIcms: true,
         optanteSimplesNacional: false,
         obrigadoEfdIcmsIpi: true,
-        totalDocumentos: '8',
       },
     ]);
-    const groupBy = jest.fn().mockReturnValue({ orderBy });
-    const secondLeftJoin = jest.fn().mockReturnValue({ groupBy });
-    const firstLeftJoin = jest
-      .fn()
-      .mockReturnValue({ leftJoin: secondLeftJoin });
-    const from = jest.fn().mockReturnValue({ leftJoin: firstLeftJoin });
+    const leftJoin = jest.fn().mockReturnValue({ orderBy });
+    const from = jest.fn().mockReturnValue({ leftJoin });
     const select = jest.fn().mockReturnValue({ from });
     const service = new DistribuicaoDfeService(
       { db: { select } } as never,
@@ -446,7 +440,6 @@ describe('DistribuicaoDfeService', () => {
         apura_icms: false,
         optante_simples_nacional: true,
         obrigado_efd_icms_ipi: false,
-        total_documentos: 105,
       },
       {
         id: 'cliente-2',
@@ -459,13 +452,10 @@ describe('DistribuicaoDfeService', () => {
         apura_icms: true,
         optante_simples_nacional: false,
         obrigado_efd_icms_ipi: true,
-        total_documentos: 8,
       },
     ]);
     expect(select).toHaveBeenCalledTimes(1);
-    expect(firstLeftJoin).toHaveBeenCalledTimes(1);
-    expect(secondLeftJoin).toHaveBeenCalledTimes(1);
-    expect(groupBy).toHaveBeenCalledTimes(1);
+    expect(leftJoin).toHaveBeenCalledTimes(1);
     expect(orderBy).toHaveBeenCalledTimes(1);
   });
 
@@ -550,10 +540,10 @@ describe('DistribuicaoDfeService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-              values: jest.fn().mockReturnValue({
-                onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
-              }),
-            }
+            values: jest.fn().mockReturnValue({
+              onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
+            }),
+          }
           : { values: itemValues },
       ),
     };

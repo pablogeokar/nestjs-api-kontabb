@@ -28,6 +28,8 @@ import { CiapService } from './services/ciap.service';
 import { DifalEntradaService } from './services/difal-entrada.service';
 import { FiscalGuiasService } from './services/fiscal-guias.service';
 import { FiscalEntregasService } from './services/fiscal-entregas.service';
+import { PerfilFiscalController } from './controllers/perfil-fiscal.controller';
+import { EstabelecimentoPerfilService } from './services/estabelecimento-perfil.service';
 import { FiscalPeriodSelectionService } from './services/fiscal-period-selection.service';
 import { FiscalClosingService } from './services/fiscal-closing.service';
 import { FiscalBooksProjectionService } from './services/fiscal-books-projection.service';
@@ -37,6 +39,8 @@ import { RolloutMetricasService } from './services/rollout-metricas.service';
 import { PisCofinsService } from './services/pis-cofins.service';
 import { RegrasFiscaisService } from './services/regras-fiscais.service';
 import { FiscalNormativeCatalogService } from './services/fiscal-normative-catalog.service';
+import { IcmsRegrasController } from './controllers/icms-regras.controller';
+import { IcmsRegrasService } from './services/icms-regras.service';
 import {
   AdminFiscalApuracaoController,
   ClienteFiscalApuracaoController,
@@ -54,6 +58,13 @@ import { EfdIcmsIpiService } from './sped/efd-icms-ipi.service';
 import { SpedConfiguracaoService } from './sped/sped-configuracao.service';
 import { SpedApuracaoContextoService } from './sped/sped-apuracao-contexto.service';
 import { SpedInventarioService } from './sped/sped-inventario.service';
+import {
+  AdminDestdaController,
+  ClienteDestdaController,
+} from './destda/destda.controller';
+import { DestdaService } from './destda/destda.service';
+import { DestdaApuracaoService } from './destda/destda-apuracao.service';
+import { DestdaConfiguracaoService } from './destda/destda-configuracao.service';
 import {
   AdminSimplesNacionalController,
   ClienteSimplesNacionalController,
@@ -77,10 +88,14 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     AdminEscrituracaoFiscalController,
     AdminSpedEfdController,
     ClienteSpedEfdController,
+    AdminDestdaController,
+    ClienteDestdaController,
     AdminFiscalApuracaoController,
     ClienteFiscalApuracaoController,
     ClienteRegrasFiscaisController,
     AdminRegrasFiscaisController,
+    IcmsRegrasController,
+    PerfilFiscalController,
     AdminSimplesNacionalController,
     ClienteSimplesNacionalController,
   ],
@@ -107,11 +122,15 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     SpedConfiguracaoService,
     SpedApuracaoContextoService,
     SpedInventarioService,
+    DestdaService,
+    DestdaApuracaoService,
+    DestdaConfiguracaoService,
     CiapService,
     DifalEntradaService,
     FiscalGuiasService,
     FiscalEntregasService,
     FiscalPeriodSelectionService,
+    EstabelecimentoPerfilService,
     FiscalClosingService,
     FiscalBooksProjectionService,
     OnboardingMatrizService,
@@ -120,6 +139,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     PisCofinsService,
     RegrasFiscaisService,
     FiscalNormativeCatalogService,
+    IcmsRegrasService,
     SimplesCalculadorService,
     SimplesNacionalService,
     SimplesNacionalRelatorioService,

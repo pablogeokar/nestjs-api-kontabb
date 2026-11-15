@@ -1,4 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   eq,
   and,
@@ -17,7 +23,10 @@ import {
 } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { StorageService } from '../../storage/storage.service';
-import { NfeWizardService } from './nfewizard.service';
+import {
+  ManifestacaoSefazRejectedError,
+  NfeWizardService,
+} from './nfewizard.service';
 import { SefazConsultaAdiadaError } from './sefaz-consulta-control.service';
 import {
   extractDfeDocZips,
@@ -72,6 +81,7 @@ export function isFiscalSyncFailure(result: FiscalSyncResult) {
 export const FISCAL_SYNC_LOCK_TTL_MS = 15 * 60 * 1000;
 const MAX_LOTES_POR_SINCRONIZACAO = 20;
 const INTERVALO_SEFAZ_MS = 60 * 60 * 1000;
+const MAX_RECUPERACOES_POR_CICLO = 5;
 
 function isEventoNfe(schema: string) {
   const fileName = schema.trim().split(/[\\/]/).pop() ?? '';
@@ -324,6 +334,19 @@ export class DistribuicaoDfeService {
             maxNsu: maxNsuConhecido,
             proximaConsultaEm: new Date(Date.now() + INTERVALO_SEFAZ_MS),
           });
+          // cStat 137 só bloqueia nova consulta por NSU. Resumos já
+          // manifestados continuam elegíveis à consulta por chave.
+          if (cStat === 137 && tipoDocumento === 'NFE') {
+            documentosProcessados += await this.recuperarResumosManifestados(
+              clienteId,
+              cnpj,
+              uf || 'SP',
+              {
+                regimeTributario: regimeTributario as RegimeTributario | null,
+                apuraIcms,
+              },
+            );
+          }
           return {
             status: cStat === 656 ? 'CONSUMO_INDEVIDO' : 'OK',
             cStat,
@@ -456,27 +479,18 @@ export class DistribuicaoDfeService {
       }
 
       // Resumos manifestados ainda podem demorar a receber um novo NSU com
-      // procNFe. A consulta pontual é limitada a uma chave elegível por ciclo.
-      if (tipoDocumento === 'NFE' && ultimoStatus === 138) {
+      // procNFe. A consulta pontual por chave independe do cursor de NSU.
+      if (tipoDocumento === 'NFE') {
         await this.manifestarResumosPendentes(clienteId, cnpj, uf || 'SP');
-        try {
-          if (
-            await this.recuperarUmResumoManifestado(
-              clienteId,
-              cnpj,
-              uf || 'SP',
-              {
-                regimeTributario: regimeTributario as RegimeTributario | null,
-                apuraIcms,
-              },
-            )
-          )
-            documentosProcessados += 1;
-        } catch (error: unknown) {
-          this.logger.warn(
-            `Recuperação de XML pendente para ${cnpj}: ${this.getRootCauseMessage(error)}`,
-          );
-        }
+        documentosProcessados += await this.recuperarResumosManifestados(
+          clienteId,
+          cnpj,
+          uf || 'SP',
+          {
+            regimeTributario: regimeTributario as RegimeTributario | null,
+            apuraIcms,
+          },
+        );
       }
 
       return {
@@ -557,9 +571,9 @@ export class DistribuicaoDfeService {
   }
 
   /**
-   * Lista as empresas que possuem documentos fiscais importados.
-   * O resumo é usado pelo painel administrativo para manter a listagem
-   * explicitamente separada por cliente, sem depender da página atual.
+   * Lista as empresas do módulo fiscal para o seletor do painel
+   * administrativo. Não conta documentos: a contagem por cliente varre
+   * `documentos_fiscais` inteira e a tela não a utiliza.
    */
   async listClientesComDocumentosFiscais() {
     const rows = await this.database.db
@@ -574,23 +588,9 @@ export class DistribuicaoDfeService {
         apuraIcms: clientes.apuraIcms,
         optanteSimplesNacional: clientes.optanteSimplesNacional,
         obrigadoEfdIcmsIpi: sql<boolean>`coalesce(${spedConfiguracoes.obrigadoEfdIcmsIpi}, false)`,
-        totalDocumentos: sql<number>`count(${documentosFiscais.id})`,
       })
       .from(clientes)
-      .leftJoin(documentosFiscais, eq(documentosFiscais.clienteId, clientes.id))
       .leftJoin(spedConfiguracoes, eq(spedConfiguracoes.clienteId, clientes.id))
-      .groupBy(
-        clientes.id,
-        clientes.razaoSocial,
-        clientes.cnpj,
-        clientes.inscricaoEstadual,
-        clientes.municipio,
-        clientes.uf,
-        clientes.regimeTributario,
-        clientes.apuraIcms,
-        clientes.optanteSimplesNacional,
-        spedConfiguracoes.obrigadoEfdIcmsIpi,
-      )
       .orderBy(asc(clientes.razaoSocial));
 
     return rows.map((row) => ({
@@ -604,7 +604,6 @@ export class DistribuicaoDfeService {
       apura_icms: row.apuraIcms,
       optante_simples_nacional: row.optanteSimplesNacional,
       obrigado_efd_icms_ipi: row.obrigadoEfdIcmsIpi,
-      total_documentos: Number(row.totalDocumentos),
     }));
   }
 
@@ -1098,6 +1097,110 @@ export class DistribuicaoDfeService {
   }
 
   /**
+   * Busca sob demanda o XML completo de uma NF-e resumida. Se a Ciência da
+   * Operação ainda não foi registrada, registra antes de consultar a chave,
+   * pois a SEFAZ só libera o XML ao interessado depois dela.
+   * `clienteId` restringe o documento à empresa do usuário (visão do cliente).
+   */
+  async buscarXmlCompletoDoDocumento(input: {
+    documentoId: string;
+    clienteId?: string;
+  }): Promise<{
+    xmlStatus: 'OBTIDO' | 'PENDENTE';
+    cienciaRegistrada: boolean;
+  }> {
+    const rows = await this.database.db
+      .select({
+        id: documentosFiscais.id,
+        clienteId: documentosFiscais.clienteId,
+        chaveAcesso: documentosFiscais.chaveAcesso,
+        tipoDocumento: documentosFiscais.tipoDocumento,
+        modelo: documentosFiscais.modelo,
+        situacao: documentosFiscais.situacao,
+        manifestacaoStatus: documentosFiscais.manifestacaoStatus,
+        cnpj: clientes.cnpj,
+        uf: clientes.uf,
+      })
+      .from(documentosFiscais)
+      .innerJoin(clientes, eq(clientes.id, documentosFiscais.clienteId))
+      .where(
+        and(
+          eq(documentosFiscais.id, input.documentoId),
+          ...(input.clienteId
+            ? [eq(documentosFiscais.clienteId, input.clienteId)]
+            : []),
+        ),
+      )
+      .limit(1);
+    const doc = rows[0];
+    if (!doc) throw new NotFoundException('Documento fiscal não encontrado.');
+    if (doc.tipoDocumento !== 'NFE' || doc.modelo !== '55') {
+      throw new BadRequestException(
+        'A busca do XML completo está disponível somente para NF-e modelo 55.',
+      );
+    }
+    if (doc.situacao !== 'RESUMIDA') {
+      throw new BadRequestException('Este documento já possui o XML completo.');
+    }
+    if (!doc.uf || !/^[A-Z]{2}$/.test(doc.uf)) {
+      throw new BadRequestException(
+        'Informe uma UF válida no cadastro da empresa antes de consultar a SEFAZ.',
+      );
+    }
+
+    let cienciaRegistrada = false;
+    let etapa: 'ciência' | 'consulta por chave' = 'ciência';
+    try {
+      if (doc.manifestacaoStatus === 'SEM_MANIFESTACAO') {
+        const resultado = await this.nfeWizard.enviarManifestacao({
+          clienteId: doc.clienteId,
+          cnpj: doc.cnpj,
+          uf: doc.uf,
+          chaveAcesso: doc.chaveAcesso,
+          tipoEvento: '210210',
+        });
+        await this.registrarManifestacao({
+          documentoId: doc.id,
+          tipoEvento: 'MANIFESTACAO_CIENCIA',
+          codigoEvento: '210210',
+          protocolo: resultado.protocolo,
+          statusSefaz: resultado.status,
+          motivoSefaz: resultado.motivo,
+        });
+        cienciaRegistrada = true;
+      }
+      etapa = 'consulta por chave';
+      const xmlStatus = await this.buscarXmlCompletoAposManifestacao({
+        documentoId: doc.id,
+        clienteId: doc.clienteId,
+        cnpj: doc.cnpj,
+        uf: doc.uf,
+        chaveAcesso: doc.chaveAcesso,
+      });
+      return { xmlStatus, cienciaRegistrada };
+    } catch (error: unknown) {
+      if (error instanceof ManifestacaoSefazRejectedError) {
+        throw new BadRequestException(error.message);
+      }
+      if (error instanceof SefazConsultaAdiadaError) {
+        throw new ServiceUnavailableException(error.message);
+      }
+      this.logger.warn(
+        `Busca manual de XML ${doc.chaveAcesso} (etapa: ${etapa}): ${this.getRootCauseMessage(error)}`,
+      );
+      // A Ciência já está registrada: a falha é só da consulta e o XML será
+      // retomado pelas sincronizações, como no fluxo de manifestação.
+      if (cienciaRegistrada)
+        return { xmlStatus: 'PENDENTE', cienciaRegistrada };
+      throw new ServiceUnavailableException(
+        etapa === 'ciência'
+          ? 'A SEFAZ não aceitou o registro da Ciência da Operação agora. Tente novamente em alguns minutos.'
+          : 'Não foi possível consultar a SEFAZ agora. Tente novamente em alguns minutos.',
+      );
+    }
+  }
+
+  /**
    * Retorna estatísticas do módulo fiscal para o dashboard.
    */
   async getDashboardStats(
@@ -1364,6 +1467,44 @@ export class DistribuicaoDfeService {
         await new Promise((resolve) => setTimeout(resolve, 1_200));
       }
     }
+  }
+
+  /**
+   * Tenta obter o XML completo dos resumos já manifestados, até
+   * MAX_RECUPERACOES_POR_CICLO chaves por ciclo. Cada tentativa reserva a
+   * chave por uma hora, então cada volta pega a próxima elegível (sem
+   * elegível, a volta termina após uma consulta ao banco).
+   */
+  private async recuperarResumosManifestados(
+    clienteId: string,
+    cnpj: string,
+    uf: string,
+    fiscalConfig: {
+      regimeTributario: RegimeTributario | null;
+      apuraIcms: boolean;
+    },
+  ): Promise<number> {
+    let recuperados = 0;
+    for (let i = 0; i < MAX_RECUPERACOES_POR_CICLO; i += 1) {
+      try {
+        const tentou = await this.recuperarUmResumoManifestado(
+          clienteId,
+          cnpj,
+          uf,
+          fiscalConfig,
+        );
+        if (tentou) recuperados += 1;
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Recuperação de XML pendente para ${cnpj}: ${this.getRootCauseMessage(error)}`,
+        );
+        // Limite local ou consumo indevido: insistir só agrava o bloqueio.
+        if (error instanceof SefazConsultaAdiadaError) break;
+        if (/consumo indevido|\b656\b/i.test(this.getRootCauseMessage(error)))
+          break;
+      }
+    }
+    return recuperados;
   }
 
   private async recuperarUmResumoManifestado(

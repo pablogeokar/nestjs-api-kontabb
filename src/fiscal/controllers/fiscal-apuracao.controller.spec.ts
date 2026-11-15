@@ -134,3 +134,28 @@ describe('AdminFiscalApuracaoController — guarda de staff preservada (R6.4)', 
     expect(roles).toEqual(['ADMIN', 'COLABORADOR']);
   });
 });
+
+describe('AdminFiscalApuracaoController — DIFAL de entrada', () => {
+  it('consulta a empresa e a competência selecionadas pela equipe fiscal', async () => {
+    const data = { total_difal_recolher: '120.48', total_fcp_recolher: '0.00' };
+    const apurarCompetencia = jest.fn().mockResolvedValue(data);
+    const controller = new AdminFiscalApuracaoController(
+      {} as never,
+      { apurarCompetencia } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(controller.apurarDifal('empresa-1', '2026-10')).resolves.toEqual({
+      data,
+    });
+    expect(apurarCompetencia).toHaveBeenCalledWith({
+      clienteId: 'empresa-1',
+      competencia: '2026-10',
+    });
+  });
+});

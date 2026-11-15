@@ -66,10 +66,17 @@ describe('comporBaseDifal (Fase 4 / tarefa 2.4 — R1.3, R1.5)', () => {
   });
 
   describe('redução de base (R1.3)', () => {
+    it('não reaplica a redução da origem sobre a base destacada na NF-e', () => {
+      const r = comporBaseDifal(
+        item({ valorBcIcms: '700.00', percentualReducaoBcIcms: '30.0000' }),
+        null,
+      );
+      expect(r.baseCalculo).toBe('700.00');
+    });
     it('aplica a redução destacada no item', () => {
       // base 1000 × (1 − 30%) = 700.
       const r = comporBaseDifal(
-        item({ percentualReducaoBcIcms: '30.0000' }),
+        item({ valorBcIcms: null, percentualReducaoBcIcms: '30.0000' }),
         null,
       );
       expect(r.baseCalculo).toBe('700.00');
@@ -79,7 +86,7 @@ describe('comporBaseDifal (Fase 4 / tarefa 2.4 — R1.3, R1.5)', () => {
       // base 1000 × (1 − (10 + 20)%) = 700.
       const regra: DifalBaseRegra = { percentualReducao: '20.0000' };
       const r = comporBaseDifal(
-        item({ percentualReducaoBcIcms: '10.0000' }),
+        item({ valorBcIcms: null, percentualReducaoBcIcms: '10.0000' }),
         regra,
       );
       expect(r.baseCalculo).toBe('700.00');
@@ -91,7 +98,7 @@ describe('comporBaseDifal (Fase 4 / tarefa 2.4 — R1.3, R1.5)', () => {
       // base 1000, redução 10% → 900; benefício 50% → 450.
       const regra: DifalBaseRegra = { percentualBeneficio: '50.0000' };
       const r = comporBaseDifal(
-        item({ percentualReducaoBcIcms: '10.0000' }),
+        item({ valorBcIcms: null, percentualReducaoBcIcms: '10.0000' }),
         regra,
       );
       expect(r.baseCalculo).toBe('450.00');

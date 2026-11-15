@@ -205,6 +205,10 @@ describe('NfeWizardService SOAP nativo', () => {
     });
     expect(requests[0].body).toContain('<Signature ');
     expect(requests[0].body).toContain('<tpEvento>210210</tpEvento>');
+    expect(requests[0].body).toContain('<cOrgao>91</cOrgao>');
+    expect(requests[0].body).toContain(
+      '<Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4"><envEvento ',
+    );
   });
 
   it('rejeita evento que não foi aceito', async () => {

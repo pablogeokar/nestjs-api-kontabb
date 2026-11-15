@@ -121,6 +121,108 @@ function baseInput(overrides: Partial<CriarGuiaInput> = {}): CriarGuiaInput {
   };
 }
 
+describe('FiscalGuiasService — espelho sem valor fiscal', () => {
+  const cliente = {
+    razaoSocial: 'EMPRESA EXEMPLO LTDA',
+    documento: '00000000000100',
+    inscricaoEstadual: '123456789',
+    logradouro: 'Rua Exemplo',
+    numero: '10',
+    bairro: 'Centro',
+    municipio: 'Salvador',
+    uf: 'BA',
+    cep: '40000000',
+  };
+
+  it('gera uma única página PDF a partir da obrigação registrada', async () => {
+    const db = createCriarGuiaDb({
+      clienteRows: [defaultGuiaRow()],
+      fechamentoRows: [cliente],
+    });
+    const buffer = await new FiscalGuiasService(db as never).gerarEspelho({
+      clienteId: 'c1',
+      guiaId: 'guia-1',
+    });
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(
+      buffer.toString('latin1').match(/\/Type \/Page\b/g) ?? [],
+    ).toHaveLength(1);
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('não gera espelho de obrigação inexistente ou cancelada', async () => {
+    const inexistente = createCriarGuiaDb({ clienteRows: [] });
+    await expect(
+      new FiscalGuiasService(inexistente as never).gerarEspelho({
+        clienteId: 'c1',
+        guiaId: 'guia-1',
+      }),
+    ).rejects.toThrow('Guia não encontrada.');
+
+    const cancelada = createCriarGuiaDb({
+      clienteRows: [defaultGuiaRow({ cancelada: true })],
+      fechamentoRows: [cliente],
+    });
+    await expect(
+      new FiscalGuiasService(cancelada as never).gerarEspelho({
+        clienteId: 'c1',
+        guiaId: 'guia-1',
+      }),
+    ).rejects.toThrow('Obrigação cancelada');
+    expect(cancelada.db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('só gera prévia da antecipação quando há total homologado positivo', async () => {
+    const db = createCriarGuiaDb({ clienteRows: [cliente] });
+    const service = new FiscalGuiasService(db as never);
+    const input = {
+      clienteId: 'c1',
+      competencia: '2026-10',
+      totalApurado: '135.00',
+      itens: [
+        {
+          documento_fiscal_id: 'nota-1',
+          numero_documento: '3167',
+          serie_documento: '1',
+          chave_acesso: '1'.repeat(44),
+          competencia_emissao: '2026-10',
+          item_id: 'item-1',
+          numero_item: 1,
+          uf_origem: 'SE',
+          ncm: '17041000',
+          cest: '2804100',
+          valor_operacao: '1000.00',
+          valor_ipi: '0.00',
+          situacao: 'CALCULADO',
+          motivo: 'RICMS-BA',
+          calculo: {
+            base_calculo: '1000.00',
+            base_calculo_origem: null,
+            aliquota_interna: '20.50',
+            aliquota_interestadual: '7.00',
+            icms_interno: '205.00',
+            deducao_origem: '70.00',
+            imposto_apurado: '135.00',
+            reducao: '0.00',
+            valor_antecipacao: '135.00',
+          },
+        },
+      ] as never,
+    };
+    const buffer = await service.gerarEspelhoPreviaAntecipacao(input);
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(
+      buffer.toString('latin1').match(/\/Type \/Page\b/g) ?? [],
+    ).toHaveLength(1);
+    await expect(
+      service.gerarEspelhoPreviaAntecipacao({
+        ...input,
+        totalApurado: '0',
+      }),
+    ).rejects.toThrow('Não há valor homologado');
+  });
+});
+
 describe('FiscalGuiasService — invariantes fora do HTTP (R6.4)', () => {
   it('cria a guia quando os valores são válidos (caminho feliz)', async () => {
     const db = createCriarGuiaDb({});
@@ -1218,5 +1320,76 @@ describe('FiscalGuiasService — idempotency key (tarefa 1.6 / R1.6)', () => {
       code: '23502',
       message: 'not-null violation',
     });
+  });
+});
+
+describe('FiscalGuiasService — abuso do vínculo com a apuração (ICMS nacional P0/A1)', () => {
+  const criar = (
+    fech: Record<string, unknown>,
+    over: Partial<CriarGuiaInput> = {},
+  ) => {
+    const db = createCriarGuiaDb({
+      fechamentoRows: [{ ...fechamentoRow(), ...fech }],
+    });
+    const service = new FiscalGuiasService(db as never);
+    return {
+      db,
+      run: () =>
+        service.criarGuia(
+          baseInput({ origem: 'APURACAO', fechamentoId: 'f1', ...over }),
+        ),
+    };
+  };
+
+  it('rejeita fechamento em rascunho', async () => {
+    const { db, run } = criar({ estado: 'RASCUNHO', corrente: false });
+    await expect(run()).rejects.toThrow('só uma apuração FECHADA');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejeita fechamento fechado que não é a versão corrente', async () => {
+    const { db, run } = criar({ corrente: false });
+    await expect(run()).rejects.toThrow('não é a versão corrente');
+    expect(db.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejeita fechamento de outra competência', async () => {
+    const { run } = criar({ competencia: '2026-07-01' });
+    await expect(run()).rejects.toThrow('competência da guia');
+  });
+
+  it('rejeita fechamento de outro cliente que escapou do filtro', async () => {
+    const { run } = criar({ clienteId: 'c2' });
+    await expect(run()).rejects.toThrow('outro estabelecimento');
+  });
+
+  it('rejeita obrigação incompatível com o tributo (DAS para ICMS-ST)', async () => {
+    const { run } = criar({ obrigacao: 'DAS' }, { tributo: 'ICMS_ST' });
+    await expect(run()).rejects.toThrow('não origina guia de ICMS_ST');
+  });
+
+  it('DIFAL com origem APURACAO é autorizado pelo fechamento, não pelo status do cliente', async () => {
+    const { run } = criar({}, { tributo: 'DIFAL_ENTRADA' });
+    await expect(run()).resolves.toBeDefined();
+  });
+
+  it('DIFAL com origem APURACAO recusa quando o cliente declara simulação', async () => {
+    const { run } = criar(
+      {},
+      { tributo: 'DIFAL_ENTRADA', difalStatus: 'SIMULACAO' },
+    );
+    await expect(run()).rejects.toThrow();
+  });
+
+  it('rejeita UF inexistente e vencimento fora do calendário', async () => {
+    const db = createCriarGuiaDb({});
+    const service = new FiscalGuiasService(db as never);
+    await expect(
+      service.criarGuia(baseInput({ ufFavorecida: 'ZZ' })),
+    ).rejects.toThrow('UF favorecida inválida');
+    await expect(
+      service.criarGuia(baseInput({ dataVencimento: '2026-02-30' })),
+    ).rejects.toThrow('Data de vencimento inválida');
+    expect(db.db.insert).not.toHaveBeenCalled();
   });
 });

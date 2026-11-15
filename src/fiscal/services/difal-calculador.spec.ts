@@ -108,6 +108,16 @@ describe('calcularDifalHipotese (Fase 4 / tarefa 2.2 — R1.1, R1.3)', () => {
     expect(r.aliquotaFcp).toBe('2.0000');
   });
 
+  it('arredonda meio centavo para cima no DIFAL e no FCP', () => {
+    const r = calcularDifalHipotese(
+      input({ baseCalculo: '0.25' }),
+      { aliquotaInterna: '14', aliquotaInterestadual: '12', aliquotaFcp: '2' },
+      { aprovada: true },
+    );
+    expect(r.valorDifal).toBe('0.01');
+    expect(r.valorFcp).toBe('0.01');
+  });
+
   it('não gera DIFAL negativo quando interestadual >= interna', () => {
     const regra: DifalRegra = {
       aliquotaInterna: '17.0000',

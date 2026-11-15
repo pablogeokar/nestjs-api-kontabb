@@ -1,24 +1,53 @@
-import { seedFiscalCatalogos } from './fiscal-catalogos.seed';
+import { readAdminSeedConfig, seedAdmin } from './admin.seed';
+import { seedCfops } from './cfops.seed';
+import { seedFinanceiroTipos } from './financeiro-tipos.seed';
+import { seedIcmsBa2026 } from './icms-ba-2026.seed';
 import { seedSimplesNacional } from './simples-nacional.seed';
 
+export type RequiredSeedMode = 'novo' | 'restore';
+
 /**
- * Inicializa os catálogos exigidos pelo restore data-only atual. O backup já
- * contém CFOPs e equivalências, por isso eles não são regravados aqui. Os
- * seeds individuais continuam disponíveis para ambientes sem restore.
+ * Modo `novo` (padrão): base criada do zero, sem restore. Grava tudo que o
+ * sistema precisa para operar: Simples Nacional, CFOPs,
+ * tipos financeiros, regras ICMS-BA 2026 (rascunho, sem aprovação fiscal) e o
+ * ADMIN inicial (exige ADMIN_SEED_EMAIL e ADMIN_SEED_PASSWORD).
+ *
+ * Modo `restore`: usado depois do restore data-only. O backup já contém
+ * usuários, CFOPs, tipos financeiros e regras ICMS; regravá-los sobrescreveria
+ * edições feitas em produção. Por isso só inicializa o Simples Nacional, que fica
+ * fora do backup.
+ *
+ * Todos os seeds são idempotentes.
  */
-export async function seedRequiredData(databaseUrl: string) {
-  await seedFiscalCatalogos(databaseUrl);
+export async function seedRequiredData(
+  databaseUrl: string,
+  mode: RequiredSeedMode = 'novo',
+) {
+  if (mode === 'restore') {
+    await seedSimplesNacional(databaseUrl);
+    return;
+  }
+  // Valida as credenciais antes de gravar qualquer coisa.
+  const adminConfig = readAdminSeedConfig();
   await seedSimplesNacional(databaseUrl);
+  await seedCfops(databaseUrl);
+  await seedFinanceiroTipos(databaseUrl);
+  await seedIcmsBa2026(databaseUrl);
+  await seedAdmin(databaseUrl, adminConfig);
 }
 
 if (require.main === module) {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error('DATABASE_URL não configurada.');
-
-  void seedRequiredData(databaseUrl)
+  const mode: RequiredSeedMode = process.argv.includes('--restore')
+    ? 'restore'
+    : 'novo';
+  void seedRequiredData(databaseUrl, mode)
     .then(() =>
       process.stdout.write(
-        'Seeds obrigatórios concluídos: catálogos fiscais e Simples Nacional.\n',
+        mode === 'restore'
+          ? 'Seeds obrigatórios (restore) concluídos: Simples Nacional.\n'
+          : 'Seeds obrigatórios concluídos: Simples Nacional, CFOPs, tipos financeiros, regras ICMS-BA 2026 e ADMIN.\n',
       ),
     )
     .catch((error: unknown) => {

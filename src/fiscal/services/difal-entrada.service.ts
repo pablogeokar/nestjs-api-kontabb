@@ -1,17 +1,27 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { and, eq, gte, lte, sql } from 'drizzle-orm';
+  and,
+  asc,
+  count,
+  eq,
+  inArray,
+  not,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
   documentosFiscais,
   documentosFiscaisItens,
 } from '../../database/schema';
-import { fromScaledInteger, toScaledInteger } from '../sped/sped-decimal';
-import { parseCompetenciaMensal } from '../fiscal-date.util';
+import {
+  fromScaledInteger,
+  sumFiscalValues,
+  toScaledInteger,
+} from '../sped/sped-decimal';
+import { FiscalPeriodSelectionService } from './fiscal-period-selection.service';
 import { classificarDifalHipotese, type DifalHipotese } from './difal-hipotese';
 import {
   calcularDifalHipotese,
@@ -20,12 +30,44 @@ import {
   type DifalCalculoStatus,
 } from './difal-calculador';
 import { comporBaseDifal, type DifalBaseRegra } from './difal-base';
-import { FiscalNormativeCatalogService } from './fiscal-normative-catalog.service';
+import {
+  FiscalNormativeCatalogService,
+  type RegraVersaoResolvida,
+} from './fiscal-normative-catalog.service';
+import {
+  perfilNaData,
+  ufsNoIntervalo,
+  type PerfilAtual,
+  type PerfilResolvido,
+} from './estabelecimento-perfil';
+import { EstabelecimentoPerfilService } from './estabelecimento-perfil.service';
+import { regraResolvidaDe, type ResolucaoRegra } from './catalogo-resolucao';
+import {
+  apurarItemAntecipacaoParcial,
+  CFOP_ANTECIPACAO_PARCIAL_BA,
+} from './antecipacao-parcial';
 
 // CFOPs de ENTRADA interestadual de uso/consumo e ativo SEM ST. São os que
 // geram, de fato, DIFAL de entrada do CONTRIBUINTE (a diferença de alíquota que
 // o próprio adquirente recolhe). 2551 = ativo imobilizado; 2556 = uso/consumo.
 const CFOPS_DIFAL_ENTRADA_CONTRIBUINTE = ['2556', '2551'] as const;
+const CFOP_ATIVO_IMOBILIZADO = '2551';
+
+/**
+ * Fundamento da dispensa do DIFAL sobre ativo para ME/EPP, quando a regra a
+ * institui em `dispensa_ativo_me_epp: { fundamento }`. Sem fundamento textual a
+ * dispensa não é aplicada.
+ */
+function dispensaAtivoMeEppDaRegra(
+  conteudo: Record<string, unknown>,
+): string | null {
+  const bruto = conteudo.dispensa_ativo_me_epp;
+  if (bruto == null || typeof bruto !== 'object') return null;
+  const fundamento = (bruto as Record<string, unknown>).fundamento;
+  return typeof fundamento === 'string' && fundamento.trim()
+    ? fundamento.trim()
+    : null;
+}
 
 // RESPONSÁVEL pelo recolhimento por hipótese (tarefa 2.6 — R1.5). Eixo de
 // responsabilidade exigido no resultado: entrada-contribuinte e antecipação são
@@ -53,6 +95,24 @@ const RESPONSAVEL_POR_HIPOTESE: Record<DifalHipotese, DifalResponsavel> = {
 // buscamos, classificamos como ST e provamos a ausência de recolhimento próprio,
 // em vez de simplesmente omitir. (R1.4.)
 const CFOPS_DIFAL_ENTRADA_ST = ['2406', '2407'] as const;
+const CST_ICMS_ST = new Set(['10', '30', '60', '70']);
+const CSOSN_ICMS_ST = new Set(['201', '202', '203', '500']);
+const CFOPS_REVENDA_INDUSTRIALIZACAO = ['2101', '2102'] as const;
+
+// Data do fato gerador do item (AAAA-MM-DD), a mesma regra de recorte do período:
+// entrada/saída fiscal, senão emissão fiscal, senão emissão bruta.
+const DATA_FATO_ITEM = sql<string>`to_char(
+  coalesce(${documentosFiscais.dataEntradaSaidaFiscal}, ${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date),
+  'YYYY-MM-DD'
+)`;
+
+const COMPETENCIA_EMISSAO_NFE = sql<string>`to_char(
+  coalesce(${documentosFiscais.dataEmissaoFiscal}, ${documentosFiscais.dataEmissao}::date),
+  'YYYY-MM'
+)`;
+
+type SituacaoEntradaInterestadual =
+  'EM_REVISAO' | 'REVENDA_INDUSTRIALIZACAO' | 'OUTRA_ENTRADA';
 
 // Conjunto de busca: candidatos a DIFAL próprio (2551/2556) MAIS os CFOPs de ST
 // (2406/2407), estes últimos retidos apenas para a auditoria da não-duplicidade.
@@ -98,11 +158,24 @@ const ALIQUOTA_INTERNA_REFERENCIA_LEGADA: Record<string, string> = {
   TO: '20',
 };
 
+function chaveResolucao(uf: string | null, data: string): string {
+  return `${uf ?? ''}|${data}`;
+}
+
+interface ResolvidaPorData {
+  resolucao: ResolucaoRegra;
+  versao: RegraVersaoResolvida | null;
+}
+
 @Injectable()
 export class DifalEntradaService {
   constructor(
     private readonly database: DatabaseService,
     private readonly catalogo: FiscalNormativeCatalogService,
+    private readonly periodos: FiscalPeriodSelectionService = new FiscalPeriodSelectionService(),
+    private readonly perfis: EstabelecimentoPerfilService = new EstabelecimentoPerfilService(
+      database,
+    ),
   ) {}
 
   /**
@@ -119,10 +192,34 @@ export class DifalEntradaService {
    * fonte do valor.
    */
   async apurarCompetencia(input: { clienteId: string; competencia: string }) {
-    const { competencia, competenciaMensal, inicio, fim } =
-      this.competenciaRange(input.competencia);
+    const { periodo, where } = this.periodos.resolve({
+      ...input,
+      finalidade: 'ENTRADA_SAIDA',
+      definitiva: false,
+    });
+    const { competencia: competenciaMensal, competenciaDate: competencia } =
+      periodo;
     const cliente = await this.getCliente(input.clienteId);
-    const uf = (cliente.uf ?? '').trim().toUpperCase();
+    // PERFIL HISTÓRICO do estabelecimento (A3): UF e regime valem NA DATA do
+    // fato gerador de cada item, não pelo cadastro de hoje. O cabeçalho usa o
+    // perfil do último dia da competência.
+    const historico = await this.perfis.listar(input.clienteId);
+    const cadastroAtual: PerfilAtual = {
+      uf: cliente.uf,
+      regimeTributario: cliente.regimeTributario,
+    };
+    const perfilFimMes = perfilNaData(
+      historico,
+      periodo.competenciaFimDate,
+      cadastroAtual,
+    );
+    const uf = perfilFimMes.uf ?? '';
+    const ufsDoMes = ufsNoIntervalo(
+      historico,
+      competencia,
+      periodo.competenciaFimDate,
+      cadastroAtual,
+    );
     const aliquotaInternaReferencia =
       ALIQUOTA_INTERNA_REFERENCIA_LEGADA[uf] ?? null;
     // REGIME do adquirente (tarefa 2.7 — R1.6). O Simples Nacional recolhe o
@@ -131,41 +228,35 @@ export class DifalEntradaService {
     // o DIFAL de entrada NÃO é suprimido para o Simples; é calculado como para
     // qualquer contribuinte e sinalizado como recolhido fora do DAS, para que a
     // obrigação fique auditável e não se confunda com o imposto do DAS.
-    const regimeAdquirente = (cliente.regimeTributario ?? '').trim() || null;
-    const adquirenteSimples = regimeAdquirente === 'SIMPLES_NACIONAL';
+    const regimeAdquirente = perfilFimMes.regimeTributario;
 
-    // Resolve a REGRA de DIFAL de entrada-contribuinte vigente para a UF do
-    // adquirente na competência. Fonte do cálculo (R1.1/R1.3), não a tabela
-    // fixa. `null` quando não há regra vigente → os itens caem em PENDÊNCIA.
-    const regraVersao = uf
-      ? await this.catalogo.resolverRegraVigente({
-          tipo: 'DIFAL',
-          uf,
-          competencia: competenciaMensal,
-          chave: 'DIFAL_ENTRADA_CONTRIBUINTE',
-        })
-      : null;
-    const regra = this.regraDoConteudo(regraVersao?.conteudo);
-    // Parâmetros de COMPOSIÇÃO DA BASE (tarefa 2.4) extraídos do mesmo `conteudo`
-    // da regra: por dentro, redução, benefício, FCP. Decimais permanecem strings.
-    const baseRegra = this.baseRegraDoConteudo(regraVersao?.conteudo);
-    const regraAprovada = regraVersao?.escopoAprovado ?? false;
-
-    const cfops = [...CFOPS_DIFAL_ENTRADA];
-    const itens = await this.database.db
+    const emitenteUf = sql<
+      string | null
+    >`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`;
+    const linhas = await this.database.db
       .select({
         documentoFiscalId: documentosFiscaisItens.documentoFiscalId,
         itemId: documentosFiscaisItens.id,
+        numeroItem: documentosFiscaisItens.numeroItem,
+        numeroDocumento: documentosFiscais.numeroDocumento,
+        serieDocumento: documentosFiscais.serie,
+        chaveAcesso: documentosFiscais.chaveAcesso,
+        competenciaEmissao: COMPETENCIA_EMISSAO_NFE,
+        dataFato: DATA_FATO_ITEM,
+        ncm: documentosFiscaisItens.ncm,
+        cest: documentosFiscaisItens.cest,
+        cstIcms: documentosFiscaisItens.cstIcms,
+        csosnIcms: documentosFiscaisItens.csosnIcms,
         cfop: documentosFiscaisItens.cfop,
         // UF de ORIGEM (remetente): extraída do emitente do documento. É a UF de
         // onde a mercadoria saiu, exposta por item ao lado da UF de destino (do
         // adquirente) para que o resultado mostre a operação interestadual
         // completa (tarefa 2.6 — R1.5). Normalizada em maiúsculas; null quando
         // o emitente não traz a UF.
-        emitenteUf: sql<
-          string | null
-        >`NULLIF(UPPER(BTRIM(${documentosFiscais.emitenteDados} ->> 'uf')), '')`,
+        emitenteUf,
         valorBcIcms: documentosFiscaisItens.valorBcIcms,
+        valorIcms: documentosFiscaisItens.valorIcms,
+        valorIpi: documentosFiscaisItens.valorIpi,
         valorBrutoProduto: documentosFiscaisItens.valorBrutoProduto,
         aliquotaIcms: documentosFiscaisItens.aliquotaIcms,
         // Parcelas e marcadores que a COMPOSIÇÃO DA BASE (tarefa 2.4) consome:
@@ -191,13 +282,101 @@ export class DifalEntradaService {
           eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'ENTRADA'),
           eq(documentosFiscais.situacao, 'AUTORIZADA'),
           eq(documentosFiscais.escriturado, true),
-          gte(documentosFiscais.dataEmissao, inicio),
-          lte(documentosFiscais.dataEmissao, fim),
-          sql`${documentosFiscaisItens.cfop} = ANY(${cfops})`,
+          eq(documentosFiscaisItens.cfopRevisaoNecessaria, false),
+          where,
+          or(
+            inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA]),
+            ufsDoMes.has('BA')
+              ? and(
+                  eq(documentosFiscaisItens.cfop, CFOP_ANTECIPACAO_PARCIAL_BA),
+                  eq(documentosFiscais.tipoDocumento, 'NFE'),
+                  eq(documentosFiscais.tipoOperacaoEscriturada, 'ENTRADA'),
+                  sql`${documentosFiscais.tpNfXml} IS DISTINCT FROM '0'`,
+                )
+              : undefined,
+          ),
         ),
       );
 
+    // Vigência por DIA do fato gerador (ICMS nacional, A2/A3): uma consulta por
+    // (UF, data) distinta, nunca por item, e sem escolher catálogo antes da regra.
+    const dataDoItem = (item: { dataFato?: string | null }) =>
+      item.dataFato ?? competencia;
+    const perfilDe = (item: { dataFato?: string | null }): PerfilResolvido =>
+      perfilNaData(historico, dataDoItem(item), cadastroAtual);
+    // A origem só descarta o item quando é CONHECIDA e igual à UF do destino na
+    // data. Origem ausente não prova operação interna: o item permanece e vira
+    // pendência de fato ausente (A3.1).
+    const intraestadual = (item: {
+      dataFato?: string | null;
+      emitenteUf: string | null;
+    }) => {
+      const p = perfilDe(item);
+      return (
+        p.uf != null && item.emitenteUf != null && item.emitenteUf === p.uf
+      );
+    };
+    const itens = linhas.filter(
+      (item) =>
+        item.cfop !== CFOP_ANTECIPACAO_PARCIAL_BA && !intraestadual(item),
+    );
+    const itensIntraestaduaisIgnorados = linhas.filter(
+      (item) =>
+        item.cfop !== CFOP_ANTECIPACAO_PARCIAL_BA && intraestadual(item),
+    ).length;
+    const entradasAntecipacao = linhas
+      .filter(
+        (item) =>
+          item.cfop === CFOP_ANTECIPACAO_PARCIAL_BA &&
+          perfilDe(item).uf === 'BA' &&
+          !intraestadual(item),
+      )
+      .sort(
+        (a, b) =>
+          a.competenciaEmissao.localeCompare(b.competenciaEmissao) ||
+          a.numeroDocumento.localeCompare(b.numeroDocumento, 'pt-BR', {
+            numeric: true,
+          }) ||
+          a.documentoFiscalId.localeCompare(b.documentoFiscalId) ||
+          a.numeroItem - b.numeroItem,
+      );
+    const resolucoesDifal = await this.resolverPorDatas(
+      'DIFAL_ENTRADA_CONTRIBUINTE',
+      itens.map((i) => ({ uf: perfilDe(i).uf, data: dataDoItem(i) })),
+      competencia,
+    );
+    const resolucoesAntecipacao = await this.resolverPorDatas(
+      'ANTECIPACAO_PARCIAL',
+      entradasAntecipacao.map((i) => ({ uf: 'BA', data: dataDoItem(i) })),
+      competencia,
+    );
+    const regraAntecipacao =
+      [...resolucoesAntecipacao.values()].find((r) => r.versao)?.versao ?? null;
+    const itensAntecipacao = entradasAntecipacao.map((item) =>
+      apurarItemAntecipacaoParcial(
+        item,
+        perfilDe(item).regimeTributario,
+        resolucoesAntecipacao.get(chaveResolucao('BA', dataDoItem(item)))
+          ?.versao ?? null,
+      ),
+    );
+    const totalAntecipacao = sumFiscalValues(
+      itensAntecipacao
+        .filter((item) => item.situacao === 'CALCULADO')
+        .map((item) => item.calculo?.valor_antecipacao),
+    );
+
+    const entradasForaDoCalculo = uf
+      ? await this.listarEntradasForaDoCalculo(
+          input.clienteId,
+          uf,
+          where,
+          emitenteUf,
+        )
+      : [];
+
     let totalDifal = 0n;
+    let totalFcp = 0n;
     let totalBase = 0n;
     // Contagem por hipótese (R1.1): a separação precisa ser visível no
     // resultado, não só interna. ST aparece aqui mas NÃO entra no total a
@@ -221,8 +400,26 @@ export class DifalEntradaService {
     // próprio (sem guia, base zero). Torna a garantia visível no resultado, não
     // apenas implícita na ausência de valor.
     let itensSemRecolhimentoProprio = 0;
+    let itensDispensados = 0;
 
     const detalhes = itens.map((item) => {
+      const perfilItem = perfilDe(item);
+      const ufItem = perfilItem.uf ?? '';
+      const adquirenteSimples =
+        perfilItem.regimeTributario === 'SIMPLES_NACIONAL';
+      // Fatos ausentes que impedem afirmar a operação interestadual (A3.1).
+      const pendenciaFato: string | null =
+        item.emitenteUf == null
+          ? 'UF de origem ausente no documento: não é possível afirmar a operação interestadual nem a UF favorecida. Complete o emitente ou revise o item.'
+          : perfilItem.uf == null
+            ? 'UF do estabelecimento ausente para a data do fato gerador: não é possível identificar a UF favorecida.'
+            : null;
+      const resolvida = resolucoesDifal.get(
+        chaveResolucao(perfilItem.uf, dataDoItem(item)),
+      );
+      const regraVersao = resolvida?.versao ?? null;
+      const regra = this.regraDoConteudo(regraVersao?.conteudo);
+      const regraAprovada = regraVersao?.escopoAprovado ?? false;
       // SEPARAÇÃO POR HIPÓTESE (tarefa 2.1, R1.1): cada item é enquadrado em
       // uma das quatro hipóteses antes de qualquer cálculo. Itens sob ST
       // (2406/2407 ou com ICMS-ST retido) são roteados para `ST` e NÃO geram
@@ -233,7 +430,10 @@ export class DifalEntradaService {
       // entrada-contribuinte. Sem isso, recolheríamos DIFAL em duplicidade.
       const stRetidaAnteriormente =
         toScaledInteger(item.valorIcmsStRetido ?? '0') > 0n;
-      const possuiSt = toScaledInteger(item.valorIcmsSt ?? '0') > 0n;
+      const possuiSt =
+        toScaledInteger(item.valorIcmsSt ?? '0') > 0n ||
+        CST_ICMS_ST.has(item.cstIcms?.slice(-2) ?? '') ||
+        CSOSN_ICMS_ST.has(item.csosnIcms ?? '');
       const classificacao = classificarDifalHipotese({
         tipoOperacaoEscriturada: 'ENTRADA',
         cfop: item.cfop ?? '',
@@ -244,7 +444,8 @@ export class DifalEntradaService {
         porHipotese[classificacao.hipotese] += 1;
       }
       const calcularEntradaContribuinte =
-        classificacao.hipotese === 'DIFAL_ENTRADA_CONTRIBUINTE';
+        classificacao.hipotese === 'DIFAL_ENTRADA_CONTRIBUINTE' &&
+        pendenciaFato == null;
 
       // COMPOSIÇÃO DA BASE (tarefa 2.4 — R1.3/R1.5): base por dentro, redução,
       // benefício, FCP, origem importada (interestadual 4%) e retenção, com
@@ -253,6 +454,8 @@ export class DifalEntradaService {
       const baseComposta = comporBaseDifal(
         {
           valorBcIcms: item.valorBcIcms,
+          valorIcms: item.valorIcms,
+          valorIpi: item.valorIpi,
           valorBrutoProduto: item.valorBrutoProduto,
           valorFrete: item.valorFrete,
           valorSeguro: item.valorSeguro,
@@ -265,7 +468,7 @@ export class DifalEntradaService {
           valorIcmsStRetido: item.valorIcmsStRetido,
           stRetida: classificacao.stRetida,
         },
-        baseRegra,
+        regra,
       );
       const baseStr = baseComposta.baseCalculo;
       // Alíquota interestadual EFETIVA apurada na composição: 4% quando a
@@ -282,7 +485,7 @@ export class DifalEntradaService {
         ? calcularDifalHipotese(
             {
               hipotese: 'DIFAL_ENTRADA_CONTRIBUINTE',
-              ufDestino: uf,
+              ufDestino: ufItem,
               competencia: competenciaMensal,
               responsavel: 'ADQUIRENTE',
               baseCalculo: baseStr,
@@ -294,8 +497,53 @@ export class DifalEntradaService {
           )
         : null;
 
+      if (
+        !calc &&
+        pendenciaFato != null &&
+        classificacao.hipotese === 'DIFAL_ENTRADA_CONTRIBUINTE'
+      ) {
+        porStatus.PENDENTE += 1;
+      }
       if (calc) {
+        if (regraVersao && !regra) {
+          calc.memoria =
+            'A regra de DIFAL vigente contém parâmetros inválidos ou incompletos.';
+        } else if (resolvida?.resolucao.estado === 'AMBIGUA') {
+          calc.memoria =
+            'Há mais de uma regra de DIFAL aprovada para a data do fato gerador com conteúdos distintos. Resolva a sobreposição no catálogo.';
+        }
         porStatus[calc.status] += 1;
+      }
+
+      // DISPENSA do DIFAL na aquisição de ATIVO por ME/EPP, quando a REGRA
+      // vigente a institui (`dispensa_ativo_me_epp`; na BA, RICMS art. 272, I,
+      // "a", 2). Ativo = CFOP 2551. ME/EPP = optante do Simples Nacional (LC
+      // 123/06, art. 3º). O diferencial calculado fica na memória como valor
+      // dispensado e não entra no total.
+      const dispensaAtivo =
+        calc != null &&
+        regraVersao != null &&
+        regra != null &&
+        adquirenteSimples &&
+        item.cfop === CFOP_ATIVO_IMOBILIZADO
+          ? dispensaAtivoMeEppDaRegra(regraVersao.conteudo)
+          : null;
+      const dispensaDifal =
+        calc != null && dispensaAtivo != null
+          ? {
+              fundamento: dispensaAtivo,
+              valor_dispensado: calc.valorDifal,
+              fcp_dispensado: calc.valorFcp,
+            }
+          : null;
+      if (calc != null && dispensaDifal != null) {
+        calc.memoria =
+          `Dispensado: aquisição de ativo (CFOP ${CFOP_ATIVO_IMOBILIZADO}) por ME/EPP ` +
+          `(${dispensaDifal.fundamento}). Diferencial calculado e não devido: ` +
+          `${calc.valorDifal}. ${calc.memoria}`;
+        calc.valorDifal = fromScaledInteger(0n);
+        calc.valorFcp = fromScaledInteger(0n);
+        itensDispensados += 1;
       }
 
       // NÃO-DUPLICIDADE (tarefa 2.5 — R1.4): o item NÃO recolhe DIFAL próprio
@@ -306,17 +554,18 @@ export class DifalEntradaService {
       // que impede o recolhimento em duplicidade e o deixa AUDITÁVEL.
       const sobRetencaoOuSt =
         classificacao.hipotese === 'ST' || baseComposta.retido;
-      const recolhimentoProprio: 'SIM' | 'NAO' = sobRetencaoOuSt
-        ? 'NAO'
-        : 'SIM';
-      const motivoNaoRecolhimento = sobRetencaoOuSt
-        ? classificacao.hipotese === 'ST'
-          ? 'Operação sob substituição tributária (ICMS retido/responsabilidade ' +
-            'do substituto): não há DIFAL de entrada próprio a recolher — ' +
-            'recolher aqui duplicaria o imposto já retido (R1.4).'
-          : 'ICMS-ST retido/responsabilidade de terceiro no item: base de DIFAL ' +
-            'próprio zerada; nenhum valor a recolher para evitar duplicidade (R1.4).'
-        : null;
+      const recolhimentoProprio: 'SIM' | 'NAO' =
+        sobRetencaoOuSt || dispensaDifal != null ? 'NAO' : 'SIM';
+      const motivoNaoRecolhimento = dispensaDifal
+        ? `DIFAL dispensado na aquisição de ativo por ME/EPP (${dispensaDifal.fundamento}).`
+        : sobRetencaoOuSt
+          ? classificacao.hipotese === 'ST'
+            ? 'Operação sob substituição tributária (ICMS retido/responsabilidade ' +
+              'do substituto): não há DIFAL de entrada próprio a recolher — ' +
+              'recolher aqui duplicaria o imposto já retido (R1.4).'
+            : 'ICMS-ST retido/responsabilidade de terceiro no item: base de DIFAL ' +
+              'próprio zerada; nenhum valor a recolher para evitar duplicidade (R1.4).'
+          : null;
       if (sobRetencaoOuSt) itensSemRecolhimentoProprio += 1;
 
       // SIMPLES NACIONAL — DIFAL de entrada FORA do DAS (tarefa 2.7 — R1.6):
@@ -345,6 +594,7 @@ export class DifalEntradaService {
         calc?.status === 'CALCULADO' && recolhimentoProprio === 'SIM';
       if (recolheDifalProprio) {
         totalDifal += toScaledInteger(calc.valorDifal);
+        totalFcp += toScaledInteger(calc.valorFcp);
         totalBase += toScaledInteger(baseStr);
       }
 
@@ -353,7 +603,11 @@ export class DifalEntradaService {
       // DIFAL de entrada a recolher (CALCULADO + recolhimento próprio). Para
       // Lucro Presumido/Real o DIFAL de entrada corre pela apuração normal, não
       // "fora do DAS"; para itens sob ST/retenção nada é devido (R1.6/R1.4).
-      const recolhidoForaDoDas = adquirenteSimples && recolheDifalProprio;
+      const recolhidoForaDoDas =
+        adquirenteSimples &&
+        recolheDifalProprio &&
+        (toScaledInteger(calc.valorDifal) > 0n ||
+          toScaledInteger(calc.valorFcp) > 0n);
 
       return {
         documento_fiscal_id: item.documentoFiscalId,
@@ -365,7 +619,7 @@ export class DifalEntradaService {
         // remetente (emitente); destino = UF do adquirente (contribuinte que
         // recolhe o DIFAL de entrada). Expõe a operação interestadual completa.
         uf_origem: item.emitenteUf,
-        uf_destino: uf || null,
+        uf_destino: perfilItem.uf,
         // RESPONSÁVEL pelo recolhimento (ADQUIRENTE/REMETENTE/TERCEIRO), por
         // hipótese (R1.5). Torna explícito de quem é a obrigação em cada item.
         responsavel,
@@ -376,10 +630,32 @@ export class DifalEntradaService {
         recolhido_fora_do_das: recolhidoForaDoDas,
         st_retida: classificacao.stRetida,
         base_calculo: baseStr,
+        icms_origem: baseComposta.icmsOrigem ?? null,
         // Estado do cálculo (R1.2): CALCULADO/SIMULACAO/PENDENTE, ou null para
         // hipóteses não calculadas aqui (ST, saída, antecipação).
-        status_calculo: calc?.status ?? null,
-        pendente: calc?.pendente ?? null,
+        status_calculo:
+          calc?.status ??
+          (pendenciaFato != null &&
+          classificacao.hipotese === 'DIFAL_ENTRADA_CONTRIBUINTE'
+            ? 'PENDENTE'
+            : null),
+        pendente:
+          calc?.pendente ??
+          (pendenciaFato != null &&
+          classificacao.hipotese === 'DIFAL_ENTRADA_CONTRIBUINTE'
+            ? true
+            : null),
+        pendencia_fato:
+          classificacao.hipotese === 'DIFAL_ENTRADA_CONTRIBUINTE'
+            ? pendenciaFato
+            : null,
+        perfil_estabelecimento: {
+          uf: perfilItem.uf,
+          regime_tributario: perfilItem.regimeTributario,
+          fonte: perfilItem.fonte,
+          confianca: perfilItem.confianca,
+          origem: perfilItem.origem,
+        },
         // Alíquotas EFETIVAMENTE aplicadas pela regra do catálogo (não a tabela
         // fixa). Null quando pendente ou hipótese não calculada aqui.
         aliquota_interna: calc?.aliquotaInterna ?? null,
@@ -387,7 +663,7 @@ export class DifalEntradaService {
         aliquota_fcp: calc?.aliquotaFcp ?? null,
         valor_difal: calc?.valorDifal ?? fromScaledInteger(0n),
         valor_fcp: calc?.valorFcp ?? fromScaledInteger(0n),
-        memoria_calculo: calc?.memoria ?? null,
+        memoria_calculo: calc?.memoria ?? pendenciaFato,
         // Memória de ARREDONDAMENTO da composição da base (R1.5, tarefa 2.4):
         // disponível mesmo para hipóteses não calculadas aqui (a composição é
         // pura e independe do cálculo do diferencial).
@@ -416,6 +692,13 @@ export class DifalEntradaService {
         // recolhido (não omitido), impedindo recolher sobre imposto já retido.
         recolhimento_proprio: recolhimentoProprio,
         motivo_nao_recolhimento: motivoNaoRecolhimento,
+        dispensa_difal: dispensaDifal,
+        // Regra efetivamente aplicada ao item, resolvida pela data do fato
+        // gerador (`data_fato`). Permite duas alíquotas no mesmo mês.
+        data_fato: dataDoItem(item),
+        estado_resolucao_regra: resolvida?.resolucao.estado ?? 'SEM_REGRA',
+        regra_versao_id: regraVersao?.id ?? null,
+        regra_revisao: regraVersao?.revisao ?? null,
       };
     });
 
@@ -425,26 +708,42 @@ export class DifalEntradaService {
     const itensRecolhidosForaDoDas = detalhes.filter(
       (d) => d.recolhido_fora_do_das,
     ).length;
+    // Cabeçalho (compatibilidade): regra da data mais recente do período. O
+    // detalhe por item informa a regra efetivamente aplicada.
+    const regraDoCabecalho =
+      [...resolucoesDifal.entries()]
+        .sort(([a], [b]) => b.split('|')[1].localeCompare(a.split('|')[1]))
+        .map(([, r]) => r.versao)
+        .find((v) => v != null) ?? null;
+    const regraCabecalho = this.regraDoConteudo(regraDoCabecalho?.conteudo);
 
     return {
       competencia,
-      uf_adquirente: cliente.uf,
+      uf_adquirente: perfilFimMes.uf ?? cliente.uf,
+      perfil_estabelecimento_fim_competencia: {
+        uf: perfilFimMes.uf,
+        regime_tributario: perfilFimMes.regimeTributario,
+        fonte: perfilFimMes.fonte,
+        confianca: perfilFimMes.confianca,
+        origem: perfilFimMes.origem,
+      },
       // REGIME do adquirente (R1.6): eixo que decide o tratamento do DIFAL de
       // entrada do Simples (recolhido fora do DAS). Null quando não informado.
       regime_adquirente: regimeAdquirente,
       // Fonte do cálculo: catálogo versionado quando há regra; estado explícito.
-      origem_regra: regraVersao
-        ? {
-            catalogo_versao_id: regraVersao.catalogoVersaoId,
-            regra_versao_id: regraVersao.id,
-            chave: regraVersao.chave,
-            revisao: regraVersao.revisao,
-            fonte: regraVersao.fonte,
-            escopo_aprovado: regraVersao.escopoAprovado,
-            vigencia_inicio: regraVersao.vigenciaInicio,
-            vigencia_fim: regraVersao.vigenciaFim,
-          }
-        : null,
+      origem_regra:
+        regraDoCabecalho && regraCabecalho
+          ? {
+              catalogo_versao_id: regraDoCabecalho.catalogoVersaoId,
+              regra_versao_id: regraDoCabecalho.id,
+              chave: regraDoCabecalho.chave,
+              revisao: regraDoCabecalho.revisao,
+              fonte: regraDoCabecalho.fonte,
+              escopo_aprovado: regraDoCabecalho.escopoAprovado,
+              vigencia_inicio: regraDoCabecalho.vigenciaInicio,
+              vigencia_fim: regraDoCabecalho.vigenciaFim,
+            }
+          : null,
       // Referência legada apenas identificada (nunca fonte de verdade); null
       // quando a UF não consta da tabela de referência.
       aliquota_interna_referencia_legada: aliquotaInternaReferencia,
@@ -454,10 +753,15 @@ export class DifalEntradaService {
       itens_por_hipotese: porHipotese,
       // Quantidade de itens por estado do cálculo (R1.2).
       itens_por_status: porStatus,
+      itens_intraestaduais_ignorados: itensIntraestaduaisIgnorados,
+      itens_com_perfil_presumido: detalhes.filter(
+        (d) => d.perfil_estabelecimento.confianca === 'BAIXA',
+      ).length,
       // NÃO-DUPLICIDADE (tarefa 2.5 — R1.4): quantidade de itens em que há
       // retenção/responsabilidade de terceiro e que, por isso, NÃO geraram DIFAL
       // próprio. Resume no cabeçalho a garantia detalhada por item.
       itens_sem_recolhimento_proprio: itensSemRecolhimentoProprio,
+      itens_dispensados: itensDispensados,
       // SIMPLES NACIONAL (tarefa 2.7 — R1.6): quantidade de itens cujo DIFAL de
       // entrada é devido e recolhido FORA do DAS por ser o adquirente Simples.
       itens_recolhidos_fora_do_das: itensRecolhidosForaDoDas,
@@ -467,79 +771,160 @@ export class DifalEntradaService {
       // contribuinte, antecipação, itens pendentes/simulados e qualquer item com
       // imposto já retido NÃO compõem o valor a recolher (não-duplicidade, R1.4).
       total_difal_recolher: fromScaledInteger(totalDifal),
+      total_fcp_recolher: fromScaledInteger(totalFcp),
+      entradas_fora_do_calculo: entradasForaDoCalculo,
+      antecipacao_parcial: {
+        total_apurado: totalAntecipacao,
+        regra_configurada: regraAntecipacao != null,
+        regra_homologada: regraAntecipacao?.escopoAprovado ?? false,
+        itens: itensAntecipacao,
+      },
       itens: detalhes,
     };
   }
 
-  // Interpreta o `conteudo` jsonb da regra de catálogo como parâmetros de DIFAL.
-  // Decimais permanecem strings; campos ausentes viram `undefined`/`null` e o
-  // calculador trata a ausência (ex.: sem alíquota interna → não calcula).
+  /** Resolve a regra para cada (UF, data) distinta; uma consulta por par, nunca por item. */
+  private async resolverPorDatas(
+    chave: string,
+    pares: Array<{ uf: string | null; data: string }>,
+    competenciaDate: string,
+  ): Promise<Map<string, ResolvidaPorData>> {
+    const out = new Map<string, ResolvidaPorData>();
+    for (const { uf, data } of pares) {
+      const k = chaveResolucao(uf, data);
+      if (!uf || out.has(k)) continue;
+      const resolucao = await this.catalogo.resolverRegraPorData({
+        tipo: 'DIFAL',
+        uf,
+        chave,
+        data,
+      });
+      out.set(k, {
+        resolucao,
+        versao: regraResolvidaDe(resolucao, competenciaDate),
+      });
+    }
+    return out;
+  }
+
+  private listarEntradasForaDoCalculo(
+    clienteId: string,
+    uf: string,
+    periodo: SQL,
+    emitenteUf: SQL<string | null>,
+  ) {
+    const cfopsApurados = [...CFOPS_DIFAL_ENTRADA];
+    if (uf === 'BA') cfopsApurados.push(CFOP_ANTECIPACAO_PARCIAL_BA);
+    const emRevisao = sql`
+      (NOT ${documentosFiscais.escriturado} OR ${documentosFiscaisItens.cfopRevisaoNecessaria})
+    `;
+    const situacao = sql<SituacaoEntradaInterestadual>`CASE
+      WHEN ${emRevisao} THEN 'EM_REVISAO'
+      WHEN ${inArray(documentosFiscaisItens.cfop, [...CFOPS_REVENDA_INDUSTRIALIZACAO])}
+        THEN 'REVENDA_INDUSTRIALIZACAO'
+      ELSE 'OUTRA_ENTRADA'
+    END`.as('situacao_triagem');
+
+    return this.database.db
+      .select({
+        documento_fiscal_id: documentosFiscais.id,
+        numero_documento: documentosFiscais.numeroDocumento,
+        competencia_emissao: COMPETENCIA_EMISSAO_NFE,
+        uf_origem: emitenteUf,
+        situacao,
+        quantidade_itens: count(),
+      })
+      .from(documentosFiscais)
+      .innerJoin(
+        documentosFiscaisItens,
+        eq(documentosFiscaisItens.documentoFiscalId, documentosFiscais.id),
+      )
+      .where(
+        and(
+          periodo,
+          eq(documentosFiscaisItens.clienteId, clienteId),
+          eq(documentosFiscais.tipoDocumento, 'NFE'),
+          eq(documentosFiscais.tipoOperacaoEscriturada, 'ENTRADA'),
+          eq(documentosFiscaisItens.tipoOperacaoEscriturada, 'ENTRADA'),
+          eq(documentosFiscais.situacao, 'AUTORIZADA'),
+          // Uma nota de entrada emitida pelo fornecedor pode documentar
+          // retorno de mercadoria ao fornecedor, sem compra para a empresa.
+          sql`${documentosFiscais.tpNfXml} IS DISTINCT FROM '0'`,
+          sql`(${emitenteUf} <> ${uf} OR (
+            ${emitenteUf} IS NULL AND (
+              ${documentosFiscaisItens.cfop} LIKE '2%' OR
+              ${documentosFiscaisItens.cfopXml} LIKE '6%'
+            )
+          ))`,
+          or(
+            emRevisao,
+            not(inArray(documentosFiscaisItens.cfop, cfopsApurados)),
+          ),
+        ),
+      )
+      .groupBy(documentosFiscais.id, situacao)
+      .orderBy(asc(documentosFiscais.dataEmissao), asc(documentosFiscais.id));
+  }
+
   private regraDoConteudo(
     conteudo: Record<string, unknown> | undefined,
-  ): DifalRegra | null {
+  ): (DifalRegra & DifalBaseRegra) | null {
     if (!conteudo) return null;
-    const aliquotaInterna = this.comoDecimalString(
+    const aliquotaInterna = percentual(
       conteudo.aliquota_interna ?? conteudo.aliquotaInterna,
     );
-    if (aliquotaInterna == null) return null;
+    const aliquotaInterestadual = percentual(
+      conteudo.aliquota_interestadual ?? conteudo.aliquotaInterestadual,
+    );
+    const aliquotaFcp = percentual(
+      conteudo.aliquota_fcp ?? conteudo.aliquotaFcp,
+    );
+    const percentualReducao = percentual(
+      conteudo.percentual_reducao ?? conteudo.percentualReducao,
+      true,
+    );
+    const percentualBeneficio = percentual(
+      conteudo.percentual_beneficio ?? conteudo.percentualBeneficio,
+      true,
+    );
+    const basePorDentro =
+      conteudo.base_por_dentro ?? conteudo.basePorDentro ?? false;
+    const baseDupla = conteudo.base_dupla ?? conteudo.baseDupla ?? false;
+    const fcpNaBasePorDentro =
+      conteudo.fcp_na_base_por_dentro ?? conteudo.fcpNaBasePorDentro ?? false;
+    if (
+      !aliquotaInterna ||
+      aliquotaInterestadual === undefined ||
+      aliquotaFcp === undefined ||
+      percentualReducao === undefined ||
+      percentualBeneficio === undefined ||
+      typeof basePorDentro !== 'boolean' ||
+      typeof baseDupla !== 'boolean' ||
+      typeof fcpNaBasePorDentro !== 'boolean'
+    ) {
+      return null;
+    }
+
+    if (
+      fcpNaBasePorDentro &&
+      ((!basePorDentro && !baseDupla) ||
+        !aliquotaFcp ||
+        toScaledInteger(aliquotaInterna, 4) + toScaledInteger(aliquotaFcp, 4) >=
+          1_000_000n)
+    ) {
+      return null;
+    }
+
     return {
       aliquotaInterna,
-      aliquotaInterestadual: this.comoDecimalString(
-        conteudo.aliquota_interestadual ?? conteudo.aliquotaInterestadual,
-      ),
-      aliquotaFcp: this.comoDecimalString(
-        conteudo.aliquota_fcp ?? conteudo.aliquotaFcp,
-      ),
+      aliquotaInterestadual,
+      aliquotaFcp,
+      percentualReducao,
+      percentualBeneficio,
+      basePorDentro,
+      baseDupla,
+      fcpNaBasePorDentro,
     };
-  }
-
-  // Interpreta o `conteudo` jsonb como parâmetros de COMPOSIÇÃO DA BASE (tarefa
-  // 2.4): por dentro, redução, benefício e FCP. Independe de `regraDoConteudo`
-  // (que trata o cálculo do diferencial): a composição é aplicada mesmo sem
-  // alíquota interna, pois redução/benefício/retenção/origem não dependem dela.
-  // Decimais permanecem strings; `base_por_dentro` é um booleano do conteúdo.
-  private baseRegraDoConteudo(
-    conteudo: Record<string, unknown> | undefined,
-  ): DifalBaseRegra | null {
-    if (!conteudo) return null;
-    const basePorDentro = conteudo.base_por_dentro ?? conteudo.basePorDentro;
-    return {
-      aliquotaInterna: this.comoDecimalString(
-        conteudo.aliquota_interna ?? conteudo.aliquotaInterna,
-      ),
-      percentualReducao: this.comoDecimalString(
-        conteudo.percentual_reducao ?? conteudo.percentualReducao,
-      ),
-      percentualBeneficio: this.comoDecimalString(
-        conteudo.percentual_beneficio ?? conteudo.percentualBeneficio,
-      ),
-      basePorDentro: basePorDentro === true,
-      aliquotaFcp: this.comoDecimalString(
-        conteudo.aliquota_fcp ?? conteudo.aliquotaFcp,
-      ),
-    };
-  }
-
-  // Aceita apenas strings decimais (restrição da fase: nunca `Number`). Qualquer
-  // outro tipo (inclusive `number` vindo de um jsonb mal cadastrado) é rejeitado
-  // como ausente, para não introduzir aritmética de ponto flutuante.
-  private comoDecimalString(valor: unknown): string | null {
-    if (typeof valor !== 'string') return null;
-    const t = valor.trim();
-    return t === '' ? null : t;
-  }
-
-  private competenciaRange(competencia: string) {
-    try {
-      const range = parseCompetenciaMensal(competencia);
-      // `competenciaMensal` ('YYYY-MM') é o formato que o catálogo consome; o
-      // `competencia` do range é 'YYYY-MM-01' (datas SPED). Devolvemos ambos.
-      return { ...range, competenciaMensal: competencia };
-    } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'Competência inválida.',
-      );
-    }
   }
 
   private async getCliente(clienteId: string) {
@@ -562,4 +947,17 @@ export class DifalEntradaService {
     if (!rows[0]) throw new NotFoundException('Empresa não encontrada.');
     return rows[0];
   }
+}
+
+function percentual(
+  valor: unknown,
+  permiteCem = false,
+): string | null | undefined {
+  if (valor == null) return null;
+  if (typeof valor !== 'string') return undefined;
+  const texto = valor.trim();
+  if (!/^\d{1,3}(?:[.,]\d{1,4})?$/.test(texto)) return undefined;
+  const escalado = toScaledInteger(texto, 4);
+  if (escalado > (permiteCem ? 1_000_000n : 999_999n)) return undefined;
+  return texto;
 }

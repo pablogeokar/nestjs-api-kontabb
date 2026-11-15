@@ -783,6 +783,34 @@ export class AdminFiscalController {
     return { url };
   }
 
+  @Post('documentos/:id/buscar-xml')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Buscar o XML completo de uma NF-e resumida',
+    description:
+      'Registra a Ciência da Operação, se necessário, e consulta a SEFAZ pela chave do documento.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Consulta executada.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async buscarXmlCompleto(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    const resultado =
+      await this.distribuicaoService.buscarXmlCompletoDoDocumento({
+        documentoId: id,
+      });
+    return {
+      success: true,
+      xml_status: resultado.xmlStatus,
+      ciencia_registrada: resultado.cienciaRegistrada,
+      message:
+        resultado.xmlStatus === 'OBTIDO'
+          ? 'XML completo obtido com sucesso.'
+          : 'A SEFAZ ainda não liberou o XML completo. O sistema tentará novamente nas próximas sincronizações.',
+    };
+  }
+
   @Get('documentos/:id/danfe')
   @ApiOperation({
     summary: 'Visualizar documento auxiliar (PDF)',

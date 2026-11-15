@@ -1,4 +1,5 @@
 import { Transform, Type } from 'class-transformer';
+import { DESTDA_COD_ASSINANTES } from '../fiscal/destda/destda-leiaute';
 import {
   ArrayMaxSize,
   IsArray,
@@ -66,6 +67,15 @@ export class ClientCnaeDto {
   @IsString()
   @Length(0, 500)
   description: string;
+}
+
+export class LookupCepParamsDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') : value,
+  )
+  @IsString()
+  @Matches(/^\d{8}$/, { message: 'CEP deve conter 8 dígitos.' })
+  cep: string;
 }
 
 export class LookupCnpjParamsDto {
@@ -186,6 +196,56 @@ export class CreateClientDto {
   @IsIn(FONTES_CONSULTA_CNPJ)
   simples_nacional_fonte?: FonteConsultaCnpj | null;
 
+  @ApiPropertyOptional({
+    description: 'Código IBGE do município (7 dígitos)',
+    nullable: true,
+    example: '2927408',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{7}$/, { message: 'O código IBGE deve ter 7 dígitos.' })
+  codigo_municipio_ibge?: string | null;
+  @ApiPropertyOptional({ description: 'Nome fantasia', nullable: true })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(1, 160)
+  nome_fantasia?: string | null;
+  @ApiPropertyOptional({
+    description: 'Nome do responsável pela empresa',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(2, 100)
+  responsavel_nome?: string | null;
+  @ApiPropertyOptional({
+    description: 'CPF do responsável (11 dígitos)',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{11}$/, { message: 'O CPF do responsável deve ter 11 dígitos.' })
+  responsavel_cpf?: string | null;
+  @ApiPropertyOptional({
+    description:
+      'Qualificação do responsável (tabela 3.3.2 da DeSTDA: 203, 205, 801, 999...)',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(DESTDA_COD_ASSINANTES)
+  responsavel_cod_assinante?: string | null;
   @ApiPropertyOptional({
     description: 'Contador responsável pelo cliente',
     format: 'uuid',
@@ -313,6 +373,71 @@ export class UpdateClientDto {
   })
   inscricao_estadual?: string | null;
 
+  @ApiPropertyOptional({
+    description: 'Inscrição municipal da empresa',
+    nullable: true,
+    example: '12345678',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9A-Z./-]{2,20}$/, {
+    message: 'Formato de inscrição municipal inválido.',
+  })
+  inscricao_municipal?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Código IBGE do município (7 dígitos)',
+    nullable: true,
+    example: '2927408',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{7}$/, { message: 'O código IBGE deve ter 7 dígitos.' })
+  codigo_municipio_ibge?: string | null;
+  @ApiPropertyOptional({ description: 'Nome fantasia', nullable: true })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(1, 160)
+  nome_fantasia?: string | null;
+  @ApiPropertyOptional({
+    description: 'Nome do responsável pela empresa',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(2, 100)
+  responsavel_nome?: string | null;
+  @ApiPropertyOptional({
+    description: 'CPF do responsável (11 dígitos)',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{11}$/, { message: 'O CPF do responsável deve ter 11 dígitos.' })
+  responsavel_cpf?: string | null;
+  @ApiPropertyOptional({
+    description:
+      'Qualificação do responsável (tabela 3.3.2 da DeSTDA: 203, 205, 801, 999...)',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(DESTDA_COD_ASSINANTES)
+  responsavel_cod_assinante?: string | null;
   @ApiPropertyOptional({
     description: 'Contador responsável pelo cliente',
     format: 'uuid',

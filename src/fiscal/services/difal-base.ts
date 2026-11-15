@@ -88,6 +88,10 @@ export interface DifalBaseRegra {
   percentualBeneficio?: string | null;
   // Quando `true`, a regra exige base "por dentro" (ICMS integra a própria base).
   basePorDentro?: boolean | null;
+  // Recompõe a base de destino após excluir o ICMS da origem.
+  baseDupla?: boolean;
+  // Inclui o adicional de FCP na alíquota usada para recompor a base.
+  fcpNaBasePorDentro?: boolean;
   // Alíquota de FCP (pontos, string). Quando presente, a base de FCP é exposta.
   aliquotaFcp?: string | null;
 }
@@ -105,6 +109,8 @@ export interface DifalBaseItem {
   valorSeguro?: string | null;
   valorOutrasDespesas?: string | null;
   valorDesconto?: string | null;
+  valorIpi?: string | null;
+  valorIcms?: string | null;
   // Código de origem da mercadoria (CST origem, 1 dígito) — define importada.
   origemMercadoria?: string | null;
   // Percentual de redução de BC destacado no item (pontos, string).
@@ -128,6 +134,8 @@ export interface DifalBaseItem {
 export interface DifalBaseComposta {
   // Base final de cálculo do DIFAL (string decimal, escala monetária).
   baseCalculo: string;
+  // Presente apenas para base dupla. Null indica falta do ICMS de origem.
+  icmsOrigem?: string | null;
   // Base bruta ANTES de qualquer redução/benefício/por-dentro (string decimal).
   // Ponto de partida da composição, exposto para que o resultado (tarefa 2.6)
   // mostre o quanto foi efetivamente abatido por redução e benefício.
@@ -210,11 +218,10 @@ export function comporBaseDifal(
   };
 
   // ── Passo 1: BASE BRUTA ────────────────────────────────────────────────────
-  // Preferir a BC de ICMS apurada no item; na ausência, compor pelas parcelas
-  // (produto + frete + seguro + outras despesas − desconto).
+  // A base dupla parte do valor da operação. A base única prefere a BC do XML.
   const bcItemScaled = toScaledInteger(item.valorBcIcms ?? '0', ESCALA_VALOR);
   let baseScaled: bigint;
-  if (bcItemScaled > 0n) {
+  if (bcItemScaled > 0n && !regra?.baseDupla) {
     baseScaled = bcItemScaled;
     registrar(
       'base_bruta',
@@ -233,14 +240,16 @@ export function comporBaseDifal(
       ESCALA_VALOR,
     );
     const desconto = toScaledInteger(item.valorDesconto ?? '0', ESCALA_VALOR);
-    baseScaled = positive(produto + frete + seguro + outras - desconto);
+    const ipi = toScaledInteger(item.valorIpi, ESCALA_VALOR);
+    baseScaled = positive(produto + frete + seguro + outras + ipi - desconto);
     registrar(
       'base_bruta',
       baseScaled,
-      `Sem BC apurada: produto ${fromScaledInteger(produto, ESCALA_VALOR)} + ` +
+      `Valor da operação: produto ${fromScaledInteger(produto, ESCALA_VALOR)} + ` +
         `frete ${fromScaledInteger(frete, ESCALA_VALOR)} + seguro ` +
         `${fromScaledInteger(seguro, ESCALA_VALOR)} + outras ` +
-        `${fromScaledInteger(outras, ESCALA_VALOR)} − desconto ` +
+        `${fromScaledInteger(outras, ESCALA_VALOR)} + IPI ` +
+        `${fromScaledInteger(ipi, ESCALA_VALOR)} − desconto ` +
         `${fromScaledInteger(desconto, ESCALA_VALOR)} = ` +
         `${fromScaledInteger(baseScaled, ESCALA_VALOR)}.`,
     );
@@ -268,10 +277,29 @@ export function comporBaseDifal(
   // Base BRUTA (antes de redução/benefício/por-dentro): guardada para que o
   // resultado (tarefa 2.6) exponha o quanto cada abatimento retirou da base.
   const baseBrutaScaled = baseScaled;
+  let icmsOrigem: string | null | undefined;
+  if (regra?.baseDupla) {
+    const valorIcms = naoVazio(item.valorIcms);
+    icmsOrigem = valorIcms;
+    if (valorIcms != null) {
+      baseScaled = positive(
+        baseScaled - toScaledInteger(valorIcms, ESCALA_VALOR),
+      );
+      registrar(
+        'exclusao_icms_origem',
+        baseScaled,
+        `Valor da operação menos o ICMS de origem de ${valorIcms}.`,
+      );
+    }
+  }
 
   // ── Passo 3: REDUÇÃO DE BASE ───────────────────────────────────────────────
+  // A BC destacada já inclui a redução da origem. Na base dupla, a redução
+  // aplicável no destino é parametrizada pela regra.
   const reducaoItem = toScaledInteger(
-    item.percentualReducaoBcIcms ?? '0',
+    bcItemScaled > 0n || regra?.baseDupla
+      ? '0'
+      : item.percentualReducaoBcIcms,
     ESCALA_ALIQUOTA,
   );
   const reducaoRegra = toScaledInteger(
@@ -318,15 +346,23 @@ export function comporBaseDifal(
 
   // ── Passo 5: BASE POR DENTRO (gross-up) ────────────────────────────────────
   const aliquotaInterna = naoVazio(regra?.aliquotaInterna);
-  if (regra?.basePorDentro && aliquotaInterna != null) {
+  if (
+    (regra?.basePorDentro || regra?.baseDupla) &&
+    aliquotaInterna != null &&
+    icmsOrigem !== null
+  ) {
     const internaScaled = toScaledInteger(aliquotaInterna, ESCALA_ALIQUOTA);
+    const fcpNoDivisor = regra.fcpNaBasePorDentro
+      ? toScaledInteger(regra.aliquotaFcp, ESCALA_ALIQUOTA)
+      : 0n;
+    const aliquotaTotal = internaScaled + fcpNoDivisor;
     const antes = baseScaled;
-    baseScaled = aplicarBasePorDentro(baseScaled, internaScaled);
+    baseScaled = aplicarBasePorDentro(baseScaled, aliquotaTotal);
     registrar(
       'base_por_dentro',
       baseScaled,
       `Base por dentro (gross-up): ${fromScaledInteger(antes, ESCALA_VALOR)} / ` +
-        `(1 − ${aliquotaInterna}/100) = ` +
+        `(1 − ${fromScaledInteger(aliquotaTotal, ESCALA_ALIQUOTA)}/100) = ` +
         `${fromScaledInteger(baseScaled, ESCALA_VALOR)} (dividido em escala ` +
         `${ESCALA_INTERNA} e arredondado a 2 casas).`,
     );
@@ -375,6 +411,7 @@ export function comporBaseDifal(
 
   return {
     baseCalculo: fromScaledInteger(baseScaled, ESCALA_VALOR),
+    icmsOrigem,
     baseBruta: fromScaledInteger(baseBrutaScaled, ESCALA_VALOR),
     baseFcp: fromScaledInteger(retido ? 0n : baseFcpScaled, ESCALA_VALOR),
     aliquotaInterestadualEfetiva,

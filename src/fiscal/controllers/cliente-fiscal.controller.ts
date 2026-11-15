@@ -87,7 +87,7 @@ export class ClienteFiscalController {
     private readonly fiscalCteService: FiscalCteService,
     private readonly importacaoChavesService: ImportacaoChavesFiscalService,
     private readonly fiscalIssLivroService: FiscalIssLivroService,
-  ) { }
+  ) {}
 
   // ─── Certificado Digital ──────────────────────────────────────────────────
 
@@ -746,6 +746,42 @@ export class ClienteFiscalController {
     res.setHeader('Content-Length', buffer.length);
     res.setHeader('Content-Disposition', `inline; filename="${id}.pdf"`);
     res.end(buffer);
+  }
+
+  @Post('documentos/:id/buscar-xml')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Buscar o XML completo de uma NF-e resumida',
+    description:
+      'Registra a Ciência da Operação, se necessário, e consulta a SEFAZ pela chave do documento.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Consulta executada.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async buscarXmlCompleto(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) {
+      throw new NotFoundException(
+        'Empresa não encontrada para o usuário logado.',
+      );
+    }
+    const resultado =
+      await this.distribuicaoService.buscarXmlCompletoDoDocumento({
+        documentoId: id,
+        clienteId: cliente.id,
+      });
+    return {
+      success: true,
+      xml_status: resultado.xmlStatus,
+      ciencia_registrada: resultado.cienciaRegistrada,
+      message:
+        resultado.xmlStatus === 'OBTIDO'
+          ? 'XML completo obtido com sucesso.'
+          : 'A SEFAZ ainda não liberou o XML completo. O sistema tentará novamente nas próximas sincronizações.',
+    };
   }
 
   // ─── Manifestação do Destinatário ─────────────────────────────────────────
