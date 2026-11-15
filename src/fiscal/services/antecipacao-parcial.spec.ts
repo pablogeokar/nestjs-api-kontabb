@@ -281,6 +281,18 @@ describe('Antecipação Parcial — redução ME/EPP parametrizada (RICMS-BA art
     );
     expect(r).toMatchObject({
       situacao: 'CALCULADO',
+      cfop: null,
+      regime_tributario: 'SIMPLES_NACIONAL',
+      composicao_operacao: {
+        produto: '1000.00',
+        frete: '0.00',
+        desconto: '0.00',
+      },
+      regra_aplicada: {
+        chave: 'ANTECIPACAO_PARCIAL',
+        revisao: 1,
+        fonte: 'Regra de teste',
+      },
       calculo: {
         imposto_apurado: '85.00',
         reducao: '0.00',

@@ -1,5 +1,68 @@
 import PDFDocument from 'pdfkit';
 
+export interface EspelhoItemMemoria {
+  numero: number;
+  cfop?: string | null;
+  regimeTributario?: string | null;
+  origemMercadoria?: string | null;
+  ncm: string | null;
+  cest: string | null;
+  situacao: string;
+  motivo: string;
+  valorOperacao: string;
+  composicaoOperacao?: {
+    produto: string;
+    frete: string;
+    seguro: string;
+    outrasDespesas: string;
+    desconto: string;
+  } | null;
+  valorIpi: string;
+  calculo: {
+    baseCalculo: string;
+    baseCalculoOrigem?: string | null;
+    aliquotaInterna: string;
+    aliquotaInterestadual: string | null;
+    icmsInterno: string;
+    deducaoOrigem: string;
+    impostoIntegral: string;
+  } | null;
+  tratamentoIpi?: string | null;
+  fundamentoIpi?: string | null;
+  reducaoCondicionada?: {
+    percentual: string;
+    fundamento: string;
+    condicao: string | null;
+    valorReducao: string;
+    valorComReducao: string;
+  } | null;
+  regra?: {
+    chave: string;
+    revisao: number;
+    fonte: string;
+    vigenciaInicio: string;
+    vigenciaFim: string | null;
+    tratamento: string;
+  } | null;
+  cenariosIpi?: { semIpi: string; comIpi: string } | null;
+}
+
+export interface EspelhoNotaMemoria {
+  id: string;
+  numero: string;
+  serie?: string | null;
+  chaveAcesso?: string | null;
+  ufOrigem: string | null;
+  itens: EspelhoItemMemoria[];
+}
+
+export interface EspelhoMemoria {
+  quantidadeNotas: number;
+  quantidadeNotasCalculadas: number;
+  valorIntegralSemReducao20: string;
+  notas: EspelhoNotaMemoria[];
+}
+
 /** Contrato independente de UF e do tipo de documento usado pelo órgão. */
 export interface EspelhoRecolhimento {
   referenciaInterna: string;
@@ -28,6 +91,7 @@ export interface EspelhoRecolhimento {
   };
   origem: string;
   observacoes: string[];
+  memoria?: EspelhoMemoria;
   geradoEm: Date;
 }
 
@@ -208,7 +272,13 @@ export async function renderEspelhoRecolhimentoPdf(
     .font('Helvetica-Bold')
     .fontSize(9)
     .fillColor(BLUE)
-    .text('VALORES REGISTRADOS', left, 496);
+    .text(
+      input.memoria
+        ? 'VALORES APURADOS PARA CONFERÊNCIA'
+        : 'VALORES REGISTRADOS',
+      left,
+      496,
+    );
   pdf
     .moveTo(left, 511)
     .lineTo(left + width, 511)
@@ -233,6 +303,26 @@ export async function renderEspelhoRecolhimentoPdf(
       align: 'right',
     });
   });
+
+  if (input.memoria) {
+    pdf.rect(left, 631, width, 22).fill('#edf5ff');
+    pdf
+      .font('Helvetica-Bold')
+      .fontSize(8.5)
+      .fillColor(BLUE)
+      .text(
+        `NF-e analisadas: ${input.memoria.quantidadeNotas}  •  Com cálculo: ${input.memoria.quantidadeNotasCalculadas}`,
+        left + 9,
+        637,
+        { width: 220 },
+      );
+    pdf.text(
+      `Sem redução de 20%: ${money(input.memoria.valorIntegralSemReducao20)}`,
+      left + 229,
+      637,
+      { width: width - 238, align: 'right' },
+    );
+  }
 
   pdf
     .font('Helvetica-Bold')
@@ -292,6 +382,209 @@ export async function renderEspelhoRecolhimentoPdf(
       780,
       { width },
     );
+  if (input.memoria) drawMemoryPages(pdf, input.memoria);
   pdf.end();
   return completed;
+}
+
+function memoryLines(item: EspelhoItemMemoria): string[] {
+  const lines = [
+    `Item ${item.numero} • NCM ${text(item.ncm)} • CEST ${text(item.cest)} • ${text(item.situacao)}`,
+    `CFOP ${text(item.cfop)} • Regime ${text(item.regimeTributario)} • Origem mercadoria ${text(item.origemMercadoria)}`,
+    `Operação: ${money(item.valorOperacao)} • IPI destacado: ${money(item.valorIpi)}`,
+  ];
+  if (item.composicaoOperacao) {
+    const c = item.composicaoOperacao;
+    lines.push(
+      `Composição: produto ${money(c.produto)} + frete ${money(c.frete)} + seguro ${money(c.seguro)} + outras ${money(c.outrasDespesas)} - desconto ${money(c.desconto)}`,
+    );
+  }
+  if (item.calculo) {
+    const calc = item.calculo;
+    lines.push(
+      `Base BA: ${money(calc.baseCalculo)} • Base de origem: ${money(calc.baseCalculoOrigem ?? calc.baseCalculo)}`,
+      `Alíquota interna: ${calc.aliquotaInterna}% • Interestadual: ${calc.aliquotaInterestadual == null ? 'ICMS destacado na NF-e' : `${calc.aliquotaInterestadual}%`}`,
+      calc.aliquotaInterestadual == null
+        ? 'Método: ICMS interno menos ICMS de origem destacado na NF-e.'
+        : calc.baseCalculoOrigem == null
+          ? 'Método: base BA × diferença das alíquotas; arredondamento em centavos.'
+          : 'Método: ICMS interno menos (base de origem × alíquota interestadual).',
+      `ICMS interno: ${money(calc.icmsInterno)} • Dedução origem: ${money(calc.deducaoOrigem)}`,
+      `Imposto integral sem redução de 20%: ${money(calc.impostoIntegral)}`,
+    );
+  } else {
+    lines.push(`Fora do total: ${text(item.motivo)}`);
+  }
+  if (item.regra) {
+    lines.push(
+      `Regra: ${text(item.regra.chave)} · revisão ${item.regra.revisao} · ${text(item.regra.tratamento)} · vigência ${date(item.regra.vigenciaInicio)} a ${item.regra.vigenciaFim ? date(item.regra.vigenciaFim) : 'em aberto'}`,
+      `Fonte normativa: ${text(item.regra.fonte)}`,
+    );
+  }
+  if (item.tratamentoIpi) {
+    lines.push(
+      `IPI na base: ${item.tratamentoIpi} • Fundamento: ${text(item.fundamentoIpi)}`,
+    );
+  }
+  if (item.reducaoCondicionada) {
+    const r = item.reducaoCondicionada;
+    lines.push(
+      `Cenário condicionado: redução ${r.percentual}% de ${money(r.valorReducao)}; valor com redução ${money(r.valorComReducao)}. NÃO APLICADO AO TOTAL.`,
+      `Condição: ${text(r.condicao)} • Fundamento: ${text(r.fundamento)}`,
+    );
+  }
+  if (item.cenariosIpi) {
+    lines.push(
+      `IPI pendente de decisão: sem IPI ${money(item.cenariosIpi.semIpi)}; com IPI ${money(item.cenariosIpi.comIpi)}. Ambos fora do total.`,
+    );
+  }
+  return lines;
+}
+
+function drawMemoryPages(pdf: PDFKit.PDFDocument, memoria: EspelhoMemoria) {
+  const left = PAGE.margin;
+  const width = PAGE.width - left * 2;
+  let y = 0;
+  const newPage = () => {
+    pdf.addPage();
+    pdf.rect(left, 40, width, 65).fill(BLUE);
+    pdf
+      .font('Helvetica-Bold')
+      .fontSize(16)
+      .fillColor('#ffffff')
+      .text('Notas fiscais e memória de cálculo', left + 15, 55, {
+        width: width - 30,
+      });
+    pdf
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor('#e6f1ff')
+      .text('ANEXO AO ESPELHO • SEM VALOR FISCAL', left + 15, 82, {
+        width: width - 30,
+      });
+    pdf
+      .moveTo(left, 770)
+      .lineTo(left + width, 770)
+      .strokeColor(BORDER)
+      .stroke();
+    pdf
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(BLUE)
+      .text('SEM VALOR FISCAL • NÃO UTILIZAR PARA PAGAMENTO', left, 780, {
+        width,
+      });
+    y = 124;
+  };
+  newPage();
+  pdf
+    .font('Helvetica-Bold')
+    .fontSize(10)
+    .fillColor(INK)
+    .text(
+      `${memoria.quantidadeNotas} NF-e analisadas • ${memoria.quantidadeNotasCalculadas} com itens calculados`,
+      left,
+      y,
+      { width },
+    );
+  y += 21;
+  pdf
+    .font('Helvetica-Bold')
+    .fontSize(10)
+    .fillColor(BLUE)
+    .text(
+      `Valor integral sem redução de 20%: ${money(memoria.valorIntegralSemReducao20)}`,
+      left,
+      y,
+      { width },
+    );
+  y += 23;
+  pdf
+    .font('Helvetica')
+    .fontSize(8)
+    .fillColor(MUTED)
+    .text(
+      'A redução de 20% é apenas um cenário condicionado quando indicada para o item; confirme enquadramento e pagamento tempestivo no portal.',
+      left,
+      y,
+      { width },
+    );
+  y += 36;
+
+  const noteHeader = (nota: EspelhoNotaMemoria, continued = false) => {
+    if (y + 52 > 754) newPage();
+    pdf.rect(left, y, width, 43).fill('#eaf3fc');
+    pdf
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(INK)
+      .text(
+        `NF-e ${text(nota.numero)} · Série ${text(nota.serie)} · Origem ${text(nota.ufOrigem)}${continued ? ' (continuação)' : ''}`,
+        left + 9,
+        y + 7,
+        { width: width - 18 },
+      );
+    pdf
+      .font('Helvetica')
+      .fontSize(7.5)
+      .fillColor(MUTED)
+      .text(
+        `Chave de acesso: ${text(nota.chaveAcesso)}  •  ${nota.itens.length} ${nota.itens.length === 1 ? 'item analisado' : 'itens analisados'}`,
+        left + 9,
+        y + 25,
+        { width: width - 18 },
+      );
+    y += 50;
+  };
+
+  for (const nota of memoria.notas) {
+    const firstItem = nota.itens[0];
+    if (firstItem) {
+      const firstLines = memoryLines(firstItem);
+      pdf.font('Helvetica').fontSize(8);
+      const firstHeight =
+        13 +
+        firstLines.reduce(
+          (sum, line) =>
+            sum +
+            pdf.heightOfString(text(line), { width: width - 22, lineGap: 1 }) +
+            4,
+          0,
+        );
+      if (y + 50 + firstHeight > 754) newPage();
+    }
+    noteHeader(nota);
+    for (const item of nota.itens) {
+      const lines = memoryLines(item);
+      pdf.font('Helvetica').fontSize(8);
+      const heights = lines.map((line) =>
+        pdf.heightOfString(text(line), { width: width - 22, lineGap: 1 }),
+      );
+      const height =
+        13 + heights.reduce((sum, lineHeight) => sum + lineHeight + 4, 0);
+      if (y + height > 754) {
+        newPage();
+        noteHeader(nota, true);
+      }
+      pdf
+        .rect(left, y, width, height)
+        .strokeColor(BORDER)
+        .lineWidth(0.5)
+        .stroke();
+      let lineY = y + 7;
+      lines.forEach((line, index) => {
+        pdf
+          .font(index === 0 ? 'Helvetica-Bold' : 'Helvetica')
+          .fontSize(8)
+          .fillColor(index === 0 ? INK : MUTED)
+          .text(text(line), left + 10, lineY, {
+            width: width - 22,
+            lineGap: 1,
+          });
+        lineY += heights[index] + 4;
+      });
+      y += height + 8;
+    }
+    y += 7;
+  }
 }

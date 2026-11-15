@@ -70,6 +70,7 @@ interface ItemAntecipacaoParcial {
   competenciaEmissao: string;
   itemId: string;
   numeroItem: number;
+  cfop?: string | null;
   ncm: string | null;
   cest: string | null;
   emitenteUf: string | null;
@@ -108,10 +109,22 @@ export function apurarItemAntecipacaoParcial(
     competencia_emissao: item.competenciaEmissao,
     item_id: item.itemId,
     numero_item: item.numeroItem,
+    cfop: item.cfop ?? null,
+    regime_tributario: regime,
+    origem_mercadoria: item.origemMercadoria,
     uf_origem: item.emitenteUf,
     ncm: item.ncm,
     cest: item.cest,
     valor_operacao: fromScaledInteger(valorOperacao),
+    composicao_operacao: {
+      produto: fromScaledInteger(toScaledInteger(item.valorBrutoProduto)),
+      frete: fromScaledInteger(toScaledInteger(item.valorFrete)),
+      seguro: fromScaledInteger(toScaledInteger(item.valorSeguro)),
+      outras_despesas: fromScaledInteger(
+        toScaledInteger(item.valorOutrasDespesas),
+      ),
+      desconto: fromScaledInteger(toScaledInteger(item.valorDesconto)),
+    },
     valor_ipi: fromScaledInteger(toScaledInteger(item.valorIpi)),
   };
 

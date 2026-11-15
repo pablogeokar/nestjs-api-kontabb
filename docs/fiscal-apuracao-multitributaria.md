@@ -168,6 +168,18 @@ de barras, linha digitável, PIX ou autenticação e não é gravado como guia e
 ou documento oficial. A emissão real e o vínculo do PDF oficial continuam sendo
 etapas distintas.
 
+Na prévia da BA, o anexo do espelho agrupa os itens por NF-e (número, série,
+chave de acesso e UF de origem), informa a quantidade de notas analisadas e a
+quantidade com itens calculados, e destaca o **valor integral sem redução de
+20%**. A memória por item vem do resultado do próprio motor: NCM/CEST, CFOP,
+regime, composição da operação, IPI, bases, alíquotas, ICMS interno, dedução,
+imposto integral, revisão/vigência/fonte da regra e eventual redução condicionada.
+Itens pendentes, simulados ou sujeitos a ST aparecem com motivo e não integram
+o total. A redução de 20% permanece apenas cenário condicionado ao enquadramento
+e ao pagamento no prazo, nunca desconto automático do valor principal. O
+espelho de um registro avulso na Central não presume vínculo com as NF-e da
+apuração corrente e permanece resumido.
+
 ## Endpoints
 
 Cliente (`/api/fiscal/apuracao/...`):

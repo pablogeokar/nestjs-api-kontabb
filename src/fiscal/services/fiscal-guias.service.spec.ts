@@ -178,14 +178,42 @@ describe('FiscalGuiasService — espelho sem valor fiscal', () => {
     const input = {
       clienteId: 'c1',
       competencia: '2026-10',
-      totalApurado: '135.37',
-      itensEmConferencia: 2,
+      totalApurado: '135.00',
+      itens: [
+        {
+          documento_fiscal_id: 'nota-1',
+          numero_documento: '3167',
+          serie_documento: '1',
+          chave_acesso: '1'.repeat(44),
+          competencia_emissao: '2026-10',
+          item_id: 'item-1',
+          numero_item: 1,
+          uf_origem: 'SE',
+          ncm: '17041000',
+          cest: '2804100',
+          valor_operacao: '1000.00',
+          valor_ipi: '0.00',
+          situacao: 'CALCULADO',
+          motivo: 'RICMS-BA',
+          calculo: {
+            base_calculo: '1000.00',
+            base_calculo_origem: null,
+            aliquota_interna: '20.50',
+            aliquota_interestadual: '7.00',
+            icms_interno: '205.00',
+            deducao_origem: '70.00',
+            imposto_apurado: '135.00',
+            reducao: '0.00',
+            valor_antecipacao: '135.00',
+          },
+        },
+      ] as never,
     };
     const buffer = await service.gerarEspelhoPreviaAntecipacao(input);
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     expect(
       buffer.toString('latin1').match(/\/Type \/Page\b/g) ?? [],
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     await expect(
       service.gerarEspelhoPreviaAntecipacao({
         ...input,

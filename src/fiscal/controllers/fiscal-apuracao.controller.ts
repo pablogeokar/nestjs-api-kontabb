@@ -409,17 +409,11 @@ export class AdminFiscalApuracaoController {
       competencia,
     });
     const antecipacao = apuracao.antecipacao_parcial;
-    const itensEmConferencia = antecipacao.itens.filter(
-      (item) =>
-        item.situacao === 'PENDENTE' ||
-        item.situacao === 'SIMULACAO' ||
-        item.situacao === 'ICMS_ST',
-    ).length;
     const buffer = await this.guiasService.gerarEspelhoPreviaAntecipacao({
       clienteId,
       competencia,
       totalApurado: antecipacao.total_apurado,
-      itensEmConferencia,
+      itens: antecipacao.itens,
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(

@@ -29,6 +29,8 @@ import {
   ufValida,
 } from './fiscal-guias-vinculo';
 import { compararGuiaComObrigacao } from './fiscal-guias-divergencia';
+import { montarMemoriaAntecipacaoParcial } from './antecipacao-parcial-espelho';
+import type { DifalEntradaService } from './difal-entrada.service';
 import {
   renderEspelhoRecolhimentoPdf,
   type EspelhoRecolhimento,
@@ -452,7 +454,9 @@ export class FiscalGuiasService {
     clienteId: string;
     competencia: string;
     totalApurado: string;
-    itensEmConferencia: number;
+    itens: Awaited<
+      ReturnType<DifalEntradaService['apurarCompetencia']>
+    >['antecipacao_parcial']['itens'];
   }): Promise<Buffer> {
     this.competenciaRange(input.competencia);
     if (toScaledInteger(input.totalApurado) <= 0n) {
@@ -476,6 +480,13 @@ export class FiscalGuiasService {
       .where(eq(clientes.id, input.clienteId))
       .limit(1);
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const memoria = montarMemoriaAntecipacaoParcial(input.itens);
+    const itensEmConferencia = input.itens.filter(
+      (item) =>
+        item.situacao === 'PENDENTE' ||
+        item.situacao === 'SIMULACAO' ||
+        item.situacao === 'ICMS_ST',
+    ).length;
     const competencia = `${input.competencia.slice(5, 7)}/${input.competencia.slice(0, 4)}`;
     return renderEspelhoRecolhimentoPdf({
       referenciaInterna: `Prévia de antecipação parcial ${competencia}`,
@@ -505,12 +516,13 @@ export class FiscalGuiasService {
       origem: 'Prévia da apuração; obrigação ainda não registrada',
       observacoes: [
         'Valor preliminar: confirme receita, vencimento, acréscimos e reduções no portal da SEFAZ.',
-        ...(input.itensEmConferencia > 0
+        ...(itensEmConferencia > 0
           ? [
-              `${input.itensEmConferencia} ${input.itensEmConferencia === 1 ? 'item ficou' : 'itens ficaram'} fora do total por pendência, simulação ou ST.`,
+              `${itensEmConferencia} ${itensEmConferencia === 1 ? 'item ficou' : 'itens ficaram'} fora do total por pendência, simulação ou ST.`,
             ]
           : []),
       ],
+      memoria,
       geradoEm: new Date(),
     });
   }
