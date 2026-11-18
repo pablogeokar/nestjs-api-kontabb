@@ -26,6 +26,12 @@ O motor 9 guarda na memória da apuração a receita de CT-e por município e UF
 
 Para atualizar um banco de produção que já contém apurações, siga [o procedimento de reaplicação](./reaplicar-simples-producao.md). A nova versão normativa R2 preserva as tabelas históricas e atualiza os sublimites de 2025/2026 para os valores oficiais. Recalcule os rascunhos anteriores ao motor 9 e confira a data de abertura do CNPJ e o histórico de receitas antes do fechamento. Tabelas normativas de anos futuros devem ser cadastradas depois da publicação oficial do CGSN.
 
+## Fator R em início de atividade (motor 12)
+
+A revisão de novembro/2026 separou a receita real dos meses anteriores (base do Fator R) da receita anualizada (base das faixas e da alíquota efetiva). A razão do Fator R passa a ser truncada em duas casas decimais, conforme o PGDAS-D, mantendo quatro posições apenas no formato de armazenamento. A anualização arredonda somente o resultado final. No mês de abertura, a folha manual sobrescreve a automática, inclusive quando o valor informado é zero. A memória salva as bases efetivas e o período usado; tela e PDF mostram a distinção.
+
+O caso de referência de outubro/2026 passou de R$ 1.354,95 para R$ 527,91, reproduzindo cada tributo da declaração fornecida. Consulte a [revisão completa do fluxo e suas limitações](./simples-auditoria-2026-11-18.md). Esta mudança não exige migration nem alteração das tabelas normativas. Após publicar API e frontend, recalcule os rascunhos; os anteriores ao motor 12 não podem ser fechados. Apurações fechadas afetadas precisam de revisão e eventual retificação, incluindo os períodos posteriores cujo histórico tenha mudado.
+
 ## Referências oficiais
 
 - [Perguntas e Respostas do Simples Nacional, item 3.15](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoSN.pdf)

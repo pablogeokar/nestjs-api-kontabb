@@ -52,7 +52,7 @@ import type {
   SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@11';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@12';
 const UFS_SIMPLES = new Set(
   'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
     ' ',
@@ -628,7 +628,11 @@ export class SimplesNacionalService {
             competenciaDate,
             false,
           ),
-      this.carregarFolha12m(clienteId, competenciaDate),
+      this.carregarFolha12m(
+        clienteId,
+        competenciaDate,
+        cliente.dataAberturaCnpj,
+      ),
       this.carregarSublimite(cliente.uf, competencia.slice(0, 4)),
       this.carregarAnexosCalculo(tabela.id),
       this.auditarReceitasPeriodo(
@@ -638,11 +642,7 @@ export class SimplesNacionalService {
         competencia,
         regimeCompetencia,
       ),
-      this.carregarFolhasAutomaticasPeriodo(
-        clienteId,
-        competenciaDate,
-        competenciaDate,
-      ),
+      this.carregarFolhaPeriodo(clienteId, competenciaDate, competenciaDate),
     ]);
     const receitaMesCompetencia =
       receitasMensais.rows.find((row) => row.mes === competencia)?.receita ??
@@ -654,8 +654,11 @@ export class SimplesNacionalService {
     const receitasPorMes = new Map(
       receitasMensais.rows.map((row) => [row.mes, row.receita]),
     );
-    const anteriores = mesesAnteriores(competencia, 12).map(
-      (mes) => receitasPorMes.get(mes) ?? '0.00',
+    const mesAbertura = cliente.dataAberturaCnpj?.slice(0, 7);
+    const anteriores = mesesAnteriores(competencia, 12).map((mes) =>
+      mesAbertura && mes < mesAbertura
+        ? '0.00'
+        : (receitasPorMes.get(mes) ?? '0.00'),
     );
     const quantidadeMesesAnteriores = Math.max(
       0,
@@ -671,15 +674,26 @@ export class SimplesNacionalService {
       mesesAnteriores: quantidadeMesesAnteriores,
       receitaPrimeiroMes: receitaMesCompetencia,
     });
+    // A anualização define faixa/alíquota. O Fator R usa a receita real
+    // dos mesmos meses da folha, inclusive nos primeiros 12 meses de atividade.
+    const receitaBruta12mReal = fromScaledInteger(
+      anteriores.reduce((total, valor) => total + toScaledInteger(valor), 0n),
+    );
+    const receitaBaseFatorR =
+      quantidadeMesesAnteriores === 0
+        ? receitaMesCompetencia
+        : receitaBruta12mReal;
+    const folhaBaseFatorR =
+      quantidadeMesesAnteriores === 0 ? folhaMes.valor : folha.valor;
     const fatorR = receitasAtividade.grupos.some(
       (grupo) => grupo.anexo === 'ANEXO_V',
     )
       ? this.calculador.calcularFatorR(
           folha.valor,
-          rbt.rbt12,
+          receitaBruta12mReal,
           quantidadeMesesAnteriores === 0
             ? {
-                folhaMes: folhaMes[0]?.valor ?? '0.00',
+                folhaMes: folhaMes.valor,
                 receitaMes: receitaMesCompetencia,
               }
             : undefined,
@@ -833,7 +847,7 @@ export class SimplesNacionalService {
         receita: regimeCompetencia
           ? 'ITENS_DE_VENDA_SERVICO_E_CTE_POR_COMPETENCIA'
           : 'ITENS_DE_VENDA_SERVICO_E_CTE_NFSE_POR_EMISSAO',
-        folha: folha.origem,
+        folha: quantidadeMesesAnteriores === 0 ? folhaMes.origem : folha.origem,
         sublimite: `${sublimite.origem}:${situacaoSublimite.motivo}`,
         classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R_TRANSPORTE_CTE',
       },
@@ -843,6 +857,12 @@ export class SimplesNacionalService {
         receitaMesCompetencia,
         receitaMesDocumentos,
         receitaClassificada,
+        receitaBruta12mReal,
+        receitaBaseFatorR: fatorR !== null ? receitaBaseFatorR : null,
+        folhaBaseFatorR: fatorR !== null ? folhaBaseFatorR : null,
+        periodoBaseFatorR:
+          quantidadeMesesAnteriores === 0 ? 'MES_ABERTURA' : 'MESES_ANTERIORES',
+        mesesAnterioresAtividade: quantidadeMesesAnteriores,
         devolucoesDoMes: fromScaledInteger(
           devolucoes.ocorrencias.get(competencia)?.valor ?? 0n,
         ),
@@ -852,7 +872,7 @@ export class SimplesNacionalService {
         ),
         folhaMesPrimeiroPeriodo:
           fatorR !== null && quantidadeMesesAnteriores === 0
-            ? (folhaMes[0]?.valor ?? '0.00')
+            ? folhaMes.valor
             : null,
         bonificacoesExcluidas: auditoriaReceitas.bonificacoesExcluidas,
         operacoesSemReceitaExcluidas:
@@ -1394,10 +1414,7 @@ export class SimplesNacionalService {
     return { porMes, ocorrencias };
   }
 
-  private async carregarNfesReferenciadas(
-    clienteId: string,
-    chaves: string[],
-  ) {
+  private async carregarNfesReferenciadas(clienteId: string, chaves: string[]) {
     if (!chaves.length) return [];
     return this.database.db
       .select({
@@ -1891,10 +1908,23 @@ export class SimplesNacionalService {
     };
   }
 
-  private async carregarFolha12m(clienteId: string, competencia: string) {
+  private async carregarFolha12m(
+    clienteId: string,
+    competencia: string,
+    dataAberturaCnpj?: string | null,
+  ) {
     const meses = mesesAnteriores(competencia.slice(0, 7), 12);
-    const inicio = `${meses[0]}-01`;
+    const mesAbertura = dataAberturaCnpj?.slice(0, 7);
+    const inicio = `${mesAbertura && mesAbertura > meses[0] ? mesAbertura : meses[0]}-01`;
     const fim = `${meses[meses.length - 1]}-01`;
+    return this.carregarFolhaPeriodo(clienteId, inicio, fim);
+  }
+
+  private async carregarFolhaPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+  ) {
     const [automaticas, manuais] = await Promise.all([
       this.carregarFolhasAutomaticasPeriodo(clienteId, inicio, fim),
       this.database.db

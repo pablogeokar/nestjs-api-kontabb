@@ -91,9 +91,10 @@ export class SimplesCalculadorService {
     );
   }
 
+  /** A receita deve ser a soma real anterior, nunca a RBT12 proporcionalizada. */
   calcularFatorR(
     folhaSalarios12m: string,
-    rbt12: string,
+    receitaBruta12mReal: string,
     primeiroMes?: { folhaMes: string; receitaMes: string },
   ): string {
     const folha = this.money(
@@ -101,15 +102,14 @@ export class SimplesCalculadorService {
       'folha de salários',
     );
     const receita = this.money(
-      primeiroMes?.receitaMes ?? rbt12,
+      primeiroMes?.receitaMes ?? receitaBruta12mReal,
       'receita do Fator R',
     );
     if (receita === 0n) return folha > 0n ? '0.2800' : '0.0100';
     if (folha === 0n) return '0.0100';
-    return fromScaledInteger(
-      this.divideRound(folha * RATE_FACTOR, receita),
-      RATE_SCALE,
-    );
+    // PGDAS-D (PA >= 04/2018): duas casas decimais, sem arredondamento.
+    // Mantém quatro casas no contrato, sem promover razões < 0,28 ao Anexo III.
+    return fromScaledInteger(((folha * 100n) / receita) * 100n, RATE_SCALE);
   }
 
   resolverAnexoFatorR(fatorR: string | null): 'ANEXO_III' | 'ANEXO_V' {
@@ -150,9 +150,10 @@ export class SimplesCalculadorService {
     }
     const disponiveis = receitas.slice(-input.mesesAnteriores);
     const total = disponiveis.reduce((sum, value) => sum + value, 0n);
-    const media = this.divideRound(total, BigInt(input.mesesAnteriores));
     return {
-      rbt12: fromScaledInteger(media * 12n),
+      rbt12: fromScaledInteger(
+        this.divideRound(total * 12n, BigInt(input.mesesAnteriores)),
+      ),
       proporcional: true,
       origem: 'INICIO_ATIVIDADE_MEDIA_MESES_ANTERIORES_ANUALIZADA',
     };

@@ -54,6 +54,22 @@ describe('SimplesCalculadorService', () => {
     expect(service.resolverAnexoFatorR('0.2800')).toBe('ANEXO_III');
   });
 
+  it.each([
+    ['2000.00', '4460.95', '0.4400', 'ANEXO_III'],
+    ['27999.99', '100000.00', '0.2700', 'ANEXO_V'],
+    ['28000.00', '100000.00', '0.2800', 'ANEXO_III'],
+    ['27740.00', '100000.00', '0.2700', 'ANEXO_V'],
+    ['120000.00', '100000.00', '1.2000', 'ANEXO_III'],
+  ])(
+    'trunca o Fator R de %s / %s como o PGDAS-D',
+    (folha, receita, fator, anexo) => {
+      expect(service.calcularFatorR(folha, receita)).toBe(fator);
+      expect(
+        service.resolverAnexoFatorR(service.calcularFatorR(folha, receita)),
+      ).toBe(anexo);
+    },
+  );
+
   it('aplica os casos especiais do Fator R e usa a receita do primeiro mês', () => {
     expect(service.calcularFatorR('0.00', '0.00')).toBe('0.0100');
     expect(service.calcularFatorR('100.00', '0.00')).toBe('0.2800');
@@ -81,6 +97,38 @@ describe('SimplesCalculadorService', () => {
       }).rbt12,
     ).toBe('180000.00');
   });
+
+  it('anualiza sem arredondar a média mensal intermediária', () => {
+    expect(
+      service.calcularRbt12({
+        receitasAnteriores: [
+          '0.00',
+          '0.00',
+          '0.00',
+          '0.00',
+          '0.00',
+          '0.00',
+          '4460.95',
+        ],
+        mesesAnteriores: 7,
+      }).rbt12,
+    ).toBe('7647.34');
+  });
+
+  it.each([1, 2, 7, 11, 12, 13])(
+    'distingue receita real e anualizada com %i meses anteriores',
+    (meses) => {
+      const resultado = service.calcularRbt12({
+        receitasAnteriores: Array.from(
+          { length: Math.min(meses, 12) },
+          () => '1000.00',
+        ),
+        mesesAnteriores: meses,
+      });
+      expect(resultado.rbt12).toBe('12000.00');
+      expect(resultado.proporcional).toBe(meses < 12);
+    },
+  );
 
   it('deduz o ICMS da receita com ST', () => {
     const result = service.calcularItem({

@@ -127,7 +127,10 @@ export function renderSimplesNacionalPdf(input: {
   sectionTitle(document, '2. Resumo da apuração');
   metricGrid(document, [
     ['Receita bruta do mês', money(apuracao.receita_bruta_mes)],
-    ['RBT12', money(apuracao.rbt12)],
+    [
+      apuracao.rbt12_proporcional ? 'RBT12 proporcionalizada (faixa)' : 'RBT12',
+      money(apuracao.rbt12),
+    ],
     ['Folha dos últimos 12 meses', money(apuracao.folha_salarios_12m)],
     ['Fator R', apuracao.fator_r ? percent(apuracao.fator_r) : 'Não aplicável'],
     ['Sublimite estadual aplicável', money(apuracao.sublimite_estadual)],
@@ -161,9 +164,18 @@ export function renderSimplesNacionalPdf(input: {
   }
 
   ensureSpace(document, 72);
-  const fatorRDetail = apuracao.fator_r
+  let fatorRDetail = apuracao.fator_r
     ? `${percent(apuracao.fator_r)} — ${decimalCompare(apuracao.fator_r, '0.2800') >= 0 ? 'percentual igual ou superior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo III.' : 'percentual inferior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo V.'}`
     : 'Não se aplica às atividades classificadas nesta apuração.';
+  const { receitaBaseFatorR, folhaBaseFatorR, periodoBaseFatorR } =
+    apuracao.memoria_calculo;
+  if (
+    apuracao.fator_r &&
+    typeof receitaBaseFatorR === 'string' &&
+    typeof folhaBaseFatorR === 'string'
+  ) {
+    fatorRDetail += ` Base: folha ${money(folhaBaseFatorR)} / receita real ${money(receitaBaseFatorR)} (${periodoBaseFatorR === 'MES_ABERTURA' ? 'mês de abertura' : 'meses anteriores ao PA'}). Razão truncada em duas casas decimais, sem arredondamento; casos de base zero seguem a regra específica.`;
+  }
   infoBox(document, 'Critério do Fator R', fatorRDetail);
   if (apuracao.excedeu_sublimite) {
     infoBox(
@@ -181,6 +193,8 @@ export function renderSimplesNacionalPdf(input: {
   );
   drawItemsTable(document, apuracao);
 
+  // Mantém o título junto à primeira fórmula quando houver quebra de página.
+  ensureSpace(document, 110);
   sectionTitle(document, '4. Demonstração das fórmulas');
   if (apuracao.itens.length === 0) {
     emptyState(
@@ -416,8 +430,9 @@ function infoBox(
   text: string,
   warning = false,
 ) {
-  ensureSpace(document, 54);
+  document.font('Helvetica').fontSize(7.5);
   const height = document.heightOfString(text, { width: 493, lineGap: 2 }) + 31;
+  ensureSpace(document, height + 6);
   const y = document.y;
   document
     .roundedRect(36, y, 523, height, 4)
