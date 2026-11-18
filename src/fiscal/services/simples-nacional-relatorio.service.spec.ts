@@ -51,6 +51,7 @@ describe('SimplesNacionalRelatorioService', () => {
           mesesAnterioresAtividade: 24,
           devolucoesDoMes: '0.00',
           devolucoesAbatidas: '0.00',
+          devolucoesClassificadas: [],
           saldoDevolucoesCompetencia: '0.00',
           folhaMesPrimeiroPeriodo: null,
           bonificacoesExcluidas: '0.00',

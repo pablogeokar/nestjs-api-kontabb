@@ -52,7 +52,7 @@ import type {
   SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@12';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@13';
 const UFS_SIMPLES = new Set(
   'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
     ' ',
@@ -70,6 +70,13 @@ interface ReceitaAgrupada {
 
 type AbatimentosPorMes = Map<string, { abatimentos: Map<string, bigint> }>;
 type DocumentoDevolucaoPendente = { numero: string; competencia: string };
+type ClassificacaoDevolucao = {
+  numero: string;
+  codigoProduto: string;
+  valor: string;
+  grupo: string;
+  origem: 'NFE_REFERENCIADA' | 'PRODUTO_PROPRIO_MES' | 'CFOP_NFE_PROPRIA';
+};
 
 @Injectable()
 export class SimplesNacionalService {
@@ -867,6 +874,8 @@ export class SimplesNacionalService {
           devolucoes.ocorrencias.get(competencia)?.valor ?? 0n,
         ),
         devolucoesAbatidas: fromScaledInteger(devolucoesAbatidas),
+        devolucoesClassificadas:
+          devolucoes.ocorrencias.get(competencia)?.classificacoes ?? [],
         saldoDevolucoesCompetencia: fromScaledInteger(
           devolucoesMes?.saldo ?? 0n,
         ),
@@ -1259,7 +1268,11 @@ export class SimplesNacionalService {
 
     const ocorrencias = new Map<
       string,
-      { valor: bigint; pendencias: Map<string, DocumentoDevolucaoPendente> }
+      {
+        valor: bigint;
+        pendencias: Map<string, DocumentoDevolucaoPendente>;
+        classificacoes: ClassificacaoDevolucao[];
+      }
     >();
     if (!entradas.length) {
       const porMes: ReturnType<typeof distribuirDevolucoesSimples> = new Map();
@@ -1298,6 +1311,29 @@ export class SimplesNacionalService {
       itens.push(original);
       originaisPorChave.set(original.chave, itens);
     }
+    const gruposVendaPorProduto = new Map<string, Set<string>>();
+    for (const venda of vendas) {
+      if (
+        !venda.codigoProduto ||
+        venda.indTotal !== '1' ||
+        valorReceitaSimples(venda) <= 0n
+      )
+        continue;
+      const grupo = chaveVendaDevolvida(
+        venda.tipoDocumento,
+        venda.cfopXml ?? venda.cfop,
+        venda,
+      );
+      if (!grupo) continue;
+      const chave = JSON.stringify([
+        venda.emitente,
+        venda.mes,
+        venda.codigoProduto,
+      ]);
+      const grupos = gruposVendaPorProduto.get(chave) ?? new Set<string>();
+      grupos.add(grupo);
+      gruposVendaPorProduto.set(chave, grupos);
+    }
     const devolucoes = entradas.flatMap((entrada, indice) => {
       const valor = valorReceitaSimples(entrada);
       if (valor === 0n) return [];
@@ -1332,11 +1368,14 @@ export class SimplesNacionalService {
       const ocorrencia = ocorrencias.get(mes) ?? {
         valor: 0n,
         pendencias: new Map<string, DocumentoDevolucaoPendente>(),
+        classificacoes: [],
       };
       ocorrencias.set(mes, ocorrencia);
       if (valor > 0n) ocorrencia.valor += valor;
       const anexo = /^[12](201|410)$/.test(cfop) ? 'ANEXO_II' : 'ANEXO_I';
       let grupo: string | null = null;
+      let origem: ClassificacaoDevolucao['origem'] = 'NFE_REFERENCIADA';
+      let produtoProprioAmbiguo = false;
       if (referenciasLocalizadas) {
         const mesmoProduto =
           entrada.emitente === entrada.cnpjCliente
@@ -1371,6 +1410,24 @@ export class SimplesNacionalService {
         // ainda não está no acervo. A NF-e do cliente usa códigos dele.
         const { st, monofasico } = segregacaoMercadoriaSimples(cfop, entrada);
         grupo = chaveMercadoriaSimples(anexo, st, monofasico);
+        origem = 'CFOP_NFE_PROPRIA';
+        if (!referencia.length && entrada.tpNfXml === '0') {
+          // O código de produto é comparável somente nas NF-e da própria
+          // empresa. Um CFOP 1202 pode estar escriturado em devolução de
+          // produto vendido como produção própria (5101/6101). Preserva a
+          // segregação comprovada pelas saídas do mesmo produto no mês.
+          const gruposProduto =
+            gruposVendaPorProduto.get(
+              JSON.stringify([entrada.cnpjCliente, mes, entrada.codigoProduto]),
+            ) ?? new Set<string>();
+          if (gruposProduto.size === 1) {
+            grupo = [...gruposProduto][0];
+            origem = 'PRODUTO_PROPRIO_MES';
+          } else if (gruposProduto.size > 1) {
+            grupo = null;
+            produtoProprioAmbiguo = true;
+          }
+        }
       }
       let motivo: string | null = null;
       if (valor < 0n) {
@@ -1380,11 +1437,13 @@ export class SimplesNacionalService {
       } else if (!/^[12](201|202|410|411|66[0-2])$/.test(cfop)) {
         motivo = 'Confira o CFOP escriturado da devolução.';
       } else if (!grupo) {
-        motivo = !referencia.length
-          ? 'O XML não informa a NF-e original. Confira a referência com o emitente.'
-          : !referenciasLocalizadas
-            ? 'A NF-e original não está no acervo da empresa. Importe o XML referenciado e recalcule.'
-            : 'A referência não identifica uma venda com segregação única. Confira os itens e a operação da NF-e original.';
+        motivo = produtoProprioAmbiguo
+          ? 'O produto da NF-e própria possui vendas em mais de uma segregação no mês. Confira a NF-e original antes de definir o abatimento.'
+          : !referencia.length
+            ? 'O XML não informa a NF-e original. Confira a referência com o emitente.'
+            : !referenciasLocalizadas
+              ? 'A NF-e original não está no acervo da empresa. Importe o XML referenciado e recalcule.'
+              : 'A referência não identifica uma venda com segregação única. Confira os itens e a operação da NF-e original.';
       }
       if (motivo) {
         ocorrencia.pendencias.set(
@@ -1393,7 +1452,15 @@ export class SimplesNacionalService {
         );
         return [];
       }
-      return grupo ? [{ mes, grupo, valor }] : [];
+      if (!grupo) return [];
+      ocorrencia.classificacoes.push({
+        numero,
+        codigoProduto: entrada.codigoProduto,
+        valor: fromScaledInteger(valor),
+        grupo,
+        origem,
+      });
+      return [{ mes, grupo, valor }];
     });
     const vendasSegregadas = vendas.flatMap((item) => {
       if (item.indTotal !== '1') return [];
@@ -1597,6 +1664,8 @@ export class SimplesNacionalService {
       .select({
         documentoId: documentosFiscais.id,
         numeroDocumento: documentosFiscais.numeroDocumento,
+        emitente: documentosFiscais.emitenteCnpjCpf,
+        codigoProduto: documentosFiscaisItens.codigoProduto,
         mes: sql<string>`to_char(${dataReceita}, 'YYYY-MM')`,
         documentoTotal: documentosFiscais.valorTotal,
         tipoDocumento: documentosFiscais.tipoDocumento,

@@ -163,6 +163,21 @@ export function renderSimplesNacionalPdf(input: {
     );
   }
 
+  const devolucoes = apuracao.memoria_calculo.devolucoesDoMes;
+  const abatidas = apuracao.memoria_calculo.devolucoesAbatidas;
+  const saldoDevolucoes = apuracao.memoria_calculo.saldoDevolucoesCompetencia;
+  if (
+    [devolucoes, abatidas, saldoDevolucoes].some(
+      (valor) => typeof valor === 'string' && decimalCompare(valor, '0.00') > 0,
+    )
+  ) {
+    infoBox(
+      document,
+      'Devoluções de vendas',
+      `Identificadas no mês: ${typeof devolucoes === 'string' ? money(devolucoes) : 'não registrado'}. Abatidas da receita: ${typeof abatidas === 'string' ? money(abatidas) : 'não registrado'}. Saldo para meses seguintes: ${typeof saldoDevolucoes === 'string' ? money(saldoDevolucoes) : 'não registrado'}. A receita apresentada no resumo já está líquida dos abatimentos.`,
+    );
+  }
+
   ensureSpace(document, 72);
   let fatorRDetail = apuracao.fator_r
     ? `${percent(apuracao.fator_r)} — ${decimalCompare(apuracao.fator_r, '0.2800') >= 0 ? 'percentual igual ou superior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo III.' : 'percentual inferior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo V.'}`

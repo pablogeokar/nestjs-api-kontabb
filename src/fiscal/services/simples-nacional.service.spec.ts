@@ -260,7 +260,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
                 Promise.resolve([
                   {
                     status: 'RASCUNHO',
-                    memoriaCalculo: { motorVersao: 'simples-nacional@11' },
+                    memoriaCalculo: { motorVersao: 'simples-nacional@12' },
                   },
                 ]),
             }),
@@ -295,7 +295,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       status: 'RASCUNHO',
       rbt12: '573927.24',
       memoriaCalculo: {
-        motorVersao: 'simples-nacional@12',
+        motorVersao: 'simples-nacional@13',
         impedidoIcmsIss: false,
       },
     } as never);
@@ -615,6 +615,250 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       expect.arrayContaining(['AUTORIZADA', 'ENTRADA', '1202', '2411']),
     );
     expect(filtro.params).not.toContain('5202');
+  });
+
+  function prepararDevolucoesIndustria(options?: {
+    ambiguo?: boolean;
+    terceiros?: boolean;
+    mesVenda?: string;
+  }) {
+    const empresa = '12345678000195';
+    const comum = {
+      mes: '2026-10',
+      tipoDocumento: 'NFE',
+      indTotal: '1',
+      csosn: '101',
+      cstPis: '07',
+      cstCofins: '07',
+      frete: null,
+      seguro: null,
+      desconto: null,
+      outras: null,
+    };
+    const entrada = {
+      ...comum,
+      mesEmissao: '2026-10',
+      cfop: '1202',
+      emitente: options?.terceiros ? 'comprador' : empresa,
+      cnpjCliente: empresa,
+      tpNfXml: options?.terceiros ? '1' : '0',
+      escrituracaoStatus: 'ESCRITURADO',
+    };
+    const entradas = [
+      {
+        ...entrada,
+        numero: '2543',
+        codigoProduto: '4',
+        bruto: '2000.00',
+        referencias: [{ tipo: 'NFE', chaveAcesso: 'venda-referenciada' }],
+      },
+      {
+        ...entrada,
+        numero: '2543',
+        codigoProduto: '2',
+        bruto: '1760.00',
+        referencias: [{ tipo: 'NFE', chaveAcesso: 'venda-referenciada' }],
+      },
+      {
+        ...entrada,
+        numero: '2557',
+        codigoProduto: '14',
+        bruto: '225.00',
+        referencias: null,
+      },
+      {
+        ...entrada,
+        numero: '2557',
+        codigoProduto: '10',
+        bruto: '150.00',
+        referencias: null,
+      },
+    ];
+    const venda = {
+      ...comum,
+      emitente: empresa,
+      cfop: '5101',
+      cfopXml: '5101',
+      situacao: 'AUTORIZADA',
+      operacao: 'SAIDA',
+      chave: 'venda-referenciada',
+    };
+    const vendas = [
+      { ...venda, codigoProduto: '4', bruto: '2000.00' },
+      { ...venda, codigoProduto: '2', bruto: '51754.00' },
+      {
+        ...venda,
+        mes: options?.mesVenda ?? comum.mes,
+        codigoProduto: '14',
+        bruto: '225.00',
+      },
+      {
+        ...venda,
+        mes: options?.mesVenda ?? comum.mes,
+        codigoProduto: '10',
+        bruto: '150.00',
+      },
+      ...(options?.ambiguo
+        ? [
+            {
+              ...venda,
+              codigoProduto: '14',
+              bruto: '1.00',
+              cfop: '5102',
+              cfopXml: '5102',
+            },
+          ]
+        : []),
+    ];
+    const consulta = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: () => ({ orderBy: () => Promise.resolve(entradas) }),
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce(consulta)
+      .mockReturnValueOnce({
+        from: () => ({ where: () => Promise.resolve([]) }),
+      });
+    const calculador = new SimplesCalculadorService();
+    const service = new SimplesNacionalService(
+      { db: { select } } as never,
+      calculador,
+      null!,
+      null!,
+    );
+    Object.defineProperty(service, 'carregarNfesReferenciadas', {
+      value: jest.fn().mockResolvedValue(vendas.slice(0, 2)),
+    });
+    Object.defineProperty(service, 'carregarItensReceitaPeriodo', {
+      value: jest.fn().mockResolvedValue(vendas),
+    });
+    Object.defineProperty(service, 'carregarLinhasReceitaPeriodo', {
+      value: jest.fn().mockResolvedValue(vendas),
+    });
+    return { service, calculador };
+  }
+
+  it('abate as duas notas 1202 de 4.135,00 da indústria e mantém base mensal e DAS consistentes', async () => {
+    const { service, calculador } = prepararDevolucoesIndustria();
+    const ajustes = await service['carregarDevolucoesAte'](
+      'empresa',
+      '2026-10-31',
+    );
+    const ajuste = ajustes.porMes.get('2026-10')!;
+    expect(ajuste.abatimentos).toEqual(
+      new Map([['ANEXO_II:false:false', 413500n]]),
+    );
+    expect(ajuste.saldo).toBe(0n);
+    const ocorrencia = ajustes.ocorrencias.get('2026-10')!;
+    expect(ocorrencia.valor).toBe(413500n);
+    expect(ocorrencia.pendencias.size).toBe(0);
+    expect(
+      ocorrencia.classificacoes.filter((item) => item.numero === '2557'),
+    ).toEqual([
+      {
+        numero: '2557',
+        codigoProduto: '14',
+        valor: '225.00',
+        grupo: 'ANEXO_II:false:false',
+        origem: 'PRODUTO_PROPRIO_MES',
+      },
+      {
+        numero: '2557',
+        codigoProduto: '10',
+        valor: '150.00',
+        grupo: 'ANEXO_II:false:false',
+        origem: 'PRODUTO_PROPRIO_MES',
+      },
+    ]);
+    const atividade = await service['carregarReceitasAtividade'](
+      'empresa',
+      new Date('2026-10-01'),
+      new Date('2026-10-31'),
+      true,
+      ajuste.abatimentos,
+    );
+    expect(atividade.grupos).toEqual([
+      expect.objectContaining({ anexo: 'ANEXO_II', receita: 4999400n }),
+    ]);
+    expect(
+      await service['carregarReceitasAutomaticasPeriodo'](
+        'empresa',
+        '2026-10-01',
+        '2026-10-01',
+        true,
+        ajustes.porMes,
+      ),
+    ).toEqual([{ mes: '2026-10', valor: '49994.00' }]);
+    const faixa = SIMPLES_ANEXOS_SEED.find((item) => item.anexo === 'ANEXO_II')!
+      .faixas[3];
+    const resultado = calculador.calcularItem({
+      anexo: 'ANEXO_II',
+      receita: '49994.00',
+      rbt12: '726665.09',
+      segregacao: 'TRIBUTACAO_INTEGRAL',
+      excedeuSublimite: false,
+      faixa: {
+        faixa: 4,
+        rbt12De: '720000.01',
+        rbt12Ate: '1800000.00',
+        aliquotaNominal: faixa.aliquota,
+        parcelaDeduzir: faixa.deducao,
+        partilha: faixa.partilha,
+      },
+    });
+    expect(resultado.tributosPartilhados).toEqual({
+      irpj: '222.82',
+      csll: '141.80',
+      cofins: '466.31',
+      pis: '100.88',
+      cpp: '1519.25',
+      ipi: '303.85',
+      icms: '1296.43',
+      iss: '0.00',
+    });
+    expect(resultado.valorDevido).toBe('4051.34');
+  });
+
+  it('não infere por produto quando há vendas na indústria e no comércio para o mesmo código', async () => {
+    const { service } = prepararDevolucoesIndustria({ ambiguo: true });
+    const ajustes = await service['carregarDevolucoesAte'](
+      'empresa',
+      '2026-10-31',
+    );
+    expect(ajustes.porMes.get('2026-10')!.abatimentos).toEqual(
+      new Map([['ANEXO_II:false:false', 391000n]]),
+    );
+    expect([...ajustes.ocorrencias.get('2026-10')!.pendencias.keys()]).toEqual([
+      expect.stringContaining('mais de uma segregação'),
+    ]);
+  });
+
+  it('não compara códigos de produto de devoluções emitidas por terceiros com o catálogo da empresa', async () => {
+    const { service } = prepararDevolucoesIndustria({ terceiros: true });
+    const ajustes = await service['carregarDevolucoesAte'](
+      'empresa',
+      '2026-10-31',
+    );
+    expect(ajustes.porMes.get('2026-10')!.abatimentos).toEqual(
+      new Map([['ANEXO_II:false:false', 376000n]]),
+    );
+    expect([...ajustes.ocorrencias.get('2026-10')!.pendencias.keys()]).toEqual([
+      expect.stringContaining('NF-e 2557'),
+    ]);
+  });
+
+  it('não usa vendas futuras para alterar a classificação da devolução de um mês anterior', async () => {
+    const { service } = prepararDevolucoesIndustria({ mesVenda: '2026-11' });
+    const ajustes = await service['carregarDevolucoesAte'](
+      'empresa',
+      '2026-11-30',
+    );
+    expect(ajustes.porMes.get('2026-10')!.abatimentos).toEqual(
+      new Map([['ANEXO_II:false:false', 376000n]]),
+    );
+    expect(ajustes.porMes.get('2026-10')!.saldo).toBe(37500n);
   });
 
   it('inclui o CT-e emitido na receita mensal e no Anexo III de transporte', async () => {
