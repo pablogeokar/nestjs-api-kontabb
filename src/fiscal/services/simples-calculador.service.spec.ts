@@ -54,6 +54,22 @@ describe('SimplesCalculadorService', () => {
     expect(service.resolverAnexoFatorR('0.2800')).toBe('ANEXO_III');
   });
 
+  it.each([
+    ['2000.00', '4460.95', '0.4400', 'ANEXO_III'],
+    ['27999.99', '100000.00', '0.2700', 'ANEXO_V'],
+    ['28000.00', '100000.00', '0.2800', 'ANEXO_III'],
+    ['27740.00', '100000.00', '0.2700', 'ANEXO_V'],
+    ['120000.00', '100000.00', '1.2000', 'ANEXO_III'],
+  ])(
+    'trunca o Fator R de %s / %s como o PGDAS-D',
+    (folha, receita, fator, anexo) => {
+      expect(service.calcularFatorR(folha, receita)).toBe(fator);
+      expect(
+        service.resolverAnexoFatorR(service.calcularFatorR(folha, receita)),
+      ).toBe(anexo);
+    },
+  );
+
   it('aplica os casos especiais do Fator R e usa a receita do primeiro mês', () => {
     expect(service.calcularFatorR('0.00', '0.00')).toBe('0.0100');
     expect(service.calcularFatorR('100.00', '0.00')).toBe('0.2800');
@@ -82,6 +98,38 @@ describe('SimplesCalculadorService', () => {
     ).toBe('180000.00');
   });
 
+  it('anualiza sem arredondar a média mensal intermediária', () => {
+    expect(
+      service.calcularRbt12({
+        receitasAnteriores: [
+          '0.00',
+          '0.00',
+          '0.00',
+          '0.00',
+          '0.00',
+          '0.00',
+          '4460.95',
+        ],
+        mesesAnteriores: 7,
+      }).rbt12,
+    ).toBe('7647.34');
+  });
+
+  it.each([1, 2, 7, 11, 12, 13])(
+    'distingue receita real e anualizada com %i meses anteriores',
+    (meses) => {
+      const resultado = service.calcularRbt12({
+        receitasAnteriores: Array.from(
+          { length: Math.min(meses, 12) },
+          () => '1000.00',
+        ),
+        mesesAnteriores: meses,
+      });
+      expect(resultado.rbt12).toBe('12000.00');
+      expect(resultado.proporcional).toBe(meses < 12);
+    },
+  );
+
   it('deduz o ICMS da receita com ST', () => {
     const result = service.calcularItem({
       anexo: 'ANEXO_I',
@@ -95,6 +143,68 @@ describe('SimplesCalculadorService', () => {
     expect(result.tributosPartilhados.icms).toBe('0.00');
     expect(result.deducoes).toContain('ICMS');
     expect(result.valorDevido).toBe('351.12');
+  });
+
+  it('reduz somente o ICMS, sem alterar a receita nem os tributos federais', () => {
+    const input = {
+      anexo: 'ANEXO_I' as const,
+      receita: '10000.00',
+      segregacao: 'TRIBUTACAO_INTEGRAL' as const,
+      faixa,
+      rbt12: '300000.00',
+      excedeuSublimite: false,
+    };
+    const integral = service.calcularItem(input);
+    const reduzido = service.calcularItem({
+      ...input,
+      percentualReducaoIcms: '0.5000',
+    });
+    const isento = service.calcularItem({
+      ...input,
+      percentualReducaoIcms: '1.0000',
+    });
+    expect(reduzido.tributosPartilhados).toEqual({
+      ...integral.tributosPartilhados,
+      icms: '90.44',
+    });
+    expect(reduzido.valorDevido).toBe('441.56');
+    expect(isento.tributosPartilhados.icms).toBe('0.00');
+    expect(isento.valorDevido).toBe('351.12');
+    expect(isento.receitaBrutaAtividade).toBe('10000.00');
+    expect(isento.beneficioIcms?.valorDispensado).toBe('180.88');
+    expect(() =>
+      service.calcularItem({ ...input, percentualReducaoIcms: '1.0001' }),
+    ).toThrow('superar 100%');
+    expect(
+      service.calcularItem({
+        ...input,
+        segregacao: 'ICMS_ST',
+        percentualReducaoIcms: '1.0000',
+      }).beneficioIcms?.valorDispensado,
+    ).toBe('0.00');
+  });
+
+  it('aplica a redução antes do arredondamento do ICMS a centavos', () => {
+    const anexo = SIMPLES_ANEXOS_SEED.find((item) => item.anexo === 'ANEXO_I')!
+      .faixas[0];
+    const result = service.calcularItem({
+      anexo: 'ANEXO_I',
+      receita: '0.45',
+      rbt12: '1000.00',
+      segregacao: 'TRIBUTACAO_INTEGRAL',
+      excedeuSublimite: false,
+      percentualReducaoIcms: '0.5000',
+      faixa: {
+        faixa: 1,
+        rbt12De: '0.00',
+        rbt12Ate: '180000.00',
+        aliquotaNominal: anexo.aliquota,
+        parcelaDeduzir: anexo.deducao,
+        partilha: anexo.partilha,
+      },
+    });
+    expect(result.tributosPartilhados.icms).toBe('0.00');
+    expect(result.beneficioIcms?.valorSemBeneficio).toBe('0.01');
   });
 
   it('reproduz a declaração PGDAS-D de 09/2026 com partilha em centavos', () => {

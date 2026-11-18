@@ -26,7 +26,27 @@ O motor 9 guarda na memória da apuração a receita de CT-e por município e UF
 
 Para atualizar um banco de produção que já contém apurações, siga [o procedimento de reaplicação](./reaplicar-simples-producao.md). A nova versão normativa R2 preserva as tabelas históricas e atualiza os sublimites de 2025/2026 para os valores oficiais. Recalcule os rascunhos anteriores ao motor 9 e confira a data de abertura do CNPJ e o histórico de receitas antes do fechamento. Tabelas normativas de anos futuros devem ser cadastradas depois da publicação oficial do CGSN.
 
+## Fator R em início de atividade (motor 12)
+
+A revisão de novembro/2026 separou a receita real dos meses anteriores (base do Fator R) da receita anualizada (base das faixas e da alíquota efetiva). A razão do Fator R passa a ser truncada em duas casas decimais, conforme o PGDAS-D, mantendo quatro posições apenas no formato de armazenamento. A anualização arredonda somente o resultado final. No mês de abertura, a folha manual sobrescreve a automática, inclusive quando o valor informado é zero. A memória salva as bases efetivas e o período usado; tela e PDF mostram a distinção.
+
+O caso de referência de outubro/2026 passou de R$ 1.354,95 para R$ 527,91, reproduzindo cada tributo da declaração fornecida. Consulte a [revisão completa do fluxo e suas limitações](./simples-auditoria-2026-11-18.md). Esta mudança não exige migration nem alteração das tabelas normativas. Após publicar API e frontend, recalcule os rascunhos; os anteriores ao motor 12 não podem ser fechados. Apurações fechadas afetadas precisam de revisão e eventual retificação, incluindo os períodos posteriores cujo histórico tenha mudado.
+
+## Devolução própria sem referência e com CFOP divergente (motor 13)
+
+Na conferência de 10/2026 da A. M. S. INDUSTRIA E COMERCIO DE ARTEFATOS DE PAPEIS LTDA, as NF-e 2543 (R$ 3.760,00) e 2557 (R$ 375,00) estavam escrituradas com CFOP 1202. O motor identificava R$ 4.135,00 em devoluções, mas abatia apenas R$ 3.760,00: a nota 2543 tinha venda referenciada no Anexo II; a 2557 não tinha referência no XML e recebia o Anexo I pelo CFOP. Como não havia receita de comércio no mês, os R$ 375,00 ficavam como saldo de devolução em vez de reduzir a receita industrial.
+
+O motor 13 preserva a prioridade da NF-e original referenciada. Para NF-e de entrada emitida pela própria empresa, sem referência e com tributação própria identificável, consulta as saídas autorizadas do mesmo emitente, código de produto e mês. Quando há uma única segregação, usa essa evidência para classificar o abatimento. Códigos de produto de terceiros não são comparados com o catálogo próprio. Mais de uma segregação para o produto gera pendência de revisão. Vendas de meses seguintes não alteram a classificação de um mês anterior. Sem evidência por produto, permanece o tratamento pelo CFOP próprio já existente.
+
+A memória `devolucoesClassificadas` registra nota, produto, valor, grupo e origem (`NFE_REFERENCIADA`, `PRODUTO_PROPRIO_MES` ou `CFOP_NFE_PROPRIA`). O PDF informa os totais identificados, abatidos e o saldo para os meses seguintes, inclusive quando há diferença legítima entre eles. O carregamento de saídas inclui emitente e código de produto; a comparação é indexada em memória por emitente/mês/produto.
+
+Na prévia calculada em transação de banco **somente leitura**, os quatro itens das duas notas foram classificados no Anexo II: abatimento R$ 4.135,00; saldo zero; receita líquida R$ 49.994,00; RBT12 R$ 726.665,09; DAS calculado R$ 4.051,34. O rascunho salvo apresentava receita de R$ 50.369,00 e DAS de R$ 4.081,74. A validação não gravou nova apuração nem alterou documentos ou CFOPs.
+
+Esta mudança exige publicação da API e recálculo dos rascunhos anteriores ao motor 13. Não exige migration ou seed. Mantém-se o transporte de saldo quando a devolução exceder a receita da segregação correspondente, conforme o [art. 17 da Resolução CGSN 140/2018](https://normas.receita.fazenda.gov.br/sijut2consulta/link.action?idAto=92278).
+
 ## Referências oficiais
+
+A partir do motor 14, benefícios gerais estaduais do ICMS no DAS podem ser parametrizados por UF, receita, atividade e vigência. Consulte o [cadastro de benefícios e isenções](./simples-beneficios-icms.md) para a regra inicial da Bahia, alcance e procedimento de publicação.
 
 - [Perguntas e Respostas do Simples Nacional, item 3.15](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoSN.pdf)
 - [Resolução CGSN nº 140/2018, arts. 2º, 17 e 26](https://normas.receita.fazenda.gov.br/sijut2consulta/link.action?idAto=92278)

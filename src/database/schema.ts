@@ -52,6 +52,7 @@ export * from './schemas/fiscal_simples_tabelas';
 export * from './schemas/fiscal_simples_anexos';
 export * from './schemas/fiscal_simples_faixas';
 export * from './schemas/fiscal_simples_sublimites';
+export * from './schemas/fiscal_simples_beneficios';
 export * from './schemas/fiscal_simples_apuracoes';
 export * from './schemas/fiscal_simples_apuracao_itens';
 export * from './schemas/fiscal_simples_historicos_mensais';

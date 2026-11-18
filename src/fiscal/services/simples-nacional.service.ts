@@ -19,6 +19,7 @@ import {
   fiscalSimplesFaixas,
   fiscalSimplesHistoricosMensais,
   fiscalSimplesSublimites,
+  fiscalSimplesBeneficios,
   fiscalSimplesTabelas,
   folhasPagamento,
 } from '../../database/schema';
@@ -46,13 +47,18 @@ import {
   valorReceitaSimples,
 } from './simples-receita';
 import { resolverSublimite } from './simples-sublimite';
+import {
+  assinaturaBeneficios,
+  resolverBeneficioSimples,
+} from './simples-beneficios';
+import type { BeneficioIcmsAplicado } from './simples-beneficios';
 import type {
   SalvarHistoricoSimplesDto,
   SalvarSimplesTabelaDto,
   SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@11';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@14';
 const UFS_SIMPLES = new Set(
   'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
     ' ',
@@ -70,6 +76,13 @@ interface ReceitaAgrupada {
 
 type AbatimentosPorMes = Map<string, { abatimentos: Map<string, bigint> }>;
 type DocumentoDevolucaoPendente = { numero: string; competencia: string };
+type ClassificacaoDevolucao = {
+  numero: string;
+  codigoProduto: string;
+  valor: string;
+  grupo: string;
+  origem: 'NFE_REFERENCIADA' | 'PRODUTO_PROPRIO_MES' | 'CFOP_NFE_PROPRIA';
+};
 
 @Injectable()
 export class SimplesNacionalService {
@@ -320,7 +333,7 @@ export class SimplesNacionalService {
   async apurar(input: { clienteId: string; competencia: string }) {
     const calculo = await this.calcular(input.clienteId, input.competencia);
     const competenciaDate = this.competencia(input.competencia);
-    return this.database.db.transaction(
+    const apuracao = await this.database.db.transaction(
       async (tx) => {
         await tx.execute(
           sql`SELECT pg_advisory_xact_lock(hashtextextended(${`simples:${input.clienteId}:${competenciaDate}`}, 0))`,
@@ -387,10 +400,12 @@ export class SimplesNacionalService {
             })),
           );
         }
-        return this.carregarResposta(apuracao);
+        return apuracao;
       },
       { isolationLevel: 'repeatable read' },
     );
+    // Carrega os itens somente após o commit, na conexão usada pela resposta.
+    return this.carregarResposta(apuracao);
   }
 
   async fechar(input: {
@@ -431,6 +446,17 @@ export class SimplesNacionalService {
       });
     }
     const clienteAtual = await this.buscarClienteSimples(input.clienteId);
+    const beneficiosAtuais = await this.carregarBeneficios(clienteAtual.uf);
+    if (
+      apuracaoInicial.memoriaCalculo.beneficiosAssinatura !==
+      assinaturaBeneficios(beneficiosAtuais)
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'APURACAO_SIMPLES_BENEFICIOS_ALTERADOS',
+        message:
+          'Os benefícios de ICMS foram alterados. Recalcule a apuração antes de fechar.',
+      });
+    }
     const regimeCompetenciaAtual = regimeCompetenciaParaApuracao(
       input.competencia,
       clienteAtual.regimeCompetencia,
@@ -628,7 +654,11 @@ export class SimplesNacionalService {
             competenciaDate,
             false,
           ),
-      this.carregarFolha12m(clienteId, competenciaDate),
+      this.carregarFolha12m(
+        clienteId,
+        competenciaDate,
+        cliente.dataAberturaCnpj,
+      ),
       this.carregarSublimite(cliente.uf, competencia.slice(0, 4)),
       this.carregarAnexosCalculo(tabela.id),
       this.auditarReceitasPeriodo(
@@ -638,11 +668,7 @@ export class SimplesNacionalService {
         competencia,
         regimeCompetencia,
       ),
-      this.carregarFolhasAutomaticasPeriodo(
-        clienteId,
-        competenciaDate,
-        competenciaDate,
-      ),
+      this.carregarFolhaPeriodo(clienteId, competenciaDate, competenciaDate),
     ]);
     const receitaMesCompetencia =
       receitasMensais.rows.find((row) => row.mes === competencia)?.receita ??
@@ -654,8 +680,11 @@ export class SimplesNacionalService {
     const receitasPorMes = new Map(
       receitasMensais.rows.map((row) => [row.mes, row.receita]),
     );
-    const anteriores = mesesAnteriores(competencia, 12).map(
-      (mes) => receitasPorMes.get(mes) ?? '0.00',
+    const mesAbertura = cliente.dataAberturaCnpj?.slice(0, 7);
+    const anteriores = mesesAnteriores(competencia, 12).map((mes) =>
+      mesAbertura && mes < mesAbertura
+        ? '0.00'
+        : (receitasPorMes.get(mes) ?? '0.00'),
     );
     const quantidadeMesesAnteriores = Math.max(
       0,
@@ -671,15 +700,26 @@ export class SimplesNacionalService {
       mesesAnteriores: quantidadeMesesAnteriores,
       receitaPrimeiroMes: receitaMesCompetencia,
     });
+    // A anualização define faixa/alíquota. O Fator R usa a receita real
+    // dos mesmos meses da folha, inclusive nos primeiros 12 meses de atividade.
+    const receitaBruta12mReal = fromScaledInteger(
+      anteriores.reduce((total, valor) => total + toScaledInteger(valor), 0n),
+    );
+    const receitaBaseFatorR =
+      quantidadeMesesAnteriores === 0
+        ? receitaMesCompetencia
+        : receitaBruta12mReal;
+    const folhaBaseFatorR =
+      quantidadeMesesAnteriores === 0 ? folhaMes.valor : folha.valor;
     const fatorR = receitasAtividade.grupos.some(
       (grupo) => grupo.anexo === 'ANEXO_V',
     )
       ? this.calculador.calcularFatorR(
           folha.valor,
-          rbt.rbt12,
+          receitaBruta12mReal,
           quantidadeMesesAnteriores === 0
             ? {
-                folhaMes: folhaMes[0]?.valor ?? '0.00',
+                folhaMes: folhaMes.valor,
                 receitaMes: receitaMesCompetencia,
               }
             : undefined,
@@ -710,6 +750,8 @@ export class SimplesNacionalService {
       receitaAnoCorrenteAtePa: rbaAtePa,
     });
     const excedeuSublimite = situacaoSublimite.impedido;
+    const beneficios = await this.carregarBeneficios(cliente.uf);
+    const beneficiosAplicados: BeneficioIcmsAplicado[] = [];
     const calculados: SimplesItemCalculoResult[] = [];
     for (const receita of receitasAtividade.grupos) {
       const anexo =
@@ -733,18 +775,53 @@ export class SimplesNacionalService {
       const faixaIcmsTransporte = faixasIcmsTransporte
         ? this.calculador.selecionarFaixa(rbt.rbt12, faixasIcmsTransporte)
         : undefined;
-      calculados.push(
-        this.calculador.calcularItem({
-          anexo,
-          receita: fromScaledInteger(receita.receita),
-          segregacao: receita.segregacao,
-          faixa,
-          rbt12: rbt.rbt12,
-          excedeuSublimite,
-          deducoesAdicionais: receita.deducoes,
-          faixaIcmsTransporte,
-        }),
-      );
+      const atividadeBeneficio =
+        anexo === 'ANEXO_I' || anexo === 'ANEXO_II' ? anexo : null;
+      const beneficio =
+        atividadeBeneficio &&
+        !excedeuSublimite &&
+        receita.segregacao !== 'ICMS_ST' &&
+        !receita.deducoes.includes('ICMS')
+          ? resolverBeneficioSimples(
+              beneficios,
+              {
+                uf: cliente.uf!,
+                competencia,
+                rbt12Faixa: rbt.rbt12,
+                rbt12Real: receitaBruta12mReal,
+                rbaAtual: rbaAtePa,
+                rbaAnterior,
+                dataAberturaCnpj: cliente.dataAberturaCnpj ?? null,
+                rbt12Proporcional: rbt.proporcional,
+              },
+              atividadeBeneficio,
+            )
+          : null;
+      const resultado = this.calculador.calcularItem({
+        anexo,
+        receita: fromScaledInteger(receita.receita),
+        segregacao: receita.segregacao,
+        faixa,
+        rbt12: rbt.rbt12,
+        excedeuSublimite,
+        deducoesAdicionais: receita.deducoes,
+        faixaIcmsTransporte,
+        percentualReducaoIcms: beneficio?.percentualReducao,
+      });
+      if (beneficio && resultado.beneficioIcms && atividadeBeneficio) {
+        beneficiosAplicados.push({
+          ...beneficio,
+          atividade: atividadeBeneficio,
+          receitaBeneficiada: resultado.receitaBrutaAtividade,
+          ...resultado.beneficioIcms,
+        });
+        if (
+          beneficio.tipo === 'ISENCAO' &&
+          resultado.segregacao === 'TRIBUTACAO_INTEGRAL'
+        )
+          resultado.segregacao = 'ICMS_ISENTO';
+      }
+      calculados.push(resultado);
     }
     const valorTotalDas = fromScaledInteger(
       calculados.reduce(
@@ -833,7 +910,7 @@ export class SimplesNacionalService {
         receita: regimeCompetencia
           ? 'ITENS_DE_VENDA_SERVICO_E_CTE_POR_COMPETENCIA'
           : 'ITENS_DE_VENDA_SERVICO_E_CTE_NFSE_POR_EMISSAO',
-        folha: folha.origem,
+        folha: quantidadeMesesAnteriores === 0 ? folhaMes.origem : folha.origem,
         sublimite: `${sublimite.origem}:${situacaoSublimite.motivo}`,
         classificacaoAnexo: 'CFOP_CNAE_LC116_FATOR_R_TRANSPORTE_CTE',
       },
@@ -843,16 +920,26 @@ export class SimplesNacionalService {
         receitaMesCompetencia,
         receitaMesDocumentos,
         receitaClassificada,
+        beneficiosAssinatura: assinaturaBeneficios(beneficios),
+        beneficiosIcms: beneficiosAplicados,
+        receitaBruta12mReal,
+        receitaBaseFatorR: fatorR !== null ? receitaBaseFatorR : null,
+        folhaBaseFatorR: fatorR !== null ? folhaBaseFatorR : null,
+        periodoBaseFatorR:
+          quantidadeMesesAnteriores === 0 ? 'MES_ABERTURA' : 'MESES_ANTERIORES',
+        mesesAnterioresAtividade: quantidadeMesesAnteriores,
         devolucoesDoMes: fromScaledInteger(
           devolucoes.ocorrencias.get(competencia)?.valor ?? 0n,
         ),
         devolucoesAbatidas: fromScaledInteger(devolucoesAbatidas),
+        devolucoesClassificadas:
+          devolucoes.ocorrencias.get(competencia)?.classificacoes ?? [],
         saldoDevolucoesCompetencia: fromScaledInteger(
           devolucoesMes?.saldo ?? 0n,
         ),
         folhaMesPrimeiroPeriodo:
           fatorR !== null && quantidadeMesesAnteriores === 0
-            ? (folhaMes[0]?.valor ?? '0.00')
+            ? folhaMes.valor
             : null,
         bonificacoesExcluidas: auditoriaReceitas.bonificacoesExcluidas,
         operacoesSemReceitaExcluidas:
@@ -1239,7 +1326,11 @@ export class SimplesNacionalService {
 
     const ocorrencias = new Map<
       string,
-      { valor: bigint; pendencias: Map<string, DocumentoDevolucaoPendente> }
+      {
+        valor: bigint;
+        pendencias: Map<string, DocumentoDevolucaoPendente>;
+        classificacoes: ClassificacaoDevolucao[];
+      }
     >();
     if (!entradas.length) {
       const porMes: ReturnType<typeof distribuirDevolucoesSimples> = new Map();
@@ -1278,6 +1369,29 @@ export class SimplesNacionalService {
       itens.push(original);
       originaisPorChave.set(original.chave, itens);
     }
+    const gruposVendaPorProduto = new Map<string, Set<string>>();
+    for (const venda of vendas) {
+      if (
+        !venda.codigoProduto ||
+        venda.indTotal !== '1' ||
+        valorReceitaSimples(venda) <= 0n
+      )
+        continue;
+      const grupo = chaveVendaDevolvida(
+        venda.tipoDocumento,
+        venda.cfopXml ?? venda.cfop,
+        venda,
+      );
+      if (!grupo) continue;
+      const chave = JSON.stringify([
+        venda.emitente,
+        venda.mes,
+        venda.codigoProduto,
+      ]);
+      const grupos = gruposVendaPorProduto.get(chave) ?? new Set<string>();
+      grupos.add(grupo);
+      gruposVendaPorProduto.set(chave, grupos);
+    }
     const devolucoes = entradas.flatMap((entrada, indice) => {
       const valor = valorReceitaSimples(entrada);
       if (valor === 0n) return [];
@@ -1312,11 +1426,14 @@ export class SimplesNacionalService {
       const ocorrencia = ocorrencias.get(mes) ?? {
         valor: 0n,
         pendencias: new Map<string, DocumentoDevolucaoPendente>(),
+        classificacoes: [],
       };
       ocorrencias.set(mes, ocorrencia);
       if (valor > 0n) ocorrencia.valor += valor;
       const anexo = /^[12](201|410)$/.test(cfop) ? 'ANEXO_II' : 'ANEXO_I';
       let grupo: string | null = null;
+      let origem: ClassificacaoDevolucao['origem'] = 'NFE_REFERENCIADA';
+      let produtoProprioAmbiguo = false;
       if (referenciasLocalizadas) {
         const mesmoProduto =
           entrada.emitente === entrada.cnpjCliente
@@ -1351,6 +1468,24 @@ export class SimplesNacionalService {
         // ainda não está no acervo. A NF-e do cliente usa códigos dele.
         const { st, monofasico } = segregacaoMercadoriaSimples(cfop, entrada);
         grupo = chaveMercadoriaSimples(anexo, st, monofasico);
+        origem = 'CFOP_NFE_PROPRIA';
+        if (!referencia.length && entrada.tpNfXml === '0') {
+          // O código de produto é comparável somente nas NF-e da própria
+          // empresa. Um CFOP 1202 pode estar escriturado em devolução de
+          // produto vendido como produção própria (5101/6101). Preserva a
+          // segregação comprovada pelas saídas do mesmo produto no mês.
+          const gruposProduto =
+            gruposVendaPorProduto.get(
+              JSON.stringify([entrada.cnpjCliente, mes, entrada.codigoProduto]),
+            ) ?? new Set<string>();
+          if (gruposProduto.size === 1) {
+            grupo = [...gruposProduto][0];
+            origem = 'PRODUTO_PROPRIO_MES';
+          } else if (gruposProduto.size > 1) {
+            grupo = null;
+            produtoProprioAmbiguo = true;
+          }
+        }
       }
       let motivo: string | null = null;
       if (valor < 0n) {
@@ -1360,11 +1495,13 @@ export class SimplesNacionalService {
       } else if (!/^[12](201|202|410|411|66[0-2])$/.test(cfop)) {
         motivo = 'Confira o CFOP escriturado da devolução.';
       } else if (!grupo) {
-        motivo = !referencia.length
-          ? 'O XML não informa a NF-e original. Confira a referência com o emitente.'
-          : !referenciasLocalizadas
-            ? 'A NF-e original não está no acervo da empresa. Importe o XML referenciado e recalcule.'
-            : 'A referência não identifica uma venda com segregação única. Confira os itens e a operação da NF-e original.';
+        motivo = produtoProprioAmbiguo
+          ? 'O produto da NF-e própria possui vendas em mais de uma segregação no mês. Confira a NF-e original antes de definir o abatimento.'
+          : !referencia.length
+            ? 'O XML não informa a NF-e original. Confira a referência com o emitente.'
+            : !referenciasLocalizadas
+              ? 'A NF-e original não está no acervo da empresa. Importe o XML referenciado e recalcule.'
+              : 'A referência não identifica uma venda com segregação única. Confira os itens e a operação da NF-e original.';
       }
       if (motivo) {
         ocorrencia.pendencias.set(
@@ -1373,7 +1510,15 @@ export class SimplesNacionalService {
         );
         return [];
       }
-      return grupo ? [{ mes, grupo, valor }] : [];
+      if (!grupo) return [];
+      ocorrencia.classificacoes.push({
+        numero,
+        codigoProduto: entrada.codigoProduto,
+        valor: fromScaledInteger(valor),
+        grupo,
+        origem,
+      });
+      return [{ mes, grupo, valor }];
     });
     const vendasSegregadas = vendas.flatMap((item) => {
       if (item.indTotal !== '1') return [];
@@ -1394,10 +1539,7 @@ export class SimplesNacionalService {
     return { porMes, ocorrencias };
   }
 
-  private async carregarNfesReferenciadas(
-    clienteId: string,
-    chaves: string[],
-  ) {
+  private async carregarNfesReferenciadas(clienteId: string, chaves: string[]) {
     if (!chaves.length) return [];
     return this.database.db
       .select({
@@ -1580,6 +1722,8 @@ export class SimplesNacionalService {
       .select({
         documentoId: documentosFiscais.id,
         numeroDocumento: documentosFiscais.numeroDocumento,
+        emitente: documentosFiscais.emitenteCnpjCpf,
+        codigoProduto: documentosFiscaisItens.codigoProduto,
         mes: sql<string>`to_char(${dataReceita}, 'YYYY-MM')`,
         documentoTotal: documentosFiscais.valorTotal,
         tipoDocumento: documentosFiscais.tipoDocumento,
@@ -1891,10 +2035,23 @@ export class SimplesNacionalService {
     };
   }
 
-  private async carregarFolha12m(clienteId: string, competencia: string) {
+  private async carregarFolha12m(
+    clienteId: string,
+    competencia: string,
+    dataAberturaCnpj?: string | null,
+  ) {
     const meses = mesesAnteriores(competencia.slice(0, 7), 12);
-    const inicio = `${meses[0]}-01`;
+    const mesAbertura = dataAberturaCnpj?.slice(0, 7);
+    const inicio = `${mesAbertura && mesAbertura > meses[0] ? mesAbertura : meses[0]}-01`;
     const fim = `${meses[meses.length - 1]}-01`;
+    return this.carregarFolhaPeriodo(clienteId, inicio, fim);
+  }
+
+  private async carregarFolhaPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+  ) {
     const [automaticas, manuais] = await Promise.all([
       this.carregarFolhasAutomaticasPeriodo(clienteId, inicio, fim),
       this.database.db
@@ -1994,6 +2151,20 @@ export class SimplesNacionalService {
       )
       .groupBy(
         sql`to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY')`,
+      );
+  }
+
+  private async carregarBeneficios(uf: string | null) {
+    if (!uf) return [];
+    return this.database.db
+      .select()
+      .from(fiscalSimplesBeneficios)
+      .where(
+        and(
+          eq(fiscalSimplesBeneficios.uf, uf),
+          eq(fiscalSimplesBeneficios.atual, true),
+          eq(fiscalSimplesBeneficios.ativo, true),
+        ),
       );
   }
 
