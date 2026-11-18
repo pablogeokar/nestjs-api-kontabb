@@ -44,6 +44,8 @@ describe('SimplesNacionalRelatorioService', () => {
           receitaMesCompetencia: '20000.00',
           receitaMesDocumentos: '20000.00',
           receitaClassificada: '20000.00',
+          beneficiosAssinatura: '',
+          beneficiosIcms: [],
           receitaBruta12mReal: '240000.00',
           receitaBaseFatorR: '240000.00',
           folhaBaseFatorR: '72000.00',

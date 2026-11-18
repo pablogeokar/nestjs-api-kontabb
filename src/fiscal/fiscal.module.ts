@@ -74,12 +74,15 @@ import { SimplesNacionalService } from './services/simples-nacional.service';
 import { SimplesNacionalRelatorioService } from './services/simples-nacional-relatorio.service';
 import { ImportacaoChavesFiscalService } from './services/importacao-chaves-fiscal.service';
 import { FiscalIssLivroService } from './services/fiscal-iss-livro.service';
+import { SimplesBeneficiosController } from './controllers/simples-beneficios.controller';
+import { SimplesBeneficiosService } from './services/simples-beneficios.service';
 import { RecuperacaoPortalController } from './controllers/recuperacao-portal.controller';
 import { RecuperacaoPortalService } from './services/recuperacao-portal.service';
 
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule],
   controllers: [
+    SimplesBeneficiosController,
     RecuperacaoPortalController,
     AdminFiscalController,
     ClienteFiscalController,
@@ -100,6 +103,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     ClienteSimplesNacionalController,
   ],
   providers: [
+    SimplesBeneficiosService,
     RecuperacaoPortalService,
     ClassificacaoDestinacaoService,
     CertificadoService,

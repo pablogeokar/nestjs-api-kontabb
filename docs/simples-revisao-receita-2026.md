@@ -46,6 +46,8 @@ Esta mudança exige publicação da API e recálculo dos rascunhos anteriores ao
 
 ## Referências oficiais
 
+A partir do motor 14, benefícios gerais estaduais do ICMS no DAS podem ser parametrizados por UF, receita, atividade e vigência. Consulte o [cadastro de benefícios e isenções](./simples-beneficios-icms.md) para a regra inicial da Bahia, alcance e procedimento de publicação.
+
 - [Perguntas e Respostas do Simples Nacional, item 3.15](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/PerguntaoSN.pdf)
 - [Resolução CGSN nº 140/2018, arts. 2º, 17 e 26](https://normas.receita.fazenda.gov.br/sijut2consulta/link.action?idAto=92278)
 - [Manual do PGDAS-D](https://www8.receita.fazenda.gov.br/SimplesNacional/Arquivos/manual/MANUAL_PGDAS-D_2018_V4.pdf)

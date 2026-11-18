@@ -19,6 +19,7 @@ import {
   fiscalSimplesFaixas,
   fiscalSimplesHistoricosMensais,
   fiscalSimplesSublimites,
+  fiscalSimplesBeneficios,
   fiscalSimplesTabelas,
   folhasPagamento,
 } from '../../database/schema';
@@ -46,13 +47,18 @@ import {
   valorReceitaSimples,
 } from './simples-receita';
 import { resolverSublimite } from './simples-sublimite';
+import {
+  assinaturaBeneficios,
+  resolverBeneficioSimples,
+} from './simples-beneficios';
+import type { BeneficioIcmsAplicado } from './simples-beneficios';
 import type {
   SalvarHistoricoSimplesDto,
   SalvarSimplesTabelaDto,
   SalvarSublimiteSimplesDto,
 } from '../dto/simples-nacional.dto';
 
-const SIMPLES_MOTOR_VERSAO = 'simples-nacional@13';
+const SIMPLES_MOTOR_VERSAO = 'simples-nacional@14';
 const UFS_SIMPLES = new Set(
   'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(
     ' ',
@@ -327,7 +333,7 @@ export class SimplesNacionalService {
   async apurar(input: { clienteId: string; competencia: string }) {
     const calculo = await this.calcular(input.clienteId, input.competencia);
     const competenciaDate = this.competencia(input.competencia);
-    return this.database.db.transaction(
+    const apuracao = await this.database.db.transaction(
       async (tx) => {
         await tx.execute(
           sql`SELECT pg_advisory_xact_lock(hashtextextended(${`simples:${input.clienteId}:${competenciaDate}`}, 0))`,
@@ -394,10 +400,12 @@ export class SimplesNacionalService {
             })),
           );
         }
-        return this.carregarResposta(apuracao);
+        return apuracao;
       },
       { isolationLevel: 'repeatable read' },
     );
+    // Carrega os itens somente após o commit, na conexão usada pela resposta.
+    return this.carregarResposta(apuracao);
   }
 
   async fechar(input: {
@@ -438,6 +446,17 @@ export class SimplesNacionalService {
       });
     }
     const clienteAtual = await this.buscarClienteSimples(input.clienteId);
+    const beneficiosAtuais = await this.carregarBeneficios(clienteAtual.uf);
+    if (
+      apuracaoInicial.memoriaCalculo.beneficiosAssinatura !==
+      assinaturaBeneficios(beneficiosAtuais)
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'APURACAO_SIMPLES_BENEFICIOS_ALTERADOS',
+        message:
+          'Os benefícios de ICMS foram alterados. Recalcule a apuração antes de fechar.',
+      });
+    }
     const regimeCompetenciaAtual = regimeCompetenciaParaApuracao(
       input.competencia,
       clienteAtual.regimeCompetencia,
@@ -731,6 +750,8 @@ export class SimplesNacionalService {
       receitaAnoCorrenteAtePa: rbaAtePa,
     });
     const excedeuSublimite = situacaoSublimite.impedido;
+    const beneficios = await this.carregarBeneficios(cliente.uf);
+    const beneficiosAplicados: BeneficioIcmsAplicado[] = [];
     const calculados: SimplesItemCalculoResult[] = [];
     for (const receita of receitasAtividade.grupos) {
       const anexo =
@@ -754,18 +775,53 @@ export class SimplesNacionalService {
       const faixaIcmsTransporte = faixasIcmsTransporte
         ? this.calculador.selecionarFaixa(rbt.rbt12, faixasIcmsTransporte)
         : undefined;
-      calculados.push(
-        this.calculador.calcularItem({
-          anexo,
-          receita: fromScaledInteger(receita.receita),
-          segregacao: receita.segregacao,
-          faixa,
-          rbt12: rbt.rbt12,
-          excedeuSublimite,
-          deducoesAdicionais: receita.deducoes,
-          faixaIcmsTransporte,
-        }),
-      );
+      const atividadeBeneficio =
+        anexo === 'ANEXO_I' || anexo === 'ANEXO_II' ? anexo : null;
+      const beneficio =
+        atividadeBeneficio &&
+        !excedeuSublimite &&
+        receita.segregacao !== 'ICMS_ST' &&
+        !receita.deducoes.includes('ICMS')
+          ? resolverBeneficioSimples(
+              beneficios,
+              {
+                uf: cliente.uf!,
+                competencia,
+                rbt12Faixa: rbt.rbt12,
+                rbt12Real: receitaBruta12mReal,
+                rbaAtual: rbaAtePa,
+                rbaAnterior,
+                dataAberturaCnpj: cliente.dataAberturaCnpj ?? null,
+                rbt12Proporcional: rbt.proporcional,
+              },
+              atividadeBeneficio,
+            )
+          : null;
+      const resultado = this.calculador.calcularItem({
+        anexo,
+        receita: fromScaledInteger(receita.receita),
+        segregacao: receita.segregacao,
+        faixa,
+        rbt12: rbt.rbt12,
+        excedeuSublimite,
+        deducoesAdicionais: receita.deducoes,
+        faixaIcmsTransporte,
+        percentualReducaoIcms: beneficio?.percentualReducao,
+      });
+      if (beneficio && resultado.beneficioIcms && atividadeBeneficio) {
+        beneficiosAplicados.push({
+          ...beneficio,
+          atividade: atividadeBeneficio,
+          receitaBeneficiada: resultado.receitaBrutaAtividade,
+          ...resultado.beneficioIcms,
+        });
+        if (
+          beneficio.tipo === 'ISENCAO' &&
+          resultado.segregacao === 'TRIBUTACAO_INTEGRAL'
+        )
+          resultado.segregacao = 'ICMS_ISENTO';
+      }
+      calculados.push(resultado);
     }
     const valorTotalDas = fromScaledInteger(
       calculados.reduce(
@@ -864,6 +920,8 @@ export class SimplesNacionalService {
         receitaMesCompetencia,
         receitaMesDocumentos,
         receitaClassificada,
+        beneficiosAssinatura: assinaturaBeneficios(beneficios),
+        beneficiosIcms: beneficiosAplicados,
         receitaBruta12mReal,
         receitaBaseFatorR: fatorR !== null ? receitaBaseFatorR : null,
         folhaBaseFatorR: fatorR !== null ? folhaBaseFatorR : null,
@@ -2093,6 +2151,20 @@ export class SimplesNacionalService {
       )
       .groupBy(
         sql`to_date('01/' || ${folhasPagamento.competencia}, 'DD/MM/YYYY')`,
+      );
+  }
+
+  private async carregarBeneficios(uf: string | null) {
+    if (!uf) return [];
+    return this.database.db
+      .select()
+      .from(fiscalSimplesBeneficios)
+      .where(
+        and(
+          eq(fiscalSimplesBeneficios.uf, uf),
+          eq(fiscalSimplesBeneficios.atual, true),
+          eq(fiscalSimplesBeneficios.ativo, true),
+        ),
       );
   }
 

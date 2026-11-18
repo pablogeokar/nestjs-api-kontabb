@@ -41,6 +41,8 @@ export interface SimplesItemCalculoInput {
   deducoesAdicionais?: Array<'ICMS' | 'ISS' | 'PIS' | 'COFINS'>;
   /** CT-e de transporte intermunicipal/interestadual: ICMS do Anexo I substitui ISS do III. */
   faixaIcmsTransporte?: SimplesFaixaCalculo;
+  /** Fração do ICMS dispensada por benefício estadual (0 a 1). */
+  percentualReducaoIcms?: string;
 }
 
 export interface SimplesItemCalculoResult {
@@ -55,6 +57,11 @@ export interface SimplesItemCalculoResult {
   valorDevido: string;
   tributosPartilhados: Record<keyof SimplesPartilha, string>;
   deducoes: Array<'ICMS' | 'ISS' | 'PIS' | 'COFINS'>;
+  beneficioIcms?: {
+    percentualReducao: string;
+    valorSemBeneficio: string;
+    valorDispensado: string;
+  };
 }
 
 const RATE_SCALE = 4;
@@ -181,6 +188,12 @@ export class SimplesCalculadorService {
   }
 
   calcularItem(input: SimplesItemCalculoInput): SimplesItemCalculoResult {
+    const reducaoIcms = this.rate(
+      input.percentualReducaoIcms ?? '0',
+      'redução do ICMS',
+    );
+    if (reducaoIcms > RATE_FACTOR)
+      throw new BadRequestException('A redução do ICMS não pode superar 100%.');
     const receita = this.money(input.receita, 'receita da atividade');
     const rbt12 = this.money(input.rbt12, 'RBT12');
     const nominal = this.rate(input.faixa.aliquotaNominal, 'alíquota nominal');
@@ -220,24 +233,46 @@ export class SimplesCalculadorService {
           : 0n),
       0n,
     );
+    const partilhaIcmsReduzida =
+      removidos.has('icms') || input.faixaIcmsTransporte
+        ? 0n
+        : this.rate(input.faixa.partilha.icms, 'partilha ICMS') * reducaoIcms;
     let aliquotaAposDeducoes = this.divideRound(
-      numerador * (RATE_FACTOR - percentualRemovido),
-      denominador,
+      numerador *
+        ((RATE_FACTOR - percentualRemovido) * RATE_FACTOR -
+          partilhaIcmsReduzida),
+      denominador * RATE_FACTOR,
     );
+    let icmsSemBeneficio = 0n;
     const partilhaCentavos = Object.fromEntries(
       TRIBUTOS.map((tributo) => {
         const percentual = this.rate(
           input.faixa.partilha[tributo],
           `partilha ${tributo}`,
         );
+        if (
+          tributo === 'icms' &&
+          !removidos.has('icms') &&
+          !input.faixaIcmsTransporte
+        ) {
+          icmsSemBeneficio = this.divideRound(
+            receita * numerador * percentual,
+            denominador * RATE_FACTOR,
+          );
+        }
         return [
           tributo,
           removidos.has(tributo) ||
           (tributo === 'icms' && input.faixaIcmsTransporte)
             ? 0n
             : this.divideRound(
-                receita * numerador * percentual,
-                denominador * RATE_FACTOR,
+                receita *
+                  numerador *
+                  percentual *
+                  (tributo === 'icms'
+                    ? RATE_FACTOR - reducaoIcms
+                    : RATE_FACTOR),
+                denominador * RATE_FACTOR * RATE_FACTOR,
               ),
         ];
       }),
@@ -254,12 +289,19 @@ export class SimplesCalculadorService {
         'partilha ICMS do Anexo I',
       );
       partilhaCentavos.icms = this.divideRound(
+        receita *
+          aliquotaI.numerador *
+          percentualIcms *
+          (RATE_FACTOR - reducaoIcms),
+        aliquotaI.denominador * RATE_FACTOR * RATE_FACTOR,
+      );
+      icmsSemBeneficio = this.divideRound(
         receita * aliquotaI.numerador * percentualIcms,
         aliquotaI.denominador * RATE_FACTOR,
       );
       aliquotaAposDeducoes += this.divideRound(
-        aliquotaI.numerador * percentualIcms,
-        aliquotaI.denominador,
+        aliquotaI.numerador * percentualIcms * (RATE_FACTOR - reducaoIcms),
+        aliquotaI.denominador * RATE_FACTOR,
       );
     }
     // O PGDAS-D soma os débitos apurados por tributo após arredondá-los a
@@ -294,11 +336,24 @@ export class SimplesCalculadorService {
         ]),
       ) as Record<keyof SimplesPartilha, string>,
       deducoes: [
-        ...(removidos.has('icms') ? (['ICMS'] as const) : []),
+        ...(removidos.has('icms') || reducaoIcms === RATE_FACTOR
+          ? (['ICMS'] as const)
+          : []),
         ...(removidos.has('iss') ? (['ISS'] as const) : []),
         ...(removidos.has('pis') ? (['PIS'] as const) : []),
         ...(removidos.has('cofins') ? (['COFINS'] as const) : []),
       ],
+      ...(reducaoIcms > 0n
+        ? {
+            beneficioIcms: {
+              percentualReducao: fromScaledInteger(reducaoIcms, RATE_SCALE),
+              valorSemBeneficio: fromScaledInteger(icmsSemBeneficio),
+              valorDispensado: fromScaledInteger(
+                icmsSemBeneficio - partilhaCentavos.icms,
+              ),
+            },
+          }
+        : {}),
     };
   }
 

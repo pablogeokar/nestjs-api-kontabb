@@ -10,6 +10,7 @@ import {
 } from './simples-nacional.service';
 import { SimplesCalculadorService } from './simples-calculador.service';
 import { SIMPLES_ANEXOS_SEED } from '../../database/seeds/simples-nacional.seed';
+import { assinaturaBeneficios, BENEFICIO_BA_2026 } from './simples-beneficios';
 
 describe('utilitários do SimplesNacionalService', () => {
   it('gera os 12 meses anteriores em ordem cronológica e cruza o ano', () => {
@@ -90,6 +91,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     mock('carregarPrimeiraCompetenciaReceita', '2026-09');
     mock('carregarFolha12m', { valor: '2000.00', origem: 'HISTORICO_MANUAL' });
     mock('carregarFolhaPeriodo', { valor: '0.00', origem: 'FOLHA' });
+    mock('carregarBeneficios', []);
     mock('carregarSublimite', { valor: '3600000.00', origem: 'TABELA' });
     mock(
       'carregarAnexosCalculo',
@@ -201,6 +203,76 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     expect(apuracao.origens.folha).toContain('HISTORICO_MANUAL');
   });
 
+  it('aplica o benefício da BA apenas ao comércio e mantém o Fator R e o serviço', async () => {
+    const { service, mock } = prepararInicioAtividade();
+    mock('carregarBeneficios', [
+      { ...BENEFICIO_BA_2026, id: 'ba', versao: 1, atual: true },
+    ]);
+    const apuracao = await service['calcular']('cliente', '2026-10');
+    expect(apuracao).toMatchObject({
+      rbt12: '7647.34',
+      fator_r: '0.4400',
+      receita_bruta_mes: '8845.56',
+      valor_total_das: '526.01',
+    });
+    expect(apuracao.itens[0]).toMatchObject({
+      segregacao: 'ICMS_ISENTO',
+      valor_devido: '3.69',
+      tributos_partilhados: { icms: '0.00' },
+    });
+    expect(apuracao.itens[1].valor_devido).toBe('522.32');
+    expect(apuracao.memoria_calculo.beneficiosIcms[0]).toMatchObject({
+      codigo: BENEFICIO_BA_2026.codigo,
+      baseReceita: '7647.34',
+      receitaBeneficiada: '140.00',
+      valorDispensado: '1.90',
+    });
+  });
+
+  it('bloqueia o fechamento se o contador alterar as regras depois do rascunho', async () => {
+    const row = {
+      status: 'RASCUNHO',
+      memoriaCalculo: {
+        motorVersao: 'simples-nacional@14',
+        beneficiosAssinatura: assinaturaBeneficios([]),
+      },
+    };
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: () => Promise.resolve([row]) }),
+          }),
+        }),
+      }),
+    };
+    const service = new SimplesNacionalService(
+      { db } as never,
+      null!,
+      null!,
+      null!,
+    );
+    Object.defineProperty(service, 'buscarClienteSimples', {
+      value: jest.fn().mockResolvedValue({ uf: 'BA' }),
+    });
+    Object.defineProperty(service, 'carregarBeneficios', {
+      value: jest
+        .fn()
+        .mockResolvedValue([
+          { ...BENEFICIO_BA_2026, id: 'ba', versao: 1, atual: true },
+        ]),
+    });
+    await expect(
+      service.fechar({
+        clienteId: 'cliente',
+        competencia: '2026-10',
+        actorUserId: 'contador',
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'APURACAO_SIMPLES_BENEFICIOS_ALTERADOS' },
+    });
+  });
+
   it.each(['0.00', '2500.00'])(
     'sobrescreve a folha automática por valor manual %s, inclusive zero',
     async (valor) => {
@@ -295,7 +367,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       status: 'RASCUNHO',
       rbt12: '573927.24',
       memoriaCalculo: {
-        motorVersao: 'simples-nacional@13',
+        motorVersao: 'simples-nacional@14',
         impedidoIcmsIss: false,
       },
     } as never);
@@ -355,6 +427,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
     mock('carregarReceitasAtividade', { grupos: [], pendencias: [] });
     mock('carregarReceitasAutomaticasPeriodo', []);
     mock('carregarFolha12m', { valor: '0.00', origem: 'FOLHA' });
+    mock('carregarBeneficios', []);
     mock('carregarSublimite', { valor: '3600000.00', origem: 'TABELA' });
     mock('carregarAnexosCalculo', new Map());
     mock('auditarReceitasPeriodo', {
@@ -1153,6 +1226,7 @@ describe('integração da receita do Simples entre atividade e RBT12', () => {
       pendencias: [],
     });
     mock('carregarFolha12m', { valor: '0.00', origem: 'FOLHA' });
+    mock('carregarBeneficios', []);
     mock('carregarSublimite', { valor: '3600000.00', origem: 'TABELA' });
     mock(
       'carregarAnexosCalculo',

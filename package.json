@@ -32,6 +32,7 @@
     "db:seed:required": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/required.seed.ts",
     "db:seed:required:restore": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/required.seed.ts --restore",
     "db:seed:simples": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/simples-nacional.seed.ts",
+    "db:seed:beneficios": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register src/database/seeds/simples-beneficios.seed.ts",
     "db:simples:prever": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register scripts/reaplicar-simples-nacional.ts",
     "db:simples:reaplicar": "node --env-file=.env -r ts-node/register -r tsconfig-paths/register scripts/reaplicar-simples-nacional.ts --execute",
     "db:studio": "drizzle-kit studio"

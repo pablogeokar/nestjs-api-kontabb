@@ -179,6 +179,29 @@ export function renderSimplesNacionalPdf(input: {
   }
 
   ensureSpace(document, 72);
+  const beneficiosIcms: unknown[] = Array.isArray(
+    apuracao.memoria_calculo.beneficiosIcms,
+  )
+    ? apuracao.memoria_calculo.beneficiosIcms
+    : [];
+  for (const item of beneficiosIcms) {
+    if (!item || typeof item !== 'object') continue;
+    const beneficio = item as Record<string, unknown>;
+    if (
+      typeof beneficio.descricao !== 'string' ||
+      typeof beneficio.valorDispensado !== 'string' ||
+      typeof beneficio.baseReceita !== 'string' ||
+      typeof beneficio.receitaBeneficiada !== 'string' ||
+      typeof beneficio.percentualReducao !== 'string' ||
+      typeof beneficio.fundamentoLegal !== 'string'
+    )
+      continue;
+    infoBox(
+      document,
+      'Benefício estadual de ICMS no DAS',
+      `${beneficio.descricao}. Base para o limite: ${money(beneficio.baseReceita)}. Receita beneficiada: ${money(beneficio.receitaBeneficiada)}. Redução do ICMS: ${percent(beneficio.percentualReducao)}. Valor dispensado: ${money(beneficio.valorDispensado)}. ${beneficio.fundamentoLegal} No PGDAS-D: ICMS - ${beneficio.tipo === 'ISENCAO' ? 'Isenção' : 'Redução'}.`,
+    );
+  }
   let fatorRDetail = apuracao.fator_r
     ? `${percent(apuracao.fator_r)} — ${decimalCompare(apuracao.fator_r, '0.2800') >= 0 ? 'percentual igual ou superior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo III.' : 'percentual inferior a 28%; atividades sujeitas ao Fator R são enquadradas no Anexo V.'}`
     : 'Não se aplica às atividades classificadas nesta apuração.';

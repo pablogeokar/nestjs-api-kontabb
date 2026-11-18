@@ -145,6 +145,68 @@ describe('SimplesCalculadorService', () => {
     expect(result.valorDevido).toBe('351.12');
   });
 
+  it('reduz somente o ICMS, sem alterar a receita nem os tributos federais', () => {
+    const input = {
+      anexo: 'ANEXO_I' as const,
+      receita: '10000.00',
+      segregacao: 'TRIBUTACAO_INTEGRAL' as const,
+      faixa,
+      rbt12: '300000.00',
+      excedeuSublimite: false,
+    };
+    const integral = service.calcularItem(input);
+    const reduzido = service.calcularItem({
+      ...input,
+      percentualReducaoIcms: '0.5000',
+    });
+    const isento = service.calcularItem({
+      ...input,
+      percentualReducaoIcms: '1.0000',
+    });
+    expect(reduzido.tributosPartilhados).toEqual({
+      ...integral.tributosPartilhados,
+      icms: '90.44',
+    });
+    expect(reduzido.valorDevido).toBe('441.56');
+    expect(isento.tributosPartilhados.icms).toBe('0.00');
+    expect(isento.valorDevido).toBe('351.12');
+    expect(isento.receitaBrutaAtividade).toBe('10000.00');
+    expect(isento.beneficioIcms?.valorDispensado).toBe('180.88');
+    expect(() =>
+      service.calcularItem({ ...input, percentualReducaoIcms: '1.0001' }),
+    ).toThrow('superar 100%');
+    expect(
+      service.calcularItem({
+        ...input,
+        segregacao: 'ICMS_ST',
+        percentualReducaoIcms: '1.0000',
+      }).beneficioIcms?.valorDispensado,
+    ).toBe('0.00');
+  });
+
+  it('aplica a redução antes do arredondamento do ICMS a centavos', () => {
+    const anexo = SIMPLES_ANEXOS_SEED.find((item) => item.anexo === 'ANEXO_I')!
+      .faixas[0];
+    const result = service.calcularItem({
+      anexo: 'ANEXO_I',
+      receita: '0.45',
+      rbt12: '1000.00',
+      segregacao: 'TRIBUTACAO_INTEGRAL',
+      excedeuSublimite: false,
+      percentualReducaoIcms: '0.5000',
+      faixa: {
+        faixa: 1,
+        rbt12De: '0.00',
+        rbt12Ate: '180000.00',
+        aliquotaNominal: anexo.aliquota,
+        parcelaDeduzir: anexo.deducao,
+        partilha: anexo.partilha,
+      },
+    });
+    expect(result.tributosPartilhados.icms).toBe('0.00');
+    expect(result.beneficioIcms?.valorSemBeneficio).toBe('0.01');
+  });
+
   it('reproduz a declaração PGDAS-D de 09/2026 com partilha em centavos', () => {
     const result = service.calcularItem({
       anexo: 'ANEXO_II',

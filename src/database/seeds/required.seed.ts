@@ -3,6 +3,7 @@ import { seedCfops } from './cfops.seed';
 import { seedFinanceiroTipos } from './financeiro-tipos.seed';
 import { seedIcmsBa2026 } from './icms-ba-2026.seed';
 import { seedSimplesNacional } from './simples-nacional.seed';
+import { seedSimplesBeneficios } from './simples-beneficios.seed';
 
 export type RequiredSeedMode = 'novo' | 'restore';
 
@@ -14,8 +15,8 @@ export type RequiredSeedMode = 'novo' | 'restore';
  *
  * Modo `restore`: usado depois do restore data-only. O backup já contém
  * usuários, CFOPs, tipos financeiros e regras ICMS; regravá-los sobrescreveria
- * edições feitas em produção. Por isso só inicializa o Simples Nacional, que fica
- * fora do backup.
+ * edições feitas em produção. Inicializa os parâmetros normativos do Simples
+ * e a regra padrão de benefícios, preservando versões e personalizações existentes.
  *
  * Todos os seeds são idempotentes.
  */
@@ -25,11 +26,13 @@ export async function seedRequiredData(
 ) {
   if (mode === 'restore') {
     await seedSimplesNacional(databaseUrl);
+    await seedSimplesBeneficios(databaseUrl);
     return;
   }
   // Valida as credenciais antes de gravar qualquer coisa.
   const adminConfig = readAdminSeedConfig();
   await seedSimplesNacional(databaseUrl);
+  await seedSimplesBeneficios(databaseUrl);
   await seedCfops(databaseUrl);
   await seedFinanceiroTipos(databaseUrl);
   await seedIcmsBa2026(databaseUrl);
@@ -46,8 +49,8 @@ if (require.main === module) {
     .then(() =>
       process.stdout.write(
         mode === 'restore'
-          ? 'Seeds obrigatórios (restore) concluídos: Simples Nacional.\n'
-          : 'Seeds obrigatórios concluídos: Simples Nacional, CFOPs, tipos financeiros, regras ICMS-BA 2026 e ADMIN.\n',
+          ? 'Seeds obrigatórios (restore) concluídos: Simples Nacional e benefícios.\n'
+          : 'Seeds obrigatórios concluídos: Simples Nacional, benefícios, CFOPs, tipos financeiros, regras ICMS-BA 2026 e ADMIN.\n',
       ),
     )
     .catch((error: unknown) => {
