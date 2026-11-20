@@ -97,11 +97,6 @@ export class UpsertContratoDto {
   @Type(() => ServicoContratoDto)
   servicos?: ServicoContratoDto[];
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(150)
-  contratanteRepresentante?: string;
 
   @ApiPropertyOptional({ example: '2026-11-12' })
   @IsOptional()

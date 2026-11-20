@@ -19,6 +19,7 @@ import { ColaboradorModule } from './colaborador/colaborador.module';
 import { ContadoresModule } from './cadastros/contadores/contadores.module';
 import { HealthController } from './health/health.controller';
 import { DashboardController } from './health/dashboard.controller';
+import { DashboardService } from './health/dashboard.service';
 import { CronController } from './cron/cron.controller';
 import { StorageAdminController } from './storage/storage.controller';
 import { CrmModule } from './crm/crm.module';
@@ -58,6 +59,6 @@ import { FaturamentoModule } from './fiscal/faturamento.module';
     CronController,
     StorageAdminController,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, DashboardService],
 })
 export class AppModule {}

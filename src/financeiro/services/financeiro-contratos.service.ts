@@ -48,6 +48,7 @@ export class FinanceiroContratosService {
           clienteRazaoSocial: clientes.razaoSocial,
           clienteCnpj: clientes.cnpj,
           clienteTipoPessoa: clientes.tipoPessoa,
+          clienteResponsavelNome: clientes.responsavelNome,
           contadorNome: contadores.nome,
         })
         .from(financeiroContratos)
@@ -117,6 +118,7 @@ export class FinanceiroContratosService {
         clienteRazaoSocial: row.clienteRazaoSocial,
         clienteCnpj: row.clienteCnpj,
         clienteTipoPessoa: row.clienteTipoPessoa,
+        clienteResponsavelNome: row.clienteResponsavelNome,
         contadorNome: row.contadorNome,
         podeImprimir: Boolean(
           row.contadorNome &&
@@ -125,7 +127,7 @@ export class FinanceiroContratosService {
           row.contrato.dataAssinatura &&
           row.contrato.servicosContratados.length &&
           (row.clienteTipoPessoa !== 'PJ' ||
-            row.contrato.contratanteRepresentante?.trim()),
+            row.clienteResponsavelNome?.trim()),
         ),
         qtdItensFixos: porContrato.get(row.contrato.id) ?? 0,
         valorMensalidadeTotal: fromCents(
@@ -256,9 +258,6 @@ export class FinanceiroContratosService {
             : {}),
           valorMensal: fromCents(toCents(servico.valorMensal)),
         })),
-      }),
-      ...(dto.contratanteRepresentante !== undefined && {
-        contratanteRepresentante: dto.contratanteRepresentante.trim() || null,
       }),
       ...(dto.dataInicio !== undefined && {
         dataInicio: dto.dataInicio || null,

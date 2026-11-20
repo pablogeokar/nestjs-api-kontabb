@@ -134,7 +134,7 @@ export function validarContratoParaImpressao(data: ContratoPdfData) {
   }
   if (data.cliente.tipoPessoa === 'PJ' && !data.cliente.representante?.trim()) {
     throw new BadRequestException(
-      'Informe o representante do cliente antes de imprimir.',
+      'Informe o responsável pela empresa no cadastro do cliente antes de imprimir.',
     );
   }
   if (!data.contador.nome || !data.contador.documento || !data.contador.crc) {
@@ -525,7 +525,7 @@ export class FinanceiroContratoDocumentoService {
         razaoSocial: cliente.razaoSocial,
         cnpj: cliente.cnpj,
         tipoPessoa: cliente.tipoPessoa,
-        representante: contrato.contratanteRepresentante,
+        representante: cliente.responsavelNome,
         municipio: cliente.municipio,
         uf: cliente.uf,
         endereco: address([
