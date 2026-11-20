@@ -401,6 +401,7 @@ describe('DistribuicaoDfeService', () => {
         apuraIcms: false,
         optanteSimplesNacional: true,
         obrigadoEfdIcmsIpi: false,
+        logoKey: null,
       },
       {
         id: 'cliente-2',
@@ -413,6 +414,7 @@ describe('DistribuicaoDfeService', () => {
         apuraIcms: true,
         optanteSimplesNacional: false,
         obrigadoEfdIcmsIpi: true,
+        logoKey: 'logos/beta.png',
       },
     ]);
     const leftJoin = jest.fn().mockReturnValue({ orderBy });
@@ -420,7 +422,9 @@ describe('DistribuicaoDfeService', () => {
     const select = jest.fn().mockReturnValue({ from });
     const service = new DistribuicaoDfeService(
       { db: { select } } as never,
-      {} as never,
+      {
+        getSignedUrl: jest.fn().mockResolvedValue('https://cdn.test/beta.png'),
+      } as never,
       {} as never,
       createCfopServiceMock() as never,
       {} as never,
@@ -440,6 +444,7 @@ describe('DistribuicaoDfeService', () => {
         apura_icms: false,
         optante_simples_nacional: true,
         obrigado_efd_icms_ipi: false,
+        logo_url: null,
       },
       {
         id: 'cliente-2',
@@ -452,6 +457,7 @@ describe('DistribuicaoDfeService', () => {
         apura_icms: true,
         optante_simples_nacional: false,
         obrigado_efd_icms_ipi: true,
+        logo_url: 'https://cdn.test/beta.png',
       },
     ]);
     expect(select).toHaveBeenCalledTimes(1);

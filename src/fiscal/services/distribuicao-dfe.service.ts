@@ -587,13 +587,15 @@ export class DistribuicaoDfeService {
         regimeTributario: clientes.regimeTributario,
         apuraIcms: clientes.apuraIcms,
         optanteSimplesNacional: clientes.optanteSimplesNacional,
+        logoKey: clientes.logoKey,
         obrigadoEfdIcmsIpi: sql<boolean>`coalesce(${spedConfiguracoes.obrigadoEfdIcmsIpi}, false)`,
       })
       .from(clientes)
       .leftJoin(spedConfiguracoes, eq(spedConfiguracoes.clienteId, clientes.id))
       .orderBy(asc(clientes.razaoSocial));
 
-    return rows.map((row) => ({
+    return Promise.all(
+      rows.map(async (row) => ({
       id: row.id,
       razao_social: row.razaoSocial,
       cnpj: row.cnpj,
@@ -604,7 +606,11 @@ export class DistribuicaoDfeService {
       apura_icms: row.apuraIcms,
       optante_simples_nacional: row.optanteSimplesNacional,
       obrigado_efd_icms_ipi: row.obrigadoEfdIcmsIpi,
-    }));
+      logo_url: row.logoKey
+        ? await this.storage.getSignedUrl(row.logoKey).catch(() => null)
+        : null,
+      })),
+    );
   }
 
   /**
