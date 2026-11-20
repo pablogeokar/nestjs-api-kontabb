@@ -93,69 +93,13 @@ export class InscricaoSubstitutoDto {
 }
 
 export class AtualizarDestdaConfiguracaoDto {
-  @ApiPropertyOptional({ pattern: '^\\d{7}$' })
-  @IsOptional()
-  @Transform(somenteDigitos)
-  @IsString()
-  @Matches(/^\d{7}$/u)
-  codigoMunicipioIbge?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 160)
-  nomeFantasia?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 30)
-  inscricaoMunicipal?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Transform(somenteDigitos)
-  @IsString()
-  @Matches(/^\d{9}$/u, { message: 'A inscrição Suframa deve ter 9 dígitos.' })
-  suframa?: string | null;
-
-  @ApiPropertyOptional({ pattern: '^\\d{11}$' })
-  @IsOptional()
-  @Transform(somenteDigitos)
-  @IsString()
-  @Matches(/^\d{11}$/u, { message: 'O NIRE deve ter 11 dígitos.' })
-  nire?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 30)
-  telefone?: string | null;
-
+  // Dados cadastrais (IBGE, fantasia, IM, Suframa, NIRE, telefone e responsável)
+  // vêm do cadastro do cliente e não são editáveis aqui.
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   @Length(0, 30)
   fax?: string | null;
-
-  @ApiPropertyOptional({ description: 'Nome do responsável (registro 0005).' })
-  @IsOptional()
-  @IsString()
-  @Length(2, 100)
-  responsavelNome?: string | null;
-
-  @ApiPropertyOptional({ pattern: '^\\d{11}$' })
-  @IsOptional()
-  @Transform(somenteDigitos)
-  @IsString()
-  @Matches(/^\d{11}$/u)
-  responsavelCpf?: string | null;
-
-  @ApiPropertyOptional({ enum: DESTDA_COD_ASSINANTES, default: '801' })
-  @IsOptional()
-  @IsIn(DESTDA_COD_ASSINANTES)
-  responsavelCodAssinante?: (typeof DESTDA_COD_ASSINANTES)[number];
-
   @ApiPropertyOptional({
     type: [InscricaoSubstitutoDto],
     description:

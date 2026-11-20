@@ -8,7 +8,6 @@ import { DatabaseService } from '../database/database.service';
 import {
   clientes,
   contadores,
-  spedConfiguracoes,
   user,
 } from '../database/schema';
 import { resultRows } from '../common/db-result';
@@ -40,13 +39,16 @@ export interface StoredCnae {
   description: string;
 }
 
-/** Dados do cadastro usados pela DeSTDA (undefined = não alterar). */
+/** Dados do cadastro usados pela DeSTDA e pela EFD (undefined = não alterar). */
 interface ClientDeclarationData {
   codigoMunicipioIbge?: string | null;
   nomeFantasia?: string | null;
   responsavelNome?: string | null;
   responsavelCpf?: string | null;
   responsavelCodAssinante?: string | null;
+  telefone?: string | null;
+  suframa?: string | null;
+  nire?: string | null;
 }
 function normalizeDeclarationData(input: ClientDeclarationData) {
   const text = (value: string | null | undefined) =>
@@ -59,6 +61,9 @@ function normalizeDeclarationData(input: ClientDeclarationData) {
     responsavelNome: text(input.responsavelNome),
     responsavelCpf: digitsOrNull(input.responsavelCpf),
     responsavelCodAssinante: digitsOrNull(input.responsavelCodAssinante),
+    telefone: text(input.telefone),
+    suframa: digitsOrNull(input.suframa),
+    nire: digitsOrNull(input.nire),
   };
 }
 interface ExistingClientFiscalConfig {
@@ -137,6 +142,9 @@ export class ClientesService {
           responsavelNome: clientes.responsavelNome,
           responsavelCpf: clientes.responsavelCpf,
           responsavelCodAssinante: clientes.responsavelCodAssinante,
+          telefone: clientes.telefone,
+          suframa: clientes.suframa,
+          nire: clientes.nire,
           tipoContribuinteIcms: clientes.tipoContribuinteIcms,
           optanteSimplesNacional: clientes.optanteSimplesNacional,
           simplesNacionalFonte: clientes.simplesNacionalFonte,
@@ -201,6 +209,9 @@ export class ClientesService {
         responsavel_nome: client.responsavelNome,
         responsavel_cpf: client.responsavelCpf,
         responsavel_cod_assinante: client.responsavelCodAssinante,
+        telefone: client.telefone,
+        suframa: client.suframa,
+        nire: client.nire,
         tipo_contribuinte_icms:
           client.tipoContribuinteIcms as TipoContribuinteIcms | null,
         optante_simples_nacional: client.optanteSimplesNacional,
@@ -301,6 +312,7 @@ export class ClientesService {
             regime_tributario, regime_competencia, data_abertura_cnpj, apura_icms, optante_simples_nacional,
             simples_nacional_fonte, simples_nacional_consultado_em,
             codigo_municipio_ibge, nome_fantasia, responsavel_nome, responsavel_cpf, responsavel_cod_assinante,
+            telefone, suframa, nire,
             primeiro_login, user_id, contador_id
           )
           SELECT
@@ -327,6 +339,9 @@ export class ClientesService {
             ${declaration.responsavelNome}::text,
             ${declaration.responsavelCpf}::text,
             ${declaration.responsavelCodAssinante}::text,
+            ${declaration.telefone}::text,
+            ${declaration.suframa}::text,
+            ${declaration.nire}::text,
             true, id, ${contadorId}::uuid
           FROM inserted_user
           RETURNING id
@@ -462,6 +477,9 @@ export class ClientesService {
           responsavel_nome = CASE WHEN ${input.responsavelNome !== undefined} THEN ${declaration.responsavelNome}::text ELSE responsavel_nome END,
           responsavel_cpf = CASE WHEN ${input.responsavelCpf !== undefined} THEN ${declaration.responsavelCpf}::text ELSE responsavel_cpf END,
           responsavel_cod_assinante = CASE WHEN ${input.responsavelCodAssinante !== undefined} THEN ${declaration.responsavelCodAssinante}::text ELSE responsavel_cod_assinante END,
+          telefone = CASE WHEN ${input.telefone !== undefined} THEN ${declaration.telefone}::text ELSE telefone END,
+          suframa = CASE WHEN ${input.suframa !== undefined} THEN ${declaration.suframa}::text ELSE suframa END,
+          nire = CASE WHEN ${input.nire !== undefined} THEN ${declaration.nire}::text ELSE nire END,
           tipo_contribuinte_icms = CASE WHEN ${fiscalUpdate.writeTipoContribuinteIcms} THEN ${fiscalUpdate.tipoContribuinteIcms}::text ELSE tipo_contribuinte_icms END,
           optante_simples_nacional = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.optanteSimplesNacional}::boolean ELSE optante_simples_nacional END,
           simples_nacional_fonte = CASE WHEN ${simplesNacionalUpdate.writeConsultation} THEN ${simplesNacionalUpdate.simplesNacionalFonte}::text ELSE simples_nacional_fonte END,
@@ -704,6 +722,9 @@ export class ClientesService {
         responsavelNome: clientes.responsavelNome,
         responsavelCpf: clientes.responsavelCpf,
         responsavelCodAssinante: clientes.responsavelCodAssinante,
+        telefone: clientes.telefone,
+        suframa: clientes.suframa,
+        nire: clientes.nire,
         tipoContribuinteIcms: clientes.tipoContribuinteIcms,
         optanteSimplesNacional: clientes.optanteSimplesNacional,
         simplesNacionalFonte: clientes.simplesNacionalFonte,
@@ -721,11 +742,6 @@ export class ClientesService {
       .limit(1);
     const client = result[0];
     if (!client) return undefined;
-    const [sped] = await this.database.db
-      .select({ inscricaoMunicipal: spedConfiguracoes.inscricaoMunicipal })
-      .from(spedConfiguracoes)
-      .where(eq(spedConfiguracoes.clienteId, clientId))
-      .limit(1);
     return {
       id: client.id,
       portal_user_name: client.portalUserName,
@@ -746,13 +762,15 @@ export class ClientesService {
       data_abertura_cnpj: client.dataAberturaCnpj,
       apura_icms: client.apuraIcms,
       inscricao_estadual: client.inscricaoEstadual,
-      inscricao_municipal:
-        client.inscricaoMunicipal ?? sped?.inscricaoMunicipal ?? null,
+      inscricao_municipal: client.inscricaoMunicipal,
       codigo_municipio_ibge: client.codigoMunicipioIbge,
       nome_fantasia: client.nomeFantasia,
       responsavel_nome: client.responsavelNome,
       responsavel_cpf: client.responsavelCpf,
       responsavel_cod_assinante: client.responsavelCodAssinante,
+      telefone: client.telefone,
+      suframa: client.suframa,
+      nire: client.nire,
       tipo_contribuinte_icms:
         client.tipoContribuinteIcms as TipoContribuinteIcms | null,
       optante_simples_nacional: client.optanteSimplesNacional,

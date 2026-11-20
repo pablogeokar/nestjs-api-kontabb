@@ -155,35 +155,7 @@ export class AtualizarSpedConfiguracaoDto {
   @Matches(/^\d{2}$/)
   classificacaoEstabelecimentoIndustrial?: string | null;
 
-  @ApiProperty({ pattern: '^\\d{7}$' })
-  @IsString()
-  @Matches(/^\d{7}$/)
-  codigoMunicipioIbge: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 160)
-  nomeFantasia?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 30)
-  inscricaoMunicipal?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 20)
-  suframa?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Length(0, 30)
-  telefone?: string | null;
-
+  // Município, fantasia, IM, Suframa e telefone vêm do cadastro do cliente.
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

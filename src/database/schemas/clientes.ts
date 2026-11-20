@@ -53,6 +53,12 @@ export const clientes = pgTable(
     responsavelCodAssinante: varchar('responsavel_cod_assinante', {
       length: 3,
     }),
+    // Contato e identificadores complementares do estabelecimento. Fonte única
+    // para DeSTDA (0000/0005) e EFD ICMS/IPI (0000); as configurações dessas
+    // obrigações leem daqui em vez de manter cópias próprias.
+    telefone: text('telefone'),
+    suframa: varchar('suframa', { length: 9 }),
+    nire: varchar('nire', { length: 11 }),
     tipoContribuinteIcms: text('tipo_contribuinte_icms'),
     optanteSimplesNacional: boolean('optante_simples_nacional'),
     simplesNacionalFonte: text('simples_nacional_fonte'),
@@ -82,6 +88,14 @@ export const clientes = pgTable(
     check(
       'chk_clientes_responsavel_cod_assinante',
       sql`${table.responsavelCodAssinante} IS NULL OR ${table.responsavelCodAssinante} ~ '^[0-9]{3}$'`,
+    ),
+    check(
+      'chk_clientes_suframa',
+      sql`${table.suframa} IS NULL OR ${table.suframa} ~ '^[0-9]{9}$'`,
+    ),
+    check(
+      'chk_clientes_nire',
+      sql`${table.nire} IS NULL OR ${table.nire} ~ '^[0-9]{11}$'`,
     ),
     check('chk_clientes_tipo_pessoa', sql`${table.tipoPessoa} IN ('PF', 'PJ')`),
     check(
