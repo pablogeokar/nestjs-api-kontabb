@@ -15,6 +15,7 @@ import {
 import type { PaginationParams } from '../../common/types';
 import {
   competenciaIndex,
+  competenciaNaVigencia,
   fromCents,
   isValidCivilDate,
   isUniqueViolation,
@@ -63,13 +64,23 @@ export class FinanceiroContratosService {
         .where(where),
     ]);
 
-    const contagens = rows.length
+    const fixos = rows.length
       ? await this.database.db
           .select({
             contratoId: financeiroContratosItens.contratoId,
-            quantidade: sql<number>`count(*)::int`,
+            valor: financeiroContratosItens.valor,
+            competenciaInicio: financeiroContratosItens.competenciaInicio,
+            competenciaFim: financeiroContratosItens.competenciaFim,
+            natureza: financeiroTiposLancamento.natureza,
           })
           .from(financeiroContratosItens)
+          .innerJoin(
+            financeiroTiposLancamento,
+            eq(
+              financeiroTiposLancamento.id,
+              financeiroContratosItens.tipoLancamentoId,
+            ),
+          )
           .where(
             and(
               inArray(
@@ -79,12 +90,27 @@ export class FinanceiroContratosService {
               eq(financeiroContratosItens.ativo, true),
             ),
           )
-          .groupBy(financeiroContratosItens.contratoId)
       : [];
-    const porContrato = new Map(
-      contagens.map((c) => [c.contratoId, c.quantidade]),
-    );
-
+    // Mensalidade efetiva: base + débitos - créditos dos lançamentos fixos
+    // ativos e vigentes na competência atual (mesma regra da geração de fatura).
+    const hoje = new Date();
+    const competenciaAtual = `${String(hoje.getMonth() + 1).padStart(2, '0')}/${hoje.getFullYear()}`;
+    const porContrato = new Map<string, number>();
+    const ajusteCents = new Map<string, number>();
+    for (const item of fixos) {
+      porContrato.set(item.contratoId, (porContrato.get(item.contratoId) ?? 0) + 1);
+      if (
+        !competenciaNaVigencia(
+          competenciaAtual,
+          item.competenciaInicio,
+          item.competenciaFim,
+        )
+      ) {
+        continue;
+      }
+      const cents = toCents(item.valor) * (item.natureza === 'CREDITO' ? -1 : 1);
+      ajusteCents.set(item.contratoId, (ajusteCents.get(item.contratoId) ?? 0) + cents);
+    }
     return {
       data: rows.map((row) => ({
         ...row.contrato,
@@ -102,6 +128,10 @@ export class FinanceiroContratosService {
             row.contrato.contratanteRepresentante?.trim()),
         ),
         qtdItensFixos: porContrato.get(row.contrato.id) ?? 0,
+        valorMensalidadeTotal: fromCents(
+          toCents(row.contrato.valorMensalidade) +
+            (ajusteCents.get(row.contrato.id) ?? 0),
+        ),
       })),
       total,
     };
