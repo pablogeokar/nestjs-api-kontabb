@@ -21,6 +21,51 @@ export function normalizarNomeMunicipio(nome: string): string {
 @Injectable()
 export class IbgeMunicipiosService {
   private readonly cache = new Map<string, Map<string, string>>();
+  private readonly localidades = new Map<
+    string,
+    { municipio: string; uf: string }
+  >();
+
+  async resolverLocalidade(
+    codigo: string,
+  ): Promise<{ municipio: string; uf: string } | null> {
+    if (!/^\d{7}$/u.test(codigo)) return null;
+    const cached = this.localidades.get(codigo);
+    if (cached) return cached;
+    try {
+      const response = await fetch(
+        `https://servicodados.ibge.gov.br/api/v1/localidades/municipios/${codigo}?view=nivelado`,
+        {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        },
+      );
+      if (!response.ok) return null;
+      const data: unknown = await response.json();
+      if (
+        typeof data !== 'object' ||
+        data === null ||
+        !('municipio-id' in data) ||
+        String(data['municipio-id']) !== codigo ||
+        !('municipio-nome' in data) ||
+        typeof data['municipio-nome'] !== 'string' ||
+        !data['municipio-nome'].trim() ||
+        !('UF-sigla' in data) ||
+        typeof data['UF-sigla'] !== 'string' ||
+        !/^[A-Z]{2}$/u.test(data['UF-sigla'])
+      ) {
+        return null;
+      }
+      const localidade = {
+        municipio: data['municipio-nome'].trim(),
+        uf: data['UF-sigla'],
+      };
+      this.localidades.set(codigo, localidade);
+      return localidade;
+    } catch {
+      return null;
+    }
+  }
 
   async resolverCodigo(municipio: string, uf: string): Promise<string | null> {
     const sigla = uf.trim().toUpperCase();
