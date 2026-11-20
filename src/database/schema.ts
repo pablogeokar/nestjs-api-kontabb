@@ -66,3 +66,4 @@ export * from './schemas/financeiro_lancamentos';
 export * from './schemas/financeiro_faturas';
 export * from './schemas/financeiro_baixas';
 export * from './schemas/financeiro_contratos_itens';
+export * from './schemas/financeiro_contratos_aditivos';

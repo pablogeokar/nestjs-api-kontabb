@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { clientes } from './clientes';
@@ -48,6 +49,9 @@ export const financeiroContratos = pgTable(
     dataAssinatura: date('data_assinatura'),
     avisoPrevioDias: integer('aviso_previo_dias').notNull().default(30),
     condicoesContratuais: text('condicoes_contratuais'),
+    versao: integer('versao').notNull().default(1),
+    competenciaVigencia: varchar('competencia_vigencia', { length: 7 }),
+    dataUltimoReajuste: date('data_ultimo_reajuste'),
     atualizadoPor: text('atualizado_por').references(() => user.id, {
       onDelete: 'set null',
     }),
@@ -58,6 +62,11 @@ export const financeiroContratos = pgTable(
     uniqueIndex('uidx_fin_contratos_cliente').on(table.clienteId),
     index('idx_fin_contratos_ativo').on(table.ativo),
     check('chk_fin_contratos_valor', sql`${table.valorMensalidade} >= 0`),
+    check('chk_fin_contratos_versao', sql`${table.versao} > 0`),
+    check(
+      'chk_fin_contratos_vigencia',
+      sql`${table.competenciaVigencia} IS NULL OR ${table.competenciaVigencia} ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'`,
+    ),
     check(
       'chk_fin_contratos_dia_vencimento',
       sql`${table.diaVencimento} BETWEEN 1 AND 31`,

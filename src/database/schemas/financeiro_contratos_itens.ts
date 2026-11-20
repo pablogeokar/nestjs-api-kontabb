@@ -29,6 +29,7 @@ export const financeiroContratosItens = pgTable(
     competenciaInicio: varchar('competencia_inicio', { length: 7 }),
     competenciaFim: varchar('competencia_fim', { length: 7 }),
     ativo: boolean('ativo').notNull().default(true),
+    removidoEm: timestamp('removido_em', { withTimezone: true }),
     criadoEm: timestamp('criado_em').notNull().defaultNow(),
     atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
   },

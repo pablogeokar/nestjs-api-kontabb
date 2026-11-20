@@ -43,7 +43,8 @@ import {
   CreateTipoLancamentoDto,
   UpdateTipoLancamentoDto,
 } from '../dto/tipo-lancamento.dto';
-import { UpsertContratoDto } from '../dto/contrato.dto';
+import { ReajusteContratoDto, UpsertContratoDto } from '../dto/contrato.dto';
+import { FinanceiroAditivoDocumentoService } from '../services/financeiro-aditivo-documento.service';
 import { ContratoPreferenciasDto } from '../dto/contrato-preferencias.dto';
 import {
   CreateLancamentoDto,
@@ -75,6 +76,7 @@ export class FinanceiroAdminController {
     private readonly contratoDocumento: FinanceiroContratoDocumentoService,
     private readonly contratoPreferencias: FinanceiroContratoPreferenciasService,
     private readonly logger: AppLogger,
+    private readonly aditivoDocumento: FinanceiroAditivoDocumentoService,
   ) {}
 
   // ── Catálogo de tipos ──
@@ -172,6 +174,43 @@ export class FinanceiroAdminController {
   }
 
   // ── Lançamentos ──
+  @Get('contratos/cliente/:clienteId/aditivos')
+  listarAditivos(@Param('clienteId', ParseUUIDPipe) clienteId: string) {
+    return this.contratos.listarAditivos(clienteId);
+  }
+
+  @Post('contratos/cliente/:clienteId/reajustes/previa')
+  previaReajuste(
+    @Param('clienteId', ParseUUIDPipe) clienteId: string,
+    @Body() dto: ReajusteContratoDto,
+  ) {
+    return this.contratos.previaReajuste(clienteId, dto);
+  }
+
+  @Post('contratos/cliente/:clienteId/reajustes')
+  reajustar(
+    @Param('clienteId', ParseUUIDPipe) clienteId: string,
+    @Body() dto: ReajusteContratoDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.contratos.reajustar(clienteId, dto, user.id);
+  }
+
+  @Get('contratos/cliente/:clienteId/aditivos/:aditivoId/pdf')
+  async imprimirAditivo(
+    @Param('clienteId', ParseUUIDPipe) clienteId: string,
+    @Param('aditivoId', ParseUUIDPipe) aditivoId: string,
+    @Res() res: Response,
+  ) {
+    const pdf = await this.aditivoDocumento.gerarPdf(clienteId, aditivoId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="aditivo-${aditivoId}.pdf"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
+  }
 
   @Get('lancamentos')
   @ApiOperation({ summary: 'Listar lançamentos (conta-corrente do cliente)' })
