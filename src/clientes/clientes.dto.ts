@@ -246,6 +246,36 @@ export class CreateClientDto {
   @IsOptional()
   @IsIn(DESTDA_COD_ASSINANTES)
   responsavel_cod_assinante?: string | null;
+  @ApiPropertyOptional({ description: 'Telefone do estabelecimento', nullable: true })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(1, 30)
+  telefone?: string | null;
+  @ApiPropertyOptional({
+    description: 'Inscrição Suframa (9 dígitos)',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{9}$/, { message: 'A inscrição Suframa deve ter 9 dígitos.' })
+  suframa?: string | null;
+  @ApiPropertyOptional({
+    description: 'NIRE - registro na Junta Comercial (11 dígitos)',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{11}$/, { message: 'O NIRE deve ter 11 dígitos.' })
+  nire?: string | null;
   @ApiPropertyOptional({
     description: 'Contador responsável pelo cliente',
     format: 'uuid',
@@ -438,6 +468,36 @@ export class UpdateClientDto {
   @IsOptional()
   @IsIn(DESTDA_COD_ASSINANTES)
   responsavel_cod_assinante?: string | null;
+  @ApiPropertyOptional({ description: 'Telefone do estabelecimento', nullable: true })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(1, 30)
+  telefone?: string | null;
+  @ApiPropertyOptional({
+    description: 'Inscrição Suframa (9 dígitos)',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{9}$/, { message: 'A inscrição Suframa deve ter 9 dígitos.' })
+  suframa?: string | null;
+  @ApiPropertyOptional({
+    description: 'NIRE - registro na Junta Comercial (11 dígitos)',
+    nullable: true,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '') || null : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{11}$/, { message: 'O NIRE deve ter 11 dígitos.' })
+  nire?: string | null;
   @ApiPropertyOptional({
     description: 'Contador responsável pelo cliente',
     format: 'uuid',

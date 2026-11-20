@@ -247,31 +247,20 @@ export class DestdaService {
         uf: clientes.uf,
         regimeTributario: clientes.regimeTributario,
         inscricaoEstadual: clientes.inscricaoEstadual,
-        inscricaoMunicipalCadastro: clientes.inscricaoMunicipal,
         contadorId: clientes.contadorId,
-        cadastroCodigoMunicipioIbge: clientes.codigoMunicipioIbge,
-        cadastroNomeFantasia: clientes.nomeFantasia,
-        cadastroResponsavelNome: clientes.responsavelNome,
-        cadastroResponsavelCpf: clientes.responsavelCpf,
-        cadastroResponsavelCodAssinante: clientes.responsavelCodAssinante,
+        codigoMunicipioIbge: clientes.codigoMunicipioIbge,
+        nomeFantasia: clientes.nomeFantasia,
+        inscricaoMunicipal: clientes.inscricaoMunicipal,
+        suframa: clientes.suframa,
+        nire: clientes.nire,
+        telefone: clientes.telefone,
+        responsavelNome: clientes.responsavelNome,
+        responsavelCpf: clientes.responsavelCpf,
+        responsavelCodAssinante: clientes.responsavelCodAssinante,
         configuracaoId: destdaConfiguracoes.id,
-        codigoMunicipioIbge: destdaConfiguracoes.codigoMunicipioIbge,
-        nomeFantasia: destdaConfiguracoes.nomeFantasia,
-        inscricaoMunicipal: destdaConfiguracoes.inscricaoMunicipal,
-        suframa: destdaConfiguracoes.suframa,
-        nire: destdaConfiguracoes.nire,
-        telefone: destdaConfiguracoes.telefone,
         fax: destdaConfiguracoes.fax,
-        responsavelNome: destdaConfiguracoes.responsavelNome,
-        responsavelCpf: destdaConfiguracoes.responsavelCpf,
-        responsavelCodAssinante: destdaConfiguracoes.responsavelCodAssinante,
         inscricoesSubstituto: destdaConfiguracoes.inscricoesSubstituto,
         perfil: destdaConfiguracoes.perfil,
-        spedCodigoMunicipioIbge: spedConfiguracoes.codigoMunicipioIbge,
-        spedNomeFantasia: spedConfiguracoes.nomeFantasia,
-        spedInscricaoMunicipal: spedConfiguracoes.inscricaoMunicipal,
-        spedSuframa: spedConfiguracoes.suframa,
-        spedTelefone: spedConfiguracoes.telefone,
         spedFax: spedConfiguracoes.fax,
       })
       .from(clientes)
@@ -301,13 +290,8 @@ export class DestdaService {
     const cnpj = normalizeIdentifier(company.cnpj);
     const uf = (company.uf ?? '').trim().toUpperCase();
     const ie = normalizeIdentifier(company.inscricaoEstadual ?? '');
-    const codMun =
-      company.codigoMunicipioIbge ??
-      company.cadastroCodigoMunicipioIbge ??
-      company.spedCodigoMunicipioIbge ??
-      '';
-    const responsavelCpf =
-      company.responsavelCpf ?? company.cadastroResponsavelCpf ?? '';
+    const codMun = company.codigoMunicipioIbge ?? '';
+    const responsavelCpf = company.responsavelCpf ?? '';
     const cadastral = inconsistencias.length;
 
     if (company.tipoPessoa !== 'PJ') {
@@ -332,15 +316,11 @@ export class DestdaService {
     if (!/^\d{7}$/u.test(codMun)) {
       erro(
         'COD_MUN_AUSENTE',
-        'Informe o código IBGE de 7 dígitos do município na configuração da DeSTDA.',
+        'Informe o código IBGE de 7 dígitos do município no cadastro da empresa.',
         'codigoMunicipioIbge',
       );
     }
-    const responsavelNome = (
-      company.responsavelNome ??
-      company.cadastroResponsavelNome ??
-      ''
-    ).trim();
+    const responsavelNome = (company.responsavelNome ?? '').trim();
     if (!responsavelNome || !/^\d{11}$/u.test(responsavelCpf)) {
       erro(
         'RESPONSAVEL_AUSENTE',
@@ -348,10 +328,7 @@ export class DestdaService {
         'responsavel',
       );
     }
-    const codAssinante =
-      company.responsavelCodAssinante ??
-      company.cadastroResponsavelCodAssinante ??
-      '801';
+    const codAssinante = company.responsavelCodAssinante ?? '801';
     if (!(DESTDA_COD_ASSINANTES as readonly string[]).includes(codAssinante)) {
       erro(
         'COD_ASSINANTE_INVALIDO',
@@ -468,15 +445,9 @@ export class DestdaService {
         uf,
         ie,
         codMun,
-        im:
-          company.inscricaoMunicipal ??
-          company.spedInscricaoMunicipal ??
-          company.inscricaoMunicipalCadastro,
-        suframa: company.suframa ?? company.spedSuframa,
-        fantasia:
-          company.nomeFantasia ??
-          company.cadastroNomeFantasia ??
-          company.spedNomeFantasia,
+        im: company.inscricaoMunicipal,
+        suframa: company.suframa,
+        fantasia: company.nomeFantasia,
         nire: company.nire,
       },
       inscricoesSubstituto: inscricoes.map((item) => ({
@@ -492,7 +463,7 @@ export class DestdaService {
         numero: company.numero,
         complemento: company.complemento,
         bairro: company.bairro,
-        fone: company.telefone ?? company.spedTelefone,
+        fone: company.telefone,
         fax: company.fax ?? company.spedFax,
         email: company.emails?.[0] ?? null,
       },

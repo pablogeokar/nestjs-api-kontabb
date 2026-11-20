@@ -285,6 +285,9 @@ export class ClientesController {
       responsavelNome: dto.responsavel_nome,
       responsavelCpf: dto.responsavel_cpf,
       responsavelCodAssinante: dto.responsavel_cod_assinante,
+      telefone: dto.telefone,
+      suframa: dto.suframa,
+      nire: dto.nire,
       contadorId: dto.contador_id,
     });
 
@@ -412,6 +415,9 @@ export class ClientesController {
       responsavelNome: dto.responsavel_nome,
       responsavelCpf: dto.responsavel_cpf,
       responsavelCodAssinante: dto.responsavel_cod_assinante,
+      telefone: dto.telefone,
+      suframa: dto.suframa,
+      nire: dto.nire,
       contadorId: dto.contador_id,
     });
     if (!updated) throw new NotFoundException('Cliente não encontrado.');

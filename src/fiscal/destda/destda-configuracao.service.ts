@@ -25,23 +25,17 @@ export class DestdaConfiguracaoService {
         uf: clientes.uf,
         municipio: clientes.municipio,
         contadorId: clientes.contadorId,
-        cadastroCodigoMunicipioIbge: clientes.codigoMunicipioIbge,
-        cadastroNomeFantasia: clientes.nomeFantasia,
-        cadastroInscricaoMunicipal: clientes.inscricaoMunicipal,
-        cadastroResponsavelNome: clientes.responsavelNome,
-        cadastroResponsavelCpf: clientes.responsavelCpf,
-        cadastroResponsavelCodAssinante: clientes.responsavelCodAssinante,
+        codigoMunicipioIbge: clientes.codigoMunicipioIbge,
+        nomeFantasia: clientes.nomeFantasia,
+        inscricaoMunicipal: clientes.inscricaoMunicipal,
+        suframa: clientes.suframa,
+        nire: clientes.nire,
+        telefone: clientes.telefone,
+        responsavelNome: clientes.responsavelNome,
+        responsavelCpf: clientes.responsavelCpf,
+        responsavelCodAssinante: clientes.responsavelCodAssinante,
         configuracaoId: destdaConfiguracoes.id,
-        codigoMunicipioIbge: destdaConfiguracoes.codigoMunicipioIbge,
-        nomeFantasia: destdaConfiguracoes.nomeFantasia,
-        inscricaoMunicipal: destdaConfiguracoes.inscricaoMunicipal,
-        suframa: destdaConfiguracoes.suframa,
-        nire: destdaConfiguracoes.nire,
-        telefone: destdaConfiguracoes.telefone,
         fax: destdaConfiguracoes.fax,
-        responsavelNome: destdaConfiguracoes.responsavelNome,
-        responsavelCpf: destdaConfiguracoes.responsavelCpf,
-        responsavelCodAssinante: destdaConfiguracoes.responsavelCodAssinante,
         inscricoesSubstituto: destdaConfiguracoes.inscricoesSubstituto,
         perfil: destdaConfiguracoes.perfil,
       })
@@ -70,22 +64,17 @@ export class DestdaConfiguracaoService {
       },
       elegivel: row.regimeTributario === 'SIMPLES_NACIONAL',
       configurado: Boolean(row.configuracaoId),
-      // Valores da DeSTDA têm precedência; sem eles, vale o cadastro do cliente.
-      codigoMunicipioIbge:
-        row.codigoMunicipioIbge ?? row.cadastroCodigoMunicipioIbge,
-      nomeFantasia: row.nomeFantasia ?? row.cadastroNomeFantasia,
-      inscricaoMunicipal:
-        row.inscricaoMunicipal ?? row.cadastroInscricaoMunicipal,
+      // Dados cadastrais vêm do cadastro do cliente (fonte única).
+      codigoMunicipioIbge: row.codigoMunicipioIbge,
+      nomeFantasia: row.nomeFantasia,
+      inscricaoMunicipal: row.inscricaoMunicipal,
       suframa: row.suframa,
       nire: row.nire,
       telefone: row.telefone,
       fax: row.fax,
-      responsavelNome: row.responsavelNome ?? row.cadastroResponsavelNome,
-      responsavelCpf: row.responsavelCpf ?? row.cadastroResponsavelCpf,
-      responsavelCodAssinante:
-        row.responsavelCodAssinante ??
-        row.cadastroResponsavelCodAssinante ??
-        '801',
+      responsavelNome: row.responsavelNome,
+      responsavelCpf: row.responsavelCpf,
+      responsavelCodAssinante: row.responsavelCodAssinante ?? '801',
       inscricoesSubstituto: row.inscricoesSubstituto ?? [],
       perfil: row.perfil ?? {},
       contabilista: resolucao
@@ -126,16 +115,7 @@ export class DestdaConfiguracaoService {
     }
 
     const valores = {
-      codigoMunicipioIbge: vazioParaNulo(data.codigoMunicipioIbge),
-      nomeFantasia: vazioParaNulo(data.nomeFantasia),
-      inscricaoMunicipal: vazioParaNulo(data.inscricaoMunicipal),
-      suframa: vazioParaNulo(data.suframa),
-      nire: vazioParaNulo(data.nire),
-      telefone: vazioParaNulo(data.telefone),
       fax: vazioParaNulo(data.fax),
-      responsavelNome: vazioParaNulo(data.responsavelNome),
-      responsavelCpf: vazioParaNulo(data.responsavelCpf),
-      responsavelCodAssinante: data.responsavelCodAssinante ?? null,
       inscricoesSubstituto: (data.inscricoesSubstituto ?? []).map((item) => ({
         uf: item.uf,
         ie: item.ie,

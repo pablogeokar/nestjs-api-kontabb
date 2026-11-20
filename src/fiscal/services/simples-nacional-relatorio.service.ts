@@ -52,7 +52,7 @@ export class SimplesNacionalRelatorioService {
   constructor(
     private readonly database: DatabaseService,
     private readonly simplesService: SimplesNacionalService,
-  ) {}
+  ) { }
 
   async gerarPdf(input: { clienteId: string; competencia: string }) {
     const [apuracao, clienteRows] = await Promise.all([
@@ -119,7 +119,7 @@ export function renderSimplesNacionalPdf(input: {
     [
       'Município / UF',
       [cliente.municipio, cliente.uf].filter(Boolean).join(' / ') ||
-        'Não informado',
+      'Não informado',
     ],
     ['CNAE principal', cliente.cnae || 'Não informado'],
   ]);
@@ -148,20 +148,20 @@ export function renderSimplesNacionalPdf(input: {
     );
   }
 
-  if (apuracao.memoria_calculo.regimeCompetencia === false) {
-    const receitaCompetencia = apuracao.memoria_calculo.receitaMesCompetencia;
-    infoBox(
-      document,
-      'Referência da base mensal: emissão',
-      `No regime de caixa cadastrado, as NFS-e foram alocadas pela data de emissão. RBT12 e Fator R usam a competência declarada.${typeof receitaCompetencia === 'string' ? ` Receita do mês por competência: ${money(receitaCompetencia)}.` : ''} Confirme os recebimentos antes de transmitir.`,
-    );
-  } else if (apuracao.memoria_calculo.regimeCompetencia === true) {
-    infoBox(
-      document,
-      'Referência da base mensal: competência',
-      'As NFS-e foram alocadas pela competência declarada.',
-    );
-  }
+  // if (apuracao.memoria_calculo.regimeCompetencia === false) {
+  //   const receitaCompetencia = apuracao.memoria_calculo.receitaMesCompetencia;
+  //   infoBox(
+  //     document,
+  //     'Referência da base mensal: emissão',
+  //     `No regime de caixa cadastrado, as NFS-e foram alocadas pela data de emissão. RBT12 e Fator R usam a competência declarada.${typeof receitaCompetencia === 'string' ? ` Receita do mês por competência: ${money(receitaCompetencia)}.` : ''} Confirme os recebimentos antes de transmitir.`,
+  //   );
+  // } else if (apuracao.memoria_calculo.regimeCompetencia === true) {
+  //   infoBox(
+  //     document,
+  //     'Referência da base mensal: competência',
+  //     'As NFS-e foram alocadas pela competência declarada.',
+  //   );
+  // }
 
   const devolucoes = apuracao.memoria_calculo.devolucoesDoMes;
   const abatidas = apuracao.memoria_calculo.devolucoesAbatidas;
@@ -212,7 +212,7 @@ export function renderSimplesNacionalPdf(input: {
     typeof receitaBaseFatorR === 'string' &&
     typeof folhaBaseFatorR === 'string'
   ) {
-    fatorRDetail += ` Base: folha ${money(folhaBaseFatorR)} / receita real ${money(receitaBaseFatorR)} (${periodoBaseFatorR === 'MES_ABERTURA' ? 'mês de abertura' : 'meses anteriores ao PA'}). Razão truncada em duas casas decimais, sem arredondamento; casos de base zero seguem a regra específica.`;
+    fatorRDetail += ` Base: folha ${money(folhaBaseFatorR)} / receita real ${money(receitaBaseFatorR)} (${periodoBaseFatorR === 'MES_ABERTURA' ? 'mês de abertura' : 'meses anteriores ao PA'}).`;
   }
   infoBox(document, 'Critério do Fator R', fatorRDetail);
   if (apuracao.excedeu_sublimite) {
@@ -293,8 +293,8 @@ export function renderSimplesNacionalPdf(input: {
 
   const pendencias = Array.isArray(memoria.pendencias)
     ? memoria.pendencias.filter(
-        (item): item is string => typeof item === 'string',
-      )
+      (item): item is string => typeof item === 'string',
+    )
     : [];
   ensureSpace(document, 56);
   document
@@ -742,8 +742,8 @@ function humanizeOrigin(value: unknown) {
   const text = stringValue(value);
   return text
     ? text
-        .replaceAll('_', ' ')
-        .replaceAll(':', ' · ')
-        .toLocaleLowerCase('pt-BR')
+      .replaceAll('_', ' ')
+      .replaceAll(':', ' · ')
+      .toLocaleLowerCase('pt-BR')
     : 'Não informada';
 }
