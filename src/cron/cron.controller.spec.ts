@@ -17,6 +17,7 @@ describe('CronController.runStorageCleanup', () => {
     logger as never,
     { cleanupExpired } as never,
     {} as never,
+    {} as never,
   );
 
   beforeEach(() => {

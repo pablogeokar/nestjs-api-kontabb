@@ -585,6 +585,33 @@ export class FinanceiroContratoDocumentoService {
   ) {}
 
   async gerarPdf(clienteId: string) {
+    const original = await this.contratos.obterOriginal(clienteId);
+    if (original) {
+      if (!original.contador)
+        throw new BadRequestException(
+          'O contrato original não possui contador registrado.',
+        );
+      const localidade = await this.ibge.resolverLocalidade(
+        original.contador.codigoMunicipioIbge,
+      );
+      if (!localidade)
+        throw new BadRequestException(
+          'Não foi possível confirmar o município do contador do contrato original. Tente novamente.',
+        );
+      return renderContratoPdf({
+        contrato: { ...original.contrato, itens: original.itens },
+        cliente: original.cliente,
+        contador: {
+          ...original.contador,
+          ...localidade,
+          endereco: address([
+            original.contador.endereco,
+            localidade.municipio,
+            localidade.uf,
+          ]),
+        },
+      });
+    }
     const contrato = await this.contratos.getByCliente(clienteId);
     const [row] = await this.database.db
       .select({ cliente: clientes, contador: contadores })

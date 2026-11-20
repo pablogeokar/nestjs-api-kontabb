@@ -296,6 +296,7 @@ describe('geração com o município cadastrado do contador', () => {
       db: { select: jest.fn().mockReturnValue(query) },
     } as unknown as DatabaseService;
     const contratos = {
+      obterOriginal: jest.fn().mockResolvedValue(null),
       getByCliente: jest.fn().mockResolvedValue(exemplo.contrato),
     } as unknown as FinanceiroContratosService;
     const ibge = new IbgeMunicipiosService();

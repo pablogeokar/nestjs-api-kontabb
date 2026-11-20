@@ -89,6 +89,26 @@ export class ItemContratoDto {
 }
 
 export class UpsertContratoDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  versaoEsperada?: number;
+  @IsOptional()
+  @Matches(COMPETENCIA_REGEX, { message: COMPETENCIA_MESSAGE })
+  competenciaInicioAditivo?: string;
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(2000)
+  motivoAditivo?: string;
+  @IsOptional()
+  @Matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)
+  dataAssinaturaAditivo?: string;
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  localAssinaturaAditivo?: string;
   @ApiPropertyOptional({ type: [ServicoContratoDto] })
   @IsOptional()
   @IsArray()
@@ -96,7 +116,6 @@ export class UpsertContratoDto {
   @ValidateNested({ each: true })
   @Type(() => ServicoContratoDto)
   servicos?: ServicoContratoDto[];
-
 
   @ApiPropertyOptional({ example: '2026-11-12' })
   @IsOptional()
@@ -182,4 +201,28 @@ export class UpsertContratoDto {
   @ValidateNested({ each: true })
   @Type(() => ItemContratoDto)
   itens?: ItemContratoDto[];
+}
+
+export class ReajusteContratoDto {
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0.0001)
+  @Max(1000)
+  percentual!: number;
+  @Matches(COMPETENCIA_REGEX, { message: COMPETENCIA_MESSAGE })
+  competenciaInicio!: string;
+  @IsString()
+  @MinLength(3)
+  @MaxLength(2000)
+  motivo!: string;
+  @IsInt()
+  @Min(1)
+  versaoEsperada!: number;
+  @IsOptional()
+  @Matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)
+  dataAssinatura?: string;
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  localAssinatura?: string;
 }

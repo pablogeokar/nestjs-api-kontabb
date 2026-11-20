@@ -17,6 +17,7 @@ import {
   or,
   sql,
   type SQL,
+  isNull,
 } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
@@ -42,6 +43,8 @@ import {
   principalAbatidoCents,
   saldoAbertoSql,
   toCents,
+  competenciaDeData,
+  competenciaIndex,
 } from '../financeiro.utils';
 import type {
   CancelarFaturaDto,
@@ -49,6 +52,7 @@ import type {
   GerarFaturaAvulsaDto,
   GerarFaturasLoteDto,
 } from '../dto/fatura.dto';
+import { estadoNaCompetencia } from '../contrato-historico';
 
 type Database = DatabaseService['db'];
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -96,6 +100,7 @@ export class FinanceiroFaturasService {
     dto: GerarFaturasLoteDto,
     userId?: string,
     requestId?: string,
+    fechamentoEm?: string,
   ): Promise<ResumoGeracaoFaturas> {
     const [mesStr, anoStr] = dto.competencia.split('/');
     if (
@@ -147,7 +152,14 @@ export class FinanceiroFaturasService {
 
       try {
         const faturaId = await this.db.transaction((tx) =>
-          this.gerarFaturaCliente(tx, clienteId, dto.competencia, hoje, userId),
+          this.gerarFaturaCliente(
+            tx,
+            clienteId,
+            dto.competencia,
+            hoje,
+            userId,
+            fechamentoEm,
+          ),
         );
         if (faturaId) {
           resumo.totalGeradas += 1;
@@ -199,17 +211,22 @@ export class FinanceiroFaturasService {
     const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
     const competencia = `${hoje.slice(5, 7)}/${hoje.slice(0, 4)}`;
 
-    const contratos = await this.db
-      .select({ clienteId: financeiroContratos.clienteId })
-      .from(financeiroContratos)
-      .where(
-        and(
-          eq(financeiroContratos.ativo, true),
-          dia === ultimoDia
-            ? gte(financeiroContratos.diaFechamento, dia)
-            : eq(financeiroContratos.diaFechamento, dia),
-        ),
+    const cadastrados = await this.db.select().from(financeiroContratos);
+    const contratos: Array<{ clienteId: string }> = [];
+    for (const cadastrado of cadastrados) {
+      const estado = await estadoNaCompetencia(
+        this.db,
+        cadastrado.id,
+        competencia,
       );
+      const vigente = estado?.contrato ?? cadastrado;
+      if (
+        vigente.ativo &&
+        (vigente.diaFechamento === dia ||
+          (dia === ultimoDia && vigente.diaFechamento > dia))
+      )
+        contratos.push({ clienteId: cadastrado.clienteId });
+    }
 
     if (contratos.length === 0) {
       return {
@@ -225,6 +242,7 @@ export class FinanceiroFaturasService {
       { competencia, clienteIds: contratos.map((c) => c.clienteId) },
       undefined,
       requestId,
+      hoje,
     );
     return { competencia, ...resumo };
   }
@@ -257,22 +275,7 @@ export class FinanceiroFaturasService {
 
     const comContrato = this.db
       .select({ id: financeiroContratos.clienteId })
-      .from(financeiroContratos)
-      .where(
-        and(
-          eq(financeiroContratos.ativo, true),
-          or(
-            sql`${financeiroContratos.valorMensalidade} > 0`,
-            inArray(
-              financeiroContratos.id,
-              this.db
-                .select({ id: financeiroContratosItens.contratoId })
-                .from(financeiroContratosItens)
-                .where(eq(financeiroContratosItens.ativo, true)),
-            ),
-          ),
-        ),
-      );
+      .from(financeiroContratos);
     const comPendentes = this.db
       .select({ id: financeiroLancamentos.clienteId })
       .from(financeiroLancamentos)
@@ -297,7 +300,68 @@ export class FinanceiroFaturasService {
         ),
       )
       .orderBy(asc(clientes.razaoSocial));
-    return rows.map((row) => row.id);
+    const elegiveis: string[] = [];
+    for (const row of rows) {
+      const [pendente] = await this.db
+        .select({ id: financeiroLancamentos.id })
+        .from(financeiroLancamentos)
+        .where(
+          and(
+            eq(financeiroLancamentos.clienteId, row.id),
+            eq(financeiroLancamentos.competencia, competencia),
+            eq(financeiroLancamentos.status, 'PENDENTE'),
+          ),
+        )
+        .limit(1);
+      if (pendente) {
+        elegiveis.push(row.id);
+        continue;
+      }
+      const [atual] = await this.db
+        .select()
+        .from(financeiroContratos)
+        .where(eq(financeiroContratos.clienteId, row.id))
+        .limit(1);
+      if (!atual) continue;
+      const estado = await estadoNaCompetencia(this.db, atual.id, competencia);
+      const vigente = estado?.contrato ?? atual;
+      if (
+        !vigente.ativo ||
+        (vigente.dataInicio &&
+          competenciaIndex(competencia) <
+            competenciaIndex(competenciaDeData(vigente.dataInicio)))
+      )
+        continue;
+      const itens: Array<{
+        ativo: boolean;
+        competenciaInicio: string | null;
+        competenciaFim: string | null;
+      }> =
+        estado?.itens ??
+        (await this.db
+          .select()
+          .from(financeiroContratosItens)
+          .where(
+            and(
+              eq(financeiroContratosItens.contratoId, atual.id),
+              isNull(financeiroContratosItens.removidoEm),
+            ),
+          ));
+      if (
+        toCents(vigente.valorMensalidade) > 0 ||
+        itens.some(
+          (item) =>
+            item.ativo &&
+            competenciaNaVigencia(
+              competencia,
+              item.competenciaInicio,
+              item.competenciaFim,
+            ),
+        )
+      )
+        elegiveis.push(row.id);
+    }
+    return elegiveis;
   }
 
   private async obterTiposPorCodigo(tx: Tx, codigos: string[]) {
@@ -315,19 +379,47 @@ export class FinanceiroFaturasService {
     competencia: string,
     hoje: string,
     userId?: string,
+    fechamentoEm?: string,
   ): Promise<string | null> {
     const mes = Number(competencia.slice(0, 2));
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${`financeiro_contrato:${clienteId}`}))`,
+    );
 
-    const [contrato] = await tx
+    const [cadastrado] = await tx
       .select()
       .from(financeiroContratos)
-      .where(
-        and(
-          eq(financeiroContratos.clienteId, clienteId),
-          eq(financeiroContratos.ativo, true),
-        ),
-      )
+      .where(eq(financeiroContratos.clienteId, clienteId))
       .limit(1);
+    const estado = cadastrado
+      ? await estadoNaCompetencia(tx, cadastrado.id, competencia)
+      : null;
+    const efetivo = estado?.contrato ?? cadastrado;
+    const contrato =
+      efetivo?.ativo &&
+      (!efetivo.dataInicio ||
+        competenciaIndex(competencia) >=
+          competenciaIndex(competenciaDeData(efetivo.dataInicio)))
+        ? efetivo
+        : undefined;
+    if (fechamentoEm) {
+      const dia = Number(fechamentoEm.slice(8, 10));
+      const ultimoDia = new Date(
+        Date.UTC(
+          Number(fechamentoEm.slice(0, 4)),
+          Number(fechamentoEm.slice(5, 7)),
+          0,
+        ),
+      ).getUTCDate();
+      if (
+        !contrato ||
+        !(
+          contrato.diaFechamento === dia ||
+          (dia === ultimoDia && contrato.diaFechamento > dia)
+        )
+      )
+        return null;
+    }
 
     const pendentes = await tx
       .select()
@@ -389,26 +481,31 @@ export class FinanceiroFaturasService {
     }
 
     if (contrato) {
-      const fixos = await tx
-        .select({
-          item: financeiroContratosItens,
-          natureza: financeiroTiposLancamento.natureza,
-        })
-        .from(financeiroContratosItens)
-        .innerJoin(
-          financeiroTiposLancamento,
-          eq(
-            financeiroTiposLancamento.id,
-            financeiroContratosItens.tipoLancamentoId,
-          ),
-        )
-        .where(
-          and(
-            eq(financeiroContratosItens.contratoId, contrato.id),
-            eq(financeiroContratosItens.ativo, true),
-          ),
-        )
-        .orderBy(asc(financeiroContratosItens.criadoEm));
+      const fixos = estado
+        ? estado.itens
+            .filter((item) => item.ativo)
+            .map((item) => ({ item, natureza: item.natureza }))
+        : await tx
+            .select({
+              item: financeiroContratosItens,
+              natureza: financeiroTiposLancamento.natureza,
+            })
+            .from(financeiroContratosItens)
+            .innerJoin(
+              financeiroTiposLancamento,
+              eq(
+                financeiroTiposLancamento.id,
+                financeiroContratosItens.tipoLancamentoId,
+              ),
+            )
+            .where(
+              and(
+                eq(financeiroContratosItens.contratoId, contrato.id),
+                eq(financeiroContratosItens.ativo, true),
+                isNull(financeiroContratosItens.removidoEm),
+              ),
+            )
+            .orderBy(asc(financeiroContratosItens.criadoEm));
       for (const { item, natureza } of fixos) {
         if (
           !competenciaNaVigencia(

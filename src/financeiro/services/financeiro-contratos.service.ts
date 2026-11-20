@@ -2,8 +2,20 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
-import { and, asc, eq, ilike, inArray, notInArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  notInArray,
+  isNull,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
@@ -11,6 +23,8 @@ import {
   financeiroContratos,
   financeiroContratosItens,
   financeiroTiposLancamento,
+  financeiroContratosAditivos,
+  financeiroFaturas,
 } from '../../database/schema';
 import type { PaginationParams } from '../../common/types';
 import {
@@ -20,8 +34,20 @@ import {
   isValidCivilDate,
   isUniqueViolation,
   toCents,
+  competenciaDeData,
 } from '../financeiro.utils';
-import type { UpsertContratoDto } from '../dto/contrato.dto';
+import type {
+  ReajusteContratoDto,
+  UpsertContratoDto,
+} from '../dto/contrato.dto';
+import { getBahiaDate } from '../../common/document-status';
+import {
+  alteracoesDoContrato,
+  capturarEstadoContrato,
+  contratoFormalizado,
+  proximoReajuste,
+  reajustarValor,
+} from '../contrato-historico';
 import {
   TIPO_ENCERRAMENTO,
   TIPO_MENSALIDADE,
@@ -89,32 +115,52 @@ export class FinanceiroContratosService {
                 rows.map((row) => row.contrato.id),
               ),
               eq(financeiroContratosItens.ativo, true),
+              isNull(financeiroContratosItens.removidoEm),
             ),
           )
       : [];
     // Mensalidade efetiva: base + débitos - créditos dos lançamentos fixos
     // ativos e vigentes na competência atual (mesma regra da geração de fatura).
-    const hoje = new Date();
-    const competenciaAtual = `${String(hoje.getMonth() + 1).padStart(2, '0')}/${hoje.getFullYear()}`;
+    const competenciaAtual = competenciaDeData(getBahiaDate());
+    const competenciasPorContrato = new Map(
+      rows.map((row) => [
+        row.contrato.id,
+        row.contrato.competenciaVigencia &&
+        competenciaIndex(row.contrato.competenciaVigencia) >
+          competenciaIndex(competenciaAtual)
+          ? row.contrato.competenciaVigencia
+          : competenciaAtual,
+      ]),
+    );
     const porContrato = new Map<string, number>();
     const ajusteCents = new Map<string, number>();
     for (const item of fixos) {
-      porContrato.set(item.contratoId, (porContrato.get(item.contratoId) ?? 0) + 1);
+      porContrato.set(
+        item.contratoId,
+        (porContrato.get(item.contratoId) ?? 0) + 1,
+      );
       if (
         !competenciaNaVigencia(
-          competenciaAtual,
+          competenciasPorContrato.get(item.contratoId) ?? competenciaAtual,
           item.competenciaInicio,
           item.competenciaFim,
         )
       ) {
         continue;
       }
-      const cents = toCents(item.valor) * (item.natureza === 'CREDITO' ? -1 : 1);
-      ajusteCents.set(item.contratoId, (ajusteCents.get(item.contratoId) ?? 0) + cents);
+      const cents =
+        toCents(item.valor) * (item.natureza === 'CREDITO' ? -1 : 1);
+      ajusteCents.set(
+        item.contratoId,
+        (ajusteCents.get(item.contratoId) ?? 0) + cents,
+      );
     }
     return {
       data: rows.map((row) => ({
         ...row.contrato,
+        proximoReajuste: proximoReajuste(
+          row.contrato.dataUltimoReajuste ?? row.contrato.dataInicio,
+        ),
         clienteRazaoSocial: row.clienteRazaoSocial,
         clienteCnpj: row.clienteCnpj,
         clienteTipoPessoa: row.clienteTipoPessoa,
@@ -154,7 +200,12 @@ export class FinanceiroContratosService {
           financeiroContratosItens.tipoLancamentoId,
         ),
       )
-      .where(eq(financeiroContratosItens.contratoId, contratoId))
+      .where(
+        and(
+          eq(financeiroContratosItens.contratoId, contratoId),
+          isNull(financeiroContratosItens.removidoEm),
+        ),
+      )
       .orderBy(asc(financeiroContratosItens.criadoEm));
     return rows.map((row) => ({
       ...row.item,
@@ -172,10 +223,181 @@ export class FinanceiroContratosService {
     if (!contrato) {
       throw new NotFoundException('Contrato financeiro não encontrado.');
     }
-    return { ...contrato, itens: await this.listarItens(contrato.id) };
+    return {
+      ...contrato,
+      proximoReajuste: proximoReajuste(
+        contrato.dataUltimoReajuste ?? contrato.dataInicio,
+      ),
+      itens: await this.listarItens(contrato.id),
+    };
   }
 
-  async upsert(clienteId: string, dto: UpsertContratoDto, userId: string) {
+  async listarAditivos(clienteId: string) {
+    const contrato = await this.getByCliente(clienteId);
+    const rows = await this.database.db
+      .select()
+      .from(financeiroContratosAditivos)
+      .where(eq(financeiroContratosAditivos.contratoId, contrato.id))
+      .orderBy(desc(financeiroContratosAditivos.numero));
+    return rows.map(({ anterior, posterior, ...row }) => ({
+      ...row,
+      valorAnterior: anterior.contrato.valorMensalidade,
+      valorNovo: posterior.contrato.valorMensalidade,
+    }));
+  }
+
+  async obterOriginal(clienteId: string) {
+    return this.database.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`financeiro_contrato:${clienteId}`}))`,
+      );
+      const [contrato] = await tx
+        .select()
+        .from(financeiroContratos)
+        .where(eq(financeiroContratos.clienteId, clienteId))
+        .limit(1);
+      if (!contrato)
+        throw new NotFoundException('Contrato financeiro não encontrado.');
+      const [primeiro] = await tx
+        .select({ anterior: financeiroContratosAditivos.anterior })
+        .from(financeiroContratosAditivos)
+        .where(eq(financeiroContratosAditivos.contratoId, contrato.id))
+        .orderBy(asc(financeiroContratosAditivos.numero))
+        .limit(1);
+      return primeiro?.anterior ?? capturarEstadoContrato(tx, contrato);
+    });
+  }
+
+  async previaReajuste(clienteId: string, dto: ReajusteContratoDto) {
+    if (dto.motivo.trim().length < 3)
+      throw new BadRequestException(
+        'Informe o índice, o período e a justificativa do reajuste.',
+      );
+    const contrato = await this.getByCliente(clienteId);
+    if (contrato.versao !== dto.versaoEsperada)
+      throw new ConflictException(
+        'O contrato foi alterado. Recarregue os dados e revise o reajuste.',
+      );
+    if (!contrato.ativo)
+      throw new BadRequestException(
+        'Ative o contrato antes de registrar um reajuste anual.',
+      );
+    if (!contrato.servicosContratados.length || !contrato.dataAssinatura)
+      throw new BadRequestException(
+        'Complete os serviços e a assinatura do contrato original antes de registrar um reajuste anual.',
+      );
+    const [partes] = await this.database.db
+      .select({ cliente: clientes, contador: contadores })
+      .from(clientes)
+      .leftJoin(contadores, eq(contadores.id, clientes.contadorId))
+      .where(eq(clientes.id, clienteId))
+      .limit(1);
+    if (
+      !partes?.contador?.nome ||
+      !partes.contador.crc ||
+      !(partes.contador.cpf || partes.contador.cnpj) ||
+      (partes.cliente.tipoPessoa === 'PJ' &&
+        !partes.cliente.responsavelNome?.trim()) ||
+      !(dto.localAssinatura || contrato.localAssinatura)?.trim()
+    )
+      throw new BadRequestException(
+        'Complete o contador vinculado, o responsável da empresa e o local de assinatura antes de reajustar e gerar o aditivo.',
+      );
+    if (dto.dataAssinatura && !isValidCivilDate(dto.dataAssinatura))
+      throw new BadRequestException('Data de assinatura do aditivo inválida.');
+    const dataMinima = proximoReajuste(
+      contrato.dataUltimoReajuste ?? contrato.dataInicio,
+    );
+    if (!dataMinima)
+      throw new BadRequestException(
+        'Informe a data de início do contrato antes de reajustar.',
+      );
+    const [mes, ano] = dto.competenciaInicio.split('/');
+    const dataEfeito = `${ano}-${mes}-01`;
+    if (dataEfeito < dataMinima)
+      throw new BadRequestException(
+        `O próximo reajuste anual poderá vigorar a partir de ${dataMinima}.`,
+      );
+    if (
+      competenciaIndex(dto.competenciaInicio) <
+      competenciaIndex(competenciaDeData(getBahiaDate()))
+    )
+      throw new BadRequestException(
+        'Não é permitido aplicar reajuste em competência passada.',
+      );
+    let servicos: typeof contrato.servicosContratados;
+    let valorNovo: string;
+    try {
+      servicos = contrato.servicosContratados.map((s) => ({
+        ...s,
+        valorMensal: reajustarValor(s.valorMensal, dto.percentual),
+      }));
+      valorNovo = servicos.length
+        ? fromCents(
+            servicos.reduce((total, s) => total + toCents(s.valorMensal), 0),
+          )
+        : reajustarValor(contrato.valorMensalidade, dto.percentual);
+    } catch {
+      throw new BadRequestException(
+        'O valor reajustado excede o limite permitido.',
+      );
+    }
+    if (
+      toCents(valorNovo) <= toCents(contrato.valorMensalidade) ||
+      toCents(valorNovo) > 999_999_999_999
+    )
+      throw new BadRequestException(
+        'O percentual informado não produz um reajuste válido em centavos.',
+      );
+    return {
+      versao: contrato.versao,
+      percentual: dto.percentual,
+      competenciaInicio: dto.competenciaInicio,
+      dataMinima,
+      valorAnterior: contrato.valorMensalidade,
+      valorNovo,
+      servicos,
+    };
+  }
+
+  async reajustar(clienteId: string, dto: ReajusteContratoDto, userId: string) {
+    const previa = await this.previaReajuste(clienteId, dto);
+    const contrato = await this.getByCliente(clienteId);
+    return this.upsert(
+      clienteId,
+      {
+        valorMensalidade: Number(previa.valorNovo),
+        diaVencimento: contrato.diaVencimento,
+        diaFechamento: contrato.diaFechamento,
+        gera13o: contrato.gera13o,
+        mes13o: contrato.mes13o,
+        ativo: contrato.ativo,
+        observacoes: contrato.observacoes ?? undefined,
+        ...(previa.servicos.length
+          ? {
+              servicos: previa.servicos.map((s) => ({
+                ...s,
+                valorMensal: Number(s.valorMensal),
+              })),
+            }
+          : {}),
+        versaoEsperada: dto.versaoEsperada,
+        competenciaInicioAditivo: dto.competenciaInicio,
+        motivoAditivo: dto.motivo,
+        dataAssinaturaAditivo: dto.dataAssinatura,
+        localAssinaturaAditivo: dto.localAssinatura,
+      },
+      userId,
+      dto.percentual,
+    );
+  }
+
+  async upsert(
+    clienteId: string,
+    dto: UpsertContratoDto,
+    userId: string,
+    percentualAnual?: number,
+  ) {
     const [cliente] = await this.database.db
       .select({ id: clientes.id })
       .from(clientes)
@@ -187,6 +409,11 @@ export class FinanceiroContratosService {
     if (dto.dataInicio && !isValidCivilDate(dto.dataInicio)) {
       throw new BadRequestException('Data de início inválida.');
     }
+    if (
+      dto.dataAssinaturaAditivo &&
+      !isValidCivilDate(dto.dataAssinaturaAditivo)
+    )
+      throw new BadRequestException('Data de assinatura do aditivo inválida.');
     if (dto.dataAssinatura && !isValidCivilDate(dto.dataAssinatura)) {
       throw new BadRequestException('Data de assinatura inválida.');
     }
@@ -279,6 +506,31 @@ export class FinanceiroContratosService {
 
     try {
       const contratoId = await this.database.db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${`financeiro_contrato:${clienteId}`}))`,
+        );
+        const [atual] = await tx
+          .select()
+          .from(financeiroContratos)
+          .where(eq(financeiroContratos.clienteId, clienteId))
+          .for('update');
+        if (
+          atual &&
+          dto.versaoEsperada !== undefined &&
+          atual.versao !== dto.versaoEsperada
+        )
+          throw new ConflictException(
+            'O contrato foi alterado. Recarregue os dados antes de salvar.',
+          );
+        if (
+          atual?.dataInicio &&
+          dto.dataInicio &&
+          atual.dataInicio !== dto.dataInicio
+        )
+          throw new BadRequestException(
+            'A data de início do contrato original não pode ser alterada.',
+          );
+        const anterior = atual ? await capturarEstadoContrato(tx, atual) : null;
         const [contrato] = await tx
           .insert(financeiroContratos)
           .values({ clienteId, ...values })
@@ -303,7 +555,8 @@ export class FinanceiroContratosService {
 
           // Remove os itens ausentes da lista enviada.
           await tx
-            .delete(financeiroContratosItens)
+            .update(financeiroContratosItens)
+            .set({ removidoEm: new Date() })
             .where(
               and(
                 eq(financeiroContratosItens.contratoId, contrato.id),
@@ -315,6 +568,7 @@ export class FinanceiroContratosService {
 
           for (const item of dto.itens) {
             const campos = {
+              removidoEm: null,
               tipoLancamentoId: item.tipoLancamentoId,
               descricao: item.descricao.trim(),
               valor: fromCents(toCents(item.valor)),
@@ -332,6 +586,115 @@ export class FinanceiroContratosService {
                 .insert(financeiroContratosItens)
                 .values({ contratoId: contrato.id, ...campos });
             }
+          }
+        }
+        const [salvo] = await tx
+          .select()
+          .from(financeiroContratos)
+          .where(eq(financeiroContratos.id, contrato.id));
+        if (
+          salvo.servicosContratados.length &&
+          salvo.servicosContratados.reduce(
+            (total, s) => total + toCents(s.valorMensal),
+            0,
+          ) !== toCents(salvo.valorMensalidade)
+        )
+          throw new ConflictException(
+            'Os serviços e a mensalidade não correspondem. Recarregue o contrato antes de salvar.',
+          );
+        if (
+          anterior &&
+          atual &&
+          (percentualAnual !== undefined || contratoFormalizado(anterior))
+        ) {
+          const posterior = await capturarEstadoContrato(tx, salvo);
+          if (percentualAnual !== undefined && !contratoFormalizado(posterior))
+            throw new BadRequestException(
+              'Complete o instrumento contratual e as partes antes de gerar o reajuste anual.',
+            );
+          const alteracoes = alteracoesDoContrato(anterior, posterior);
+          if (alteracoes.length) {
+            const hoje = getBahiaDate();
+            const competencia =
+              dto.competenciaInicioAditivo ?? competenciaDeData(hoje);
+            if (
+              salvo.dataInicio &&
+              competenciaIndex(competencia) <
+                competenciaIndex(competenciaDeData(salvo.dataInicio))
+            )
+              throw new BadRequestException(
+                'A vigência do aditivo não pode anteceder o início do contrato.',
+              );
+            if (
+              competenciaIndex(competencia) <
+                competenciaIndex(competenciaDeData(hoje)) ||
+              (atual.competenciaVigencia &&
+                competenciaIndex(competencia) <
+                  competenciaIndex(atual.competenciaVigencia))
+            )
+              throw new BadRequestException(
+                'A vigência do aditivo não pode ser anterior à competência atual ou ao último aditivo.',
+              );
+            const [faturada] = await tx
+              .select({ id: financeiroFaturas.id })
+              .from(financeiroFaturas)
+              .where(
+                and(
+                  eq(financeiroFaturas.clienteId, clienteId),
+                  sql`(substring(${financeiroFaturas.competencia}, 4, 4)::int * 12 + substring(${financeiroFaturas.competencia}, 1, 2)::int) >= ${competenciaIndex(competencia)}`,
+                ),
+              )
+              .limit(1);
+            if (faturada)
+              throw new ConflictException(
+                'Já existe fatura emitida a partir dessa competência. Escolha uma vigência posterior às faturas emitidas.',
+              );
+            const [mes, ano] = competencia.split('/');
+            const dataBase = `${ano}-${mes}-01`;
+            if (percentualAnual !== undefined) {
+              const minima = proximoReajuste(
+                atual.dataUltimoReajuste ?? atual.dataInicio,
+              );
+              if (!minima || dataBase < minima)
+                throw new ConflictException(
+                  'Ainda não completou o intervalo anual para reajuste.',
+                );
+            }
+            posterior.contrato.versao = atual.versao + 1;
+            posterior.contrato.competenciaVigencia = competencia;
+            posterior.contrato.dataUltimoReajuste =
+              percentualAnual !== undefined
+                ? dataBase
+                : atual.dataUltimoReajuste;
+            await tx
+              .update(financeiroContratos)
+              .set({
+                versao: posterior.contrato.versao,
+                competenciaVigencia: competencia,
+                dataUltimoReajuste: posterior.contrato.dataUltimoReajuste,
+              })
+              .where(eq(financeiroContratos.id, contrato.id));
+            await tx.insert(financeiroContratosAditivos).values({
+              contratoId: contrato.id,
+              numero: atual.versao,
+              tipo:
+                percentualAnual === undefined ? 'ALTERACAO' : 'REAJUSTE_ANUAL',
+              competenciaInicio: competencia,
+              motivo:
+                dto.motivoAditivo?.trim() ||
+                'Atualização dos parâmetros contratuais',
+              percentual:
+                percentualAnual === undefined ? null : String(percentualAnual),
+              dataAssinatura: dto.dataAssinaturaAditivo ?? hoje,
+              localAssinatura:
+                dto.localAssinaturaAditivo?.trim() ||
+                salvo.localAssinatura ||
+                'Não informado',
+              anterior,
+              posterior,
+              alteracoes,
+              criadoPor: userId ?? null,
+            });
           }
         }
         return contrato.id;
