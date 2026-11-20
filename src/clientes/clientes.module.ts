@@ -21,6 +21,6 @@ import { CrmModule } from '../crm/crm.module';
     IbgeMunicipiosService,
     CepLookupService,
   ],
-  exports: [ClientesService],
+  exports: [ClientesService, IbgeMunicipiosService],
 })
 export class ClientesModule {}

@@ -3,10 +3,17 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
+import { IbgeMunicipiosService } from '../../clientes/ibge-municipios.service';
 import { DatabaseService } from '../../database/database.service';
 import { clientes, contadores } from '../../database/schema';
 import { SERVICOS_CONTRATO } from '../financeiro-servicos.catalogo';
-import { isValidCivilDate, toCents } from '../financeiro.utils';
+import {
+  competenciaDeData,
+  competenciaNaVigencia,
+  fromCents,
+  isValidCivilDate,
+  toCents,
+} from '../financeiro.utils';
 import { FinanceiroContratosService } from './financeiro-contratos.service';
 
 const LOGO = readFileSync(
@@ -84,7 +91,14 @@ export interface ContratoPdfData {
     municipio: string | null;
     uf: string | null;
   };
-  contador: { nome: string; documento: string; crc: string; endereco: string };
+  contador: {
+    nome: string;
+    documento: string;
+    crc: string;
+    endereco: string;
+    municipio: string | null;
+    uf: string | null;
+  };
 }
 
 export function servicosDoInstrumento(
@@ -140,6 +154,11 @@ export function validarContratoParaImpressao(data: ContratoPdfData) {
   if (!data.contador.nome || !data.contador.documento || !data.contador.crc) {
     throw new BadRequestException(
       'Complete o cadastro do contador vinculado antes de imprimir.',
+    );
+  }
+  if (!data.contador.municipio?.trim() || !data.contador.uf?.trim()) {
+    throw new BadRequestException(
+      'Informe um município válido no cadastro do contador vinculado antes de imprimir o contrato.',
     );
   }
   for (const servico of data.contrato.servicosContratados) {
@@ -252,6 +271,7 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
         indent?: number;
         gap?: number;
         justify?: boolean;
+        link?: string;
       } = {},
     ) => {
       const size = options.size ?? 9;
@@ -291,6 +311,15 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
             lineBreak: false,
             ...(wordSpacing > 0 ? { wordSpacing } : {}),
           });
+          if (options.link) {
+            pdf.link(
+              40 + indent,
+              y,
+              pdf.widthOfString(line),
+              size + 2.5,
+              options.link,
+            );
+          }
           y += size + 2.5;
         }
       }
@@ -395,6 +424,41 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
         text(
           `No mês ${String(data.contrato.mes13o).padStart(2, '0')}, será cobrado adicional anual de encerramento de exercício equivalente a uma mensalidade base (${money(data.contrato.valorMensalidade)}).`,
         );
+        text(
+          'O adicional remunera o trabalho adicional de encerramento do exercício, conforme os serviços contratados e efetivamente prestados: fechamento da escrituração, demonstrações contábeis anuais, obrigações acessórias anuais e folha do 13º salário, quando aplicáveis ao escopo deste contrato.',
+        );
+        text(
+          'Fundamentação normativa: Resolução CFC nº 1.590/2020, art. 2º, alíneas “b”, “e” e “f”, e art. 4º; e NBC PG 01 (Código de Ética Profissional do Contador), itens 7, 8 e 9. Essas normas exigem o detalhamento dos serviços, honorários e condições de pagamento, a fixação escrita dos valores e a formalização do contrato.',
+        );
+        text(
+          'Conforme orientação do Conselho Federal de Contabilidade, a obrigação de pagamento decorre deste ajuste expresso para remunerar os serviços de encerramento, sem natureza salarial.',
+        );
+        text('Fontes oficiais para consulta:', { size: 8, bold: true });
+        text(
+          'Resolução CFC nº 1.590/2020 - contrato de prestação de serviços contábeis (arts. 2º e 4º).',
+          {
+            size: 8,
+            color: BLUE,
+            link: 'https://www1.cfc.org.br/sisweb/SRE/docs/Res_1590%20(Alterada).pdf',
+          },
+        );
+        text(
+          'NBC PG 01 - Código de Ética Profissional do Contador (itens 7, 8 e 9).',
+          {
+            size: 8,
+            color: BLUE,
+            link: 'https://www1.cfc.org.br/sisweb/SRE/docs/NBCPG01.pdf',
+          },
+        );
+        text(
+          'CFC - Perguntas frequentes: Cobrança de 13º Salário por parte do Contabilista.',
+          {
+            size: 8,
+            color: BLUE,
+            link: 'https://cfc.org.br/fiscalizacao-etica-e-disciplina/perguntas-frequentes/cobranca-de-13o-salario-por-parte-do-contabilista/',
+            gap: 8,
+          },
+        );
       }
       const fixos = data.contrato.itens.filter((item) => item.ativo);
       if (fixos.length) {
@@ -413,6 +477,25 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
           );
         }
       }
+      const competenciaInicial = competenciaDeData(data.contrato.dataInicio!);
+      const totalMensal = fixos.reduce((total, item) => {
+        if (
+          !competenciaNaVigencia(
+            competenciaInicial,
+            item.competenciaInicio,
+            item.competenciaFim,
+          )
+        ) {
+          return total;
+        }
+        return (
+          total + toCents(item.valor) * (item.natureza === 'CREDITO' ? -1 : 1)
+        );
+      }, toCents(data.contrato.valorMensalidade));
+      text(
+        `Total a pagar no vencimento de cada ciclo ${money(fromCents(Math.max(0, totalMensal)))}`,
+        { bold: true, color: DEEP, gap: 8 },
+      );
       text(
         'Tributos, taxas públicas e serviços extraordinários não descritos neste instrumento não integram os honorários acima, salvo ajuste expresso.',
       );
@@ -439,12 +522,8 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
         'As partes manterão confidenciais as informações recebidas em razão deste contrato, ressalvadas as comunicações exigidas por lei e as necessárias à execução dos serviços. O tratamento de dados pessoais observará a legislação aplicável e o escopo deste instrumento.',
       );
       section('10', 'Foro competente');
-      const domicilioCliente =
-        data.cliente.municipio && data.cliente.uf
-          ? `, em ${data.cliente.municipio}/${data.cliente.uf}`
-          : '';
       text(
-        `Para dirimir controvérsias decorrentes deste contrato, as partes elegem o foro competente do domicílio da CONTRATANTE${domicilioCliente}, observadas as regras de competência inderrogável e os direitos do consumidor quando aplicáveis.`,
+        `Para dirimir controvérsias decorrentes deste contrato, as partes elegem o foro da comarca que abrange o município de ${data.contador.municipio!.trim()}/${data.contador.uf!.trim()}, domicílio do(a) CONTRATADO(A), observadas as regras de competência inderrogável e os direitos do consumidor quando aplicáveis.`,
       );
       if (data.contrato.condicoesContratuais) {
         section('11', 'Condições adicionais');
@@ -502,6 +581,7 @@ export class FinanceiroContratoDocumentoService {
   constructor(
     private readonly database: DatabaseService,
     private readonly contratos: FinanceiroContratosService,
+    private readonly ibge: IbgeMunicipiosService,
   ) {}
 
   async gerarPdf(clienteId: string) {
@@ -519,6 +599,14 @@ export class FinanceiroContratoDocumentoService {
     }
     const cliente = row.cliente;
     const contador = row.contador;
+    const localidade = await this.ibge.resolverLocalidade(
+      contador.codigoMunicipioIbge,
+    );
+    if (!localidade) {
+      throw new BadRequestException(
+        'Não foi possível confirmar o município do contador para definir o foro. Verifique o código IBGE no cadastro do contador e tente novamente.',
+      );
+    }
     return renderContratoPdf({
       contrato,
       cliente: {
@@ -542,11 +630,15 @@ export class FinanceiroContratoDocumentoService {
         nome: contador.nome,
         documento: contador.cpf ?? contador.cnpj ?? '',
         crc: contador.crc,
+        municipio: localidade.municipio,
+        uf: localidade.uf,
         endereco: address([
           contador.logradouro,
           contador.numero,
           contador.complemento,
           contador.bairro,
+          localidade.municipio,
+          localidade.uf,
           contador.cep,
         ]),
       },
