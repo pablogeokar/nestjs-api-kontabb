@@ -7,7 +7,13 @@ import { IbgeMunicipiosService } from '../../clientes/ibge-municipios.service';
 import { DatabaseService } from '../../database/database.service';
 import { clientes, contadores } from '../../database/schema';
 import { SERVICOS_CONTRATO } from '../financeiro-servicos.catalogo';
-import { isValidCivilDate, toCents } from '../financeiro.utils';
+import {
+  competenciaDeData,
+  competenciaNaVigencia,
+  fromCents,
+  isValidCivilDate,
+  toCents,
+} from '../financeiro.utils';
 import { FinanceiroContratosService } from './financeiro-contratos.service';
 
 const LOGO = readFileSync(
@@ -471,6 +477,25 @@ export function renderContratoPdf(data: ContratoPdfData): Promise<Buffer> {
           );
         }
       }
+      const competenciaInicial = competenciaDeData(data.contrato.dataInicio!);
+      const totalMensal = fixos.reduce((total, item) => {
+        if (
+          !competenciaNaVigencia(
+            competenciaInicial,
+            item.competenciaInicio,
+            item.competenciaFim,
+          )
+        ) {
+          return total;
+        }
+        return (
+          total + toCents(item.valor) * (item.natureza === 'CREDITO' ? -1 : 1)
+        );
+      }, toCents(data.contrato.valorMensalidade));
+      text(
+        `Total a pagar no vencimento de cada ciclo ${money(fromCents(Math.max(0, totalMensal)))}`,
+        { bold: true, color: DEEP, gap: 8 },
+      );
       text(
         'Tributos, taxas públicas e serviços extraordinários não descritos neste instrumento não integram os honorários acima, salvo ajuste expresso.',
       );

@@ -77,6 +77,14 @@ describe('contrato financeiro personalizado', () => {
     expect(texto).not.toContain('domicílio da CONTRATANTE');
     expect(texto).not.toContain('será cobrado adicional anual');
     expect(texto).not.toContain('Fundamentação normativa:');
+    expect(texto).toContain(
+      'Total a pagar no vencimento de cada ciclo R$ 420,00',
+    );
+    expect(texto).not.toContain('Resumo do total a pagar no vencimento');
+    expect(texto).not.toContain(
+      'Os totais consideram os valores e as vigências',
+    );
+    expect(texto).not.toContain('Total no vencimento com encerramento');
     expect(
       servicosDoInstrumento(exemplo.contrato.servicosContratados).map(
         (item) => item.nome,
@@ -85,6 +93,96 @@ describe('contrato financeiro personalizado', () => {
       'Departamento de Pessoal',
       'eSocial de empregado(a) doméstico(a)',
     ]);
+  });
+
+  it('mostra uma única linha com a mensalidade e os adicionais e descontos vigentes no início do contrato', async () => {
+    const item = {
+      descricao: 'Adicional permanente',
+      valor: '50.25',
+      natureza: 'DEBITO',
+      ativo: true,
+      competenciaInicio: null,
+      competenciaFim: null,
+    };
+    const texto = extrairTexto(
+      await renderContratoPdf({
+        ...exemplo,
+        contrato: {
+          ...exemplo.contrato,
+          gera13o: true,
+          itens: [
+            item,
+            {
+              ...item,
+              descricao: 'Desconto permanente',
+              valor: '20.10',
+              natureza: 'CREDITO',
+            },
+            {
+              ...item,
+              descricao: 'Adicional temporário',
+              valor: '100.00',
+              competenciaInicio: '11/2026',
+              competenciaFim: '11/2026',
+            },
+            {
+              ...item,
+              descricao: 'Adicional futuro',
+              valor: '200.00',
+              competenciaInicio: '01/2027',
+            },
+            {
+              ...item,
+              descricao: 'Adicional encerrado',
+              valor: '999.00',
+              competenciaFim: '10/2026',
+            },
+            {
+              ...item,
+              descricao: 'Adicional inativo',
+              valor: '999.00',
+              ativo: false,
+            },
+          ],
+        },
+      }),
+    );
+    expect(texto).toContain(
+      'Total a pagar no vencimento de cada ciclo R$ 550,15',
+    );
+    expect(
+      texto.match(/Total a pagar no vencimento de cada ciclo/g),
+    ).toHaveLength(1);
+    expect(texto).not.toContain('Resumo do total a pagar no vencimento');
+    expect(texto).not.toContain('Total no vencimento com encerramento');
+    expect(texto).not.toContain('A partir da competência');
+  });
+
+  it('limita o total mensal a zero quando os descontos superam a mensalidade', async () => {
+    const texto = extrairTexto(
+      await renderContratoPdf({
+        ...exemplo,
+        contrato: {
+          ...exemplo.contrato,
+          dataInicio: '2026-12-01',
+          diaVencimento: 31,
+          gera13o: true,
+          itens: [
+            {
+              descricao: 'Desconto temporário',
+              valor: '600.00',
+              natureza: 'CREDITO',
+              ativo: true,
+              competenciaInicio: null,
+              competenciaFim: '12/2026',
+            },
+          ],
+        },
+      }),
+    );
+    expect(texto).toContain(
+      'Total a pagar no vencimento de cada ciclo R$ 0,00',
+    );
   });
 
   it('fundamenta o adicional pactuado na cláusula 5 e inclui as fontes oficiais', async () => {
