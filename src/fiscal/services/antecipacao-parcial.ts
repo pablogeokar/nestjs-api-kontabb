@@ -12,6 +12,36 @@ export const CFOP_ANTECIPACAO_PARCIAL_BA = CFOP_ANTECIPACAO_PARCIAL;
 const CEM = 1_000_000n;
 const ICMS_CST_ST = new Set(['10', '30', '60', '70']);
 const ICMS_CSOSN_ST = new Set(['201', '202', '203', '500']);
+// CSOSN do fornecedor do Simples Nacional que PERMITE aproveitamento de crédito
+// (informado em vCredICMSSN) e os que NÃO permitem. 201 também traz ST e cai no
+// ramo de ST antes do cálculo; 900 pode destacar ICMS normalmente, então só se
+// decide pelo valor destacado.
+const CSOSN_COM_CREDITO = new Set(['101']);
+const CSOSN_SEM_CREDITO = new Set(['102', '103', '300', '400']);
+
+/**
+ * Como o abatimento da antecipação foi determinado. Torna explícito se houve
+ * crédito vindo da nota ou a regra de cálculo do regime do adquirente.
+ * - ALIQUOTA_NAO_OPTANTE: adquirente do Simples Nacional. A norma manda cobrar
+ *   a diferença entre a alíquota interna e a interestadual (7%, 12% ou 4%),
+ *   qualquer que seja o regime do fornecedor. Não depende de crédito na nota.
+ * - ICMS_DESTACADO: adquirente do regime normal; abate o ICMS destacado.
+ * - CREDITO_SIMPLES_DESTACADO: regime normal comprando de fornecedor do Simples
+ *   com crédito informado na nota (CSOSN 101).
+ * - SEM_CREDITO: regime normal comprando de fornecedor do Simples sem permissão
+ *   de crédito; nada a abater.
+ */
+export type CriterioCreditoOrigem =
+  | 'ALIQUOTA_NAO_OPTANTE'
+  | 'ICMS_DESTACADO'
+  | 'CREDITO_SIMPLES_DESTACADO'
+  | 'SEM_CREDITO';
+export interface CreditoOrigem {
+  criterio: CriterioCreditoOrigem;
+  descricao: string;
+  /** Valor abatido em R$; null quando o abatimento é uma alíquota (Simples). */
+  valor: string | null;
+}
 
 export interface ParametrosAntecipacaoParcial {
   baseCalculo: string;
@@ -88,6 +118,7 @@ interface ItemAntecipacaoParcial {
   valorIpi: string | null;
   aliquotaIcms: string | null;
   valorIcms: string | null;
+  valorCreditoIcmsSn?: string | null;
   valorIcmsSt: string | null;
   valorIcmsStRetido: string | null;
 }
@@ -289,16 +320,59 @@ export function apurarItemAntecipacaoParcial(
   const aliquotaOrigem = aliquotaDaRegra ?? item.aliquotaIcms;
   const aliquotaInterestadual =
     simples && percentualValido(aliquotaOrigem) ? aliquotaOrigem : undefined;
-  const deducaoOrigem =
-    !simples && item.valorIcms != null && toScaledInteger(item.valorIcms) >= 0n
-      ? item.valorIcms
-      : undefined;
+  // Adquirente do regime normal: abate o imposto que o documento informa. Do
+  // fornecedor do Simples, só o crédito expressamente informado (LC 123/06,
+  // art. 23, § 1º; Parecer SEFAZ-BA 34/2012). Sem permissão de crédito, nada.
+  const csosn = item.csosnIcms?.trim() ?? '';
+  let deducaoOrigem: string | undefined;
+  let creditoOrigem: CreditoOrigem | null = null;
+  if (!simples) {
+    if (item.valorIcms != null && toScaledInteger(item.valorIcms) >= 0n) {
+      deducaoOrigem = item.valorIcms;
+      creditoOrigem = {
+        criterio: 'ICMS_DESTACADO',
+        descricao: 'Abatido o ICMS destacado no documento de aquisição.',
+        valor: fromScaledInteger(toScaledInteger(item.valorIcms)),
+      };
+    } else if (
+      CSOSN_COM_CREDITO.has(csosn) &&
+      item.valorCreditoIcmsSn != null &&
+      toScaledInteger(item.valorCreditoIcmsSn) > 0n
+    ) {
+      deducaoOrigem = item.valorCreditoIcmsSn;
+      creditoOrigem = {
+        criterio: 'CREDITO_SIMPLES_DESTACADO',
+        descricao: `Fornecedor do Simples Nacional com permissão de crédito (CSOSN ${csosn}): abatido o crédito informado na nota.`,
+        valor: fromScaledInteger(toScaledInteger(item.valorCreditoIcmsSn)),
+      };
+    } else if (CSOSN_SEM_CREDITO.has(csosn)) {
+      deducaoOrigem = '0';
+      creditoOrigem = {
+        criterio: 'SEM_CREDITO',
+        descricao: `Fornecedor do Simples Nacional sem permissão de crédito (CSOSN ${csosn}): não há ICMS a abater.`,
+        valor: fromScaledInteger(0n),
+      };
+    }
+  } else if (aliquotaInterestadual != null) {
+    creditoOrigem = {
+      criterio: 'ALIQUOTA_NAO_OPTANTE',
+      descricao:
+        'Adquirente do Simples Nacional: cobra-se a diferença entre a alíquota ' +
+        'interna e a interestadual (RICMS-BA, art. 321, VII, "b"). Não depende ' +
+        'de crédito destacado na nota' +
+        (CSOSN_SEM_CREDITO.has(csosn)
+          ? `; o CSOSN ${csosn} do fornecedor não altera o cálculo.`
+          : '.'),
+      valor: null,
+    };
+  }
   if (aliquotaInterestadual == null && deducaoOrigem == null) {
     return pendenteComRegra(
-      'Confira a alíquota interestadual aplicável ou o ICMS de origem, conforme o regime.',
+      !simples && CSOSN_COM_CREDITO.has(csosn)
+        ? `O fornecedor do Simples Nacional permite crédito (CSOSN ${csosn}), mas a nota não informa o valor do crédito. Confira o XML.`
+        : 'Confira a alíquota interestadual aplicável ou o ICMS de origem, conforme o regime.',
     );
   }
-
   const reducao = reducaoMeEppDaRegra(regra.conteudo);
   if (reducao === 'INVALIDA') {
     return pendenteComRegra(
@@ -339,6 +413,7 @@ export function apurarItemAntecipacaoParcial(
         'O XML contém IPI. Defina e fundamente, na regra do item, se o IPI integra a base da antecipação (Lei 7.014/96, arts. 17, § 2º, e 23, III).',
       calculo: null,
       regra_aplicada: regraAplicada,
+      credito_origem: creditoOrigem,
       cenarios_ipi: {
         sem_ipi: calcularComBase(valorOperacao),
         com_ipi: calcularComBase(valorOperacao + valorIpi),
@@ -363,6 +438,7 @@ export function apurarItemAntecipacaoParcial(
       : ('SIMULACAO' as const),
     motivo: regra.fonte,
     regra_aplicada: regraAplicada,
+    credito_origem: creditoOrigem,
     tratamento_ipi: valorIpi > 0n ? ipiNaBase : null,
     fundamento_ipi: valorIpi > 0n ? fundamentoIpi : null,
     // Sem comprovação do recolhimento tempestivo, o total e a DeSTDA usam o

@@ -268,6 +268,7 @@ export class DifalEntradaService {
         emitenteUf,
         valorBcIcms: documentosFiscaisItens.valorBcIcms,
         valorIcms: documentosFiscaisItens.valorIcms,
+        valorCreditoIcmsSn: documentosFiscaisItens.valorCreditoIcmsSn,
         valorIpi: documentosFiscaisItens.valorIpi,
         valorBrutoProduto: documentosFiscaisItens.valorBrutoProduto,
         aliquotaIcms: documentosFiscaisItens.aliquotaIcms,

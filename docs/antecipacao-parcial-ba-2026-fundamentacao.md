@@ -70,7 +70,9 @@ Uma decisão `ipi_na_base` no cadastro vale para todos os itens que coincidam co
 
 Pontos a confirmar antes de homologar:
 
-- **ICMS de origem:** o motor deduz o ICMS **destacado** no XML. Se o fornecedor é do Simples e não destaca ICMS, o item fica pendente ("Base dupla exige o valor do ICMS da origem"). Falta confirmar com a SEFAZ-BA se a dedução deve ser o destacado ou o valor nominal pela alíquota interestadual. É o ponto A4 do diagnóstico.
+- **Abatimento da antecipação (ponto A4, resolvido):** depende do regime do **adquirente**, e o motor registra o critério em `credito_origem`.
+  - **Adquirente do Simples Nacional:** diferença entre a alíquota interna e a interestadual (7%, 12% ou 4%), sem depender de crédito destacado, mesmo quando o fornecedor é do Simples e o CSOSN é 102. Base: RICMS-BA, art. 321, VII, "b"; Parecer SEFAZ-BA 18.724/2009 ([texto](https://www.legisweb.com.br/legislacao/?id=348147)), que diz que o valor informado na nota pelo fornecedor do Simples só é crédito para quem apura pelo regime normal.
+  - **Adquirente do regime normal:** abate o ICMS destacado. Se o fornecedor é do Simples, abate só o crédito informado na nota (CSOSN 101, `vCredICMSSN`). Com CSOSN 102, 103, 300 ou 400 não há crédito e nada é abatido. Base: LC 123/06, art. 23, § 1º; Parecer SEFAZ-BA 34/2012 ([texto](https://www.legisweb.com.br/legislacao/?id=347630)). CSOSN 101 sem valor de crédito na nota fica pendente.
 - **Simples como adquirente:** a aplicação da base dupla e o alcance dos Temas 517 e 1284 do STF devem ser confirmados pela revisão fiscal.
 - **FCP:** mercadorias de uso e consumo com adicional de FCP (art. 16, II, IV, V e VII, e cosméticos da IN SAT 05/2016) não têm o adicional na regra geral.
 - **Dados:** o banco ainda não tem entradas 2551/2556, então a regra ainda não foi exercitada com dados reais.
