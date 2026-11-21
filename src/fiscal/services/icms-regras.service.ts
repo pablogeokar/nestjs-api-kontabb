@@ -12,8 +12,11 @@ import {
   fiscalRegrasVersoes,
 } from '../../database/schema';
 import {
+  ChaveEnquadramentoIcmsDto,
   EnquadramentoIcmsDto,
   HomologarIcmsRegrasDto,
+  RemoverEnquadramentoIcmsDto,
+  SalvarEnquadramentoIcmsDto,
   QueryIcmsRegrasDto,
   SalvarIcmsRegrasDto,
   UFS_ICMS,
@@ -103,6 +106,15 @@ export function validarEnquadramentosIcms(
   }
 }
 
+function chaveEnquadramento(row: ChaveEnquadramentoIcmsDto) {
+  return [
+    row.ncm,
+    row.cest ?? '',
+    row.regime,
+    row.uf_origem,
+    row.origem_mercadoria,
+  ].join('|');
+}
 @Injectable()
 export class IcmsRegrasService {
   constructor(private readonly database: DatabaseService) {}
@@ -320,6 +332,193 @@ export class IcmsRegrasService {
     });
   }
 
+  /** Insere ou altera um único enquadramento (nova revisão da regra). */
+  async salvarEnquadramento(input: SalvarEnquadramentoIcmsDto, userId: string) {
+    const row = input.enquadramento;
+    validarEnquadramentosIcms([row]);
+    return this.mutarEnquadramentos(
+      input,
+      userId,
+      input.fonte,
+      input.fonteUrl,
+      (rows) => {
+        const novaChave = chaveEnquadramento(row);
+        const antiga = input.chaveAnterior
+          ? chaveEnquadramento(input.chaveAnterior)
+          : novaChave;
+        const outros = rows.filter((r) => chaveEnquadramento(r) !== antiga);
+        if (outros.some((r) => chaveEnquadramento(r) === novaChave))
+          throw new BadRequestException(
+            'Já existe um enquadramento com este NCM, CEST, regime e origem.',
+          );
+        const existe = outros.length !== rows.length;
+        const next = existe
+          ? rows.map((r) => (chaveEnquadramento(r) === antiga ? row : r))
+          : [...rows, row];
+        return {
+          rows: next,
+          exigeFonteUrl: row.confirmado_fiscalmente === true,
+        };
+      },
+    );
+  }
+  async removerEnquadramento(
+    input: RemoverEnquadramentoIcmsDto,
+    userId: string,
+  ) {
+    return this.mutarEnquadramentos(
+      input,
+      userId,
+      undefined,
+      undefined,
+      (rows) => {
+        const alvo = chaveEnquadramento(input.chave);
+        if (!rows.some((r) => chaveEnquadramento(r) === alvo))
+          throw new NotFoundException('Enquadramento não encontrado.');
+        return {
+          rows: rows.filter((r) => chaveEnquadramento(r) !== alvo),
+          exigeFonteUrl: false,
+        };
+      },
+    );
+  }
+  private async mutarEnquadramentos(
+    input: QueryIcmsRegrasDto & { expectedRevision: number },
+    userId: string,
+    fonteInformada: string | undefined,
+    fonteUrlInformada: string | undefined,
+    mutar: (rows: EnquadramentoIcmsDto[]) => {
+      rows: EnquadramentoIcmsDto[];
+      exigeFonteUrl: boolean;
+    },
+  ) {
+    const competencia = competenciaDate(input);
+    return this.database.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`icms:${input.uf}`}))`,
+      );
+      const [catalogo] = await tx
+        .select()
+        .from(fiscalCatalogosVersoes)
+        .where(
+          and(
+            eq(fiscalCatalogosVersoes.tipo, TIPO),
+            eq(fiscalCatalogosVersoes.uf, input.uf),
+            eq(fiscalCatalogosVersoes.ativo, true),
+            lte(fiscalCatalogosVersoes.vigenciaInicio, competencia),
+            or(
+              isNull(fiscalCatalogosVersoes.vigenciaFim),
+              gte(fiscalCatalogosVersoes.vigenciaFim, competencia),
+            ),
+          ),
+        )
+        .orderBy(desc(fiscalCatalogosVersoes.vigenciaInicio))
+        .limit(1);
+      const [previous] = catalogo
+        ? await tx
+            .select()
+            .from(fiscalRegrasVersoes)
+            .where(
+              and(
+                eq(fiscalRegrasVersoes.catalogoVersaoId, catalogo.id),
+                eq(fiscalRegrasVersoes.chave, CHAVE),
+                eq(fiscalRegrasVersoes.ativo, true),
+              ),
+            )
+            .orderBy(desc(fiscalRegrasVersoes.revisao))
+            .limit(1)
+        : [];
+      const revisao = previous?.revisao ?? 0;
+      if (revisao !== input.expectedRevision)
+        throw new ConflictException(
+          'As regras foram alteradas por outro usuário. Recarregue antes de salvar.',
+        );
+      const aprovadaAntes = Boolean(
+        previous &&
+        (previous.escopoAprovado ?? catalogo?.escopoAprovado ?? false),
+      );
+      const atuais = (
+        Array.isArray(previous?.conteudo?.enquadramentos)
+          ? previous.conteudo.enquadramentos
+          : []
+      ) as EnquadramentoIcmsDto[];
+      // Uma revisão homologada em bloco vale para todas as linhas. Ao editar
+      // uma só, a nova revisão deixa de ser homologada em bloco e cada linha
+      // anterior mantém a aprovação em si (já validada na homologação).
+      const base = aprovadaAntes
+        ? atuais.map((r) => ({
+            ...r,
+            confirmado_fiscalmente: Boolean(r.fundamento?.trim()),
+          }))
+        : atuais;
+      const { rows, exigeFonteUrl } = mutar(base);
+      const fonte =
+        fonteInformada?.trim() || previous?.fonte || catalogo?.fonte;
+      if (!fonte) throw new BadRequestException('Informe a fonte normativa.');
+      const fonteUrl =
+        fonteUrlInformada?.trim() ||
+        previous?.fonteUrl ||
+        catalogo?.fonteUrl ||
+        null;
+      if (exigeFonteUrl && !fonteUrl)
+        throw new BadRequestException(
+          'Informe a URL oficial da fonte antes de aprovar o enquadramento.',
+        );
+      const [savedCatalogo] = catalogo
+        ? [catalogo]
+        : await tx
+            .insert(fiscalCatalogosVersoes)
+            .values({
+              tipo: TIPO,
+              uf: input.uf,
+              codigo: `ANTECIPACAO_PARCIAL_${input.uf}_${input.competencia.replace('-', '_')}`,
+              descricao: `Antecipação Parcial ${input.uf} ${input.competencia}`,
+              fonte,
+              fonteUrl,
+              vigenciaInicio: competencia,
+              vigenciaFim: `${input.competencia}-${new Date(Date.UTC(Number(input.competencia.slice(0, 4)), Number(input.competencia.slice(5, 7)), 0)).getUTCDate()}`,
+              conteudo: {},
+              escopoAprovado: false,
+            })
+            .returning();
+      if (!savedCatalogo)
+        throw new BadRequestException('Não foi possível criar o catálogo.');
+      await tx.insert(fiscalRegrasVersoes).values({
+        catalogoVersaoId: savedCatalogo.id,
+        chave: CHAVE,
+        revisao: revisao + 1,
+        conteudo: { ...previous?.conteudo, enquadramentos: rows },
+        fonte,
+        fonteUrl,
+        responsavelPor: userId,
+        escopoAprovado: false,
+        vigenciaInicio:
+          previous?.vigenciaInicio ?? savedCatalogo.vigenciaInicio,
+        vigenciaFim: previous?.vigenciaFim ?? savedCatalogo.vigenciaFim,
+      });
+      if (!savedCatalogo.escopoAprovado) {
+        await tx
+          .update(fiscalCatalogosVersoes)
+          .set({
+            fonte,
+            fonteUrl,
+            hashConteudo: null,
+            conteudo: {
+              status: 'RASCUNHO',
+              competencia: input.competencia,
+              enquadramentos: rows,
+            },
+            atualizadoEm: new Date(),
+          })
+          .where(eq(fiscalCatalogosVersoes.id, savedCatalogo.id));
+      }
+      return {
+        catalogoId: savedCatalogo.id,
+        revisao: revisao + 1,
+        enquadramentos: rows,
+      };
+    });
+  }
   async homologar(input: HomologarIcmsRegrasDto, userId: string) {
     const competencia = competenciaDate(input);
     return this.database.db.transaction(async (tx) => {

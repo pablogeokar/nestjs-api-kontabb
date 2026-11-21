@@ -2,7 +2,10 @@ import { BadRequestException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { SalvarIcmsRegrasDto } from '../dto/icms-regras.dto';
-import { validarEnquadramentosIcms } from './icms-regras.service';
+import {
+  IcmsRegrasService,
+  validarEnquadramentosIcms,
+} from './icms-regras.service';
 
 const row = {
   ncm: '19053100',
@@ -122,5 +125,121 @@ describe('cadastro de regras de ICMS', () => {
         { ...row, tratamento: 'CONFERIR', motivo: '' },
       ]),
     ).toThrow('resolva a conferência fiscal');
+  });
+});
+describe('salvamento de um enquadramento por vez', () => {
+  function criarServico(
+    catalogo: Record<string, unknown> | null,
+    regra: Record<string, unknown> | null,
+  ) {
+    const inserts: Record<string, unknown>[] = [];
+    const respostas = [catalogo ? [catalogo] : [], regra ? [regra] : []];
+    const tx = {
+      execute: jest.fn(),
+      select: () => {
+        const chain: Record<string, unknown> = {};
+        chain.from = () => chain;
+        chain.where = () => chain;
+        chain.orderBy = () => chain;
+        chain.limit = () => Promise.resolve(respostas.shift() ?? []);
+        return chain;
+      },
+      insert: () => ({
+        values: (value: Record<string, unknown>) => {
+          inserts.push(value);
+          return {
+            returning: () => Promise.resolve([{ id: 'cat-1', ...value }]),
+          };
+        },
+      }),
+      update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+    };
+    const service = new IcmsRegrasService({
+      db: { transaction: (fn: (t: typeof tx) => unknown) => fn(tx) },
+    } as never);
+    return { service, inserts };
+  }
+  const catalogo = {
+    id: 'cat-1',
+    escopoAprovado: false,
+    vigenciaInicio: '2026-01-01',
+    vigenciaFim: '2026-12-31',
+    fonte: 'RICMS-BA',
+    fonteUrl: 'https://x.gov.br',
+  };
+  const query = { uf: 'BA', competencia: '2026-11' };
+
+  it('inclui a linha nova sem reenviar as demais e aumenta a revisão', async () => {
+    const { service, inserts } = criarServico(catalogo, {
+      revisao: 3,
+      fonte: 'RICMS-BA',
+      fonteUrl: 'https://x.gov.br',
+      escopoAprovado: null,
+      conteudo: { enquadramentos: [row], reducao_me_epp: '20' },
+    });
+    const nova = { ...row, ncm: '61121100', cest: null };
+    const result = await service.salvarEnquadramento(
+      { ...query, expectedRevision: 3, enquadramento: nova } as never,
+      'user-1',
+    );
+    expect(result.revisao).toBe(4);
+    expect(result.enquadramentos).toHaveLength(2);
+    expect(inserts[0]).toMatchObject({ revisao: 4, escopoAprovado: false });
+    expect(
+      (inserts[0].conteudo as Record<string, unknown>).reducao_me_epp,
+    ).toBe('20');
+  });
+
+  it('mantém aprovadas as linhas de uma revisão homologada em bloco', async () => {
+    const { service } = criarServico(catalogo, {
+      revisao: 1,
+      fonte: 'RICMS-BA',
+      fonteUrl: 'https://x.gov.br',
+      escopoAprovado: true,
+      conteudo: {
+        enquadramentos: [{ ...row, confirmado_fiscalmente: undefined }],
+      },
+    });
+    const nova = {
+      ...row,
+      ncm: '61121100',
+      cest: null,
+      tratamento: 'CONFERIR',
+      confirmado_fiscalmente: false,
+      fundamento: undefined,
+    };
+    const result = await service.salvarEnquadramento(
+      { ...query, expectedRevision: 1, enquadramento: nova } as never,
+      'user-1',
+    );
+    expect(result.enquadramentos[0].confirmado_fiscalmente).toBe(true);
+    expect(result.enquadramentos[1].confirmado_fiscalmente).toBe(false);
+  });
+
+  it('rejeita revisão desatualizada e chave duplicada', async () => {
+    const regra = {
+      revisao: 2,
+      fonte: 'RICMS-BA',
+      fonteUrl: 'https://x.gov.br',
+      escopoAprovado: null,
+      conteudo: { enquadramentos: [row] },
+    };
+    await expect(
+      criarServico(catalogo, regra).service.salvarEnquadramento(
+        { ...query, expectedRevision: 1, enquadramento: row } as never,
+        'u',
+      ),
+    ).rejects.toThrow(/outro usuário/);
+    await expect(
+      criarServico(catalogo, regra).service.salvarEnquadramento(
+        {
+          ...query,
+          expectedRevision: 2,
+          enquadramento: { ...row, ncm: '61121100' },
+          chaveAnterior: { ...row, ncm: '61121100' },
+        } as never,
+        'u',
+      ),
+    ).resolves.toBeDefined();
   });
 });

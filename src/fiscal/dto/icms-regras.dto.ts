@@ -61,3 +61,30 @@ export class SalvarIcmsRegrasDto extends QueryIcmsRegrasDto {
 export class HomologarIcmsRegrasDto extends QueryIcmsRegrasDto {
   @IsInt() @Min(1) expectedRevision!: number;
 }
+export class ChaveEnquadramentoIcmsDto {
+  @Matches(/^\d{8}$/) ncm!: string;
+  @IsOptional() @Matches(/^\d{7}$/) cest!: string | null;
+  @IsIn(['SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO', 'LUCRO_REAL']) regime!: string;
+  @IsIn(UFS_ICMS) uf_origem!: string;
+  @Matches(/^[0-8]$/) origem_mercadoria!: string;
+}
+/** Salva UM enquadramento, sem reenviar nem reaprovar os demais. */
+export class SalvarEnquadramentoIcmsDto extends QueryIcmsRegrasDto {
+  @IsInt() @Min(0) @Max(100000) expectedRevision!: number;
+  @IsOptional() @IsString() @MaxLength(60) fonte?: string;
+  @IsOptional() @IsUrl({ require_protocol: true }) fonteUrl?: string;
+  @ValidateNested()
+  @Type(() => EnquadramentoIcmsDto)
+  enquadramento!: EnquadramentoIcmsDto;
+  /** Chave anterior, quando a edição altera NCM/CEST/regime/origem. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ChaveEnquadramentoIcmsDto)
+  chaveAnterior?: ChaveEnquadramentoIcmsDto;
+}
+export class RemoverEnquadramentoIcmsDto extends QueryIcmsRegrasDto {
+  @IsInt() @Min(1) expectedRevision!: number;
+  @ValidateNested()
+  @Type(() => ChaveEnquadramentoIcmsDto)
+  chave!: ChaveEnquadramentoIcmsDto;
+}
