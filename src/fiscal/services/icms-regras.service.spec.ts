@@ -249,6 +249,44 @@ describe('salvamento de um enquadramento por vez', () => {
     ).rejects.toThrow(/interestadual/);
   });
 
+  it('mantém a revisão em vigor quando todas as linhas seguem confirmadas', async () => {
+    const regra = {
+      revisao: 1,
+      fonte: 'RICMS-BA',
+      fonteUrl: 'https://x.gov.br',
+      escopoAprovado: true,
+      conteudo: { enquadramentos: [row] },
+    };
+    const { service, inserts } = criarServico(catalogo, regra);
+    await service.salvarEnquadramento(
+      {
+        ...query,
+        expectedRevision: 1,
+        enquadramento: { ...row, ncm: '61121100', cest: null },
+      } as never,
+      'user-1',
+    );
+    expect(inserts[0]).toMatchObject({
+      escopoAprovado: true,
+      aprovadoPor: 'user-1',
+    });
+    const rascunho = criarServico(catalogo, regra);
+    await rascunho.service.salvarEnquadramento(
+      {
+        ...query,
+        expectedRevision: 1,
+        enquadramento: {
+          ...row,
+          ncm: '61121100',
+          cest: null,
+          confirmado_fiscalmente: false,
+        },
+      } as never,
+      'user-1',
+    );
+    expect(rascunho.inserts[0]).toMatchObject({ escopoAprovado: false });
+  });
+
   it('rejeita revisão desatualizada e chave duplicada', async () => {
     const regra = {
       revisao: 2,

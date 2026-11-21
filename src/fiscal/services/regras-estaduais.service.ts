@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import { CONVENIO_ICMS_142_2018 } from './st-verificacao';
 import { DatabaseService } from '../../database/database.service';
 import {
   fiscalCatalogosVersoes,
@@ -12,6 +14,7 @@ import {
 } from '../../database/schema';
 import { UFS_ICMS, type QueryIcmsRegrasDto } from '../dto/icms-regras.dto';
 import type {
+  AprovarFonteStDto,
   DifalParametrosDto,
   RemoverStEstadualDto,
   SalvarDifalEstadualDto,
@@ -167,7 +170,8 @@ export class RegrasEstaduaisService {
       query.uf,
       competencia,
     );
-    if (!catalogo) return { catalogo: null, regras: [] };
+    const fontes = await this.fontesSt(query.uf, competencia);
+    if (!catalogo) return { catalogo: null, regras: [], fontes };
     const linhas = await this.database.db
       .select()
       .from(fiscalRegrasVersoes)
@@ -186,8 +190,113 @@ export class RegrasEstaduaisService {
       if (!ultimas.has(linha.chave)) ultimas.set(linha.chave, linha);
     return {
       catalogo: this.resumoCatalogo(catalogo),
+      fontes,
       regras: [...ultimas.values()].map((r) => this.resumoRegra(r, catalogo)),
     };
+  }
+
+  /** Situação das duas camadas de fonte que habilitam a ST na apuração. */
+  private async fontesSt(uf: string, competencia: string) {
+    const [nacional, estadual] = await Promise.all([
+      this.catalogoVigente(this.database.db, 'ST_FCP', 'BR', competencia),
+      this.catalogoVigente(this.database.db, 'ST_FCP', uf, competencia),
+    ]);
+    const resumo = (c: typeof nacional) =>
+      c
+        ? {
+            fonte: c.fonte,
+            fonteUrl: c.fonteUrl,
+            verificada: c.escopoAprovado === true,
+          }
+        : null;
+    return {
+      nacional: resumo(nacional),
+      estadual: resumo(estadual),
+      padraoNacional: {
+        fonte: CONVENIO_ICMS_142_2018.fonte,
+        fonteUrl: CONVENIO_ICMS_142_2018.fonteUrl,
+      },
+    };
+  }
+
+  /** Marca (ou revoga) a verificação da fonte normativa de ST. */
+  async aprovarFonteSt(input: AprovarFonteStDto, userId: string) {
+    const competencia = primeiroDia(input);
+    const nacional = input.nivel === 'NACIONAL';
+    const uf = nacional ? 'BR' : input.uf;
+    return this.transacao('ST_FCP', { ...input, uf }, async (tx) => {
+      let catalogo = await this.catalogoVigente(tx, 'ST_FCP', uf, competencia);
+      const fonte =
+        texto(input.fonte) ??
+        catalogo?.fonte ??
+        (nacional ? CONVENIO_ICMS_142_2018.fonte : null);
+      const fonteUrl =
+        texto(input.fonteUrl) ??
+        catalogo?.fonteUrl ??
+        (nacional ? CONVENIO_ICMS_142_2018.fonteUrl : null);
+      if (!catalogo) {
+        if (!input.aprovar)
+          throw new NotFoundException('Fonte não encontrada.');
+        if (!fonte) throw new BadRequestException('Informe a fonte normativa.');
+        if (nacional) {
+          const [criado] = await tx
+            .insert(fiscalCatalogosVersoes)
+            .values({
+              tipo: 'ST_FCP',
+              uf,
+              codigo: 'ST_FCP_BR_CONVENIO_142_2018',
+              descricao: 'Convênio ICMS 142/2018 (arcabouço nacional da ST)',
+              fonte,
+              fonteUrl,
+              vigenciaInicio: CONVENIO_ICMS_142_2018.vigenciaInicio,
+              vigenciaFim: null,
+              conteudo: {},
+              escopoAprovado: false,
+            })
+            .returning();
+          catalogo = criado;
+        } else {
+          catalogo = await this.criarCatalogo(
+            tx,
+            'ST_FCP',
+            input,
+            fonte,
+            fonteUrl,
+          );
+        }
+      }
+      if (input.aprovar && (!fonte || !fonteUrl))
+        throw new BadRequestException(
+          'Informe o ato normativo e o link oficial antes de verificar a fonte.',
+        );
+      const hashConteudo = input.aprovar
+        ? createHash('sha256')
+            .update(
+              JSON.stringify({
+                tipo: catalogo.tipo,
+                uf: catalogo.uf,
+                codigo: catalogo.codigo,
+                fonte,
+                fonteUrl,
+                vigenciaInicio: catalogo.vigenciaInicio,
+                vigenciaFim: catalogo.vigenciaFim,
+              }),
+            )
+            .digest('hex')
+        : null;
+      await tx
+        .update(fiscalCatalogosVersoes)
+        .set({
+          fonte: fonte ?? catalogo.fonte,
+          fonteUrl,
+          escopoAprovado: input.aprovar,
+          aprovadoPor: input.aprovar ? userId : null,
+          hashConteudo,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(fiscalCatalogosVersoes.id, catalogo.id));
+      return { nivel: input.nivel, uf, verificada: input.aprovar };
+    });
   }
 
   async salvarSt(input: SalvarStEstadualDto, userId: string) {

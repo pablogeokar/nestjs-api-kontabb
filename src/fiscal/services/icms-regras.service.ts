@@ -490,6 +490,18 @@ export class IcmsRegrasService {
         const anterior = dia.toISOString().slice(0, 10);
         return { inicio, fim: anterior < fimAno ? anterior : fimAno };
       })();
+      // O resolvedor de regras prefere a revisão aprovada mais recente. Se a
+      // anterior estava aprovada, a nova só passa a valer se também for
+      // aprovada; isso ocorre quando todas as linhas estão confirmadas.
+      const aprovarRevisao =
+        aprovadaAntes &&
+        rows.length > 0 &&
+        rows.every(
+          (r) =>
+            r.confirmado_fiscalmente === true &&
+            r.tratamento !== 'CONFERIR' &&
+            Boolean(r.fundamento?.trim()),
+        );
       const [savedCatalogo] = catalogo
         ? [catalogo]
         : await tx
@@ -517,7 +529,9 @@ export class IcmsRegrasService {
         fonte,
         fonteUrl,
         responsavelPor: userId,
-        escopoAprovado: false,
+        escopoAprovado: aprovarRevisao,
+        aprovadoPor: aprovarRevisao ? userId : null,
+        aprovadoEm: aprovarRevisao ? new Date() : null,
         vigenciaInicio:
           previous?.vigenciaInicio ?? savedCatalogo.vigenciaInicio,
         vigenciaFim: previous?.vigenciaFim ?? savedCatalogo.vigenciaFim,

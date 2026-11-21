@@ -14,6 +14,7 @@ import { AdminOnly, StaffOnly } from '../../auth/roles.decorator';
 import type { CurrentUser as CurrentUserType } from '../../common/types';
 import { QueryIcmsRegrasDto } from '../dto/icms-regras.dto';
 import {
+  AprovarFonteStDto,
   RemoverStEstadualDto,
   SalvarDifalEstadualDto,
   SalvarStEstadualDto,
@@ -51,6 +52,14 @@ export class RegrasEstaduaisController {
     @CurrentUser() user: CurrentUserType,
   ) {
     return { data: await this.service.salvarSt(input, user.id) };
+  }
+  @Put('st/fonte')
+  @AdminOnly()
+  async aprovarFonteSt(
+    @Body() input: AprovarFonteStDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return { data: await this.service.aprovarFonteSt(input, user.id) };
   }
   @Delete('st')
   @AdminOnly()

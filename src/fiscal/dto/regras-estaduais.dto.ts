@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -67,4 +68,13 @@ export class SalvarStEstadualDto extends QueryIcmsRegrasDto {
 
 export class RemoverStEstadualDto extends QueryIcmsRegrasDto {
   @Matches(/^\d{7}$/) cest!: string;
+}
+
+export class AprovarFonteStDto extends QueryIcmsRegrasDto {
+  /** NACIONAL: Convênio ICMS 142/18. ESTADUAL: norma da UF das regras. */
+  @IsIn(['NACIONAL', 'ESTADUAL']) nivel!: 'NACIONAL' | 'ESTADUAL';
+  @IsOptional() @IsString() @MaxLength(60) fonte?: string;
+  @IsOptional() @IsUrl({ require_protocol: true }) fonteUrl?: string;
+  /** Falso revoga a verificação. */
+  @IsBoolean() aprovar!: boolean;
 }

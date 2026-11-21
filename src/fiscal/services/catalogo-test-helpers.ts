@@ -78,10 +78,12 @@ export function regraPadrao(
 export function createCatalogo(regra: Partial<RegraVersaoResolvida> | null): {
   resolverRegraPorData: jest.Mock;
   ufsComRegra: jest.Mock;
+  resolverVersaoVigente: jest.Mock;
 } {
   const resolvida = regra == null ? null : regraPadrao(regra);
   return {
     ufsComRegra: jest.fn().mockResolvedValue([]),
+    resolverVersaoVigente: jest.fn().mockResolvedValue(null),
     resolverRegraPorData: jest.fn(
       ({ data, chave }: { data: string; chave: string }) =>
         Promise.resolve(resolucaoDe(resolvida, data, chave)),

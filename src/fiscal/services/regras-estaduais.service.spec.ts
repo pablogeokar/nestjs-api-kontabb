@@ -188,3 +188,56 @@ describe('regras estaduais de ST', () => {
     });
   });
 });
+
+describe('verificação da fonte de ST', () => {
+  it('cria o catálogo nacional do Convênio 142/18 e o marca como verificado', async () => {
+    const { service, inserts } = criar([[]]);
+    const r = await service.aprovarFonteSt(
+      {
+        uf: 'SP',
+        competencia: '2026-11',
+        nivel: 'NACIONAL',
+        aprovar: true,
+      } as never,
+      'u1',
+    );
+    expect(inserts[0]).toMatchObject({
+      tipo: 'ST_FCP',
+      uf: 'BR',
+      vigenciaInicio: '2019-01-01',
+      vigenciaFim: null,
+    });
+    expect(r).toMatchObject({ nivel: 'NACIONAL', uf: 'BR', verificada: true });
+  });
+
+  it('exige ato e link para verificar a fonte estadual', async () => {
+    await expect(
+      criar([
+        [{ ...catalogo, tipo: 'ST_FCP', fonte: '', fonteUrl: null }],
+      ]).service.aprovarFonteSt(
+        {
+          uf: 'SP',
+          competencia: '2026-11',
+          nivel: 'ESTADUAL',
+          aprovar: true,
+        } as never,
+        'u1',
+      ),
+    ).rejects.toThrow(/link oficial/);
+  });
+
+  it('revoga a verificação sem exigir fonte nova', async () => {
+    const r = await criar([
+      [{ ...catalogo, tipo: 'ST_FCP' }],
+    ]).service.aprovarFonteSt(
+      {
+        uf: 'BA',
+        competencia: '2026-11',
+        nivel: 'ESTADUAL',
+        aprovar: false,
+      } as never,
+      'u1',
+    );
+    expect(r.verificada).toBe(false);
+  });
+});
