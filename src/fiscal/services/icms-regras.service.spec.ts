@@ -216,6 +216,39 @@ describe('salvamento de um enquadramento por vez', () => {
     expect(result.enquadramentos[1].confirmado_fiscalmente).toBe(false);
   });
 
+  it('aceita outra UF e rejeita origem igual à UF de apuração', async () => {
+    const { service, inserts } = criarServico(catalogo, {
+      revisao: 0,
+      fonte: 'RICMS-PE',
+      fonteUrl: 'https://x.gov.br',
+      escopoAprovado: null,
+      conteudo: { enquadramentos: [] },
+    });
+    const pe = { ...row, uf_origem: 'BA' };
+    const result = await service.salvarEnquadramento(
+      {
+        uf: 'PE',
+        competencia: '2026-11',
+        expectedRevision: 0,
+        enquadramento: pe,
+      } as never,
+      'user-1',
+    );
+    expect(result.enquadramentos).toHaveLength(1);
+    expect(inserts[0]).toBeDefined();
+    await expect(
+      criarServico(catalogo, null).service.salvarEnquadramento(
+        {
+          uf: 'PE',
+          competencia: '2026-11',
+          expectedRevision: 0,
+          enquadramento: { ...row, uf_origem: 'PE' },
+        } as never,
+        'user-1',
+      ),
+    ).rejects.toThrow(/interestadual/);
+  });
+
   it('rejeita revisão desatualizada e chave duplicada', async () => {
     const regra = {
       revisao: 2,

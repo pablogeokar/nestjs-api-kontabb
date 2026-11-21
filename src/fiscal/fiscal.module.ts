@@ -41,6 +41,8 @@ import { RegrasFiscaisService } from './services/regras-fiscais.service';
 import { FiscalNormativeCatalogService } from './services/fiscal-normative-catalog.service';
 import { IcmsRegrasController } from './controllers/icms-regras.controller';
 import { IcmsRegrasService } from './services/icms-regras.service';
+import { RegrasEstaduaisController } from './controllers/regras-estaduais.controller';
+import { RegrasEstaduaisService } from './services/regras-estaduais.service';
 import {
   AdminFiscalApuracaoController,
   ClienteFiscalApuracaoController,
@@ -98,6 +100,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     ClienteRegrasFiscaisController,
     AdminRegrasFiscaisController,
     IcmsRegrasController,
+    RegrasEstaduaisController,
     PerfilFiscalController,
     AdminSimplesNacionalController,
     ClienteSimplesNacionalController,
@@ -144,6 +147,7 @@ import { RecuperacaoPortalService } from './services/recuperacao-portal.service'
     RegrasFiscaisService,
     FiscalNormativeCatalogService,
     IcmsRegrasService,
+    RegrasEstaduaisService,
     SimplesCalculadorService,
     SimplesNacionalService,
     SimplesNacionalRelatorioService,

@@ -44,7 +44,7 @@ import { EstabelecimentoPerfilService } from './estabelecimento-perfil.service';
 import { regraResolvidaDe, type ResolucaoRegra } from './catalogo-resolucao';
 import {
   apurarItemAntecipacaoParcial,
-  CFOP_ANTECIPACAO_PARCIAL_BA,
+  CFOP_ANTECIPACAO_PARCIAL,
 } from './antecipacao-parcial';
 
 // CFOPs de ENTRADA interestadual de uso/consumo e ativo SEM ST. São os que
@@ -220,6 +220,9 @@ export class DifalEntradaService {
       periodo.competenciaFimDate,
       cadastroAtual,
     );
+    // UFs com regras de Antecipação Parcial cadastradas. A regra pertence ao
+    // estado, não ao CNPJ: o estabelecimento usa a da UF do seu perfil na data.
+    const ufsAntecipacao = await this.ufsComRegraAntecipacao(ufsDoMes);
     const aliquotaInternaReferencia =
       ALIQUOTA_INTERNA_REFERENCIA_LEGADA[uf] ?? null;
     // REGIME do adquirente (tarefa 2.7 — R1.6). O Simples Nacional recolhe o
@@ -286,9 +289,9 @@ export class DifalEntradaService {
           where,
           or(
             inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA]),
-            ufsDoMes.has('BA')
+            ufsAntecipacao.size > 0
               ? and(
-                  eq(documentosFiscaisItens.cfop, CFOP_ANTECIPACAO_PARCIAL_BA),
+                  eq(documentosFiscaisItens.cfop, CFOP_ANTECIPACAO_PARCIAL),
                   eq(documentosFiscais.tipoDocumento, 'NFE'),
                   eq(documentosFiscais.tipoOperacaoEscriturada, 'ENTRADA'),
                   sql`${documentosFiscais.tpNfXml} IS DISTINCT FROM '0'`,
@@ -317,18 +320,16 @@ export class DifalEntradaService {
       );
     };
     const itens = linhas.filter(
-      (item) =>
-        item.cfop !== CFOP_ANTECIPACAO_PARCIAL_BA && !intraestadual(item),
+      (item) => item.cfop !== CFOP_ANTECIPACAO_PARCIAL && !intraestadual(item),
     );
     const itensIntraestaduaisIgnorados = linhas.filter(
-      (item) =>
-        item.cfop !== CFOP_ANTECIPACAO_PARCIAL_BA && intraestadual(item),
+      (item) => item.cfop !== CFOP_ANTECIPACAO_PARCIAL && intraestadual(item),
     ).length;
     const entradasAntecipacao = linhas
       .filter(
         (item) =>
-          item.cfop === CFOP_ANTECIPACAO_PARCIAL_BA &&
-          perfilDe(item).uf === 'BA' &&
+          item.cfop === CFOP_ANTECIPACAO_PARCIAL &&
+          ufsAntecipacao.has(perfilDe(item).uf ?? '') &&
           !intraestadual(item),
       )
       .sort(
@@ -347,7 +348,10 @@ export class DifalEntradaService {
     );
     const resolucoesAntecipacao = await this.resolverPorDatas(
       'ANTECIPACAO_PARCIAL',
-      entradasAntecipacao.map((i) => ({ uf: 'BA', data: dataDoItem(i) })),
+      entradasAntecipacao.map((i) => ({
+        uf: perfilDe(i).uf,
+        data: dataDoItem(i),
+      })),
       competencia,
     );
     const regraAntecipacao =
@@ -356,8 +360,10 @@ export class DifalEntradaService {
       apurarItemAntecipacaoParcial(
         item,
         perfilDe(item).regimeTributario,
-        resolucoesAntecipacao.get(chaveResolucao('BA', dataDoItem(item)))
-          ?.versao ?? null,
+        resolucoesAntecipacao.get(
+          chaveResolucao(perfilDe(item).uf, dataDoItem(item)),
+        )?.versao ?? null,
+        perfilDe(item).uf ?? 'BA',
       ),
     );
     const totalAntecipacao = sumFiscalValues(
@@ -372,6 +378,7 @@ export class DifalEntradaService {
           uf,
           where,
           emitenteUf,
+          ufsAntecipacao.has(uf),
         )
       : [];
 
@@ -807,14 +814,32 @@ export class DifalEntradaService {
     return out;
   }
 
+  /**
+   * UFs, entre as do período, com regra de Antecipação Parcial cadastrada.
+   * A BA permanece sempre elegível, como antes da regra por estado.
+   */
+  private async ufsComRegraAntecipacao(
+    ufsDoMes: ReadonlySet<string>,
+  ): Promise<Set<string>> {
+    const resultado = new Set<string>(ufsDoMes.has('BA') ? ['BA'] : []);
+    const outras = [...ufsDoMes].filter((u) => u !== 'BA');
+    if (outras.length === 0) return resultado;
+    for (const uf of await this.catalogo.ufsComRegra(
+      'ANTECIPACAO_PARCIAL',
+      outras,
+    ))
+      resultado.add(uf);
+    return resultado;
+  }
   private listarEntradasForaDoCalculo(
     clienteId: string,
     uf: string,
     periodo: SQL,
     emitenteUf: SQL<string | null>,
+    apuraAntecipacao: boolean,
   ) {
     const cfopsApurados = [...CFOPS_DIFAL_ENTRADA];
-    if (uf === 'BA') cfopsApurados.push(CFOP_ANTECIPACAO_PARCIAL_BA);
+    if (apuraAntecipacao) cfopsApurados.push(CFOP_ANTECIPACAO_PARCIAL);
     const emRevisao = sql`
       (NOT ${documentosFiscais.escriturado} OR ${documentosFiscaisItens.cfopRevisaoNecessaria})
     `;

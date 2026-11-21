@@ -5,7 +5,9 @@ import {
 } from '../sped/sped-decimal';
 import type { RegraVersaoResolvida } from './fiscal-normative-catalog.service';
 
-export const CFOP_ANTECIPACAO_PARCIAL_BA = '2102';
+export const CFOP_ANTECIPACAO_PARCIAL = '2102';
+/** @deprecated use CFOP_ANTECIPACAO_PARCIAL; o CFOP não é exclusivo da BA. */
+export const CFOP_ANTECIPACAO_PARCIAL_BA = CFOP_ANTECIPACAO_PARCIAL;
 
 const CEM = 1_000_000n;
 const ICMS_CST_ST = new Set(['10', '30', '60', '70']);
@@ -94,6 +96,7 @@ export function apurarItemAntecipacaoParcial(
   item: ItemAntecipacaoParcial,
   regime: string | null,
   regra: RegraVersaoResolvida | null,
+  ufDestino = 'BA',
 ) {
   const valorOperacao =
     toScaledInteger(item.valorBrutoProduto) +
@@ -149,12 +152,12 @@ export function apurarItemAntecipacaoParcial(
     return pendente(
       sinalStXml
         ? 'O XML indica ICMS-ST, mas não há regra normativa vigente para confirmar o enquadramento. Confira a retenção e a obrigação de ST.'
-        : 'Não há regra normativa de Antecipação Parcial vigente para BA nesta competência. Corrigir o CFOP seleciona a operação, mas não define o tratamento tributário do produto.',
+        : `Não há regra normativa de Antecipação Parcial vigente para ${ufDestino} nesta competência. Corrigir o CFOP seleciona a operação, mas não define o tratamento tributário do produto.`,
     );
   }
   if (
     !item.emitenteUf ||
-    item.emitenteUf === 'BA' ||
+    item.emitenteUf === ufDestino ||
     !regime ||
     !/^\d{8}$/.test(item.ncm ?? '')
   ) {

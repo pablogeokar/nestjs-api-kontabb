@@ -26,16 +26,15 @@ const CHAVE = 'ANTECIPACAO_PARCIAL';
 const TIPO = 'DIFAL';
 
 function competenciaDate(query: QueryIcmsRegrasDto) {
-  if (query.uf !== 'BA')
-    throw new BadRequestException(
-      'O cadastro de Antecipação Parcial está disponível para BA.',
-    );
+  if (!UFS_ICMS.includes(query.uf))
+    throw new BadRequestException('UF inválida para o cadastro de regras.');
   return `${query.competencia}-01`;
 }
 
 export function validarEnquadramentosIcms(
   rows: EnquadramentoIcmsDto[],
   homologar = false,
+  ufDestino = 'BA',
 ) {
   const keys = new Set<string>();
   for (const [index, row] of rows.entries()) {
@@ -52,7 +51,7 @@ export function validarEnquadramentosIcms(
         `Linha ${index + 1}: enquadramento duplicado.`,
       );
     keys.add(key);
-    if (!UFS_ICMS.includes(row.uf_origem) || row.uf_origem === 'BA')
+    if (!UFS_ICMS.includes(row.uf_origem) || row.uf_origem === ufDestino)
       throw new BadRequestException(
         `Linha ${index + 1}: origem deve ser interestadual.`,
       );
@@ -191,7 +190,7 @@ export class IcmsRegrasService {
 
   async salvar(input: SalvarIcmsRegrasDto, userId: string) {
     const competencia = competenciaDate(input);
-    validarEnquadramentosIcms(input.enquadramentos);
+    validarEnquadramentosIcms(input.enquadramentos, false, input.uf);
     if (!input.fonte.trim())
       throw new BadRequestException('Informe a fonte normativa.');
     if (
@@ -335,7 +334,7 @@ export class IcmsRegrasService {
   /** Insere ou altera um único enquadramento (nova revisão da regra). */
   async salvarEnquadramento(input: SalvarEnquadramentoIcmsDto, userId: string) {
     const row = input.enquadramento;
-    validarEnquadramentosIcms([row]);
+    validarEnquadramentosIcms([row], false, input.uf);
     return this.mutarEnquadramentos(
       input,
       userId,
@@ -464,6 +463,33 @@ export class IcmsRegrasService {
         throw new BadRequestException(
           'Informe a URL oficial da fonte antes de aprovar o enquadramento.',
         );
+      // Catálogo novo da UF: cobre o ano da competência, sem invadir a
+      // vigência de um catálogo posterior. Uma regra por UF e período, e não
+      // uma por CNPJ nem por mês.
+      const vigenciaNova = await (async () => {
+        if (catalogo)
+          return { inicio: competencia, fim: null as string | null };
+        const inicio = `${input.competencia.slice(0, 4)}-01-01`;
+        const [proximo] = await tx
+          .select({ inicio: fiscalCatalogosVersoes.vigenciaInicio })
+          .from(fiscalCatalogosVersoes)
+          .where(
+            and(
+              eq(fiscalCatalogosVersoes.tipo, TIPO),
+              eq(fiscalCatalogosVersoes.uf, input.uf),
+              eq(fiscalCatalogosVersoes.ativo, true),
+              gte(fiscalCatalogosVersoes.vigenciaInicio, competencia),
+            ),
+          )
+          .orderBy(fiscalCatalogosVersoes.vigenciaInicio)
+          .limit(1);
+        const fimAno = `${input.competencia.slice(0, 4)}-12-31`;
+        if (!proximo) return { inicio, fim: fimAno };
+        const dia = new Date(`${proximo.inicio}T00:00:00Z`);
+        dia.setUTCDate(dia.getUTCDate() - 1);
+        const anterior = dia.toISOString().slice(0, 10);
+        return { inicio, fim: anterior < fimAno ? anterior : fimAno };
+      })();
       const [savedCatalogo] = catalogo
         ? [catalogo]
         : await tx
@@ -475,8 +501,8 @@ export class IcmsRegrasService {
               descricao: `Antecipação Parcial ${input.uf} ${input.competencia}`,
               fonte,
               fonteUrl,
-              vigenciaInicio: competencia,
-              vigenciaFim: `${input.competencia}-${new Date(Date.UTC(Number(input.competencia.slice(0, 4)), Number(input.competencia.slice(5, 7)), 0)).getUTCDate()}`,
+              vigenciaInicio: vigenciaNova.inicio,
+              vigenciaFim: vigenciaNova.fim,
               conteudo: {},
               escopoAprovado: false,
             })
@@ -566,7 +592,7 @@ export class IcmsRegrasService {
       const rows = regra.conteudo.enquadramentos;
       if (!Array.isArray(rows) || rows.length === 0)
         throw new BadRequestException('Não há enquadramentos para homologar.');
-      validarEnquadramentosIcms(rows as EnquadramentoIcmsDto[], true);
+      validarEnquadramentosIcms(rows as EnquadramentoIcmsDto[], true, input.uf);
       if (!regra.fonteUrl)
         throw new BadRequestException(
           'Informe a URL da fonte normativa antes de homologar.',

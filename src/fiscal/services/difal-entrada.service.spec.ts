@@ -1004,6 +1004,7 @@ describe('DifalEntradaService — A3 perfil histórico do estabelecimento', () =
       item('i2', '2026-10-15'),
     ]);
     const catalogo = {
+      ufsComRegra: jest.fn().mockResolvedValue([]),
       resolverRegraPorData: jest.fn(
         ({ data, chave }: { data: string; chave: string }) =>
           Promise.resolve(
@@ -1054,6 +1055,7 @@ describe('DifalEntradaService — A3 perfil histórico do estabelecimento', () =
       },
     ]);
     const catalogo = {
+      ufsComRegra: jest.fn().mockResolvedValue([]),
       resolverRegraPorData: jest.fn(({ data, chave }) =>
         Promise.resolve({
           estado: 'AMBIGUA',

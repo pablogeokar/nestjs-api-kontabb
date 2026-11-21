@@ -480,6 +480,10 @@ export class FiscalGuiasService {
       .where(eq(clientes.id, input.clienteId))
       .limit(1);
     if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    if (cliente.uf !== 'BA')
+      throw new BadRequestException(
+        'O espelho com DAE e código de receita 2175 está disponível apenas para a Bahia. Confira o valor no portal da SEFAZ da UF.',
+      );
     const memoria = montarMemoriaAntecipacaoParcial(input.itens);
     const itensEmConferencia = input.itens.filter(
       (item) =>
