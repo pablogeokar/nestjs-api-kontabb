@@ -2,7 +2,7 @@
 
 Seed: `src/database/seeds/icms-ba-2026.seed.ts` (`pnpm db:seed:icms-ba`) (regras `ANTECIPACAO_PARCIAL` e `DIFAL_ENTRADA_CONTRIBUINTE`)
 Dados: `src/database/seeds/data/antecipacao-parcial-ba-2026.enquadramentos.ts` (123 enquadramentos)
-Consulta às fontes: 14/11/2026. Situação: **rascunho** (`escopo_aprovado = false`), nenhuma linha com `confirmado_fiscalmente = true`.
+Consulta às fontes: 14/11/2026. Situação: catálogo e regra sem homologação em bloco (`escopo_aprovado = false`). A seed (`pnpm db:seed:icms-ba`) reproduz a revisão 31 de 21/11/2026: 126 enquadramentos, dos quais 24 já confirmados (`confirmado_fiscalmente = true`) e 6 em `CONFERIR`. Ao semear um banco novo, as 24 linhas confirmadas entram em vigor; para exigir nova conferência, troque o valor para `false` em `src/database/seeds/data/antecipacao-parcial-ba-2026.enquadramentos.ts` antes de semear. Três linhas (NCM 17041000/CE, 61121100/SP e 61034300/SC) foram acrescentadas pela revisão fiscal, com fundamento curto ("RICMS BA", "revisado pelo usuário"); vale detalhar a base legal.
 
 ## Escopo
 
@@ -50,6 +50,8 @@ O item mantém `valor_antecipacao` e o total da apuração pelo imposto integral
 ## IPI destacado na aquisição
 
 A base da antecipação parcial é o valor da operação interestadual no documento (Lei 7.014/96, arts. 12-A e 23, III). A exclusão do IPI depende dos requisitos do art. 17, § 2º; um CEST/NCM ou o simples fato de haver IPI destacado não demonstram todos eles. Por isso, cada enquadramento pode registrar `ipi_na_base` (`INCLUIR` ou `EXCLUIR`) e `fundamento_ipi`. A decisão é validada no cadastro e fica sujeita à confirmação fiscal. Sem decisão fundamentada, o item com IPI mostra os valores **com** e **sem** IPI, permanece `PENDENTE` e não compõe o total ou a DeSTDA. Quando o IPI é incluído para adquirente do Simples, o motor calcula o ICMS interno sobre a base com IPI e a parcela interestadual sobre a operação sem IPI; o detalhe expõe `base_calculo_origem`, `base_calculo` e `deducao_origem`. Com decisão e enquadramento aprovado, a base adotada e o tratamento do IPI aparecem no detalhe.
+
+**Estado da decisão de IPI (BA, nov/2026):** não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na base da antecipação parcial. A leitura literal do art. 23, III da Lei 7.014/96 (valor da operação constante no documento) sustenta incluir o IPI, que é também o critério sem risco de recolher a menos. A LC 87/96, art. 13, § 2º, indica excluir quando a operação é entre contribuintes, para comercialização, com fato gerador do ICMS e do IPI. As regras com `ipi_na_base` registram o critério adotado e a pendência de consulta à DITRI (script `scripts/atualizar-fundamento-ipi-antecipacao.cjs`). Se vier resposta, trocar a decisão e o fundamento nas regras.
 
 O [Acórdão CJF 0042-11/25-VD](https://mbusca.sefaz.ba.gov.br/consef/2025%20-%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0042-11.25-VD.pdf) registra base com IPI em compras de optante do Simples. O [Acórdão JJF 0007-05/17](https://mbusca.sefaz.ba.gov.br/consef/2017%20ac%C3%B3rd%C3%A3os%20juntas/A-0007-05.17.pdf) distingue a base paga pelo comerciante da base do ICMS na origem. O [Acórdão CJF 0239-12/18](https://mbusca.sefaz.ba.gov.br/consef/2019%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0239-12.18.pdf) trata da exclusão condicionada do IPI. Esses precedentes motivam a decisão explícita por enquadramento, sujeita à verificação das circunstâncias da operação.
 
