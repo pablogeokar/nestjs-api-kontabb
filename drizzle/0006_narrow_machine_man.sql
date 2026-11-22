@@ -1,0 +1,1 @@
+ALTER TABLE "funcionarios_rh" ADD COLUMN "foto_key" text;

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -244,6 +245,7 @@ export class ColaboradorController {
   // ─── Portal endpoints ───
 
   @Get('perfil')
+  @Header('Cache-Control', 'private, no-store')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ColaboradorRequirePasswordChangedGuard)
   @ApiOperation({ summary: 'Perfil do colaborador' })

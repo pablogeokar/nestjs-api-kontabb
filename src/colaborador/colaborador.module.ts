@@ -1,3 +1,7 @@
+import { ColaboradorLogoController } from './colaborador-logo.controller';
+import { ColaboradorLogoService } from './colaborador-logo.service';
+import { ColaboradorFotoController } from './colaborador-foto.controller';
+import { ColaboradorFotoService } from './colaborador-foto.service';
 import { Module } from '@nestjs/common';
 import { ColaboradorController } from './colaborador.controller';
 import { ColaboradorService } from './colaborador.service';
@@ -9,9 +13,15 @@ import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [ClientesModule, StorageModule],
-  controllers: [ColaboradorController],
+  controllers: [
+    ColaboradorController,
+    ColaboradorFotoController,
+    ColaboradorLogoController,
+  ],
   providers: [
     ColaboradorService,
+    ColaboradorFotoService,
+    ColaboradorLogoService,
     ColaboradorSessionService,
     ColaboradorAuthGuard,
     ColaboradorRequirePasswordChangedGuard,

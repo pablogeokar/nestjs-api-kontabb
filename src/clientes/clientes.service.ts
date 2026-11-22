@@ -5,11 +5,7 @@ import {
 } from '@nestjs/common';
 import { asc, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import {
-  clientes,
-  contadores,
-  user,
-} from '../database/schema';
+import { clientes, contadores, user } from '../database/schema';
 import { resultRows } from '../common/db-result';
 import { AppLogger } from '../common/logger.service';
 import { StorageService } from '../storage/storage.service';
@@ -534,13 +530,26 @@ export class ClientesService {
     clientId: string;
     actorUserId: string;
   }) {
-    const result = await this.database.db.execute(sql`
+    const result = await this.database.db.transaction(async (tx) => {
+      // Acquire the parent lock before the deletion statement gets its snapshot.
+      // This includes a photo committed while we were waiting for an upload.
+      await tx
+        .select({ id: clientes.id })
+        .from(clientes)
+        .where(eq(clientes.id, input.clientId))
+        .for('update');
+      return tx.execute(sql`
       WITH target_client AS MATERIALIZED (
         SELECT id, user_id, razao_social FROM clientes WHERE id = ${input.clientId}::uuid FOR UPDATE
       ),
       target_files AS MATERIALIZED (
         SELECT d.id, d.arquivo_key, d.comprovante_key
         FROM guias d INNER JOIN target_client c ON c.id = d.cliente_id
+      ),
+      target_photos AS MATERIALIZED (
+        SELECT f.id, f.foto_key FROM funcionarios_rh f
+        INNER JOIN target_client c ON c.id = f.cliente_id
+        WHERE f.foto_key IS NOT NULL
       ),
       deleted_client AS (
         DELETE FROM clientes c USING target_client target WHERE c.id = target.id
@@ -556,7 +565,11 @@ export class ClientesService {
       ),
       cleanup_jobs AS (
         INSERT INTO storage_cleanup_jobs (object_key, entidade_tipo, entidade_id)
-        SELECT keys.object_key, 'DOCUMENTO', keys.id::text FROM candidate_keys keys
+        SELECT keys.object_key, keys.entidade_tipo, keys.id::text FROM (
+          SELECT id, object_key, 'DOCUMENTO' AS entidade_tipo FROM candidate_keys
+          UNION ALL
+          SELECT id, foto_key, 'FUNCIONARIO_FOTO' FROM target_photos
+        ) keys
         WHERE EXISTS (SELECT 1 FROM deleted_client)
         ON CONFLICT (object_key) DO NOTHING
         RETURNING id
@@ -572,6 +585,7 @@ export class ClientesService {
         EXISTS (SELECT 1 FROM deleted_client) AS deleted,
         COALESCE((SELECT array_agg(id::text) FROM cleanup_jobs), ARRAY[]::text[]) AS job_ids
     `);
+    });
 
     const row = resultRows<{ deleted: boolean; job_ids: string[] | null }>(
       result,
