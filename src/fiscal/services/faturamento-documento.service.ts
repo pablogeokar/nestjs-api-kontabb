@@ -321,17 +321,12 @@ export class FaturamentoDocumentoService {
     y += 50 + 16;
 
     // ── Tabela por competência ─────────────────────────────────────────
-    // Colunas de composição só quando informam algo além do total: mais de um
-    // tipo de receita ou devoluções deduzidas no período.
-    // Composição por tipo só quando há mais de um tipo de receita no período.
-    const mostrarComposicao = colunas.length > 1;
+    // Composição por tipo só quando há mais de um tipo de receita e todos os
+    // meses têm a composição; caso contrário, só a receita bruta do mês.
+    // O relatório não indica a origem da base de cálculo de cada mês.
+    const mostrarComposicao =
+      colunas.length > 1 && input.meses.every(mesDetalhado);
     const colunasValor: TipoReceita[] = mostrarComposicao ? colunas : [];
-    const manual = input.meses.some(
-      (mes) => !mesDetalhado(mes) && mes.origem === 'HISTORICO_INFORMADO',
-    );
-    const semComposicao = input.meses.some(
-      (mes) => !mesDetalhado(mes) && mes.origem !== 'HISTORICO_INFORMADO',
-    );
     const larguraCompetencia = mostrarComposicao ? 96 : 200;
     const larguraTotal = mostrarComposicao ? 116 : WIDTH - 200;
     const larguraValor = mostrarComposicao
@@ -341,13 +336,6 @@ export class FaturamentoDocumentoService {
       LEFT + larguraCompetencia + indice * larguraValor;
     const xTotal = RIGHT - larguraTotal;
     const ALTURA_LINHA = 21;
-    const marca = (mes: (typeof input.meses)[number]) =>
-      mesDetalhado(mes)
-        ? ''
-        : mes.origem === 'HISTORICO_INFORMADO'
-          ? ' *'
-          : ' **';
-
     const cabecalhoTabela = () => {
       pdf.rect(LEFT, y, WIDTH, 24).fill(NAVY);
       pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(7);
@@ -371,9 +359,9 @@ export class FaturamentoDocumentoService {
     garantir(18 + 24 + ALTURA_LINHA * 2);
     secao(
       'RECEITA BRUTA POR COMPETÊNCIA',
-      mostrarComposicao
-        ? 'Valores em reais (R$)'
-        : `Receita de ${ROTULO_TIPO[colunas[0]].toLowerCase()} · Valores em reais (R$)`,
+      colunas.length === 1
+        ? `Receita de ${ROTULO_TIPO[colunas[0]].toLowerCase()} · Valores em reais (R$)`
+        : 'Valores em reais (R$)',
     );
     cabecalhoTabela();
 
@@ -395,11 +383,7 @@ export class FaturamentoDocumentoService {
         .fillColor(INK)
         .font('Helvetica')
         .fontSize(8.5)
-        .text(
-          `${rotuloCompetencia(mes.competencia)}${marca(mes)}`,
-          LEFT + 10,
-          yTexto,
-        );
+        .text(rotuloCompetencia(mes.competencia), LEFT + 10, yTexto);
       colunasValor.forEach((coluna, posicao) => {
         const valor = detalhado ? valorDoTipo(mes, coluna) : 0n;
         const texto =
@@ -451,30 +435,11 @@ export class FaturamentoDocumentoService {
       align: 'right',
     });
     y += 28;
-    const notas = [
-      ...(manual
-        ? ['* Base de cálculo informada manualmente pela contabilidade.']
-        : []),
-      ...(semComposicao
-        ? [
-            '** Base de cálculo da apuração do Simples Nacional salva no sistema.',
-          ]
-        : []),
-    ];
-    if (notas.length > 0) y += 6;
-    for (const nota of notas) {
-      pdf
-        .fillColor(MUTED)
-        .font('Helvetica')
-        .fontSize(7)
-        .text(nota, LEFT, y, { width: WIDTH });
-      y += 10;
-    }
     y += 14;
 
     // ── Critérios de apuração ──────────────────────────────────────────
     const criterios = [
-      'Receita bruta por competência correspondente à base de cálculo utilizada na apuração dos tributos, conforme os documentos fiscais eletrônicos autorizados emitidos pela empresa e disponíveis no sistema até a data de emissão deste documento.',
+      'Receita bruta por competência correspondente à base de cálculo utilizada na apuração dos tributos, conforme as informações registradas no sistema até a data de emissão deste documento.',
       ...colunas.map((tipo) => CRITERIOS[tipo]),
       'Documento de natureza informativa. Não substitui a escrituração fiscal e contábil nem os documentos fiscais originais.',
     ];
