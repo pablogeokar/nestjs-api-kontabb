@@ -1,3 +1,4 @@
+import { colaboradorFotoUrl } from './colaborador-foto.service';
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
@@ -196,6 +197,7 @@ export class ColaboradorService {
     const rows = await this.database.db
       .select({
         id: funcionariosRh.id,
+        fotoKey: funcionariosRh.fotoKey,
         codigoFuncionario: funcionariosRh.codigoFuncionario,
         nomeCompleto: funcionariosRh.nomeCompleto,
         cargo: funcionariosRh.cargo,
@@ -209,7 +211,9 @@ export class ColaboradorService {
       .where(eq(funcionariosRh.id, funcionarioId))
       .limit(1);
 
-    return rows[0] ?? null;
+    if (!rows[0]) return null;
+    const { fotoKey, ...perfil } = rows[0];
+    return { ...perfil, fotoUrl: colaboradorFotoUrl(fotoKey) };
   }
 
   /**

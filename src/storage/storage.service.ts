@@ -200,6 +200,20 @@ export class StorageService {
     return `clientes/${cnpjCpf}/comprovantes/${receiptId}.${extension}`;
   }
 
+  funcionarioFotoObjectKey(input: {
+    clienteId: string;
+    funcionarioId: string;
+    fotoId: string;
+  }) {
+    const cliente = this.assertSafeKeySegment(input.clienteId, 'clienteId');
+    const funcionario = this.assertSafeKeySegment(
+      input.funcionarioId,
+      'funcionarioId',
+    );
+    const foto = this.assertSafeKeySegment(input.fotoId, 'fotoId');
+    return `clientes/${cliente}/funcionarios/${funcionario}/fotos/${foto}.webp`;
+  }
+
   logoObjectKey(input: { cnpjCpf: string; extension: string }) {
     const cnpjCpf = this.assertSafeKeySegment(input.cnpjCpf, 'cnpjCpf');
     const extension = this.assertSafeKeySegment(input.extension, 'extension');

@@ -312,3 +312,7 @@ pnpm build
 
 Os testes unitários cobrem assinatura do cookie, nomes normal/seguro, Bearer,
 sessões inválidas, matriz de papéis e autorização do comprovante de guia.
+
+### Foto do colaborador
+
+Contrato, migration, limpeza no R2 e testes isolados: [Foto e crachá do colaborador](docs/colaborador-foto.md).

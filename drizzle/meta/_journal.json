@@ -43,6 +43,13 @@
       "when": 1795216310813,
       "tag": "0005_sloppy_jocasta",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795372533179,
+      "tag": "0006_narrow_machine_man",
+      "breakpoints": true
     }
   ]
 }
