@@ -18,11 +18,18 @@ export interface FaturamentoMesSnapshot {
   competencia: string;
   valorProdutos: string;
   valorServicos: string;
-  /** Prestação de serviço de transporte (CT-e). Ausente em relatórios emitidos antes da inclusão do CT-e. */
+  /** Prestação de serviço de transporte (CT-e). Ausente em relatórios anteriores à inclusão do CT-e. */
   valorTransportes?: string;
+  /** Devoluções de vendas deduzidas da receita do mês. */
+  valorDevolucoes?: string;
+  /** Receita bruta do mês: base da apuração dos tributos. */
   total: string;
-  quantidadeProdutos: number;
-  quantidadeServicos: number;
+  /** De onde veio a receita do mês. Ausente em relatórios antigos (documentos). */
+  origem?: 'APURACAO_SIMPLES' | 'HISTORICO_INFORMADO' | 'DOCUMENTOS';
+  /** Falso quando a abertura por tipo não soma o total (histórico informado). */
+  detalhado?: boolean;
+  quantidadeProdutos?: number;
+  quantidadeServicos?: number;
   quantidadeTransportes?: number;
 }
 

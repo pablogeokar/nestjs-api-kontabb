@@ -1,8 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import {
-  buildFaturamentoMeses,
+  montarMesesFaturamento,
   parseFaturamentoPeriod,
 } from './faturamento.service';
+import type { ReceitaBrutaCompetencia } from './simples-nacional.service';
 
 describe('período da relação de faturamento', () => {
   it('atravessa a virada do ano e calcula a data final exclusiva', () => {
@@ -27,121 +28,73 @@ describe('período da relação de faturamento', () => {
 });
 
 describe('valores mensais da relação de faturamento', () => {
-  it('soma centavos com precisão, separa produtos e serviços e preenche mês sem documentos', () => {
-    const period = parseFaturamentoPeriod('2026-01', '2026-03');
-    expect(
-      buildFaturamentoMeses(period.first, period.last, [
-        {
-          competencia: '2026-01',
-          tipo: 'PRODUTO',
-          valor: '0.10',
-          quantidade: 1,
-        },
-        {
-          competencia: '2026-01',
-          tipo: 'PRODUTO',
-          valor: '0.20',
-          quantidade: 2,
-        },
-        {
-          competencia: '2026-03',
-          tipo: 'SERVICO',
-          valor: '100.01',
-          quantidade: 1,
-        },
-      ]),
-    ).toEqual({
-      total: '100.31',
-      meses: [
-        {
-          competencia: '2026-01',
-          valorProdutos: '0.30',
-          valorServicos: '0.00',
-          valorTransportes: '0.00',
-          total: '0.30',
-          quantidadeProdutos: 3,
-          quantidadeServicos: 0,
-          quantidadeTransportes: 0,
-        },
-        {
-          competencia: '2026-02',
-          valorProdutos: '0.00',
-          valorServicos: '0.00',
-          valorTransportes: '0.00',
-          total: '0.00',
-          quantidadeProdutos: 0,
-          quantidadeServicos: 0,
-          quantidadeTransportes: 0,
-        },
-        {
-          competencia: '2026-03',
-          valorProdutos: '0.00',
-          valorServicos: '100.01',
-          valorTransportes: '0.00',
-          total: '100.01',
-          quantidadeProdutos: 0,
-          quantidadeServicos: 1,
-          quantidadeTransportes: 0,
-        },
-      ],
-    });
+  const receita = (
+    competencia: string,
+    valores: Partial<ReceitaBrutaCompetencia>,
+  ): ReceitaBrutaCompetencia => ({
+    competencia,
+    origem: 'DOCUMENTOS',
+    statusApuracao: null,
+    detalhado: true,
+    mercadorias: '0.00',
+    servicos: '0.00',
+    transportes: '0.00',
+    devolucoes: '0.00',
+    receitaBruta: '0.00',
+    ...valores,
   });
 
-  it('soma a prestação de transporte (CT-e) ao total do mês, em coluna própria', () => {
-    const period = parseFaturamentoPeriod('2026-10', '2026-10');
-    expect(
-      buildFaturamentoMeses(period.first, period.last, [
-        {
-          competencia: '2026-10',
-          tipo: 'PRODUTO',
-          valor: '100.10',
-          quantidade: 2,
-        },
-        {
-          competencia: '2026-10',
-          tipo: 'SERVICO',
-          valor: '50.20',
-          quantidade: 1,
-        },
-        {
-          competencia: '2026-10',
-          tipo: 'TRANSPORTE',
-          valor: '47827.27',
-          quantidade: 89,
-        },
-      ]),
-    ).toEqual({
-      total: '47977.57',
-      meses: [
-        {
-          competencia: '2026-10',
-          valorProdutos: '100.10',
-          valorServicos: '50.20',
-          valorTransportes: '47827.27',
-          total: '47977.57',
-          quantidadeProdutos: 2,
-          quantidadeServicos: 1,
-          quantidadeTransportes: 89,
-        },
-      ],
-    });
-  });
-
-  it('uma transportadora sem NF-e nem NFS-e deixa de sair com faturamento zerado', () => {
-    const period = parseFaturamentoPeriod('2026-10', '2026-10');
-    const { total, meses } = buildFaturamentoMeses(period.first, period.last, [
-      {
-        competencia: '2026-10',
-        tipo: 'TRANSPORTE',
-        valor: '47827.27',
-        quantidade: 89,
-      },
+  it('usa a receita bruta de apuração de cada mês e soma o período com precisão', () => {
+    const { meses, total } = montarMesesFaturamento([
+      receita('2026-09', {
+        mercadorias: '54129.00',
+        devolucoes: '4135.00',
+        receitaBruta: '49994.00',
+        origem: 'APURACAO_SIMPLES',
+        statusApuracao: 'FECHADO',
+      }),
+      receita('2026-10', {
+        mercadorias: '0.10',
+        servicos: '0.20',
+        receitaBruta: '0.30',
+      }),
     ]);
-    expect(total).toBe('47827.27');
-    expect(meses[0]).toMatchObject({
-      valorProdutos: '0.00',
+    expect(total).toBe('49994.30');
+    expect(meses[0]).toEqual({
+      competencia: '2026-09',
+      valorProdutos: '54129.00',
       valorServicos: '0.00',
-      valorTransportes: '47827.27',
+      valorTransportes: '0.00',
+      valorDevolucoes: '4135.00',
+      total: '49994.00',
+      origem: 'APURACAO_SIMPLES',
+      detalhado: true,
     });
+    expect(meses[1].total).toBe('0.30');
+  });
+
+  it('mantém o mês do histórico informado sem composição por tipo', () => {
+    const { meses, total } = montarMesesFaturamento([
+      receita('2026-01', {
+        origem: 'HISTORICO_INFORMADO',
+        detalhado: false,
+        receitaBruta: '126346.56',
+      }),
+    ]);
+    expect(total).toBe('126346.56');
+    expect(meses[0]).toMatchObject({
+      origem: 'HISTORICO_INFORMADO',
+      detalhado: false,
+      valorProdutos: '0.00',
+    });
+  });
+
+  it('não emite números de documentos no snapshot', () => {
+    const { meses } = montarMesesFaturamento([
+      receita('2026-10', { transportes: '47827.27', receitaBruta: '47827.27' }),
+    ]);
+    expect(
+      Object.keys(meses[0]).some((chave) => chave.startsWith('quantidade')),
+    ).toBe(false);
   });
 });

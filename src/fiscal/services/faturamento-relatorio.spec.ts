@@ -3,33 +3,35 @@ import {
   centavos,
   colunasAtivas,
   decimal,
-  documentosDoMes,
   formatarCentavos,
   formatarDataHora,
   formatarDocumentoFiscal,
   rotuloPeriodo,
+  temDevolucoes,
   totaisPeriodo,
 } from './faturamento-relatorio';
 
 const mes = (
   competencia: string,
-  produtos: string,
-  servicos: string,
-  transportes: string | undefined,
-  qtd = [0, 0, 0],
+  valores: Partial<FaturamentoMesSnapshot> = {},
 ): FaturamentoMesSnapshot => {
-  const total =
-    centavos(produtos) + centavos(servicos) + centavos(transportes ?? '0.00');
-  return {
+  const base = {
     competencia,
-    valorProdutos: produtos,
-    valorServicos: servicos,
-    ...(transportes === undefined ? {} : { valorTransportes: transportes }),
-    total: decimal(total),
-    quantidadeProdutos: qtd[0],
-    quantidadeServicos: qtd[1],
-    ...(transportes === undefined ? {} : { quantidadeTransportes: qtd[2] }),
+    valorProdutos: '0.00',
+    valorServicos: '0.00',
+    valorTransportes: '0.00',
+    valorDevolucoes: '0.00',
+    ...valores,
   };
+  const total =
+    valores.total ??
+    decimal(
+      centavos(base.valorProdutos) +
+        centavos(base.valorServicos) +
+        centavos(base.valorTransportes) -
+        centavos(base.valorDevolucoes),
+    );
+  return { ...base, total };
 };
 
 describe('formatação de valores', () => {
@@ -57,11 +59,9 @@ describe('formatação de valores', () => {
   });
 
   it('formata data e hora no horário da Bahia', () => {
-    // 22/11/2026 17:32 UTC = 14:32 em Salvador (UTC-3)
     expect(formatarDataHora(new Date('2026-11-22T17:32:00Z'))).toBe(
       '22/11/2026 às 14:32',
     );
-    // virada de dia: 01:10 UTC do dia 1º ainda é dia 30 na Bahia
     expect(formatarDataHora(new Date('2026-12-01T01:10:00Z'))).toBe(
       '30/11/2026 às 22:10',
     );
@@ -76,52 +76,78 @@ describe('formatação de valores', () => {
 describe('colunas e totais do período', () => {
   it('mostra só os tipos de receita com movimento', () => {
     expect(
-      colunasAtivas([mes('2026-10', '0.00', '0.00', '100.00', [0, 0, 3])]),
+      colunasAtivas([mes('2026-10', { valorTransportes: '100.00' })]),
     ).toEqual(['TRANSPORTES']);
     expect(
       colunasAtivas([
-        mes('2026-09', '10.00', '0.00', '0.00', [1, 0, 0]),
-        mes('2026-10', '0.00', '5.00', '0.00', [0, 1, 0]),
+        mes('2026-09', { valorProdutos: '10.00' }),
+        mes('2026-10', { valorServicos: '5.00' }),
       ]),
     ).toEqual(['MERCADORIAS', 'SERVICOS']);
-  });
-
-  it('sem movimento algum, mantém mercadorias e serviços', () => {
-    expect(colunasAtivas([mes('2026-10', '0.00', '0.00', '0.00')])).toEqual([
+    expect(colunasAtivas([mes('2026-10')])).toEqual([
       'MERCADORIAS',
       'SERVICOS',
     ]);
   });
 
-  it('lê relatórios antigos, emitidos sem o campo de transportes', () => {
-    const antigo = mes('2026-01', '100.00', '50.00', undefined, [2, 1, 0]);
-    expect(antigo.valorTransportes).toBeUndefined();
+  it('deduz as devoluções: a receita bruta é a base da apuração', () => {
+    const t = totaisPeriodo([
+      mes('2026-10', { valorProdutos: '54129.00', valorDevolucoes: '4135.00' }),
+      mes('2026-11', { valorProdutos: '23932.00', valorDevolucoes: '902.00' }),
+    ]);
+    expect(t.porTipo.MERCADORIAS).toBe(centavos('78061.00'));
+    expect(t.devolucoes).toBe(centavos('5037.00'));
+    expect(t.total).toBe(centavos('73024.00'));
+    expect(t.porTipo.MERCADORIAS - t.devolucoes).toBe(t.total);
+  });
+
+  it('o mês do histórico informado soma no total, fora da composição por tipo', () => {
+    const t = totaisPeriodo([
+      mes('2026-01', {
+        total: '126346.56',
+        origem: 'HISTORICO_INFORMADO',
+        detalhado: false,
+      }),
+      mes('2026-02', { valorProdutos: '100.00' }),
+    ]);
+    expect(t.total).toBe(centavos('126446.56'));
+    expect(t.porTipo.MERCADORIAS).toBe(centavos('100.00'));
+    expect(
+      colunasAtivas([
+        mes('2026-01', { detalhado: false, valorServicos: '9.00' }),
+      ]),
+    ).toEqual(['MERCADORIAS', 'SERVICOS']);
+  });
+
+  it('lê relatórios antigos, sem transportes, devoluções nem origem', () => {
+    const antigo: FaturamentoMesSnapshot = {
+      competencia: '2026-01',
+      valorProdutos: '100.00',
+      valorServicos: '50.00',
+      total: '150.00',
+      quantidadeProdutos: 2,
+      quantidadeServicos: 1,
+    };
     expect(colunasAtivas([antigo])).toEqual(['MERCADORIAS', 'SERVICOS']);
-    expect(documentosDoMes(antigo)).toBe(3);
-    expect(totaisPeriodo([antigo]).porTipo.TRANSPORTES).toBe(0n);
+    expect(temDevolucoes([antigo])).toBe(false);
+    expect(totaisPeriodo([antigo])).toMatchObject({
+      total: centavos('150.00'),
+      devolucoes: 0n,
+    });
   });
 
-  it('totaliza por tipo, documentos e total, e calcula a média sobre todas as competências', () => {
-    const t = totaisPeriodo([
-      mes('2026-08', '0.00', '0.00', '40000.00', [0, 0, 80]),
-      mes('2026-09', '0.00', '0.00', '43827.27', [0, 0, 81]),
-      mes('2026-10', '10.00', '0.00', '47654.54', [1, 0, 82]),
-    ]);
-    expect(t.porTipo.TRANSPORTES).toBe(centavos('131481.81'));
-    expect(t.porTipo.MERCADORIAS).toBe(centavos('10.00'));
-    expect(t.documentos).toBe(244);
-    expect(t.total).toBe(centavos('131491.81'));
-    expect(t.competencias).toBe(3);
-    // 131491,81 / 3 = 43830,6033... -> 43830,60
-    expect(t.mediaMensal).toBe(centavos('43830.60'));
-  });
-
-  it('inclui meses sem receita na média e arredonda meio centavo para cima', () => {
-    const t = totaisPeriodo([
-      mes('2026-01', '0.01', '0.00', '0.00', [1, 0, 0]),
-      mes('2026-02', '0.00', '0.00', '0.00'),
-    ]);
-    expect(t.mediaMensal).toBe(1n);
+  it('calcula a média sobre todas as competências e arredonda meio centavo para cima', () => {
+    expect(
+      totaisPeriodo([
+        mes('2026-08', { valorTransportes: '40000.00' }),
+        mes('2026-09', { valorTransportes: '43827.27' }),
+        mes('2026-10', { valorTransportes: '47654.54' }),
+      ]).mediaMensal,
+    ).toBe(centavos('43827.27'));
+    expect(
+      totaisPeriodo([mes('2026-01', { valorProdutos: '0.01' }), mes('2026-02')])
+        .mediaMensal,
+    ).toBe(1n);
     expect(totaisPeriodo([]).mediaMensal).toBe(0n);
   });
 });

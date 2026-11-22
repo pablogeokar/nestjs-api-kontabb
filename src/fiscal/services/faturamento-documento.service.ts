@@ -8,17 +8,19 @@ import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import type { FaturamentoMesSnapshot } from '../../database/schema';
 import {
   ROTULO_TIPO,
+  centavos,
   colunasAtivas,
-  documentosDoMes,
+  devolucoesDoMes,
   formatarCentavos,
   formatarData,
   formatarDataHora,
   formatarDocumentoFiscal,
+  mesDetalhado,
   rotuloCompetencia,
   rotuloPeriodo,
+  temDevolucoes,
   totaisPeriodo,
   valorDoTipo,
-  centavos,
   type TipoReceita,
 } from './faturamento-relatorio';
 
@@ -64,11 +66,10 @@ export interface FaturamentoPdfInput {
 
 const CRITERIOS: Record<TipoReceita, string> = {
   MERCADORIAS:
-    'Mercadorias: itens de NF-e (modelo 55) e NFC-e (modelo 65) autorizadas, de saída, com CFOP de receita de venda, pela data de emissão.',
-  SERVICOS:
-    'Serviços: NFS-e autorizadas, de saída, pela competência declarada no documento ou, na falta dela, pela data de emissão.',
+    'Mercadorias: itens de NF-e (modelo 55) e NFC-e (modelo 65) com CFOP de venda.',
+  SERVICOS: 'Serviços: NFS-e emitidas pela empresa.',
   TRANSPORTES:
-    'Transportes: CT-e autorizados de prestação de serviço de transporte (CFOP 5.351 a 5.357, 5.360, 6.351 a 6.357 e 6.360), pela data de emissão. CT-e de anulação, e CT-e anulados ou substituídos, não são computados.',
+    'Transportes: CT-e de prestação de serviço de transporte (CFOP 5.351 a 5.357, 5.360, 6.351 a 6.357 e 6.360). O CT-e de anulação deduz o valor da prestação anulada.',
 };
 
 @Injectable()
@@ -228,7 +229,7 @@ export class FaturamentoDocumentoService {
         align: 'center',
       });
     pdf.rect(PAGE_W / 2 - 24, y + 45, 48, 2).fill(NAVY);
-    y += 58;
+    y += 54;
 
     // Identificação do contribuinte.
     const rotulo = (texto: string, x: number, yy: number) =>
@@ -273,7 +274,7 @@ export class FaturamentoDocumentoService {
       .font('Helvetica')
       .fontSize(9.5)
       .text(periodo, meio, y + 63, { width: 230 });
-    y += alturaIdentificacao + 16;
+    y += alturaIdentificacao + 14;
 
     // Resumo do período.
     secao('RESUMO DO PERÍODO');
@@ -281,24 +282,24 @@ export class FaturamentoDocumentoService {
       {
         titulo: 'RECEITA BRUTA NO PERÍODO',
         valor: `R$ ${formatarCentavos(totais.total)}`,
-        largura: 196,
+        largura: 186,
         destaque: true,
+      },
+      {
+        titulo: '(–) DEVOLUÇÕES',
+        valor: `R$ ${formatarCentavos(totais.devolucoes)}`,
+        largura: 111,
+        destaque: false,
       },
       {
         titulo: 'MÉDIA MENSAL',
         valor: `R$ ${formatarCentavos(totais.mediaMensal)}`,
-        largura: 131,
+        largura: 120,
         destaque: false,
       },
       {
         titulo: 'COMPETÊNCIAS',
         valor: String(totais.competencias),
-        largura: 90,
-        destaque: false,
-      },
-      {
-        titulo: 'DOCUMENTOS',
-        valor: totais.documentos.toLocaleString('pt-BR'),
         largura: 90,
         destaque: false,
       },
@@ -319,49 +320,55 @@ export class FaturamentoDocumentoService {
       pdf
         .fillColor(celula.destaque ? NAVY : INK)
         .font('Helvetica-Bold')
-        .fontSize(celula.destaque ? 14 : 12)
+        .fontSize(celula.destaque ? 14 : 11.5)
         .text(celula.valor, xCelula + 11, y + 26, {
           width: celula.largura - 16,
         });
       xCelula += celula.largura;
     }
-    y += 50 + 18;
+    y += 50 + 16;
 
     // ── Tabela por competência ─────────────────────────────────────────
-    // Com um único tipo de receita, a coluna do tipo repetiria o total: fica só o total.
-    const mostrarTipos = colunas.length > 1;
-    const colunasTabela = mostrarTipos ? colunas : [];
-    const larguraCompetencia = mostrarTipos ? 84 : 150;
-    const larguraDocs = mostrarTipos ? 52 : 110;
-    const larguraTotal = mostrarTipos ? 108 : WIDTH - 150 - 110;
-    const larguraTipo = mostrarTipos
-      ? (WIDTH - larguraCompetencia - larguraDocs - larguraTotal) /
-        colunas.length
+    // Colunas de composição só quando informam algo além do total: mais de um
+    // tipo de receita ou devoluções deduzidas no período.
+    const comDevolucoes = temDevolucoes(input.meses);
+    const mostrarComposicao = colunas.length > 1 || comDevolucoes;
+    const colunasValor: Array<TipoReceita | 'DEVOLUCOES'> = mostrarComposicao
+      ? [...colunas, ...(comDevolucoes ? (['DEVOLUCOES'] as const) : [])]
+      : [];
+    const historico = input.meses.some(
+      (mes) => mes.origem === 'HISTORICO_INFORMADO',
+    );
+    const larguraCompetencia = mostrarComposicao ? 96 : 200;
+    const larguraTotal = mostrarComposicao ? 116 : WIDTH - 200;
+    const larguraValor = mostrarComposicao
+      ? (WIDTH - larguraCompetencia - larguraTotal) / colunasValor.length
       : 0;
-    const xDocs = LEFT + larguraCompetencia;
-    const xTipo = (indice: number) =>
-      xDocs + larguraDocs + indice * larguraTipo;
+    const xValor = (indice: number) =>
+      LEFT + larguraCompetencia + indice * larguraValor;
     const xTotal = RIGHT - larguraTotal;
     const ALTURA_LINHA = 21;
+    const rotuloColuna = (coluna: TipoReceita | 'DEVOLUCOES') =>
+      coluna === 'DEVOLUCOES' ? '(–) DEVOLUÇÕES' : ROTULO_TIPO[coluna];
+    const valorColuna = (
+      mes: (typeof input.meses)[number],
+      coluna: TipoReceita | 'DEVOLUCOES',
+    ) =>
+      coluna === 'DEVOLUCOES' ? devolucoesDoMes(mes) : valorDoTipo(mes, coluna);
 
     const cabecalhoTabela = () => {
       pdf.rect(LEFT, y, WIDTH, 24).fill(NAVY);
       pdf.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(7);
       const opcoes = { characterSpacing: 0.6 };
       pdf.text('COMPETÊNCIA', LEFT + 10, y + 9, { ...opcoes });
-      pdf.text('DOCS.', xDocs, y + 9, {
-        ...opcoes,
-        width: larguraDocs - 10,
-        align: 'right',
-      });
-      colunasTabela.forEach((tipo, indice) => {
-        pdf.text(ROTULO_TIPO[tipo], xTipo(indice), y + 9, {
+      colunasValor.forEach((coluna, indice) => {
+        pdf.text(rotuloColuna(coluna), xValor(indice), y + 9, {
           ...opcoes,
-          width: larguraTipo - 10,
+          width: larguraValor - 10,
           align: 'right',
         });
       });
-      pdf.text('TOTAL', xTotal, y + 9, {
+      pdf.text('RECEITA BRUTA', xTotal, y + 9, {
         ...opcoes,
         width: larguraTotal - 10,
         align: 'right',
@@ -369,11 +376,10 @@ export class FaturamentoDocumentoService {
       y += 24;
     };
 
-    // Título da seção e cabeçalho precisam caber com pelo menos duas linhas.
     garantir(18 + 24 + ALTURA_LINHA * 2);
     secao(
-      'DETALHAMENTO POR COMPETÊNCIA',
-      mostrarTipos
+      'RECEITA BRUTA POR COMPETÊNCIA',
+      mostrarComposicao
         ? 'Valores em reais (R$)'
         : `Receita de ${ROTULO_TIPO[colunas[0]].toLowerCase()} · Valores em reais (R$)`,
     );
@@ -392,28 +398,26 @@ export class FaturamentoDocumentoService {
         .strokeColor(LINE_SOFT)
         .stroke();
       const yTexto = y + 6.5;
+      const detalhado = mesDetalhado(mes);
       pdf
         .fillColor(INK)
         .font('Helvetica')
         .fontSize(8.5)
-        .text(rotuloCompetencia(mes.competencia), LEFT + 10, yTexto);
-      pdf.fillColor(MUTED).text(String(documentosDoMes(mes)), xDocs, yTexto, {
-        width: larguraDocs - 10,
-        align: 'right',
-      });
-      colunasTabela.forEach((tipo, posicao) => {
-        const valor = valorDoTipo(mes, tipo);
+        .text(
+          `${rotuloCompetencia(mes.competencia)}${mes.origem === 'HISTORICO_INFORMADO' ? ' *' : ''}`,
+          LEFT + 10,
+          yTexto,
+        );
+      colunasValor.forEach((coluna, posicao) => {
+        const valor = detalhado ? valorColuna(mes, coluna) : 0n;
+        const texto =
+          !detalhado || valor === 0n ? '—' : formatarCentavos(valor);
         pdf
-          .fillColor(valor === 0n ? FAINT : INK)
-          .text(
-            valor === 0n ? '—' : formatarCentavos(valor),
-            xTipo(posicao),
-            yTexto,
-            {
-              width: larguraTipo - 10,
-              align: 'right',
-            },
-          );
+          .fillColor(!detalhado || valor === 0n ? FAINT : INK)
+          .text(texto, xValor(posicao), yTexto, {
+            width: larguraValor - 10,
+            align: 'right',
+          });
       });
       pdf
         .fillColor(NAVY)
@@ -443,31 +447,45 @@ export class FaturamentoDocumentoService {
       .font('Helvetica-Bold')
       .fontSize(8.5)
       .text('TOTAL DO PERÍODO', LEFT + 10, yTotais, { characterSpacing: 0.3 });
-    pdf.text(totais.documentos.toLocaleString('pt-BR'), xDocs, yTotais, {
-      width: larguraDocs - 10,
-      align: 'right',
-    });
-    colunasTabela.forEach((tipo, posicao) => {
-      pdf.text(
-        formatarCentavos(totais.porTipo[tipo]),
-        xTipo(posicao),
-        yTotais,
-        {
-          width: larguraTipo - 10,
-          align: 'right',
-        },
-      );
+    colunasValor.forEach((coluna, posicao) => {
+      const valor =
+        coluna === 'DEVOLUCOES' ? totais.devolucoes : totais.porTipo[coluna];
+      pdf.text(formatarCentavos(valor), xValor(posicao), yTotais, {
+        width: larguraValor - 10,
+        align: 'right',
+      });
     });
     pdf.fontSize(10).text(formatarCentavos(totais.total), xTotal, y + 8.5, {
       width: larguraTotal - 10,
       align: 'right',
     });
-    y += 28 + 18;
+    y += 28;
+    if (historico) {
+      y += 6;
+      pdf
+        .fillColor(MUTED)
+        .font('Helvetica')
+        .fontSize(7)
+        .text(
+          '* Receita bruta informada no histórico de apuração (competência anterior aos documentos fiscais no sistema), sem composição por tipo.',
+          LEFT,
+          y,
+          { width: WIDTH },
+        );
+      y += 10;
+    }
+    y += 14;
 
     // ── Critérios de apuração ──────────────────────────────────────────
     const criterios = [
-      'Receita bruta documental, apurada a partir dos documentos fiscais eletrônicos autorizados e emitidos pela própria empresa, disponíveis no sistema até a data de emissão deste documento. Valores brutos, sem dedução de devoluções ou de tributos.',
+      'Receita bruta por competência que serviu de base para a apuração dos tributos, apurada a partir dos documentos fiscais eletrônicos autorizados emitidos pela empresa e disponíveis no sistema até a data de emissão deste documento.',
+      'Deduzidas as devoluções de vendas. Não compõem a receita bruta as bonificações e brindes, as remessas, as transferências, as devoluções de compras e as demais saídas sem natureza de receita.',
       ...colunas.map((tipo) => CRITERIOS[tipo]),
+      ...(input.meses.some((mes) => mes.origem === 'APURACAO_SIMPLES')
+        ? [
+            'Nas competências com apuração do Simples Nacional salva no sistema, a receita bruta é a dessa apuração.',
+          ]
+        : []),
       'Documento de natureza informativa. Não substitui a escrituração fiscal e contábil nem os documentos fiscais originais.',
     ];
     pdf.font('Helvetica').fontSize(7.5);
@@ -490,10 +508,10 @@ export class FaturamentoDocumentoService {
         .text(texto, LEFT + 16, y, { width: WIDTH - 16, lineGap: 1.5 });
       y += alturasCriterios[indice];
     });
-    y += 10;
+    y += 6;
 
     // ── Responsável contábil e autenticidade ───────────────────────────
-    const alturaBloco = 128;
+    const alturaBloco = 120;
     garantir(18 + alturaBloco);
     secao('RESPONSÁVEL CONTÁBIL E AUTENTICIDADE');
     const larguraEsquerda = 247;
@@ -565,9 +583,9 @@ export class FaturamentoDocumentoService {
       .rect(xDireita, y, larguraDireita, alturaBloco)
       .fillAndStroke('#FBFCFE', LINE);
     rotulo('AUTENTICIDADE', xDireita + 14, y + 11);
-    pdf.image(qr, xDireita + 12, y + 24, { width: 62, height: 62 });
-    const xTextoQr = xDireita + 86;
-    const larguraTextoQr = larguraDireita - 98;
+    pdf.image(qr, xDireita + 12, y + 23, { width: 58, height: 58 });
+    const xTextoQr = xDireita + 82;
+    const larguraTextoQr = larguraDireita - 94;
     pdf
       .fillColor(INK)
       .font('Helvetica')
@@ -598,17 +616,17 @@ export class FaturamentoDocumentoService {
         { width: larguraTextoQr, lineGap: 1.5 },
       );
     pdf
-      .moveTo(xDireita + 14, y + 94)
-      .lineTo(RIGHT - 14, y + 94)
+      .moveTo(xDireita + 14, y + 88)
+      .lineTo(RIGHT - 14, y + 88)
       .lineWidth(0.5)
       .strokeColor(LINE_SOFT)
       .stroke();
-    rotulo('CÓDIGO DE CONTROLE', xDireita + 14, y + 101);
+    rotulo('CÓDIGO DE CONTROLE', xDireita + 14, y + 95);
     pdf
       .fillColor(NAVY)
       .font('Courier-Bold')
       .fontSize(8.5)
-      .text(input.codigo, xDireita + 14, y + 112, {
+      .text(input.codigo, xDireita + 14, y + 106, {
         width: larguraDireita - 28,
       });
     y += alturaBloco;

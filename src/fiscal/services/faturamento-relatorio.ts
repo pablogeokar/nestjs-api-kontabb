@@ -44,35 +44,32 @@ export function valorDoTipo(mes: FaturamentoMesSnapshot, tipo: TipoReceita) {
   return centavos(mes.valorTransportes ?? '0.00');
 }
 
-export function quantidadeDoTipo(
-  mes: FaturamentoMesSnapshot,
-  tipo: TipoReceita,
-) {
-  if (tipo === 'MERCADORIAS') return mes.quantidadeProdutos;
-  if (tipo === 'SERVICOS') return mes.quantidadeServicos;
-  return mes.quantidadeTransportes ?? 0;
-}
+export const devolucoesDoMes = (mes: FaturamentoMesSnapshot) =>
+  centavos(mes.valorDevolucoes ?? '0.00');
+
+/** Relatórios anteriores não traziam o campo: a abertura por tipo era sempre a do total. */
+export const mesDetalhado = (mes: FaturamentoMesSnapshot) =>
+  mes.detalhado !== false;
 
 /**
- * Colunas exibidas na tabela: só os tipos de receita com movimento no período.
- * Sem movimento algum, mostra mercadorias e serviços para o quadro não ficar vazio.
+ * Tipos de receita com movimento nos meses abertos por tipo. Sem nenhum,
+ * mostra mercadorias e serviços para o quadro não ficar vazio.
  */
 export function colunasAtivas(meses: FaturamentoMesSnapshot[]): TipoReceita[] {
+  const detalhados = meses.filter(mesDetalhado);
   const ativas = TIPOS_RECEITA.filter((tipo) =>
-    meses.some(
-      (mes) => valorDoTipo(mes, tipo) !== 0n || quantidadeDoTipo(mes, tipo) > 0,
-    ),
+    detalhados.some((mes) => valorDoTipo(mes, tipo) !== 0n),
   );
   return ativas.length > 0 ? ativas : ['MERCADORIAS', 'SERVICOS'];
 }
 
-export function documentosDoMes(mes: FaturamentoMesSnapshot): number {
-  return TIPOS_RECEITA.reduce((n, tipo) => n + quantidadeDoTipo(mes, tipo), 0);
-}
+export const temDevolucoes = (meses: FaturamentoMesSnapshot[]) =>
+  meses.some((mes) => devolucoesDoMes(mes) !== 0n);
 
 export interface TotaisPeriodo {
   porTipo: Record<TipoReceita, bigint>;
-  documentos: number;
+  devolucoes: bigint;
+  /** Soma da receita bruta mensal: base da apuração no período. */
   total: bigint;
   /** Total dividido pelo número de competências do período (inclui meses sem receita), arredondado ao centavo. */
   mediaMensal: bigint;
@@ -85,18 +82,20 @@ export function totaisPeriodo(meses: FaturamentoMesSnapshot[]): TotaisPeriodo {
     SERVICOS: 0n,
     TRANSPORTES: 0n,
   };
-  let documentos = 0;
+  let devolucoes = 0n;
   let total = 0n;
   for (const mes of meses) {
-    for (const tipo of TIPOS_RECEITA) porTipo[tipo] += valorDoTipo(mes, tipo);
-    documentos += documentosDoMes(mes);
+    if (mesDetalhado(mes)) {
+      for (const tipo of TIPOS_RECEITA) porTipo[tipo] += valorDoTipo(mes, tipo);
+      devolucoes += devolucoesDoMes(mes);
+    }
     total += centavos(mes.total);
   }
   const n = BigInt(meses.length);
   const mediaMensal = n > 0n ? (total * 2n + n) / (2n * n) : 0n;
   return {
     porTipo,
-    documentos,
+    devolucoes,
     total,
     mediaMensal,
     competencias: meses.length,

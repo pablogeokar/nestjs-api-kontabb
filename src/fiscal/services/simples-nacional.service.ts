@@ -45,6 +45,7 @@ import {
   regimeCompetenciaParaApuracao,
   segregacaoMercadoriaSimples,
   valorReceitaSimples,
+  consolidarReceitaMensal,
 } from './simples-receita';
 import { resolverSublimite } from './simples-sublimite';
 import {
@@ -84,6 +85,19 @@ type ClassificacaoDevolucao = {
   origem: 'NFE_REFERENCIADA' | 'PRODUTO_PROPRIO_MES' | 'CFOP_NFE_PROPRIA';
 };
 
+/** Base mensal da receita bruta usada na apuração (decimais em texto). */
+export interface ReceitaBrutaCompetencia {
+  competencia: string;
+  origem: 'APURACAO_SIMPLES' | 'HISTORICO_INFORMADO' | 'DOCUMENTOS';
+  statusApuracao: string | null;
+  /** A abertura por tipo e as devoluções somam a receita bruta exibida. */
+  detalhado: boolean;
+  mercadorias: string;
+  servicos: string;
+  transportes: string;
+  devolucoes: string;
+  receitaBruta: string;
+}
 @Injectable()
 export class SimplesNacionalService {
   constructor(
@@ -313,6 +327,157 @@ export class SimplesNacionalService {
     });
   }
 
+  /**
+   * Receita bruta de cada competência no mesmo critério que serve de base à
+   * apuração do Simples Nacional. Ordem de origem, por mês:
+   * 1. apuração salva (a versão mais recente, a mesma exibida na apuração);
+   * 2. receita bruta informada no histórico manual;
+   * 3. documentos fiscais, com bonificações e demais saídas sem receita fora
+   *    e as devoluções de vendas abatidas.
+   * A abertura por tipo só acompanha o mês quando ela soma a base exibida.
+   */
+  async receitaBrutaPorCompetencia(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+  ): Promise<ReceitaBrutaCompetencia[]> {
+    if (
+      !/^\d{4}-(0[1-9]|1[0-2])$/.test(inicio) ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/.test(fim) ||
+      fim < inicio
+    )
+      throw new BadRequestException('Informe o período em AAAA-MM.');
+    const [cliente] = await this.database.db
+      .select({ regimeCompetencia: clientes.regimeCompetencia })
+      .from(clientes)
+      .where(eq(clientes.id, clienteId))
+      .limit(1);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const meses: string[] = [];
+    for (
+      let ano = Number(inicio.slice(0, 4)), mes = Number(inicio.slice(5));
+      `${ano}-${String(mes).padStart(2, '0')}` <= fim;
+      mes === 12 ? ((ano += 1), (mes = 1)) : (mes += 1)
+    )
+      meses.push(`${ano}-${String(mes).padStart(2, '0')}`);
+    const ultimoDia = new Date(`${fim}-01T00:00:00.000Z`);
+    ultimoDia.setUTCMonth(ultimoDia.getUTCMonth() + 1);
+    ultimoDia.setUTCDate(0);
+    const fimIso = ultimoDia.toISOString().slice(0, 10);
+    const regimePorMes = new Map(
+      meses.map((mes) => [
+        mes,
+        regimeCompetenciaParaApuracao(mes, cliente.regimeCompetencia),
+      ]),
+    );
+    const temCaixa = [...regimePorMes.values()].some(
+      (competencia) => !competencia,
+    );
+    const devolucoes = await this.carregarDevolucoesAte(clienteId, fimIso);
+    const [porCompetencia, porCaixa, apuracoes, manuais] = await Promise.all([
+      this.carregarReceitaConsolidadaPeriodo(
+        clienteId,
+        `${inicio}-01`,
+        fim,
+        true,
+        devolucoes.porMes,
+      ),
+      // No regime de caixa a base não abate devoluções, como no cálculo do DAS.
+      temCaixa
+        ? this.carregarReceitaConsolidadaPeriodo(
+            clienteId,
+            `${inicio}-01`,
+            fim,
+            false,
+          )
+        : Promise.resolve([]),
+      this.database.db
+        .select({
+          mes: sql<string>`to_char(${fiscalSimplesApuracoes.competencia}, 'YYYY-MM')`,
+          versao: fiscalSimplesApuracoes.versao,
+          receita: fiscalSimplesApuracoes.receitaBrutaMes,
+          status: fiscalSimplesApuracoes.status,
+        })
+        .from(fiscalSimplesApuracoes)
+        .where(
+          and(
+            eq(fiscalSimplesApuracoes.clienteId, clienteId),
+            sql`${fiscalSimplesApuracoes.competencia} >= ${`${inicio}-01`}::date`,
+            sql`${fiscalSimplesApuracoes.competencia} <= ${fimIso}::date`,
+          ),
+        ),
+      this.database.db
+        .select({
+          mes: sql<string>`to_char(${fiscalSimplesHistoricosMensais.competencia}, 'YYYY-MM')`,
+          receita: fiscalSimplesHistoricosMensais.receitaBruta,
+        })
+        .from(fiscalSimplesHistoricosMensais)
+        .where(
+          and(
+            eq(fiscalSimplesHistoricosMensais.clienteId, clienteId),
+            sql`${fiscalSimplesHistoricosMensais.competencia} >= ${`${inicio}-01`}::date`,
+            sql`${fiscalSimplesHistoricosMensais.competencia} <= ${fimIso}::date`,
+            sql`${fiscalSimplesHistoricosMensais.receitaBruta} IS NOT NULL`,
+          ),
+        ),
+    ]);
+    const ultimaApuracao = new Map<
+      string,
+      { versao: number; receita: string; status: string }
+    >();
+    for (const apuracao of apuracoes) {
+      const atual = ultimaApuracao.get(apuracao.mes);
+      if (!atual || apuracao.versao > atual.versao)
+        ultimaApuracao.set(apuracao.mes, apuracao);
+    }
+    const manualPorMes = new Map(
+      manuais.flatMap((row) =>
+        row.receita == null ? [] : [[row.mes, row.receita] as const],
+      ),
+    );
+    const docsCompetencia = new Map(
+      porCompetencia.map((row) => [row.mes, row]),
+    );
+    const docsCaixa = new Map(porCaixa.map((row) => [row.mes, row]));
+    return meses.map((mes) => {
+      const docs = (regimePorMes.get(mes) ? docsCompetencia : docsCaixa).get(
+        mes,
+      ) ?? {
+        mes,
+        mercadorias: 0n,
+        servicos: 0n,
+        transportes: 0n,
+        devolucoes: 0n,
+        receita: 0n,
+      };
+      const apuracao = ultimaApuracao.get(mes);
+      const manual = manualPorMes.get(mes);
+      const origem: ReceitaBrutaCompetencia['origem'] = apuracao
+        ? 'APURACAO_SIMPLES'
+        : manual != null
+          ? 'HISTORICO_INFORMADO'
+          : 'DOCUMENTOS';
+      const receita =
+        origem === 'APURACAO_SIMPLES'
+          ? toScaledInteger(apuracao!.receita)
+          : origem === 'HISTORICO_INFORMADO'
+            ? toScaledInteger(manual!)
+            : docs.receita;
+      const detalhado =
+        origem !== 'HISTORICO_INFORMADO' && receita === docs.receita;
+      return {
+        competencia: mes,
+        origem,
+        statusApuracao: apuracao?.status ?? null,
+        detalhado,
+        mercadorias: fromScaledInteger(detalhado ? docs.mercadorias : 0n),
+        servicos: fromScaledInteger(detalhado ? docs.servicos : 0n),
+        transportes: fromScaledInteger(detalhado ? docs.transportes : 0n),
+        devolucoes: fromScaledInteger(detalhado ? docs.devolucoes : 0n),
+        receitaBruta: fromScaledInteger(receita),
+      };
+    });
+  }
   async obterApuracao(clienteId: string, competencia: string) {
     const competenciaDate = this.competencia(competencia);
     const [existente] = await this.database.db
@@ -2094,6 +2259,25 @@ export class SimplesNacionalService {
     regimeCompetencia = true,
     abatimentosPorMes?: AbatimentosPorMes,
   ) {
+    const consolidada = await this.carregarReceitaConsolidadaPeriodo(
+      clienteId,
+      inicio,
+      fim,
+      regimeCompetencia,
+      abatimentosPorMes,
+    );
+    return consolidada.map((mes) => ({
+      mes: mes.mes,
+      valor: fromScaledInteger(mes.receita),
+    }));
+  }
+  private async carregarReceitaConsolidadaPeriodo(
+    clienteId: string,
+    inicio: string,
+    fim: string,
+    regimeCompetencia = true,
+    abatimentosPorMes?: AbatimentosPorMes,
+  ) {
     const ultimoDia = new Date(`${fim.slice(0, 7)}-01T00:00:00.000Z`);
     ultimoDia.setUTCMonth(ultimoDia.getUTCMonth() + 1);
     ultimoDia.setUTCDate(0);
@@ -2103,34 +2287,8 @@ export class SimplesNacionalService {
       ultimoDia.toISOString().slice(0, 10),
       regimeCompetencia,
     );
-    const porMes = new Map<string, { demais: bigint; cte: bigint }>();
-    for (const row of rows) {
-      if (row.indTotal !== '1') continue;
-      if (
-        classificarOperacaoSimples(
-          row.tipoDocumento,
-          row.cfopXml ?? row.cfop,
-        ) !== 'RECEITA'
-      )
-        continue;
-      const valor = valorReceitaSimples(row);
-      if (valor < 0n && row.tipoDocumento !== 'CTE') continue;
-      const valores = porMes.get(row.mes) ?? { demais: 0n, cte: 0n };
-      if (row.tipoDocumento === 'CTE') valores.cte += valor;
-      else valores.demais += valor;
-      porMes.set(row.mes, valores);
-    }
-    return [...porMes.entries()].map(([mes, valores]) => {
-      const cte = valores.cte < 0n ? 0n : valores.cte;
-      const abatimentos = abatimentosPorMes?.get(mes)?.abatimentos;
-      const abatido = [...(abatimentos?.values() ?? [])].reduce(
-        (total, valor) => total + valor,
-        0n,
-      );
-      return { mes, valor: fromScaledInteger(valores.demais + cte - abatido) };
-    });
+    return consolidarReceitaMensal(rows, abatimentosPorMes);
   }
-
   private async carregarFolhasAutomaticasPeriodo(
     clienteId: string,
     inicio: string,

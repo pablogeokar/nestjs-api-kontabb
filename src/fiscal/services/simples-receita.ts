@@ -155,6 +155,80 @@ export function classificarOperacaoSimples(
   return 'REVISAR';
 }
 
+/** Receita de um mês, aberta por tipo, no mesmo critério da base do Simples. */
+export interface ReceitaMensalConsolidada {
+  mes: string;
+  mercadorias: bigint;
+  servicos: bigint;
+  transportes: bigint;
+  /** Devoluções de vendas abatidas no mês (regime de competência). */
+  devolucoes: bigint;
+  /** Base do mês: mercadorias + serviços + transportes − devoluções. */
+  receita: bigint;
+}
+
+/**
+ * Consolida as linhas de receita (itens de NF-e/NFC-e/NFS-e e CT-e) por mês.
+ * É a regra única da base mensal do Simples: só operação classificada como
+ * RECEITA (bonificações, remessas, transferências e devoluções de compra ficam
+ * de fora), item que compõe o total da nota, e devoluções de vendas abatidas.
+ * O CT-e de anulação entra com valor negativo; o total de transporte do mês
+ * nunca fica abaixo de zero.
+ */
+export function consolidarReceitaMensal(
+  rows: ReadonlyArray<{
+    mes: string;
+    tipoDocumento: string;
+    cfop: string | null;
+    cfopXml: string | null;
+    indTotal: string | null;
+    bruto: string;
+    frete: string | null;
+    seguro: string | null;
+    outras: string | null;
+    desconto: string | null;
+  }>,
+  abatimentosPorMes?: Map<string, { abatimentos: Map<string, bigint> }>,
+): ReceitaMensalConsolidada[] {
+  const porMes = new Map<
+    string,
+    { mercadorias: bigint; servicos: bigint; transportes: bigint }
+  >();
+  for (const row of rows) {
+    if (row.indTotal !== '1') continue;
+    if (
+      classificarOperacaoSimples(row.tipoDocumento, row.cfopXml ?? row.cfop) !==
+      'RECEITA'
+    )
+      continue;
+    const valor = valorReceitaSimples(row);
+    if (valor < 0n && row.tipoDocumento !== 'CTE') continue;
+    const atual = porMes.get(row.mes) ?? {
+      mercadorias: 0n,
+      servicos: 0n,
+      transportes: 0n,
+    };
+    if (row.tipoDocumento === 'CTE') atual.transportes += valor;
+    else if (row.tipoDocumento === 'NFSE') atual.servicos += valor;
+    else atual.mercadorias += valor;
+    porMes.set(row.mes, atual);
+  }
+  return [...porMes.entries()].map(([mes, valores]) => {
+    const transportes = valores.transportes < 0n ? 0n : valores.transportes;
+    const devolucoes = [
+      ...(abatimentosPorMes?.get(mes)?.abatimentos.values() ?? []),
+    ].reduce((total, valor) => total + valor, 0n);
+    return {
+      mes,
+      mercadorias: valores.mercadorias,
+      servicos: valores.servicos,
+      transportes,
+      devolucoes,
+      receita:
+        valores.mercadorias + valores.servicos + transportes - devolucoes,
+    };
+  });
+}
 export function valorReceitaSimples(item: {
   bruto: string;
   frete: string | null;
