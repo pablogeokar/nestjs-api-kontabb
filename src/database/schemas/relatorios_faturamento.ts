@@ -18,9 +18,12 @@ export interface FaturamentoMesSnapshot {
   competencia: string;
   valorProdutos: string;
   valorServicos: string;
+  /** Prestação de serviço de transporte (CT-e). Ausente em relatórios emitidos antes da inclusão do CT-e. */
+  valorTransportes?: string;
   total: string;
   quantidadeProdutos: number;
   quantidadeServicos: number;
+  quantidadeTransportes?: number;
 }
 
 export const relatoriosFaturamento = pgTable(

@@ -22,6 +22,7 @@ import {
 } from '../../database/schema';
 import { StorageService } from '../../storage/storage.service';
 import { FaturamentoDocumentoService } from './faturamento-documento.service';
+import { centavos as cents, decimal } from './faturamento-relatorio';
 
 export interface RevenueRow {
   competencia: string;
@@ -29,13 +30,6 @@ export interface RevenueRow {
   valor: string;
   quantidade: number;
 }
-const cents = (value: string) => {
-  const [whole, fraction = ''] = value.split('.');
-  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2));
-};
-const decimal = (value: bigint) =>
-  `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
-
 export function parseFaturamentoPeriod(start: string, end: string) {
   if (
     !/^\d{4}-(0[1-9]|1[0-2])$/.test(start) ||
@@ -68,20 +62,27 @@ export function buildFaturamentoMeses(
     {
       products: bigint;
       services: bigint;
+      transports: bigint;
       countProducts: number;
       countServices: number;
+      countTransports: number;
     }
   >();
   for (const row of rows) {
     const current = values.get(row.competencia) ?? {
       products: 0n,
       services: 0n,
+      transports: 0n,
       countProducts: 0,
       countServices: 0,
+      countTransports: 0,
     };
     if (row.tipo === 'SERVICO') {
       current.services += cents(row.valor);
       current.countServices += Number(row.quantidade);
+    } else if (row.tipo === 'TRANSPORTE') {
+      current.transports += cents(row.valor);
+      current.countTransports += Number(row.quantidade);
     } else {
       current.products += cents(row.valor);
       current.countProducts += Number(row.quantidade);
@@ -97,22 +98,26 @@ export function buildFaturamentoMeses(
     const row = values.get(competencia) ?? {
       products: 0n,
       services: 0n,
+      transports: 0n,
       countProducts: 0,
       countServices: 0,
+      countTransports: 0,
     };
-    total += row.products + row.services;
+    const mes = row.products + row.services + row.transports;
+    total += mes;
     meses.push({
       competencia,
       valorProdutos: decimal(row.products),
       valorServicos: decimal(row.services),
-      total: decimal(row.products + row.services),
+      valorTransportes: decimal(row.transports),
+      total: decimal(mes),
       quantidadeProdutos: row.countProducts,
       quantidadeServicos: row.countServices,
+      quantidadeTransportes: row.countTransports,
     });
   }
   return { meses, total: decimal(total) };
 }
-
 @Injectable()
 export class FaturamentoService {
   constructor(
@@ -175,6 +180,31 @@ export class FaturamentoService {
           AND regexp_replace(upper(df.emitente_cnpj_cpf), '[^0-9A-Z]', '', 'g') = ${empresa.documento.toUpperCase().replace(/[^0-9A-Z]/g, '')}
           AND coalesce(df.competencia_declarada, df.data_emissao_fiscal, df.data_emissao::date) >= ${period.startDate}::date
           AND coalesce(df.competencia_declarada, df.data_emissao_fiscal, df.data_emissao::date) < ${period.nextDate}::date
+        GROUP BY 1
+        UNION ALL
+        -- Prestação de serviço de transporte (CT-e). Mesmo critério do cálculo do Simples:
+        -- CFOP de transporte, escrituração de saída e CT-e de anulação fora da receita.
+        -- O CT-e anulado ou substituído por outro presente na base também não conta,
+        -- para o mesmo frete não entrar duas vezes.
+        SELECT to_char(coalesce(df.data_emissao_fiscal, df.data_emissao::date), 'YYYY-MM') AS competencia,
+          'TRANSPORTE' AS tipo, sum(e.valor_total_servico) AS valor, count(DISTINCT df.id)::int AS quantidade
+        FROM documentos_fiscais df
+        JOIN documentos_fiscais_cte_escrituracao e ON e.documento_fiscal_id = df.id
+        WHERE df.cliente_id = ${empresa.id}::uuid AND df.situacao = 'AUTORIZADA'
+          AND df.tipo_documento = 'CTE'
+          AND e.tipo_operacao_escriturada = 'SAIDA' AND e.escrituravel = true
+          AND e.cfop_xml ~ '^[56](35[1-7]|360)$'
+          AND coalesce(e.tp_cte, '0') <> '2'
+          AND regexp_replace(upper(df.emitente_cnpj_cpf), '[^0-9A-Z]', '', 'g') = ${empresa.documento.toUpperCase().replace(/[^0-9A-Z]/g, '')}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM documentos_fiscais_cte_escrituracao r
+            JOIN documentos_fiscais rd ON rd.id = r.documento_fiscal_id
+            WHERE r.cliente_id = df.cliente_id AND rd.situacao = 'AUTORIZADA'
+              AND r.tp_cte IN ('2', '3') AND r.chave_cte_referenciado = df.chave_acesso
+          )
+          AND coalesce(df.data_emissao_fiscal, df.data_emissao::date) >= ${period.startDate}::date
+          AND coalesce(df.data_emissao_fiscal, df.data_emissao::date) < ${period.nextDate}::date
         GROUP BY 1
       )
       SELECT competencia, tipo, valor::text, quantidade FROM receitas ORDER BY competencia, tipo
@@ -276,7 +306,7 @@ export class FaturamentoService {
         .where(eq(relatoriosFaturamento.id, record.id))
         .catch(() => undefined);
       throw new ServiceUnavailableException(
-        'Não foi possível emitir o demonstrativo. Tente novamente.',
+        'Não foi possível emitir a relação de faturamento. Tente novamente.',
       );
     }
   }
