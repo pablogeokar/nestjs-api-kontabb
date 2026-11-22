@@ -7,7 +7,6 @@ import {
   formatarDataHora,
   formatarDocumentoFiscal,
   rotuloPeriodo,
-  temDevolucoes,
   totaisPeriodo,
 } from './faturamento-relatorio';
 
@@ -20,7 +19,6 @@ const mes = (
     valorProdutos: '0.00',
     valorServicos: '0.00',
     valorTransportes: '0.00',
-    valorDevolucoes: '0.00',
     ...valores,
   };
   const total =
@@ -28,8 +26,7 @@ const mes = (
     decimal(
       centavos(base.valorProdutos) +
         centavos(base.valorServicos) +
-        centavos(base.valorTransportes) -
-        centavos(base.valorDevolucoes),
+        centavos(base.valorTransportes),
     );
   return { ...base, total };
 };
@@ -90,15 +87,16 @@ describe('colunas e totais do período', () => {
     ]);
   });
 
-  it('deduz as devoluções: a receita bruta é a base da apuração', () => {
+  it('soma a composição líquida por tipo até a receita bruta do período', () => {
     const t = totaisPeriodo([
-      mes('2026-10', { valorProdutos: '54129.00', valorDevolucoes: '4135.00' }),
-      mes('2026-11', { valorProdutos: '23932.00', valorDevolucoes: '902.00' }),
+      mes('2026-10', { valorProdutos: '49994.00', valorServicos: '800.00' }),
+      mes('2026-11', { valorProdutos: '23030.00' }),
     ]);
-    expect(t.porTipo.MERCADORIAS).toBe(centavos('78061.00'));
-    expect(t.devolucoes).toBe(centavos('5037.00'));
-    expect(t.total).toBe(centavos('73024.00'));
-    expect(t.porTipo.MERCADORIAS - t.devolucoes).toBe(t.total);
+    expect(t.porTipo.MERCADORIAS).toBe(centavos('73024.00'));
+    expect(t.porTipo.SERVICOS).toBe(centavos('800.00'));
+    expect(t.total).toBe(centavos('73824.00'));
+    expect(t.porTipo.MERCADORIAS + t.porTipo.SERVICOS).toBe(t.total);
+    expect(Object.keys(t)).not.toContain('devolucoes');
   });
 
   it('o mês do histórico informado soma no total, fora da composição por tipo', () => {
@@ -119,7 +117,7 @@ describe('colunas e totais do período', () => {
     ).toEqual(['MERCADORIAS', 'SERVICOS']);
   });
 
-  it('lê relatórios antigos, sem transportes, devoluções nem origem', () => {
+  it('lê relatórios antigos, sem transportes nem origem', () => {
     const antigo: FaturamentoMesSnapshot = {
       competencia: '2026-01',
       valorProdutos: '100.00',
@@ -129,11 +127,7 @@ describe('colunas e totais do período', () => {
       quantidadeServicos: 1,
     };
     expect(colunasAtivas([antigo])).toEqual(['MERCADORIAS', 'SERVICOS']);
-    expect(temDevolucoes([antigo])).toBe(false);
-    expect(totaisPeriodo([antigo])).toMatchObject({
-      total: centavos('150.00'),
-      devolucoes: 0n,
-    });
+    expect(totaisPeriodo([antigo]).total).toBe(centavos('150.00'));
   });
 
   it('calcula a média sobre todas as competências e arredonda meio centavo para cima', () => {

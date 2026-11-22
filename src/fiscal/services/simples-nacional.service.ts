@@ -46,6 +46,8 @@ import {
   segregacaoMercadoriaSimples,
   valorReceitaSimples,
   consolidarReceitaMensal,
+  decidirReceitaDoMes,
+  type OrigemReceitaMes,
 } from './simples-receita';
 import { resolverSublimite } from './simples-sublimite';
 import {
@@ -85,17 +87,17 @@ type ClassificacaoDevolucao = {
   origem: 'NFE_REFERENCIADA' | 'PRODUTO_PROPRIO_MES' | 'CFOP_NFE_PROPRIA';
 };
 
-/** Base mensal da receita bruta usada na apuração (decimais em texto). */
+/** Base de cálculo mensal da receita bruta (decimais em texto). */
 export interface ReceitaBrutaCompetencia {
   competencia: string;
-  origem: 'APURACAO_SIMPLES' | 'HISTORICO_INFORMADO' | 'DOCUMENTOS';
+  origem: OrigemReceitaMes;
   statusApuracao: string | null;
-  /** A abertura por tipo e as devoluções somam a receita bruta exibida. */
+  /** A composição por tipo soma a receita bruta do mês. */
   detalhado: boolean;
+  /** Vendas de mercadorias já líquidas das devoluções. */
   mercadorias: string;
   servicos: string;
   transportes: string;
-  devolucoes: string;
   receitaBruta: string;
 }
 @Injectable()
@@ -328,13 +330,12 @@ export class SimplesNacionalService {
   }
 
   /**
-   * Receita bruta de cada competência no mesmo critério que serve de base à
-   * apuração do Simples Nacional. Ordem de origem, por mês:
-   * 1. apuração salva (a versão mais recente, a mesma exibida na apuração);
-   * 2. receita bruta informada no histórico manual;
+   * Base de cálculo da receita bruta de cada competência. Ordem de origem, por
+   * mês (ver `decidirReceitaDoMes`):
+   * 1. base informada manualmente (mês sem notas ou correção da contabilidade);
+   * 2. apuração salva (a versão mais recente, a mesma exibida na apuração);
    * 3. documentos fiscais, com bonificações e demais saídas sem receita fora
    *    e as devoluções de vendas abatidas.
-   * A abertura por tipo só acompanha o mês quando ela soma a base exibida.
    */
   async receitaBrutaPorCompetencia(
     clienteId: string,
@@ -440,41 +441,27 @@ export class SimplesNacionalService {
     );
     const docsCaixa = new Map(porCaixa.map((row) => [row.mes, row]));
     return meses.map((mes) => {
-      const docs = (regimePorMes.get(mes) ? docsCompetencia : docsCaixa).get(
-        mes,
-      ) ?? {
-        mes,
-        mercadorias: 0n,
-        servicos: 0n,
-        transportes: 0n,
-        devolucoes: 0n,
-        receita: 0n,
-      };
       const apuracao = ultimaApuracao.get(mes);
       const manual = manualPorMes.get(mes);
-      const origem: ReceitaBrutaCompetencia['origem'] = apuracao
-        ? 'APURACAO_SIMPLES'
-        : manual != null
-          ? 'HISTORICO_INFORMADO'
-          : 'DOCUMENTOS';
-      const receita =
-        origem === 'APURACAO_SIMPLES'
-          ? toScaledInteger(apuracao!.receita)
-          : origem === 'HISTORICO_INFORMADO'
-            ? toScaledInteger(manual!)
-            : docs.receita;
-      const detalhado =
-        origem !== 'HISTORICO_INFORMADO' && receita === docs.receita;
+      const decisao = decidirReceitaDoMes({
+        documentos: (regimePorMes.get(mes) ? docsCompetencia : docsCaixa).get(
+          mes,
+        ),
+        apuracao:
+          apuracao === undefined
+            ? undefined
+            : toScaledInteger(apuracao.receita),
+        manual: manual === undefined ? undefined : toScaledInteger(manual),
+      });
       return {
         competencia: mes,
-        origem,
+        origem: decisao.origem,
         statusApuracao: apuracao?.status ?? null,
-        detalhado,
-        mercadorias: fromScaledInteger(detalhado ? docs.mercadorias : 0n),
-        servicos: fromScaledInteger(detalhado ? docs.servicos : 0n),
-        transportes: fromScaledInteger(detalhado ? docs.transportes : 0n),
-        devolucoes: fromScaledInteger(detalhado ? docs.devolucoes : 0n),
-        receitaBruta: fromScaledInteger(receita),
+        detalhado: decisao.detalhado,
+        mercadorias: fromScaledInteger(decisao.mercadorias),
+        servicos: fromScaledInteger(decisao.servicos),
+        transportes: fromScaledInteger(decisao.transportes),
+        receitaBruta: fromScaledInteger(decisao.receita),
       };
     });
   }

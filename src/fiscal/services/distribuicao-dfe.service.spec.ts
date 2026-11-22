@@ -546,10 +546,10 @@ describe('DistribuicaoDfeService', () => {
       insert: jest.fn((table) =>
         table === documentosFiscais
           ? {
-            values: jest.fn().mockReturnValue({
-              onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
-            }),
-          }
+              values: jest.fn().mockReturnValue({
+                onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
+              }),
+            }
           : { values: itemValues },
       ),
     };

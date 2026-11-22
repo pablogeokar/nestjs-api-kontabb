@@ -229,6 +229,49 @@ export function consolidarReceitaMensal(
     };
   });
 }
+export type OrigemReceitaMes =
+  'HISTORICO_INFORMADO' | 'APURACAO_SIMPLES' | 'DOCUMENTOS';
+
+/**
+ * Base de cálculo de um mês. A base informada manualmente prevalece: cobre o
+ * mês sem notas no sistema e a correção feita pela contabilidade. Sem ela, vale
+ * a apuração salva (a mesma exibida na apuração) e, por último, os documentos.
+ * A composição por tipo (já líquida das devoluções) só acompanha o mês quando
+ * soma a base escolhida.
+ */
+export function decidirReceitaDoMes(input: {
+  documentos: ReceitaMensalConsolidada | undefined;
+  apuracao: bigint | undefined;
+  manual: bigint | undefined;
+}) {
+  const docs = input.documentos;
+  const receitaDocs = docs?.receita ?? 0n;
+  const origem: OrigemReceitaMes =
+    input.manual !== undefined
+      ? 'HISTORICO_INFORMADO'
+      : input.apuracao !== undefined
+        ? 'APURACAO_SIMPLES'
+        : 'DOCUMENTOS';
+  const receita =
+    origem === 'HISTORICO_INFORMADO'
+      ? input.manual!
+      : origem === 'APURACAO_SIMPLES'
+        ? input.apuracao!
+        : receitaDocs;
+  const detalhado = receita === receitaDocs;
+  // As devoluções abatem a receita de mercadorias do mês (nunca além dela).
+  const mercadorias = detalhado
+    ? (docs?.mercadorias ?? 0n) - (docs?.devolucoes ?? 0n)
+    : 0n;
+  return {
+    origem,
+    detalhado,
+    receita,
+    mercadorias,
+    servicos: detalhado ? (docs?.servicos ?? 0n) : 0n,
+    transportes: detalhado ? (docs?.transportes ?? 0n) : 0n,
+  };
+}
 export function valorReceitaSimples(item: {
   bruto: string;
   frete: string | null;

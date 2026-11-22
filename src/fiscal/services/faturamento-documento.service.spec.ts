@@ -15,7 +15,6 @@ type Valores = Partial<
     | 'mercadorias'
     | 'servicos'
     | 'transportes'
-    | 'devolucoes'
     | 'origem'
     | 'detalhado'
     | 'receitaBruta'
@@ -34,10 +33,7 @@ function periodo(
   for (let offset = p.first; offset <= p.last; offset++) {
     const v = receita(offset - p.first);
     const calculado =
-      centavos(v.mercadorias) +
-      centavos(v.servicos) +
-      centavos(v.transportes) -
-      centavos(v.devolucoes);
+      centavos(v.mercadorias) + centavos(v.servicos) + centavos(v.transportes);
     receitas.push({
       competencia: `${Math.floor(offset / 12)}-${String((offset % 12) + 1).padStart(2, '0')}`,
       origem: v.origem ?? 'DOCUMENTOS',
@@ -46,7 +42,6 @@ function periodo(
       mercadorias: v.mercadorias ?? '0.00',
       servicos: v.servicos ?? '0.00',
       transportes: v.transportes ?? '0.00',
-      devolucoes: v.devolucoes ?? '0.00',
       receitaBruta: v.receitaBruta ?? (calculado / 100).toFixed(2),
     });
   }
@@ -81,7 +76,6 @@ describe('PDF da relação de faturamento', () => {
     const dados = periodo('2025-11', '2026-10', (i) => ({
       mercadorias: String(100000 + i * 10),
       servicos: '3206.00',
-      devolucoes: i % 4 === 0 ? '902.00' : '0.00',
     }));
     expect(paginas(await service.render({ ...base, ...dados }))).toBe(2);
   });
@@ -95,7 +89,7 @@ describe('PDF da relação de faturamento', () => {
     expect(n).toBeLessThanOrEqual(6);
   });
 
-  it('emite período com devoluções e com mês do histórico informado', async () => {
+  it('emite período com mês de base informada manualmente', async () => {
     const dados = periodo('2026-01', '2026-03', (i) =>
       i === 0
         ? {
@@ -103,9 +97,10 @@ describe('PDF da relação de faturamento', () => {
             detalhado: false,
             receitaBruta: '61215.50',
           }
-        : { mercadorias: '54129.00', devolucoes: '4135.00' },
+        : { mercadorias: '49994.00' },
     );
     expect(dados.total).toBe('161203.50');
+    expect(dados.meses.some((mes) => 'valorDevolucoes' in mes)).toBe(false);
     const pdf = await service.render({ ...base, ...dados });
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     // Critérios e assinatura seguem juntos para a página seguinte quando não cabem.

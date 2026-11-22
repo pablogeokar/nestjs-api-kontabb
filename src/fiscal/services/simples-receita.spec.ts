@@ -2,6 +2,7 @@ import {
   CFOPS_DEVOLUCAO_VENDA,
   classificarOperacaoSimples,
   consolidarReceitaMensal,
+  decidirReceitaDoMes,
   distribuirDevolucoesSimples,
   regimeCompetenciaParaApuracao,
   somarReceitaSimples,
@@ -191,5 +192,86 @@ describe('consolidação mensal da receita (base do Simples e da relação de fa
     ]);
     expect(mes.transportes).toBe(0n);
     expect(mes.receita).toBe(1000n);
+  });
+});
+
+describe('base de cálculo do mês (relação de faturamento e card de vendas)', () => {
+  const docs = {
+    mes: '2026-10',
+    mercadorias: 5412900n,
+    servicos: 80000n,
+    transportes: 0n,
+    devolucoes: 413500n,
+    receita: 5079400n,
+  };
+
+  it('a base informada manualmente prevalece sobre a apuração e os documentos', () => {
+    const r = decidirReceitaDoMes({
+      documentos: docs,
+      apuracao: 5079400n,
+      manual: 5100000n,
+    });
+    expect(r).toMatchObject({
+      origem: 'HISTORICO_INFORMADO',
+      receita: 5100000n,
+      detalhado: false,
+      mercadorias: 0n,
+    });
+  });
+
+  it('vale a base manual no mês sem notas no sistema', () => {
+    expect(
+      decidirReceitaDoMes({
+        documentos: undefined,
+        apuracao: undefined,
+        manual: 6121550n,
+      }),
+    ).toMatchObject({ origem: 'HISTORICO_INFORMADO', receita: 6121550n });
+  });
+
+  it('sem base manual, usa a apuração salva e a composição líquida quando ela soma a base', () => {
+    const r = decidirReceitaDoMes({
+      documentos: docs,
+      apuracao: 5079400n,
+      manual: undefined,
+    });
+    expect(r).toMatchObject({
+      origem: 'APURACAO_SIMPLES',
+      detalhado: true,
+      mercadorias: 4999400n, // 54.129,00 − 4.135,00 (devoluções)
+      servicos: 80000n,
+    });
+    expect(r.mercadorias + r.servicos + r.transportes).toBe(r.receita);
+  });
+
+  it('a manual igual aos documentos mantém a composição por tipo', () => {
+    expect(
+      decidirReceitaDoMes({
+        documentos: docs,
+        apuracao: undefined,
+        manual: 5079400n,
+      }).detalhado,
+    ).toBe(true);
+  });
+
+  it('sem manual nem apuração, usa os documentos', () => {
+    expect(
+      decidirReceitaDoMes({
+        documentos: docs,
+        apuracao: undefined,
+        manual: undefined,
+      }),
+    ).toMatchObject({
+      origem: 'DOCUMENTOS',
+      receita: 5079400n,
+      detalhado: true,
+    });
+    expect(
+      decidirReceitaDoMes({
+        documentos: undefined,
+        apuracao: undefined,
+        manual: undefined,
+      }),
+    ).toMatchObject({ origem: 'DOCUMENTOS', receita: 0n, detalhado: true });
   });
 });

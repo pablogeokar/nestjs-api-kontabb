@@ -596,19 +596,19 @@ export class DistribuicaoDfeService {
 
     return Promise.all(
       rows.map(async (row) => ({
-      id: row.id,
-      razao_social: row.razaoSocial,
-      cnpj: row.cnpj,
-      inscricao_estadual: row.inscricaoEstadual,
-      municipio: row.municipio,
-      uf: row.uf,
-      regime_tributario: row.regimeTributario,
-      apura_icms: row.apuraIcms,
-      optante_simples_nacional: row.optanteSimplesNacional,
-      obrigado_efd_icms_ipi: row.obrigadoEfdIcmsIpi,
-      logo_url: row.logoKey
-        ? await this.storage.getSignedUrl(row.logoKey).catch(() => null)
-        : null,
+        id: row.id,
+        razao_social: row.razaoSocial,
+        cnpj: row.cnpj,
+        inscricao_estadual: row.inscricaoEstadual,
+        municipio: row.municipio,
+        uf: row.uf,
+        regime_tributario: row.regimeTributario,
+        apura_icms: row.apuraIcms,
+        optante_simples_nacional: row.optanteSimplesNacional,
+        obrigado_efd_icms_ipi: row.obrigadoEfdIcmsIpi,
+        logo_url: row.logoKey
+          ? await this.storage.getSignedUrl(row.logoKey).catch(() => null)
+          : null,
       })),
     );
   }

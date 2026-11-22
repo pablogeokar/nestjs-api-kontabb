@@ -52,7 +52,7 @@ export class SimplesNacionalRelatorioService {
   constructor(
     private readonly database: DatabaseService,
     private readonly simplesService: SimplesNacionalService,
-  ) { }
+  ) {}
 
   async gerarPdf(input: { clienteId: string; competencia: string }) {
     const [apuracao, clienteRows] = await Promise.all([
@@ -119,7 +119,7 @@ export function renderSimplesNacionalPdf(input: {
     [
       'Município / UF',
       [cliente.municipio, cliente.uf].filter(Boolean).join(' / ') ||
-      'Não informado',
+        'Não informado',
     ],
     ['CNAE principal', cliente.cnae || 'Não informado'],
   ]);
@@ -293,8 +293,8 @@ export function renderSimplesNacionalPdf(input: {
 
   const pendencias = Array.isArray(memoria.pendencias)
     ? memoria.pendencias.filter(
-      (item): item is string => typeof item === 'string',
-    )
+        (item): item is string => typeof item === 'string',
+      )
     : [];
   ensureSpace(document, 56);
   document
@@ -742,8 +742,8 @@ function humanizeOrigin(value: unknown) {
   const text = stringValue(value);
   return text
     ? text
-      .replaceAll('_', ' ')
-      .replaceAll(':', ' · ')
-      .toLocaleLowerCase('pt-BR')
+        .replaceAll('_', ' ')
+        .replaceAll(':', ' · ')
+        .toLocaleLowerCase('pt-BR')
     : 'Não informada';
 }

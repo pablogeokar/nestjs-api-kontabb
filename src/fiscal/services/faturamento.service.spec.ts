@@ -39,7 +39,6 @@ describe('valores mensais da relação de faturamento', () => {
     mercadorias: '0.00',
     servicos: '0.00',
     transportes: '0.00',
-    devolucoes: '0.00',
     receitaBruta: '0.00',
     ...valores,
   });
@@ -47,8 +46,7 @@ describe('valores mensais da relação de faturamento', () => {
   it('usa a receita bruta de apuração de cada mês e soma o período com precisão', () => {
     const { meses, total } = montarMesesFaturamento([
       receita('2026-09', {
-        mercadorias: '54129.00',
-        devolucoes: '4135.00',
+        mercadorias: '49994.00',
         receitaBruta: '49994.00',
         origem: 'APURACAO_SIMPLES',
         statusApuracao: 'FECHADO',
@@ -62,10 +60,9 @@ describe('valores mensais da relação de faturamento', () => {
     expect(total).toBe('49994.30');
     expect(meses[0]).toEqual({
       competencia: '2026-09',
-      valorProdutos: '54129.00',
+      valorProdutos: '49994.00',
       valorServicos: '0.00',
       valorTransportes: '0.00',
-      valorDevolucoes: '4135.00',
       total: '49994.00',
       origem: 'APURACAO_SIMPLES',
       detalhado: true,
@@ -89,12 +86,15 @@ describe('valores mensais da relação de faturamento', () => {
     });
   });
 
-  it('não emite números de documentos no snapshot', () => {
+  it('não grava quantidade de documentos nem devoluções no snapshot', () => {
     const { meses } = montarMesesFaturamento([
       receita('2026-10', { transportes: '47827.27', receitaBruta: '47827.27' }),
     ]);
     expect(
-      Object.keys(meses[0]).some((chave) => chave.startsWith('quantidade')),
+      Object.keys(meses[0]).some(
+        (chave) =>
+          chave.startsWith('quantidade') || chave === 'valorDevolucoes',
+      ),
     ).toBe(false);
   });
 });

@@ -59,7 +59,6 @@ export function montarMesesFaturamento(receitas: ReceitaBrutaCompetencia[]) {
       valorProdutos: receita.mercadorias,
       valorServicos: receita.servicos,
       valorTransportes: receita.transportes,
-      valorDevolucoes: receita.devolucoes,
       total: receita.receitaBruta,
       origem: receita.origem,
       detalhado: receita.detalhado,

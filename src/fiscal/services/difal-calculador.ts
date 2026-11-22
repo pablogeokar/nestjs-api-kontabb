@@ -276,7 +276,10 @@ export function calcularDifalHipotese(
   const fcpScaled =
     fcpStr == null
       ? 0n
-      : aplicarAliquota(baseFcpScaled, toScaledInteger(fcpStr, ESCALA_ALIQUOTA));
+      : aplicarAliquota(
+          baseFcpScaled,
+          toScaledInteger(fcpStr, ESCALA_ALIQUOTA),
+        );
 
   const status: DifalCalculoStatus = opcoes.aprovada
     ? 'CALCULADO'
@@ -302,7 +305,7 @@ export function calcularDifalHipotese(
     pendente: status !== 'CALCULADO',
     memoria:
       `DIFAL ${input.hipotese} (${ufDestino}, ${input.competencia}, resp. ` +
-`${input.responsavel}): ${formula} = ${valorDifalStr}` +
+      `${input.responsavel}): ${formula} = ${valorDifalStr}` +
       (fcpStr != null ? `; FCP ${fcpStr} = ${valorFcpStr}` : '') +
       (status === 'SIMULACAO'
         ? '. Regra vigente porém NÃO aprovada: simulação, não guia (R1.2).'

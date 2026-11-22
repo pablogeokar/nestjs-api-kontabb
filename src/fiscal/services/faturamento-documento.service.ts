@@ -10,7 +10,6 @@ import {
   ROTULO_TIPO,
   centavos,
   colunasAtivas,
-  devolucoesDoMes,
   formatarCentavos,
   formatarData,
   formatarDataHora,
@@ -18,7 +17,6 @@ import {
   mesDetalhado,
   rotuloCompetencia,
   rotuloPeriodo,
-  temDevolucoes,
   totaisPeriodo,
   valorDoTipo,
   type TipoReceita,
@@ -66,10 +64,10 @@ export interface FaturamentoPdfInput {
 
 const CRITERIOS: Record<TipoReceita, string> = {
   MERCADORIAS:
-    'Mercadorias: itens de NF-e (modelo 55) e NFC-e (modelo 65) com CFOP de venda.',
+    'Mercadorias: NF-e (modelo 55) e NFC-e (modelo 65) com CFOP de venda.',
   SERVICOS: 'Serviços: NFS-e emitidas pela empresa.',
   TRANSPORTES:
-    'Transportes: CT-e de prestação de serviço de transporte (CFOP 5.351 a 5.357, 5.360, 6.351 a 6.357 e 6.360). O CT-e de anulação deduz o valor da prestação anulada.',
+    'Transportes: CT-e de prestação de serviço de transporte (CFOP 5.351 a 5.357, 5.360, 6.351 a 6.357 e 6.360).',
 };
 
 @Injectable()
@@ -282,25 +280,19 @@ export class FaturamentoDocumentoService {
       {
         titulo: 'RECEITA BRUTA NO PERÍODO',
         valor: `R$ ${formatarCentavos(totais.total)}`,
-        largura: 186,
+        largura: 227,
         destaque: true,
-      },
-      {
-        titulo: '(–) DEVOLUÇÕES',
-        valor: `R$ ${formatarCentavos(totais.devolucoes)}`,
-        largura: 111,
-        destaque: false,
       },
       {
         titulo: 'MÉDIA MENSAL',
         valor: `R$ ${formatarCentavos(totais.mediaMensal)}`,
-        largura: 120,
+        largura: 170,
         destaque: false,
       },
       {
         titulo: 'COMPETÊNCIAS',
         valor: String(totais.competencias),
-        largura: 90,
+        largura: 110,
         destaque: false,
       },
     ];
@@ -331,13 +323,14 @@ export class FaturamentoDocumentoService {
     // ── Tabela por competência ─────────────────────────────────────────
     // Colunas de composição só quando informam algo além do total: mais de um
     // tipo de receita ou devoluções deduzidas no período.
-    const comDevolucoes = temDevolucoes(input.meses);
-    const mostrarComposicao = colunas.length > 1 || comDevolucoes;
-    const colunasValor: Array<TipoReceita | 'DEVOLUCOES'> = mostrarComposicao
-      ? [...colunas, ...(comDevolucoes ? (['DEVOLUCOES'] as const) : [])]
-      : [];
-    const historico = input.meses.some(
-      (mes) => mes.origem === 'HISTORICO_INFORMADO',
+    // Composição por tipo só quando há mais de um tipo de receita no período.
+    const mostrarComposicao = colunas.length > 1;
+    const colunasValor: TipoReceita[] = mostrarComposicao ? colunas : [];
+    const manual = input.meses.some(
+      (mes) => !mesDetalhado(mes) && mes.origem === 'HISTORICO_INFORMADO',
+    );
+    const semComposicao = input.meses.some(
+      (mes) => !mesDetalhado(mes) && mes.origem !== 'HISTORICO_INFORMADO',
     );
     const larguraCompetencia = mostrarComposicao ? 96 : 200;
     const larguraTotal = mostrarComposicao ? 116 : WIDTH - 200;
@@ -348,13 +341,12 @@ export class FaturamentoDocumentoService {
       LEFT + larguraCompetencia + indice * larguraValor;
     const xTotal = RIGHT - larguraTotal;
     const ALTURA_LINHA = 21;
-    const rotuloColuna = (coluna: TipoReceita | 'DEVOLUCOES') =>
-      coluna === 'DEVOLUCOES' ? '(–) DEVOLUÇÕES' : ROTULO_TIPO[coluna];
-    const valorColuna = (
-      mes: (typeof input.meses)[number],
-      coluna: TipoReceita | 'DEVOLUCOES',
-    ) =>
-      coluna === 'DEVOLUCOES' ? devolucoesDoMes(mes) : valorDoTipo(mes, coluna);
+    const marca = (mes: (typeof input.meses)[number]) =>
+      mesDetalhado(mes)
+        ? ''
+        : mes.origem === 'HISTORICO_INFORMADO'
+          ? ' *'
+          : ' **';
 
     const cabecalhoTabela = () => {
       pdf.rect(LEFT, y, WIDTH, 24).fill(NAVY);
@@ -362,7 +354,7 @@ export class FaturamentoDocumentoService {
       const opcoes = { characterSpacing: 0.6 };
       pdf.text('COMPETÊNCIA', LEFT + 10, y + 9, { ...opcoes });
       colunasValor.forEach((coluna, indice) => {
-        pdf.text(rotuloColuna(coluna), xValor(indice), y + 9, {
+        pdf.text(ROTULO_TIPO[coluna], xValor(indice), y + 9, {
           ...opcoes,
           width: larguraValor - 10,
           align: 'right',
@@ -404,12 +396,12 @@ export class FaturamentoDocumentoService {
         .font('Helvetica')
         .fontSize(8.5)
         .text(
-          `${rotuloCompetencia(mes.competencia)}${mes.origem === 'HISTORICO_INFORMADO' ? ' *' : ''}`,
+          `${rotuloCompetencia(mes.competencia)}${marca(mes)}`,
           LEFT + 10,
           yTexto,
         );
       colunasValor.forEach((coluna, posicao) => {
-        const valor = detalhado ? valorColuna(mes, coluna) : 0n;
+        const valor = detalhado ? valorDoTipo(mes, coluna) : 0n;
         const texto =
           !detalhado || valor === 0n ? '—' : formatarCentavos(valor);
         pdf
@@ -448,8 +440,7 @@ export class FaturamentoDocumentoService {
       .fontSize(8.5)
       .text('TOTAL DO PERÍODO', LEFT + 10, yTotais, { characterSpacing: 0.3 });
     colunasValor.forEach((coluna, posicao) => {
-      const valor =
-        coluna === 'DEVOLUCOES' ? totais.devolucoes : totais.porTipo[coluna];
+      const valor = totais.porTipo[coluna];
       pdf.text(formatarCentavos(valor), xValor(posicao), yTotais, {
         width: larguraValor - 10,
         align: 'right',
@@ -460,32 +451,31 @@ export class FaturamentoDocumentoService {
       align: 'right',
     });
     y += 28;
-    if (historico) {
-      y += 6;
+    const notas = [
+      ...(manual
+        ? ['* Base de cálculo informada manualmente pela contabilidade.']
+        : []),
+      ...(semComposicao
+        ? [
+            '** Base de cálculo da apuração do Simples Nacional salva no sistema.',
+          ]
+        : []),
+    ];
+    if (notas.length > 0) y += 6;
+    for (const nota of notas) {
       pdf
         .fillColor(MUTED)
         .font('Helvetica')
         .fontSize(7)
-        .text(
-          '* Receita bruta informada no histórico de apuração (competência anterior aos documentos fiscais no sistema), sem composição por tipo.',
-          LEFT,
-          y,
-          { width: WIDTH },
-        );
+        .text(nota, LEFT, y, { width: WIDTH });
       y += 10;
     }
     y += 14;
 
     // ── Critérios de apuração ──────────────────────────────────────────
     const criterios = [
-      'Receita bruta por competência que serviu de base para a apuração dos tributos, apurada a partir dos documentos fiscais eletrônicos autorizados emitidos pela empresa e disponíveis no sistema até a data de emissão deste documento.',
-      'Deduzidas as devoluções de vendas. Não compõem a receita bruta as bonificações e brindes, as remessas, as transferências, as devoluções de compras e as demais saídas sem natureza de receita.',
+      'Receita bruta por competência correspondente à base de cálculo utilizada na apuração dos tributos, conforme os documentos fiscais eletrônicos autorizados emitidos pela empresa e disponíveis no sistema até a data de emissão deste documento.',
       ...colunas.map((tipo) => CRITERIOS[tipo]),
-      ...(input.meses.some((mes) => mes.origem === 'APURACAO_SIMPLES')
-        ? [
-            'Nas competências com apuração do Simples Nacional salva no sistema, a receita bruta é a dessa apuração.',
-          ]
-        : []),
       'Documento de natureza informativa. Não substitui a escrituração fiscal e contábil nem os documentos fiscais originais.',
     ];
     pdf.font('Helvetica').fontSize(7.5);
