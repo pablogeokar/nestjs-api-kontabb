@@ -150,12 +150,95 @@ describe('AdminFiscalApuracaoController — DIFAL de entrada', () => {
       {} as never,
     );
 
-    await expect(controller.apurarDifal('empresa-1', '2026-10')).resolves.toEqual({
+    await expect(
+      controller.apurarDifal('empresa-1', '2026-10'),
+    ).resolves.toEqual({
       data,
     });
     expect(apurarCompetencia).toHaveBeenCalledWith({
       clienteId: 'empresa-1',
       competencia: '2026-10',
     });
+  });
+});
+
+describe('ClienteFiscalApuracaoController — memória de cálculo da Antecipação Parcial', () => {
+  function montar(clienteDoUsuario: { id: string } | null) {
+    const apurarCompetencia = jest.fn().mockResolvedValue({
+      antecipacao_parcial: {
+        total_apurado: '85.00',
+        itens: [{ item_id: 'i1' }],
+      },
+    });
+    const gerarEspelhoPreviaAntecipacao = jest
+      .fn()
+      .mockResolvedValue(Buffer.from('%PDF-teste'));
+    const controller = new ClienteFiscalApuracaoController(
+      {
+        getClientForUser: jest.fn().mockResolvedValue(clienteDoUsuario),
+      } as never,
+      {} as never,
+      { apurarCompetencia } as never,
+      { gerarEspelhoPreviaAntecipacao } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const res = { setHeader: jest.fn(), send: jest.fn() };
+    return {
+      controller,
+      apurarCompetencia,
+      gerarEspelhoPreviaAntecipacao,
+      res,
+    };
+  }
+
+  it('gera o PDF da própria empresa e nomeia o arquivo como memória de cálculo', async () => {
+    const t = montar({ id: 'cliente-1' });
+    await t.controller.memoriaAntecipacaoParcial(
+      '2026-10',
+      user,
+      t.res as never,
+    );
+    expect(t.apurarCompetencia).toHaveBeenCalledWith({
+      clienteId: 'cliente-1',
+      competencia: '2026-10',
+    });
+    expect(t.gerarEspelhoPreviaAntecipacao).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clienteId: 'cliente-1',
+        totalApurado: '85.00',
+      }),
+    );
+    expect(t.res.setHeader).toHaveBeenCalledWith(
+      'Content-Disposition',
+      'inline; filename="memoria-calculo-antecipacao-2026-10.pdf"',
+    );
+    expect(t.res.setHeader).toHaveBeenCalledWith(
+      'Cache-Control',
+      'private, no-store',
+    );
+    expect(t.res.send).toHaveBeenCalledWith(Buffer.from('%PDF-teste'));
+  });
+
+  it('rejeita competência inválida e usuário sem empresa', async () => {
+    const t = montar({ id: 'cliente-1' });
+    await expect(
+      t.controller.memoriaAntecipacaoParcial('2026-13', user, t.res as never),
+    ).rejects.toThrow(BadRequestException);
+    expect(t.apurarCompetencia).not.toHaveBeenCalled();
+    const semEmpresa = montar(null);
+    await expect(
+      semEmpresa.controller.memoriaAntecipacaoParcial(
+        '2026-10',
+        user,
+        semEmpresa.res as never,
+      ),
+    ).rejects.toThrow('Empresa não encontrada');
+    expect(semEmpresa.apurarCompetencia).not.toHaveBeenCalled();
   });
 });
