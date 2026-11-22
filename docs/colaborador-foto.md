@@ -8,11 +8,12 @@ cliente e chaves de objetos nunca são aceitos no formulário.
 
 | Rota | Resultado |
 | --- | --- |
-| `GET /api/colaborador/perfil` | Perfil com `fotoUrl: string \| null`; nunca retorna `foto_key`. |
+| `GET /api/colaborador/perfil` | Perfil com `fotoUrl` e `logoUrl`, ambas nullable; nunca retorna keys. |
 | `GET /api/colaborador/foto` | `{ fotoUrl }`. |
 | `POST /api/colaborador/foto` | Multipart com um único campo de arquivo `file`; retorna `{ fotoUrl }`. |
 | `DELETE /api/colaborador/foto` | Remove a referência; retorna `{ fotoUrl: null }`. |
 | `GET /api/colaborador/foto/imagem` | Bytes WebP da própria foto; 404 quando ausente. |
+| `GET /api/colaborador/logo/imagem` | Logo JPEG, PNG ou WebP da própria empresa; 404 quando ausente. |
 
 Uploads: JPEG, PNG ou WebP de até 2 MiB. A API valida MIME e magic bytes,
 decodifica com limite de 25 milhões de pixels, rejeita animações, aplica a
@@ -26,6 +27,13 @@ para canvas/WebGL e expiração de URLs assinadas durante a sessão. A imagem é
 baixada pelo SDK da API; o bucket permanece privado. As respostas têm
 `Cache-Control: private, no-store`. Não é necessário configurar domínio público,
 novas variáveis ou CORS no R2 para as fotos.
+
+A logo para o verso segue o mesmo acesso autenticado na própria origem, com
+`private, no-store` e limite de 60 leituras/min por funcionário. O perfil retorna
+`logoUrl: "/api/colaborador/logo/imagem"` quando a empresa possui logo; caso contrário,
+`null`. Falhas do R2 retornam erro público estável e o frontend usa a KONTABB como
+fallback. A URL assinada legada de `GET /api/colaborador/logo` permanece disponível.
+Esse ajuste usa `clientes.logo_key` existente e não exige nova migration.
 
 ## Persistência e falhas
 

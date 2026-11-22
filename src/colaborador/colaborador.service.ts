@@ -198,6 +198,7 @@ export class ColaboradorService {
       .select({
         id: funcionariosRh.id,
         fotoKey: funcionariosRh.fotoKey,
+        logoKey: clientes.logoKey,
         codigoFuncionario: funcionariosRh.codigoFuncionario,
         nomeCompleto: funcionariosRh.nomeCompleto,
         cargo: funcionariosRh.cargo,
@@ -212,8 +213,12 @@ export class ColaboradorService {
       .limit(1);
 
     if (!rows[0]) return null;
-    const { fotoKey, ...perfil } = rows[0];
-    return { ...perfil, fotoUrl: colaboradorFotoUrl(fotoKey) };
+    const { fotoKey, logoKey, ...perfil } = rows[0];
+    return {
+      ...perfil,
+      fotoUrl: colaboradorFotoUrl(fotoKey),
+      logoUrl: logoKey ? '/api/colaborador/logo/imagem' : null,
+    };
   }
 
   /**

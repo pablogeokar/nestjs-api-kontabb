@@ -1,3 +1,5 @@
+import { ColaboradorLogoController } from './colaborador-logo.controller';
+import { ColaboradorLogoService } from './colaborador-logo.service';
 /** Run only against a disposable local DB: see docs/colaborador-foto.md. */
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -94,9 +96,10 @@ if (testUrl) {
         return Promise.resolve();
       });
       const module = await Test.createTestingModule({
-        controllers: [ColaboradorFotoController],
+        controllers: [ColaboradorFotoController, ColaboradorLogoController],
         providers: [
           ColaboradorFotoService,
+          ColaboradorLogoService,
           ColaboradorService,
           ColaboradorSessionService,
           ColaboradorAuthGuard,
@@ -351,6 +354,70 @@ if (testUrl) {
       expect((await cleanup.processJobs()).failed).toBe(1);
       expect((await cleanup.processJobs()).completed).toBe(1);
       expect(objects.size).toBe(0);
+    });
+
+    it('serve somente a logo da própria empresa e mantém a key privada', async () => {
+      const logoUrl = base.replace(/\/foto$/, '/logo/imagem');
+      expect((await fetch(logoUrl)).status).toBe(401);
+      expect(
+        (await fetch(logoUrl, { headers: { Cookie: cookie() } })).status,
+      ).toBe(404);
+      expect(
+        (await app.get(ColaboradorService).getPerfil(actor.funcionarioId))
+          ?.logoUrl,
+      ).toBeNull();
+      objects.set('empresa/logo.png', png);
+      await database.db
+        .update(clientes)
+        .set({ logoKey: 'empresa/logo.png' })
+        .where(eq(clientes.id, actor.clienteId));
+      const image = await fetch(logoUrl, { headers: { Cookie: cookie() } });
+      expect(image.status).toBe(200);
+      expect(image.headers.get('content-type')).toContain('image/png');
+      expect(image.headers.get('cache-control')).toBe('private, no-store');
+      expect(Buffer.from(await image.arrayBuffer())).toEqual(png);
+      const perfil = await app
+        .get(ColaboradorService)
+        .getPerfil(actor.funcionarioId);
+      expect(perfil?.logoUrl).toBe('/api/colaborador/logo/imagem');
+      expect(perfil).not.toHaveProperty('logoKey');
+      const [other] = await database.db
+        .insert(clientes)
+        .values({
+          cnpj: '99887766000155',
+          razaoSocial: 'Outra empresa',
+          logoKey: 'empresa/logo.png',
+        })
+        .returning();
+      await expect(
+        app
+          .get(ColaboradorLogoService)
+          .getImagem({ ...actor, clienteId: other.id }),
+      ).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('retorna erro estável se a logo do R2 estiver ausente ou inválida', async () => {
+      await database.db
+        .update(clientes)
+        .set({ logoKey: 'logo-indisponivel.png' })
+        .where(eq(clientes.id, actor.clienteId));
+      const logoUrl = base.replace(/\/foto$/, '/logo/imagem');
+      const missing = await fetch(logoUrl, { headers: { Cookie: cookie() } });
+      expect(missing.status).toBe(503);
+      expect(await missing.json()).toMatchObject({
+        message: 'Não foi possível carregar a logo.',
+      });
+      objects.set('logo-indisponivel.png', Buffer.from('<svg/>'));
+      expect(
+        (await fetch(logoUrl, { headers: { Cookie: cookie() } })).status,
+      ).toBe(503);
+      expect(
+        (
+          await fetch(logoUrl, {
+            headers: { Cookie: cookie({ ...actor, primeiroAcesso: true }) },
+          })
+        ).status,
+      ).toBe(401);
     });
 
     it('mantém a foto anterior e permite retry quando o upload no R2 falha', async () => {
