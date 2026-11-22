@@ -1004,6 +1004,8 @@ describe('DifalEntradaService — A3 perfil histórico do estabelecimento', () =
       item('i2', '2026-10-15'),
     ]);
     const catalogo = {
+      ufsComRegra: jest.fn().mockResolvedValue([]),
+      resolverVersaoVigente: jest.fn().mockResolvedValue(null),
       resolverRegraPorData: jest.fn(
         ({ data, chave }: { data: string; chave: string }) =>
           Promise.resolve(
@@ -1054,6 +1056,8 @@ describe('DifalEntradaService — A3 perfil histórico do estabelecimento', () =
       },
     ]);
     const catalogo = {
+      ufsComRegra: jest.fn().mockResolvedValue([]),
+      resolverVersaoVigente: jest.fn().mockResolvedValue(null),
       resolverRegraPorData: jest.fn(({ data, chave }) =>
         Promise.resolve({
           estado: 'AMBIGUA',
@@ -1279,5 +1283,111 @@ describe('DifalEntradaService — dispensa do DIFAL sobre ativo para ME/EPP (RIC
       valor_difal: '0.00',
     });
     expect(r.total_difal_recolher).toBe('0.00');
+  });
+});
+
+describe('DifalEntradaService — enquadramento de ST pela regra do estado', () => {
+  const catalogoAprovado = (uf: string) => ({
+    id: `cat-${uf}`,
+    tipo: 'ST_FCP',
+    uf,
+    codigo: `ST_${uf}`,
+    descricao: null,
+    fonte: 'Conv. ICMS 142/18',
+    fonteUrl: 'https://confaz.gov.br',
+    hashConteudo: null,
+    conteudo: {},
+    vigenciaInicio: '2019-01-01',
+    vigenciaFim: null,
+    competencia: '2026-09-01',
+    escopoAprovado: true,
+    aprovadoPor: 'u1',
+    pendente: false,
+  });
+  const itemSt = (cest: string | null) => ({
+    documentoFiscalId: 'd1',
+    itemId: 'i1',
+    cfop: '2407',
+    ncm: '22021000',
+    cest,
+    valorBcIcms: '1000.00',
+    valorBrutoProduto: '1000.00',
+    aliquotaIcms: '12.0000',
+  });
+  function montar(opcoes: {
+    cest: string | null;
+    nacional?: boolean;
+    conteudo?: Record<string, unknown> | null;
+    aprovada?: boolean;
+  }) {
+    const stRegra =
+      opcoes.conteudo === null
+        ? null
+        : regraPadrao({
+            chave: opcoes.cest ?? '',
+            conteudo: opcoes.conteudo ?? { sujeito_ast: true, mva: '40' },
+            escopoAprovado: opcoes.aprovada ?? true,
+          });
+    const catalogo = {
+      ufsComRegra: jest.fn().mockResolvedValue([]),
+      resolverVersaoVigente: jest.fn(({ uf }: { uf: string }) =>
+        Promise.resolve(
+          uf === 'BR' && opcoes.nacional === false
+            ? null
+            : catalogoAprovado(uf),
+        ),
+      ),
+      resolverRegraPorData: jest.fn(
+        ({ chave, data }: { chave: string; data: string }) =>
+          Promise.resolve(
+            resolucaoDe(chave === opcoes.cest ? stRegra : null, data, chave),
+          ),
+      ),
+    };
+    return new DifalEntradaService(
+      createDb('SP', [itemSt(opcoes.cest)]) as never,
+      catalogo as never,
+    );
+  }
+  const apurar = (service: DifalEntradaService) =>
+    service.apurarCompetencia({ clienteId: 'c1', competencia: '2026-09' });
+
+  it('confirma o item como SUJEITO com MVA da regra aprovada, sem alterar totais', async () => {
+    const result = await apurar(montar({ cest: '1700100' }));
+    expect(result.itens[0].st_enquadramento).toMatchObject({
+      status: 'SUJEITO',
+      mva: '40',
+      divergencia: null,
+    });
+    expect(result.st.por_status.SUJEITO).toBe(1);
+    expect(result.total_difal_recolher).toBe('0.00');
+  });
+
+  it('aponta divergência quando o XML indica ST e a regra exclui o CEST', async () => {
+    const result = await apurar(
+      montar({ cest: '1700100', conteudo: { sujeito_ast: false } }),
+    );
+    expect(result.itens[0].st_enquadramento?.status).toBe('NAO_SUJEITO');
+    expect(result.itens[0].st_enquadramento?.divergencia).toMatch(/exclui/);
+    expect(result.st.divergencias).toBe(1);
+  });
+
+  it('deixa pendente quando a regra do CEST não está aprovada ou não existe', async () => {
+    const rascunho = await apurar(montar({ cest: '1700100', aprovada: false }));
+    expect(rascunho.itens[0].st_enquadramento?.status).toBe('PENDENCIA');
+    const semRegra = await apurar(montar({ cest: '1700100', conteudo: null }));
+    expect(semRegra.itens[0].st_enquadramento?.status).toBe('PENDENCIA');
+    const semCest = await apurar(montar({ cest: null }));
+    expect(semCest.itens[0].st_enquadramento?.status).toBe('PENDENCIA');
+  });
+
+  it('bloqueia quando a fonte nacional não está aprovada', async () => {
+    const result = await apurar(montar({ cest: '1700100', nacional: false }));
+    expect(result.itens[0].st_enquadramento?.status).toBe('BLOQUEADO');
+    expect(result.st.verificacao_fonte[0]).toMatchObject({
+      uf: 'SP',
+      status: 'PENDENTE_NACIONAL',
+      habilitado: false,
+    });
   });
 });

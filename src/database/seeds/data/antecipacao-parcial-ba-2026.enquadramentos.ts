@@ -1,8 +1,13 @@
-// Enquadramentos de Antecipação Parcial da BA para 2026 (gerado a partir das
-// entradas interestaduais do banco de desenvolvimento em 14/11/2026).
+// Enquadramentos de Antecipação Parcial da BA para 2026. Gerado a partir das
+// entradas interestaduais do banco de desenvolvimento em 14/11/2026 e
+// atualizado em 21/11/2026 com a revisão 31 da regra (conferida pelo contador).
 // Fundamentação por linha em docs/antecipacao-parcial-ba-2026-fundamentacao.md.
-// Nenhuma linha está confirmada fiscalmente: o seed grava rascunho.
-
+//
+// Linhas com `confirmado_fiscalmente: true` já foram revisadas e entram em vigor
+// ao semear um banco novo, sem nova aprovação. Para exigir nova conferência no
+// ambiente, troque o valor para `false` antes de semear.
+// Decisão de IPI (`ipi_na_base`): critério adotado pendente de consulta à DITRI;
+// ver a seção "Estado da decisão de IPI" da fundamentação.
 export interface EnquadramentoAntecipacaoSeed {
   ncm: string;
   cest: string | null;
@@ -12,12 +17,13 @@ export interface EnquadramentoAntecipacaoSeed {
   tratamento: 'APLICAVEL' | 'ICMS_ST' | 'DISPENSADO' | 'CONFERIR';
   aliquota_interna?: string;
   aliquota_interestadual?: string;
+  ipi_na_base?: 'INCLUIR' | 'EXCLUIR';
+  fundamento_ipi?: string;
   motivo?: string;
   fundamento?: string;
   revisao_fiscal?: string;
   confirmado_fiscalmente: boolean;
 }
-
 export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] =
   [
     {
@@ -37,7 +43,7 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'SE',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
@@ -52,7 +58,7 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'CE',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
@@ -67,10 +73,13 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'CE',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º (origem CE → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
       revisao_fiscal:
@@ -82,7 +91,7 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'SE',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
@@ -157,14 +166,12 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'SE',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º (origem SE → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'CEST 23.002.00 (preparados para sorvete) não consta do Anexo 1 do RICMS-BA 2026 (item 15.1 lista só 23.001.00). NCM 1901.20 aparece nos itens 11.3/11.4 apenas para misturas para pães (CEST 17.046.xx), descrição diferente do produto. Conferir a classificação do DUCREM. Evidência: 2 item(ns) de entrada; descrição no XML: DUCREM JAZAM LOVE NAPOLITANO DP18X25G CX18DP QTD. 10.00 CX | DUCREM JAZAM NAPOLITANO DP48X10G CX20DP QTD. 15.00 CX',
     },
     {
       ncm: '19041000',
@@ -187,7 +194,7 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'SE',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
@@ -213,7 +220,7 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'SE',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
@@ -258,10 +265,13 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '5',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
       revisao_fiscal:
@@ -333,10 +343,13 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '5',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
       revisao_fiscal:
@@ -348,10 +361,13 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '5',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
       revisao_fiscal:
@@ -468,14 +484,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '6',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'NCM 8414.59.90 também consta do Anexo II do Conv. ICMS 142/18 (autopeças, CEST 01.094.00). O XML informa CEST 21.088.00 (eletrônicos, sem ST na BA) e a descrição é de cooler/base para computador, não autopeça. A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 6 item(ns) de entrada; descrição no XML: BASE P/NOTEBOOK 14  NBC-11BK C3TECH | COOLER FAN F9-L160BK RGB 1...',
     },
     {
       ncm: '84145990',
@@ -498,10 +515,17 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '0',
-      confirmado_fiscalmente: false,
-      tratamento: 'CONFERIR',
+      confirmado_fiscalmente: true,
+      tratamento: 'APLICAVEL',
+      aliquota_interna: '20.5',
+      aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       motivo:
         'NCM 8424.89.90 consta do Anexo I do Conv. ICMS 52/91 (item 20.6, "outros aparelhos de pulverização"). Se abrangido, RICMS-BA art. 266, I, "a" (carga 8,80%) deve ser considerado na antecipação parcial (art. 268, § 3º). Confirmar se o pulverizador manual 500 ml está no alcance do convênio.',
+      fundamento: 'Antecipação Parcial por interpretação.',
+      revisao_fiscal: 'Consideramos Antecipação Parcial de forma manual',
     },
     {
       ncm: '84433111',
@@ -839,14 +863,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '1',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '4',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 13/2012 (origem 1: importado/conteúdo de importação > 40%). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 2 item(ns) de entrada; descrição no XML: TECLADO USB PADRAO KB103 PRETO LECOO',
     },
     {
       ncm: '84716052',
@@ -854,14 +879,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '5',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 5 item(ns) de entrada; descrição no XML: TECL USB MULT KB-M10BK PRETO C3T',
     },
     {
       ncm: '84716052',
@@ -959,14 +985,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '5',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 11 item(ns) de entrada; descrição no XML: KIT TECL+MOUSE S/FIO KW202 BRANCO LECOO | MOUSE USB MS-35BK PRETO C3TECH',
     },
     {
       ncm: '84716053',
@@ -1079,14 +1106,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '6',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 9 item(ns) de entrada; descrição no XML: LEITOR COD 1D/2D S/FIO LB-W110BK C3TECH | LEITOR COD 1D/2D USB LB-D300 C3TECH',
     },
     {
       ncm: '84719012',
@@ -1124,14 +1152,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '5',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 5 item(ns) de entrada; descrição no XML: GAB MICRO-ATX MT-30BK C/FTE 200W C3T | GAB MICRO-ATX MT-37BK C/FTE 200W C3T',
     },
     {
       ncm: '84733019',
@@ -1225,14 +1254,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '5',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '7',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'Evidência: 15 item(ns) de entrada; descrição no XML: FTE ATX 200W PS-200V4 FAN 8CM C3TECH S/CABO | FTE SFX 200W PS-200SFX C3TECH S/CABO',
     },
     {
       ncm: '85044040',
@@ -1240,14 +1270,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'DF',
       origem_mercadoria: '4',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '12',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º (origem DF → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 3 item(ns) de entrada; descrição no XML: NOBREAK SMS LITE 600BI/115 29202 | NOBREAK SMS TECH 1400BI/115 29305',
     },
     {
       ncm: '85044040',
@@ -1502,14 +1533,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'MG',
       origem_mercadoria: '2',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '4',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 13/2012 (origem 2: importado/conteúdo de importação > 40%). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'Evidência: 2 item(ns) de entrada; descrição no XML: FONE C/MIC USB H390 PRETO LOGITECH',
     },
     {
       ncm: '85183000',
@@ -1592,14 +1624,15 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
       regime: 'SIMPLES_NACIONAL',
       uf_origem: 'ES',
       origem_mercadoria: '1',
-      confirmado_fiscalmente: false,
+      confirmado_fiscalmente: true,
       tratamento: 'APLICAVEL',
       aliquota_interna: '20.5',
       aliquota_interestadual: '4',
+      ipi_na_base: 'INCLUIR',
+      fundamento_ipi:
+        'Critério adotado: o IPI destacado integra a base, por ser parte do valor da operação constante no documento de aquisição (Lei 7.014/96, art. 23, III). Não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na antecipação parcial. A LC 87/96, art. 13, § 2º, indica exclusão em operação entre contribuintes para comercialização com fato gerador dos dois impostos. Pendente de confirmação por consulta à DITRI.',
       fundamento:
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 13/2012 (origem 1: importado/conteúdo de importação > 40%). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
-      revisao_fiscal:
-        'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 1 item(ns) de entrada; descrição no XML: MONITOR TOUCH SCREEN ELO 1515L 15 RESISTIVO SER/USB BEZEL',
     },
     {
       ncm: '85285200',
@@ -1836,5 +1869,42 @@ export const ENQUADRAMENTOS_ANTECIPACAO_BA_2026: EnquadramentoAntecipacaoSeed[] 
         'Lei 7.014/96, art. 12-A e art. 15, I, "a" (20,5%, Lei 14.629/23, efeitos 07/02/24); RICMS-BA, art. 321, VII, "b" e § 1º; Res. SF 22/1989, art. 1º, par. único, I (origem MG → BA). Sem item correspondente no Anexo 1 do RICMS-BA (redação 2026).',
       revisao_fiscal:
         'A redução de base para informática (RICMS-BA art. 266, XIII, carga 12%) foi revogada pelo Decreto 23.248/24, com efeitos a partir de 01/03/25; aplica-se a alíquota cheia. Evidência: 3 item(ns) de entrada; descrição no XML: ESTAB ES-300VA BM 115V BEM LIGADO CLK | ESTAB ES-300VA MONO 115V BEM LIGADO CLK',
+    },
+    {
+      ncm: '17041000',
+      cest: '1700100',
+      regime: 'SIMPLES_NACIONAL',
+      uf_origem: 'CE',
+      origem_mercadoria: '0',
+      confirmado_fiscalmente: true,
+      tratamento: 'APLICAVEL',
+      aliquota_interna: '20.5',
+      aliquota_interestadual: '12',
+      fundamento: 'revisado pelo usuário',
+      revisao_fiscal: 'revisado pelo usuário',
+    },
+    {
+      ncm: '61121100',
+      cest: null,
+      regime: 'SIMPLES_NACIONAL',
+      uf_origem: 'SP',
+      origem_mercadoria: '0',
+      confirmado_fiscalmente: true,
+      tratamento: 'APLICAVEL',
+      aliquota_interna: '20.5',
+      aliquota_interestadual: '7',
+      fundamento: 'RICMS BA',
+    },
+    {
+      ncm: '61034300',
+      cest: '2805900',
+      regime: 'SIMPLES_NACIONAL',
+      uf_origem: 'SC',
+      origem_mercadoria: '0',
+      confirmado_fiscalmente: true,
+      tratamento: 'APLICAVEL',
+      aliquota_interna: '20.5',
+      aliquota_interestadual: '7',
+      fundamento: 'RICMS BA',
     },
   ];

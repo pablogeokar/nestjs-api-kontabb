@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { StorageModule } from '../storage/storage.module';
 import { AuthModule } from '../auth/auth.module';
 import { ContadoresModule } from '../cadastros/contadores/contadores.module';
+import { FiscalModule } from './fiscal.module';
 import {
   FaturamentoClienteController,
   FaturamentoPublicoController,
@@ -10,7 +11,7 @@ import { FaturamentoDocumentoService } from './services/faturamento-documento.se
 import { FaturamentoService } from './services/faturamento.service';
 
 @Module({
-  imports: [AuthModule, StorageModule, ContadoresModule],
+  imports: [AuthModule, StorageModule, ContadoresModule, FiscalModule],
   controllers: [FaturamentoClienteController, FaturamentoPublicoController],
   providers: [FaturamentoService, FaturamentoDocumentoService],
 })

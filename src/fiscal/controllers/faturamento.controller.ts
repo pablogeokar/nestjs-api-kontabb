@@ -50,7 +50,7 @@ export class FaturamentoClienteController {
     response.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition':
-        'attachment; filename="demonstrativo-faturamento.pdf"',
+        'attachment; filename="relacao-de-faturamento.pdf"',
       'Cache-Control': 'no-store',
     });
     response.send(buffer);
@@ -94,7 +94,7 @@ export class FaturamentoPublicoController {
     response.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition':
-        'attachment; filename="demonstrativo-faturamento-original.pdf"',
+        'attachment; filename="relacao-de-faturamento-original.pdf"',
       'Cache-Control': 'no-store',
       'X-Robots-Tag': 'noindex',
     });

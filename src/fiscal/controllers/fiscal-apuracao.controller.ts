@@ -59,6 +59,39 @@ import {
   RetificarEntregaDto,
 } from '../dto/entregas-fiscais.dto';
 
+/** Gera o PDF da memória de cálculo da Antecipação Parcial (sem valor fiscal). */
+async function gerarPdfMemoriaAntecipacao(
+  difalService: DifalEntradaService,
+  guiasService: FiscalGuiasService,
+  clienteId: string,
+  competencia: string,
+): Promise<Buffer> {
+  try {
+    parseCompetenciaMensal(competencia);
+  } catch {
+    throw new BadRequestException('Competência inválida. Utilize AAAA-MM.');
+  }
+  const apuracao = await difalService.apurarCompetencia({
+    clienteId,
+    competencia,
+  });
+  const antecipacao = apuracao.antecipacao_parcial;
+  return guiasService.gerarEspelhoPreviaAntecipacao({
+    clienteId,
+    competencia,
+    totalApurado: antecipacao.total_apurado,
+    itens: antecipacao.itens,
+  });
+}
+function enviarPdfMemoria(res: Response, competencia: string, buffer: Buffer) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    `inline; filename="memoria-calculo-antecipacao-${competencia}.pdf"`,
+  );
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(buffer);
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // Controller do CLIENTE logado (escopo da própria empresa)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,6 +231,24 @@ export class ClienteFiscalApuracaoController {
       clienteId: await this.clienteId(user.id),
       competencia,
     });
+  }
+  @Get('antecipacao-parcial/espelho')
+  @ApiOperation({
+    summary:
+      'Baixa a memória de cálculo da Antecipação Parcial da própria empresa',
+  })
+  async memoriaAntecipacaoParcial(
+    @Query('competencia') competencia: string,
+    @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
+  ) {
+    const buffer = await gerarPdfMemoriaAntecipacao(
+      this.difalService,
+      this.guiasService,
+      await this.clienteId(user.id),
+      competencia,
+    );
+    enviarPdfMemoria(res, competencia, buffer);
   }
 
   // ── PIS/COFINS ──────────────────────────────────────────────────────────
@@ -399,31 +450,14 @@ export class AdminFiscalApuracaoController {
     @Query('competencia') competencia: string,
     @Res() res: Response,
   ) {
-    try {
-      parseCompetenciaMensal(competencia);
-    } catch {
-      throw new BadRequestException('Competência inválida. Utilize AAAA-MM.');
-    }
-    const apuracao = await this.difalService.apurarCompetencia({
+    const buffer = await gerarPdfMemoriaAntecipacao(
+      this.difalService,
+      this.guiasService,
       clienteId,
       competencia,
-    });
-    const antecipacao = apuracao.antecipacao_parcial;
-    const buffer = await this.guiasService.gerarEspelhoPreviaAntecipacao({
-      clienteId,
-      competencia,
-      totalApurado: antecipacao.total_apurado,
-      itens: antecipacao.itens,
-    });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="espelho-antecipacao-${competencia}.pdf"`,
     );
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.send(buffer);
+    enviarPdfMemoria(res, competencia, buffer);
   }
-
   // ── Rollout: inventário read-only antes de ativar correções (R5.2) ─────────
   // Mesma projeção read-only do controller do cliente, escopada por `clienteId`
   // (query) para a operação staff do rollout. Não ativa correção nem decide

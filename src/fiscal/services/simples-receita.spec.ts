@@ -1,6 +1,8 @@
 import {
   CFOPS_DEVOLUCAO_VENDA,
   classificarOperacaoSimples,
+  consolidarReceitaMensal,
+  decidirReceitaDoMes,
   distribuirDevolucoesSimples,
   regimeCompetenciaParaApuracao,
   somarReceitaSimples,
@@ -110,5 +112,166 @@ describe('receita documental do Simples Nacional', () => {
           .map((item) => item.valor),
       ),
     ).toBe('930.00');
+  });
+});
+
+describe('consolidação mensal da receita (base do Simples e da relação de faturamento)', () => {
+  const linha = (
+    mes: string,
+    tipoDocumento: string,
+    cfop: string | null,
+    bruto: string,
+    extra: Partial<{ indTotal: string; desconto: string; frete: string }> = {},
+  ) => ({
+    mes,
+    tipoDocumento,
+    cfop,
+    cfopXml: null,
+    indTotal: extra.indTotal ?? '1',
+    bruto,
+    frete: extra.frete ?? null,
+    seguro: null,
+    outras: null,
+    desconto: extra.desconto ?? null,
+  });
+
+  it('separa mercadorias, serviços e transportes e soma frete e desconto do item', () => {
+    const [mes] = consolidarReceitaMensal([
+      linha('2026-10', 'NFE', '5102', '100.00', {
+        frete: '10.00',
+        desconto: '5.00',
+      }),
+      linha('2026-10', 'NFCE', '5405', '50.00'),
+      linha('2026-10', 'NFSE', null, '300.00'),
+      linha('2026-10', 'CTE', '6353', '1000.00'),
+    ]);
+    expect(mes).toEqual({
+      mes: '2026-10',
+      mercadorias: 15500n,
+      servicos: 30000n,
+      transportes: 100000n,
+      devolucoes: 0n,
+      receita: 145500n,
+    });
+  });
+
+  it('deixa fora bonificações, remessas, transferências e itens fora do total da nota', () => {
+    const [mes] = consolidarReceitaMensal([
+      linha('2026-10', 'NFE', '5102', '1000.00'),
+      linha('2026-10', 'NFE', '5910', '400.00'), // bonificação
+      linha('2026-10', 'NFE', '5152', '300.00'), // transferência
+      linha('2026-10', 'NFE', '5901', '200.00'), // remessa
+      linha('2026-10', 'NFE', '5102', '99.00', { indTotal: '0' }),
+    ]);
+    expect(mes.receita).toBe(100000n);
+  });
+
+  it('abate as devoluções de vendas do mês', () => {
+    const [mes] = consolidarReceitaMensal(
+      [linha('2026-10', 'NFE', '5102', '54129.00')],
+      new Map([
+        [
+          '2026-10',
+          { abatimentos: new Map([['ANEXO_I:false:false', 413500n]]) },
+        ],
+      ]),
+    );
+    expect(mes).toMatchObject({
+      mercadorias: 5412900n,
+      devolucoes: 413500n,
+      receita: 4999400n,
+    });
+  });
+
+  it('o CT-e de anulação deduz a prestação, sem deixar o transporte negativo', () => {
+    const [mes] = consolidarReceitaMensal([
+      linha('2026-10', 'CTE', '6353', '1000.00'),
+      linha('2026-10', 'CTE', '6353', '-1000.00'),
+      linha('2026-10', 'CTE', '6353', '-50.00'),
+      linha('2026-10', 'NFSE', null, '10.00'),
+    ]);
+    expect(mes.transportes).toBe(0n);
+    expect(mes.receita).toBe(1000n);
+  });
+});
+
+describe('base de cálculo do mês (relação de faturamento e card de vendas)', () => {
+  const docs = {
+    mes: '2026-10',
+    mercadorias: 5412900n,
+    servicos: 80000n,
+    transportes: 0n,
+    devolucoes: 413500n,
+    receita: 5079400n,
+  };
+
+  it('a base informada manualmente prevalece sobre a apuração e os documentos', () => {
+    const r = decidirReceitaDoMes({
+      documentos: docs,
+      apuracao: 5079400n,
+      manual: 5100000n,
+    });
+    expect(r).toMatchObject({
+      origem: 'HISTORICO_INFORMADO',
+      receita: 5100000n,
+      detalhado: false,
+      mercadorias: 0n,
+    });
+  });
+
+  it('vale a base manual no mês sem notas no sistema', () => {
+    expect(
+      decidirReceitaDoMes({
+        documentos: undefined,
+        apuracao: undefined,
+        manual: 6121550n,
+      }),
+    ).toMatchObject({ origem: 'HISTORICO_INFORMADO', receita: 6121550n });
+  });
+
+  it('sem base manual, usa a apuração salva e a composição líquida quando ela soma a base', () => {
+    const r = decidirReceitaDoMes({
+      documentos: docs,
+      apuracao: 5079400n,
+      manual: undefined,
+    });
+    expect(r).toMatchObject({
+      origem: 'APURACAO_SIMPLES',
+      detalhado: true,
+      mercadorias: 4999400n, // 54.129,00 − 4.135,00 (devoluções)
+      servicos: 80000n,
+    });
+    expect(r.mercadorias + r.servicos + r.transportes).toBe(r.receita);
+  });
+
+  it('a manual igual aos documentos mantém a composição por tipo', () => {
+    expect(
+      decidirReceitaDoMes({
+        documentos: docs,
+        apuracao: undefined,
+        manual: 5079400n,
+      }).detalhado,
+    ).toBe(true);
+  });
+
+  it('sem manual nem apuração, usa os documentos', () => {
+    expect(
+      decidirReceitaDoMes({
+        documentos: docs,
+        apuracao: undefined,
+        manual: undefined,
+      }),
+    ).toMatchObject({
+      origem: 'DOCUMENTOS',
+      receita: 5079400n,
+      detalhado: true,
+    });
+    expect(
+      decidirReceitaDoMes({
+        documentos: undefined,
+        apuracao: undefined,
+        manual: undefined,
+      }),
+    ).toMatchObject({ origem: 'DOCUMENTOS', receita: 0n, detalhado: true });
   });
 });

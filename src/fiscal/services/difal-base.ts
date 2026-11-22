@@ -297,9 +297,7 @@ export function comporBaseDifal(
   // A BC destacada já inclui a redução da origem. Na base dupla, a redução
   // aplicável no destino é parametrizada pela regra.
   const reducaoItem = toScaledInteger(
-    bcItemScaled > 0n || regra?.baseDupla
-      ? '0'
-      : item.percentualReducaoBcIcms,
+    bcItemScaled > 0n || regra?.baseDupla ? '0' : item.percentualReducaoBcIcms,
     ESCALA_ALIQUOTA,
   );
   const reducaoRegra = toScaledInteger(

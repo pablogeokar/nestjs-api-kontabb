@@ -116,6 +116,26 @@ interface ResolverRegraInput extends ResolverCatalogoInput {
 export class FiscalNormativeCatalogService {
   constructor(private readonly database: DatabaseService) {}
 
+  /** UFs, entre as informadas, que têm ao menos uma revisão ativa da regra. */
+  async ufsComRegra(chave: string, ufs: string[]): Promise<string[]> {
+    if (ufs.length === 0) return [];
+    const linhas = await this.database.db
+      .selectDistinct({ uf: fiscalCatalogosVersoes.uf })
+      .from(fiscalRegrasVersoes)
+      .innerJoin(
+        fiscalCatalogosVersoes,
+        eq(fiscalCatalogosVersoes.id, fiscalRegrasVersoes.catalogoVersaoId),
+      )
+      .where(
+        and(
+          eq(fiscalRegrasVersoes.chave, chave),
+          eq(fiscalRegrasVersoes.ativo, true),
+          eq(fiscalCatalogosVersoes.ativo, true),
+          inArray(fiscalCatalogosVersoes.uf, ufs),
+        ),
+      );
+    return linhas.map((linha) => linha.uf);
+  }
   /**
    * Resolve a versão de catálogo VIGENTE na competência (aprovada ou não),
    * marcando o estado de aprovação. Fundamento comum de todos os lookups.

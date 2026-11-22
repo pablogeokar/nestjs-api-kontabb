@@ -3,9 +3,12 @@ import postgres from 'postgres';
 import { ENQUADRAMENTOS_ANTECIPACAO_BA_2026 } from './data/antecipacao-parcial-ba-2026.enquadramentos';
 
 /**
- * Seed do motor de regras de ICMS da BA para 2026 (rascunho, nada homologado):
- * - ANTECIPACAO_PARCIAL: enquadramentos por NCM/CEST/regime/origem e cenário
- *   de redução de 20% para ME/EPP condicionado ao pagamento no prazo (art. 274);
+ * Seed do motor de regras de ICMS da BA para 2026:
+ * - ANTECIPACAO_PARCIAL: enquadramentos por NCM/CEST/regime/origem, com a
+ *   decisão de IPI na base e o cenário de redução de 20% para ME/EPP condicionado
+ *   ao pagamento no prazo (art. 274). As linhas com `confirmado_fiscalmente`
+ *   seguem o arquivo de dados: as já revisadas entram em vigor ao semear um
+ *   banco novo; o catálogo e a regra não são homologados em bloco;
  * - DIFAL_ENTRADA_CONTRIBUINTE: alíquota interna, base dupla e dispensa sobre
  *   ativo para ME/EPP (RICMS-BA, art. 272, I, "a", 2).
  *
@@ -15,9 +18,12 @@ import { ENQUADRAMENTOS_ANTECIPACAO_BA_2026 } from './data/antecipacao-parcial-b
  * Uso: pnpm db:seed:icms-ba            (grava)
  *      pnpm db:seed:icms-ba --preview  (só mostra o resumo)
  *
- * Idempotente. Aborta se houver catálogo homologado, enquadramento confirmado
- * a substituir ou outra vigência de Antecipação Parcial BA sobreposta a 2026.
- * Se o conteúdo mudar e a última revisão não tiver aprovações, grava a próxima.
+ * Idempotente. Em banco novo grava a revisão 1. Em banco existente: se o
+ * conteúdo é igual, nada muda; se difere e a última revisão não tem linha
+ * confirmada, grava a próxima revisão. Aborta se a última revisão tiver linha
+ * confirmada a substituir, se houver catálogo homologado ou outra vigência de
+ * Antecipação Parcial BA sobreposta a 2026. Nesses casos, ajuste pela interface
+ * fiscal.
  */
 const ANEXO_1_2026 =
   'https://mbusca.sefaz.ba.gov.br/ditri/normas_complementares/decretos/decreto_2012_13780_ricms_anexo_1_vigente_2026.pdf';

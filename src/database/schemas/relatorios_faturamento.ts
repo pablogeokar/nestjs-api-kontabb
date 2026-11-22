@@ -18,9 +18,19 @@ export interface FaturamentoMesSnapshot {
   competencia: string;
   valorProdutos: string;
   valorServicos: string;
+  /** Prestação de serviço de transporte (CT-e). Ausente em relatórios anteriores à inclusão do CT-e. */
+  valorTransportes?: string;
+  /** Só em relatórios emitidos antes da composição líquida; não é mais gravado. */
+  valorDevolucoes?: string;
+  /** Receita bruta do mês: base da apuração dos tributos. */
   total: string;
-  quantidadeProdutos: number;
-  quantidadeServicos: number;
+  /** De onde veio a receita do mês. Ausente em relatórios antigos (documentos). */
+  origem?: 'APURACAO_SIMPLES' | 'HISTORICO_INFORMADO' | 'DOCUMENTOS';
+  /** Falso quando a composição por tipo não soma o total (base informada manualmente). */
+  detalhado?: boolean;
+  quantidadeProdutos?: number;
+  quantidadeServicos?: number;
+  quantidadeTransportes?: number;
 }
 
 export const relatoriosFaturamento = pgTable(

@@ -2,7 +2,7 @@
 
 Seed: `src/database/seeds/icms-ba-2026.seed.ts` (`pnpm db:seed:icms-ba`) (regras `ANTECIPACAO_PARCIAL` e `DIFAL_ENTRADA_CONTRIBUINTE`)
 Dados: `src/database/seeds/data/antecipacao-parcial-ba-2026.enquadramentos.ts` (123 enquadramentos)
-Consulta às fontes: 14/11/2026. Situação: **rascunho** (`escopo_aprovado = false`), nenhuma linha com `confirmado_fiscalmente = true`.
+Consulta às fontes: 14/11/2026. Situação: catálogo e regra sem homologação em bloco (`escopo_aprovado = false`). A seed (`pnpm db:seed:icms-ba`) reproduz a revisão 31 de 21/11/2026: 126 enquadramentos, dos quais 24 já confirmados (`confirmado_fiscalmente = true`) e 6 em `CONFERIR`. Ao semear um banco novo, as 24 linhas confirmadas entram em vigor; para exigir nova conferência, troque o valor para `false` em `src/database/seeds/data/antecipacao-parcial-ba-2026.enquadramentos.ts` antes de semear. Três linhas (NCM 17041000/CE, 61121100/SP e 61034300/SC) foram acrescentadas pela revisão fiscal, com fundamento curto ("RICMS BA", "revisado pelo usuário"); vale detalhar a base legal.
 
 ## Escopo
 
@@ -51,6 +51,8 @@ O item mantém `valor_antecipacao` e o total da apuração pelo imposto integral
 
 A base da antecipação parcial é o valor da operação interestadual no documento (Lei 7.014/96, arts. 12-A e 23, III). A exclusão do IPI depende dos requisitos do art. 17, § 2º; um CEST/NCM ou o simples fato de haver IPI destacado não demonstram todos eles. Por isso, cada enquadramento pode registrar `ipi_na_base` (`INCLUIR` ou `EXCLUIR`) e `fundamento_ipi`. A decisão é validada no cadastro e fica sujeita à confirmação fiscal. Sem decisão fundamentada, o item com IPI mostra os valores **com** e **sem** IPI, permanece `PENDENTE` e não compõe o total ou a DeSTDA. Quando o IPI é incluído para adquirente do Simples, o motor calcula o ICMS interno sobre a base com IPI e a parcela interestadual sobre a operação sem IPI; o detalhe expõe `base_calculo_origem`, `base_calculo` e `deducao_origem`. Com decisão e enquadramento aprovado, a base adotada e o tratamento do IPI aparecem no detalhe.
 
+**Estado da decisão de IPI (BA, nov/2026):** não há norma específica nem parecer da SEFAZ-BA localizados sobre IPI na base da antecipação parcial. A leitura literal do art. 23, III da Lei 7.014/96 (valor da operação constante no documento) sustenta incluir o IPI, que é também o critério sem risco de recolher a menos. A LC 87/96, art. 13, § 2º, indica excluir quando a operação é entre contribuintes, para comercialização, com fato gerador do ICMS e do IPI. As regras com `ipi_na_base` registram o critério adotado e a pendência de consulta à DITRI (script `scripts/atualizar-fundamento-ipi-antecipacao.cjs`). Se vier resposta, trocar a decisão e o fundamento nas regras.
+
 O [Acórdão CJF 0042-11/25-VD](https://mbusca.sefaz.ba.gov.br/consef/2025%20-%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0042-11.25-VD.pdf) registra base com IPI em compras de optante do Simples. O [Acórdão JJF 0007-05/17](https://mbusca.sefaz.ba.gov.br/consef/2017%20ac%C3%B3rd%C3%A3os%20juntas/A-0007-05.17.pdf) distingue a base paga pelo comerciante da base do ICMS na origem. O [Acórdão CJF 0239-12/18](https://mbusca.sefaz.ba.gov.br/consef/2019%20ac%C3%B3rd%C3%A3os%20c%C3%A2maras/A-0239-12.18.pdf) trata da exclusão condicionada do IPI. Esses precedentes motivam a decisão explícita por enquadramento, sujeita à verificação das circunstâncias da operação.
 
 Na NF-e 320904 exibida na revisão, os NCMs 18063120/CEST 1700202 e 18063220/CEST 1700301 já têm enquadramento no seed, mas não possuem decisão sobre IPI. Assim, o bloqueio anterior por IPI passa a trazer os dois cenários para revisão, sem presumir o tratamento fiscal.
@@ -70,7 +72,9 @@ Uma decisão `ipi_na_base` no cadastro vale para todos os itens que coincidam co
 
 Pontos a confirmar antes de homologar:
 
-- **ICMS de origem:** o motor deduz o ICMS **destacado** no XML. Se o fornecedor é do Simples e não destaca ICMS, o item fica pendente ("Base dupla exige o valor do ICMS da origem"). Falta confirmar com a SEFAZ-BA se a dedução deve ser o destacado ou o valor nominal pela alíquota interestadual. É o ponto A4 do diagnóstico.
+- **Abatimento da antecipação (ponto A4, resolvido):** depende do regime do **adquirente**, e o motor registra o critério em `credito_origem`.
+  - **Adquirente do Simples Nacional:** diferença entre a alíquota interna e a interestadual (7%, 12% ou 4%), sem depender de crédito destacado, mesmo quando o fornecedor é do Simples e o CSOSN é 102. Base: RICMS-BA, art. 321, VII, "b"; Parecer SEFAZ-BA 18.724/2009 ([texto](https://www.legisweb.com.br/legislacao/?id=348147)), que diz que o valor informado na nota pelo fornecedor do Simples só é crédito para quem apura pelo regime normal.
+  - **Adquirente do regime normal:** abate o ICMS destacado. Se o fornecedor é do Simples, abate só o crédito informado na nota (CSOSN 101, `vCredICMSSN`). Com CSOSN 102, 103, 300 ou 400 não há crédito e nada é abatido. Base: LC 123/06, art. 23, § 1º; Parecer SEFAZ-BA 34/2012 ([texto](https://www.legisweb.com.br/legislacao/?id=347630)). CSOSN 101 sem valor de crédito na nota fica pendente.
 - **Simples como adquirente:** a aplicação da base dupla e o alcance dos Temas 517 e 1284 do STF devem ser confirmados pela revisão fiscal.
 - **FCP:** mercadorias de uso e consumo com adicional de FCP (art. 16, II, IV, V e VII, e cosméticos da IN SAT 05/2016) não têm o adicional na regra geral.
 - **Dados:** o banco ainda não tem entradas 2551/2556, então a regra ainda não foi exercitada com dados reais.

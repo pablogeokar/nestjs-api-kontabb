@@ -60,6 +60,24 @@ export class ClienteSimplesNacionalController {
     };
   }
 
+  @Get('receita-bruta')
+  @ApiOperation({
+    summary:
+      'Receita bruta da competência: a base da apuração, já deduzidas as devoluções',
+  })
+  async receitaBruta(
+    @Query() query: CompetenciaSimplesDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    const cliente = await this.clientesService.getClientForUser(user.id);
+    if (!cliente) throw new NotFoundException('Empresa não encontrada.');
+    const [receita] = await this.service.receitaBrutaPorCompetencia(
+      cliente.id,
+      query.competencia,
+      query.competencia,
+    );
+    return { data: receita };
+  }
   @Get('apuracao/pdf')
   @ApiOperation({ summary: 'Exporta a memória de cálculo do DAS em PDF' })
   async gerarRelatorioApuracao(

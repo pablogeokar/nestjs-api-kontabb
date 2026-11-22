@@ -6,12 +6,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { SignPdf } from '@signpdf/signpdf';
 import { P12Signer } from '@signpdf/signer-p12';
 import { ContadorCertificadoService } from '../../cadastros/contadores/contador-certificado.service';
 import { RateLimitService } from '../../common/rate-limit.service';
-import { resultRows } from '../../common/db-result';
 import { DatabaseService } from '../../database/database.service';
 import {
   clientes,
@@ -22,19 +21,11 @@ import {
 } from '../../database/schema';
 import { StorageService } from '../../storage/storage.service';
 import { FaturamentoDocumentoService } from './faturamento-documento.service';
-
-export interface RevenueRow {
-  competencia: string;
-  tipo: string;
-  valor: string;
-  quantidade: number;
-}
-const cents = (value: string) => {
-  const [whole, fraction = ''] = value.split('.');
-  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2));
-};
-const decimal = (value: bigint) =>
-  `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
+import {
+  SimplesNacionalService,
+  type ReceitaBrutaCompetencia,
+} from './simples-nacional.service';
+import { centavos as cents, decimal } from './faturamento-relatorio';
 
 export function parseFaturamentoPeriod(start: string, end: string) {
   if (
@@ -58,61 +49,23 @@ export function parseFaturamentoPeriod(start: string, end: string) {
   return { first, last, startDate: `${start}-01`, nextDate: next };
 }
 
-export function buildFaturamentoMeses(
-  first: number,
-  last: number,
-  rows: RevenueRow[],
-) {
-  const values = new Map<
-    string,
-    {
-      products: bigint;
-      services: bigint;
-      countProducts: number;
-      countServices: number;
-    }
-  >();
-  for (const row of rows) {
-    const current = values.get(row.competencia) ?? {
-      products: 0n,
-      services: 0n,
-      countProducts: 0,
-      countServices: 0,
-    };
-    if (row.tipo === 'SERVICO') {
-      current.services += cents(row.valor);
-      current.countServices += Number(row.quantidade);
-    } else {
-      current.products += cents(row.valor);
-      current.countProducts += Number(row.quantidade);
-    }
-    values.set(row.competencia, current);
-  }
-  const meses: FaturamentoMesSnapshot[] = [];
+/** Snapshot mensal do relatório a partir da base de apuração de cada competência. */
+export function montarMesesFaturamento(receitas: ReceitaBrutaCompetencia[]) {
   let total = 0n;
-  for (let offset = first; offset <= last; offset++) {
-    const competencia = `${Math.floor(offset / 12)
-      .toString()
-      .padStart(4, '0')}-${String((offset % 12) + 1).padStart(2, '0')}`;
-    const row = values.get(competencia) ?? {
-      products: 0n,
-      services: 0n,
-      countProducts: 0,
-      countServices: 0,
+  const meses: FaturamentoMesSnapshot[] = receitas.map((receita) => {
+    total += cents(receita.receitaBruta);
+    return {
+      competencia: receita.competencia,
+      valorProdutos: receita.mercadorias,
+      valorServicos: receita.servicos,
+      valorTransportes: receita.transportes,
+      total: receita.receitaBruta,
+      origem: receita.origem,
+      detalhado: receita.detalhado,
     };
-    total += row.products + row.services;
-    meses.push({
-      competencia,
-      valorProdutos: decimal(row.products),
-      valorServicos: decimal(row.services),
-      total: decimal(row.products + row.services),
-      quantidadeProdutos: row.countProducts,
-      quantidadeServicos: row.countServices,
-    });
-  }
+  });
   return { meses, total: decimal(total) };
 }
-
 @Injectable()
 export class FaturamentoService {
   constructor(
@@ -121,10 +74,12 @@ export class FaturamentoService {
     private readonly certs: ContadorCertificadoService,
     private readonly pdf: FaturamentoDocumentoService,
     private readonly rateLimit: RateLimitService,
+    private readonly simples: SimplesNacionalService,
   ) {}
 
   async emitir(userId: string, inicio: string, fim: string, actorId = userId) {
-    const period = parseFaturamentoPeriod(inicio, fim);
+    // Valida o período (formato, ordem e limite de 120 competências).
+    parseFaturamentoPeriod(inicio, fim);
     await this.rateLimit.consume({
       key: `faturamento:emitir:${userId}`,
       limit: 12,
@@ -149,40 +104,9 @@ export class FaturamentoService {
       throw new ForbiddenException(
         'A emissão está indisponível para esta empresa.',
       );
-    const result = await this.database.db.execute(sql`
-      WITH receitas AS (
-        SELECT to_char(coalesce(df.data_emissao_fiscal, df.data_emissao::date), 'YYYY-MM') AS competencia,
-          'PRODUTO' AS tipo,
-          sum(i.valor_bruto_produto + coalesce(i.valor_frete, 0) + coalesce(i.valor_seguro, 0)
-            + coalesce(i.valor_outras_despesas, 0) - coalesce(i.valor_desconto, 0)) AS valor,
-          count(DISTINCT df.id)::int AS quantidade
-        FROM documentos_fiscais df
-        JOIN documentos_fiscais_itens i ON i.documento_fiscal_id = df.id
-        WHERE df.cliente_id = ${empresa.id}::uuid AND df.situacao = 'AUTORIZADA'
-          AND df.tipo_operacao_escriturada = 'SAIDA' AND df.tipo_documento IN ('NFE', 'NFCE')
-          AND i.ind_total = '1'
-          AND coalesce(i.cfop_xml, i.cfop) ~ '^[567](10[1-9]|11[0-9]|12[0-5]|35[1-9]|360|40[1-5]|65[1-6])$'
-          AND regexp_replace(upper(df.emitente_cnpj_cpf), '[^0-9A-Z]', '', 'g') = ${empresa.documento.toUpperCase().replace(/[^0-9A-Z]/g, '')}
-          AND coalesce(df.data_emissao_fiscal, df.data_emissao::date) >= ${period.startDate}::date
-          AND coalesce(df.data_emissao_fiscal, df.data_emissao::date) < ${period.nextDate}::date
-        GROUP BY 1
-        UNION ALL
-        SELECT to_char(coalesce(df.competencia_declarada, df.data_emissao_fiscal, df.data_emissao::date), 'YYYY-MM') AS competencia,
-          'SERVICO' AS tipo, sum(df.valor_total) AS valor, count(*)::int AS quantidade
-        FROM documentos_fiscais df
-        WHERE df.cliente_id = ${empresa.id}::uuid AND df.situacao = 'AUTORIZADA'
-          AND df.tipo_operacao_escriturada = 'SAIDA' AND df.tipo_documento = 'NFSE'
-          AND regexp_replace(upper(df.emitente_cnpj_cpf), '[^0-9A-Z]', '', 'g') = ${empresa.documento.toUpperCase().replace(/[^0-9A-Z]/g, '')}
-          AND coalesce(df.competencia_declarada, df.data_emissao_fiscal, df.data_emissao::date) >= ${period.startDate}::date
-          AND coalesce(df.competencia_declarada, df.data_emissao_fiscal, df.data_emissao::date) < ${period.nextDate}::date
-        GROUP BY 1
-      )
-      SELECT competencia, tipo, valor::text, quantidade FROM receitas ORDER BY competencia, tipo
-    `);
-    const { meses, total } = buildFaturamentoMeses(
-      period.first,
-      period.last,
-      resultRows<RevenueRow>(result),
+    // A receita de cada mês é a mesma base usada na apuração dos tributos.
+    const { meses, total } = montarMesesFaturamento(
+      await this.simples.receitaBrutaPorCompetencia(empresa.id, inicio, fim),
     );
     const codigo = `KTB-${randomBytes(16).toString('hex').toUpperCase()}`;
     const [record] = await this.database.db
@@ -276,7 +200,7 @@ export class FaturamentoService {
         .where(eq(relatoriosFaturamento.id, record.id))
         .catch(() => undefined);
       throw new ServiceUnavailableException(
-        'Não foi possível emitir o demonstrativo. Tente novamente.',
+        'Não foi possível emitir a relação de faturamento. Tente novamente.',
       );
     }
   }

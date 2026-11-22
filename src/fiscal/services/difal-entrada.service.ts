@@ -43,8 +43,17 @@ import {
 import { EstabelecimentoPerfilService } from './estabelecimento-perfil.service';
 import { regraResolvidaDe, type ResolucaoRegra } from './catalogo-resolucao';
 import {
+  enquadrarSt,
+  type StEnquadramentoResultado,
+  type StEnquadramentoStatus,
+} from './st-enquadramento';
+import {
+  verificarCenarioSt,
+  type StVerificacaoResultado,
+} from './st-verificacao';
+import {
   apurarItemAntecipacaoParcial,
-  CFOP_ANTECIPACAO_PARCIAL_BA,
+  CFOP_ANTECIPACAO_PARCIAL,
 } from './antecipacao-parcial';
 
 // CFOPs de ENTRADA interestadual de uso/consumo e ativo SEM ST. São os que
@@ -220,6 +229,9 @@ export class DifalEntradaService {
       periodo.competenciaFimDate,
       cadastroAtual,
     );
+    // UFs com regras de Antecipação Parcial cadastradas. A regra pertence ao
+    // estado, não ao CNPJ: o estabelecimento usa a da UF do seu perfil na data.
+    const ufsAntecipacao = await this.ufsComRegraAntecipacao(ufsDoMes);
     const aliquotaInternaReferencia =
       ALIQUOTA_INTERNA_REFERENCIA_LEGADA[uf] ?? null;
     // REGIME do adquirente (tarefa 2.7 — R1.6). O Simples Nacional recolhe o
@@ -256,6 +268,7 @@ export class DifalEntradaService {
         emitenteUf,
         valorBcIcms: documentosFiscaisItens.valorBcIcms,
         valorIcms: documentosFiscaisItens.valorIcms,
+        valorCreditoIcmsSn: documentosFiscaisItens.valorCreditoIcmsSn,
         valorIpi: documentosFiscaisItens.valorIpi,
         valorBrutoProduto: documentosFiscaisItens.valorBrutoProduto,
         aliquotaIcms: documentosFiscaisItens.aliquotaIcms,
@@ -286,9 +299,9 @@ export class DifalEntradaService {
           where,
           or(
             inArray(documentosFiscaisItens.cfop, [...CFOPS_DIFAL_ENTRADA]),
-            ufsDoMes.has('BA')
+            ufsAntecipacao.size > 0
               ? and(
-                  eq(documentosFiscaisItens.cfop, CFOP_ANTECIPACAO_PARCIAL_BA),
+                  eq(documentosFiscaisItens.cfop, CFOP_ANTECIPACAO_PARCIAL),
                   eq(documentosFiscais.tipoDocumento, 'NFE'),
                   eq(documentosFiscais.tipoOperacaoEscriturada, 'ENTRADA'),
                   sql`${documentosFiscais.tpNfXml} IS DISTINCT FROM '0'`,
@@ -317,18 +330,16 @@ export class DifalEntradaService {
       );
     };
     const itens = linhas.filter(
-      (item) =>
-        item.cfop !== CFOP_ANTECIPACAO_PARCIAL_BA && !intraestadual(item),
+      (item) => item.cfop !== CFOP_ANTECIPACAO_PARCIAL && !intraestadual(item),
     );
     const itensIntraestaduaisIgnorados = linhas.filter(
-      (item) =>
-        item.cfop !== CFOP_ANTECIPACAO_PARCIAL_BA && intraestadual(item),
+      (item) => item.cfop !== CFOP_ANTECIPACAO_PARCIAL && intraestadual(item),
     ).length;
     const entradasAntecipacao = linhas
       .filter(
         (item) =>
-          item.cfop === CFOP_ANTECIPACAO_PARCIAL_BA &&
-          perfilDe(item).uf === 'BA' &&
+          item.cfop === CFOP_ANTECIPACAO_PARCIAL &&
+          ufsAntecipacao.has(perfilDe(item).uf ?? '') &&
           !intraestadual(item),
       )
       .sort(
@@ -347,7 +358,10 @@ export class DifalEntradaService {
     );
     const resolucoesAntecipacao = await this.resolverPorDatas(
       'ANTECIPACAO_PARCIAL',
-      entradasAntecipacao.map((i) => ({ uf: 'BA', data: dataDoItem(i) })),
+      entradasAntecipacao.map((i) => ({
+        uf: perfilDe(i).uf,
+        data: dataDoItem(i),
+      })),
       competencia,
     );
     const regraAntecipacao =
@@ -356,8 +370,10 @@ export class DifalEntradaService {
       apurarItemAntecipacaoParcial(
         item,
         perfilDe(item).regimeTributario,
-        resolucoesAntecipacao.get(chaveResolucao('BA', dataDoItem(item)))
-          ?.versao ?? null,
+        resolucoesAntecipacao.get(
+          chaveResolucao(perfilDe(item).uf, dataDoItem(item)),
+        )?.versao ?? null,
+        perfilDe(item).uf ?? 'BA',
       ),
     );
     const totalAntecipacao = sumFiscalValues(
@@ -372,9 +388,18 @@ export class DifalEntradaService {
           uf,
           where,
           emitenteUf,
+          ufsAntecipacao.has(uf),
         )
       : [];
 
+    // ENQUADRAMENTO DE ST (regra do estado por CEST): confronta o sinal de ST do
+    // XML com a regra cadastrada para a UF do adquirente. Não altera totais.
+    const stPorItem = await this.enquadrarItensSt(
+      itens,
+      competenciaMensal,
+      perfilDe,
+      dataDoItem,
+    );
     let totalDifal = 0n;
     let totalFcp = 0n;
     let totalBase = 0n;
@@ -699,6 +724,7 @@ export class DifalEntradaService {
         estado_resolucao_regra: resolvida?.resolucao.estado ?? 'SEM_REGRA',
         regra_versao_id: regraVersao?.id ?? null,
         regra_revisao: regraVersao?.revisao ?? null,
+        st_enquadramento: stPorItem.itens.get(item.itemId) ?? null,
       };
     });
 
@@ -773,6 +799,7 @@ export class DifalEntradaService {
       total_difal_recolher: fromScaledInteger(totalDifal),
       total_fcp_recolher: fromScaledInteger(totalFcp),
       entradas_fora_do_calculo: entradasForaDoCalculo,
+      st: stPorItem.resumo,
       antecipacao_parcial: {
         total_apurado: totalAntecipacao,
         regra_configurada: regraAntecipacao != null,
@@ -783,6 +810,141 @@ export class DifalEntradaService {
     };
   }
 
+  /**
+   * Enquadra na ST os itens com sinal de ST no XML, pela regra do estado do
+   * adquirente (chave = CEST). A verificação da fonte (Convênio 142/18 e norma
+   * estadual) vale por UF e precede a regra, como no motor de ST.
+   */
+  private async enquadrarItensSt(
+    itens: ReadonlyArray<{
+      itemId: string;
+      cfop: string | null;
+      ncm: string | null;
+      cest: string | null;
+      cstIcms: string | null;
+      csosnIcms: string | null;
+      valorIcmsSt: string | null;
+      valorIcmsStRetido: string | null;
+      dataFato?: string | null;
+    }>,
+    competencia: string,
+    perfilDe: (item: { dataFato?: string | null }) => PerfilResolvido,
+    dataDoItem: (item: { dataFato?: string | null }) => string,
+  ) {
+    const resultado = new Map<
+      string,
+      StEnquadramentoResultado & { divergencia: string | null }
+    >();
+    const verificacoes = new Map<string, StVerificacaoResultado>();
+    const porStatus: Record<StEnquadramentoStatus, number> = {
+      SUJEITO: 0,
+      NAO_SUJEITO: 0,
+      PENDENCIA: 0,
+      BLOQUEADO: 0,
+    };
+    let divergencias = 0;
+    const catalogosEstaduais = new Map<
+      string,
+      Awaited<
+        ReturnType<FiscalNormativeCatalogService['resolverVersaoVigente']>
+      >
+    >();
+    for (const item of itens) {
+      const classificacao = classificarDifalHipotese({
+        tipoOperacaoEscriturada: 'ENTRADA',
+        cfop: item.cfop ?? '',
+        possuiSt:
+          toScaledInteger(item.valorIcmsSt ?? '0') > 0n ||
+          CST_ICMS_ST.has(item.cstIcms?.slice(-2) ?? '') ||
+          CSOSN_ICMS_ST.has(item.csosnIcms ?? ''),
+        stRetidaAnteriormente:
+          toScaledInteger(item.valorIcmsStRetido ?? '0') > 0n,
+      });
+      if (classificacao.hipotese !== 'ST') continue;
+      const uf = perfilDe(item).uf;
+      if (!uf) continue;
+      if (!verificacoes.has(uf)) {
+        const [nacional, estadual] = await Promise.all([
+          this.catalogo.resolverVersaoVigente({
+            tipo: 'ST_FCP',
+            uf: 'BR',
+            competencia,
+          }),
+          this.catalogo.resolverVersaoVigente({
+            tipo: 'ST_FCP',
+            uf,
+            competencia,
+          }),
+        ]);
+        catalogosEstaduais.set(uf, estadual);
+        verificacoes.set(
+          uf,
+          verificarCenarioSt({
+            uf,
+            competencia,
+            fonteNacional: nacional,
+            fonteEstadual: estadual,
+          }),
+        );
+      }
+      const verificacao = verificacoes.get(uf)!;
+      const cest = item.cest?.replace(/\D/g, '') || null;
+      const resolucao =
+        cest && verificacao.habilitado
+          ? await this.catalogo.resolverRegraPorData({
+              tipo: 'ST_FCP',
+              uf,
+              chave: cest,
+              data: dataDoItem(item),
+            })
+          : null;
+      const candidata =
+        resolucao?.estado === 'DEFINITIVA'
+          ? resolucao.regra
+          : resolucao?.estado === 'PENDENTE_APROVACAO'
+            ? (resolucao.candidatas[0] ?? null)
+            : null;
+      const texto = (v: unknown) => (typeof v === 'string' ? v : null);
+      const enquadramento = enquadrarSt({
+        produto: { cest, ncm: item.ncm },
+        uf,
+        competencia,
+        verificacao: verificacao.status,
+        catalogo: catalogosEstaduais.get(uf) ?? null,
+        regra: candidata
+          ? {
+              cest: cest ?? '',
+              sujeitoAst: candidata.conteudo.sujeito_ast === true,
+              mva: texto(candidata.conteudo.mva),
+              aliquotaFcp: texto(candidata.conteudo.aliquota_fcp),
+            }
+          : null,
+        regraAprovada: resolucao?.estado === 'DEFINITIVA',
+      });
+      // O XML indica ST, mas a norma aprovada do estado exclui o CEST.
+      const divergencia =
+        enquadramento.status === 'NAO_SUJEITO'
+          ? 'O XML indica ICMS-ST, mas a regra aprovada do estado exclui este CEST da ST. Confira a nota e a regra.'
+          : null;
+      if (divergencia) divergencias += 1;
+      porStatus[enquadramento.status] += 1;
+      resultado.set(item.itemId, { ...enquadramento, divergencia });
+    }
+    return {
+      itens: resultado,
+      resumo: {
+        itens: resultado.size,
+        por_status: porStatus,
+        divergencias,
+        verificacao_fonte: [...verificacoes.values()].map((v) => ({
+          uf: v.uf,
+          status: v.status,
+          habilitado: v.habilitado,
+          memoria: v.memoria,
+        })),
+      },
+    };
+  }
   /** Resolve a regra para cada (UF, data) distinta; uma consulta por par, nunca por item. */
   private async resolverPorDatas(
     chave: string,
@@ -807,14 +969,32 @@ export class DifalEntradaService {
     return out;
   }
 
+  /**
+   * UFs, entre as do período, com regra de Antecipação Parcial cadastrada.
+   * A BA permanece sempre elegível, como antes da regra por estado.
+   */
+  private async ufsComRegraAntecipacao(
+    ufsDoMes: ReadonlySet<string>,
+  ): Promise<Set<string>> {
+    const resultado = new Set<string>(ufsDoMes.has('BA') ? ['BA'] : []);
+    const outras = [...ufsDoMes].filter((u) => u !== 'BA');
+    if (outras.length === 0) return resultado;
+    for (const uf of await this.catalogo.ufsComRegra(
+      'ANTECIPACAO_PARCIAL',
+      outras,
+    ))
+      resultado.add(uf);
+    return resultado;
+  }
   private listarEntradasForaDoCalculo(
     clienteId: string,
     uf: string,
     periodo: SQL,
     emitenteUf: SQL<string | null>,
+    apuraAntecipacao: boolean,
   ) {
     const cfopsApurados = [...CFOPS_DIFAL_ENTRADA];
-    if (uf === 'BA') cfopsApurados.push(CFOP_ANTECIPACAO_PARCIAL_BA);
+    if (apuraAntecipacao) cfopsApurados.push(CFOP_ANTECIPACAO_PARCIAL);
     const emRevisao = sql`
       (NOT ${documentosFiscais.escriturado} OR ${documentosFiscaisItens.cfopRevisaoNecessaria})
     `;

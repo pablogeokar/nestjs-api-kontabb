@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Post,
   Put,
@@ -15,6 +16,8 @@ import type { CurrentUser as CurrentUserType } from '../../common/types';
 import {
   HomologarIcmsRegrasDto,
   QueryIcmsRegrasDto,
+  RemoverEnquadramentoIcmsDto,
+  SalvarEnquadramentoIcmsDto,
   SalvarIcmsRegrasDto,
 } from '../dto/icms-regras.dto';
 import { IcmsRegrasService } from '../services/icms-regras.service';
@@ -41,6 +44,22 @@ export class IcmsRegrasController {
     return { data: await this.service.salvar(input, user.id) };
   }
 
+  @Put('enquadramento')
+  @AdminOnly()
+  async salvarEnquadramento(
+    @Body() input: SalvarEnquadramentoIcmsDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return { data: await this.service.salvarEnquadramento(input, user.id) };
+  }
+  @Delete('enquadramento')
+  @AdminOnly()
+  async removerEnquadramento(
+    @Body() input: RemoverEnquadramentoIcmsDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return { data: await this.service.removerEnquadramento(input, user.id) };
+  }
   @Post('homologar')
   @AdminOnly()
   async homologar(

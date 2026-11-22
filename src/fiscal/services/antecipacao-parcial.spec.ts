@@ -411,3 +411,93 @@ describe('Antecipação Parcial — redução ME/EPP parametrizada (RICMS-BA art
     }
   });
 });
+
+type Credito = { criterio: string; descricao: string; valor: string | null };
+const creditoDe = (r: unknown) =>
+  (r as { credito_origem?: Credito | null }).credito_origem;
+describe('Antecipação Parcial — crédito conforme o regime do adquirente', () => {
+  const comRegime = (regime: string) => {
+    const r = regra(true);
+    (r.conteudo.enquadramentos as Record<string, unknown>[])[0].regime = regime;
+    return r;
+  };
+  const item102 = { ...item, valorBrutoProduto: '257.40' };
+
+  it('Simples comprando de Simples sem crédito (CSOSN 102): diferença de alíquotas, sem depender da nota', () => {
+    const r = apurarItemAntecipacaoParcial(
+      item102,
+      'SIMPLES_NACIONAL',
+      regra(true),
+    );
+    expect(r.situacao).toBe('CALCULADO');
+    expect(r.calculo?.valor_antecipacao).toBe('21.88');
+    expect(creditoDe(r)).toMatchObject({
+      criterio: 'ALIQUOTA_NAO_OPTANTE',
+      valor: null,
+    });
+    expect(creditoDe(r)?.descricao).toMatch(/CSOSN 102.*não altera/);
+  });
+
+  it('regime normal comprando de Simples sem permissão de crédito: nada a abater', () => {
+    const r = apurarItemAntecipacaoParcial(
+      item102,
+      'LUCRO_PRESUMIDO',
+      comRegime('LUCRO_PRESUMIDO'),
+    );
+    expect(r.situacao).toBe('CALCULADO');
+    // 20,5% sobre a base inteira, sem dedução.
+    expect(r.calculo?.valor_antecipacao).toBe('52.77');
+    expect(r.calculo?.deducao_origem).toBe('0.00');
+    expect(creditoDe(r)).toMatchObject({
+      criterio: 'SEM_CREDITO',
+      valor: '0.00',
+    });
+  });
+
+  it('regime normal comprando de Simples com crédito (CSOSN 101): abate só o crédito informado', () => {
+    const r = apurarItemAntecipacaoParcial(
+      {
+        ...item102,
+        csosnIcms: '101',
+        valorCreditoIcmsSn: '5.42',
+      },
+      'LUCRO_REAL',
+      comRegime('LUCRO_REAL'),
+    );
+    expect(r.calculo?.deducao_origem).toBe('5.42');
+    expect(r.calculo?.valor_antecipacao).toBe('47.35');
+    expect(creditoDe(r)).toMatchObject({
+      criterio: 'CREDITO_SIMPLES_DESTACADO',
+      valor: '5.42',
+    });
+  });
+
+  it('CSOSN 101 sem valor de crédito na nota fica pendente, sem presumir crédito', () => {
+    const r = apurarItemAntecipacaoParcial(
+      { ...item102, csosnIcms: '101' },
+      'LUCRO_REAL',
+      comRegime('LUCRO_REAL'),
+    );
+    expect(r.situacao).toBe('PENDENTE');
+    expect(r.motivo).toMatch(/permite crédito/);
+  });
+
+  it('regime normal abate o ICMS destacado quando há', () => {
+    const r = apurarItemAntecipacaoParcial(
+      { ...item102, csosnIcms: null, cstIcms: '00', valorIcms: '30.89' },
+      'LUCRO_REAL',
+      comRegime('LUCRO_REAL'),
+    );
+    expect(creditoDe(r)?.criterio).toBe('ICMS_DESTACADO');
+    expect(r.calculo?.deducao_origem).toBe('30.89');
+  });
+
+  it('regime normal sem CSOSN nem ICMS destacado continua pendente', () => {
+    const r = apurarItemAntecipacaoParcial(
+      { ...item102, csosnIcms: null, cstIcms: '00', valorIcms: null },
+      'LUCRO_REAL',
+      comRegime('LUCRO_REAL'),
+    );
+    expect(r.situacao).toBe('PENDENTE');
+  });
+});
