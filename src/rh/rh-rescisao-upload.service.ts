@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ClientesService } from '../clientes/clientes.service';
 import { StorageService } from '../storage/storage.service';
 import { AppLogger } from '../common/logger.service';
+import { MailService } from '../mail/mail.service';
 import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
 import { sanitizeFileName } from '../common/file-validation';
 import {
@@ -41,6 +42,7 @@ export class RhRescisaoUploadService {
     private readonly clientesService: ClientesService,
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
+    private readonly mail: MailService,
   ) {}
 
   async processFile(
@@ -141,6 +143,25 @@ export class RhRescisaoUploadService {
         cnpj: dados.cnpj,
         funcionarioNome: dados.funcionarioNome,
       };
+    }
+
+    // Avisa o cliente (fire-and-forget). Clientes suspensos não recebem e-mail.
+    if (!client.suspenso && client.emails && client.emails.length > 0) {
+      const [ano, mes, dia] = dados.dataDesligamento.split('-');
+      this.mail
+        .sendRescisaoNotificationEmail({
+          to: client.emails,
+          clientName: client.razaoSocial,
+          funcionarioNome: dados.funcionarioNome,
+          dataDesligamento: `${dia}/${mes}/${ano}`,
+          totalLiquido: String(dados.totalLiquido),
+        })
+        .catch((err) => {
+          this.logger.error('rh_rescisao_email_notification_failed', err, {
+            requestId: ctx.requestId,
+            clienteId: client.id,
+          });
+        });
     }
 
     return {
