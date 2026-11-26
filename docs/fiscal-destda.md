@@ -20,22 +20,22 @@ Nacional, para validação e transmissão no SEDIF-SN.
 ISO-8859-1, linhas terminadas em CRLF, campos delimitados por `|`, decimais com
 vírgula e duas casas, datas `ddmmaaaa`.
 
-| Bloco | Registros                                                      |
-| ----- | -------------------------------------------------------------- |
+| Bloco | Registros                                                       |
+| ----- | --------------------------------------------------------------- |
 | 0     | 0000, 0001, 0002 (por UF de substituto), 0005, 0030, 0100, 0990 |
-| G     | G001, G020, G600/G605, G610/G615, G620/G625, G990              |
+| G     | G001, G020, G600/G605, G610/G615, G620/G625, G990               |
 | 9     | 9001, 9900 (um por registro), 9990, 9999                        |
 
 Os registros 9020/9030 (arquivos associados) não são gerados.
 
 ## Origem dos valores
 
-| Registro   | Conteúdo                                              | Fonte no sistema                                                                                                 |
-| ---------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| G605 (0/1) | DIFAL de entrada: ativo (CFOP 2551) e uso/consumo (2556) | `DifalEntradaService` (itens `DIFAL_ENTRADA_CONTRIBUINTE`, `CALCULADO`, com recolhimento próprio)              |
-| G605 (3)   | Antecipação parcial (sem encerramento de fase)         | `antecipacao_parcial` do `DifalEntradaService` (itens `CALCULADO`)                                              |
-| G615       | DIFAL de venda interestadual a não contribuinte (EC 87), por UF | NF-e de saída: `valor_icms_uf_dest` + `valor_fcp_uf_dest`                                              |
-| G625       | ICMS-ST retido como substituto, por UF de destino     | NF-e de saída interestadual: `valor_icms_st` + `valor_fcp_st`. CFOP 6.651 a 6.667 vão como combustível (tipo 3) |
+| Registro   | Conteúdo                                                        | Fonte no sistema                                                                                                |
+| ---------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| G605 (0/1) | DIFAL de entrada: ativo (CFOP 2551) e uso/consumo (2556)        | `DifalEntradaService` (itens `DIFAL_ENTRADA_CONTRIBUINTE`, `CALCULADO`, com recolhimento próprio)               |
+| G605 (3)   | Antecipação parcial (sem encerramento de fase)                  | `antecipacao_parcial` do `DifalEntradaService` (itens `CALCULADO`)                                              |
+| G615       | DIFAL de venda interestadual a não contribuinte (EC 87), por UF | NF-e de saída: `valor_icms_uf_dest` + `valor_fcp_uf_dest`                                                       |
+| G625       | ICMS-ST retido como substituto, por UF de destino               | NF-e de saída interestadual: `valor_icms_st` + `valor_fcp_st`. CFOP 6.651 a 6.667 vão como combustível (tipo 3) |
 
 G600, G610 e G620 são os totalizadores calculados a partir dos filhos. Cada
 filho informa NF, ajuste e valor a declarar (NF menos ajuste).
@@ -99,24 +99,39 @@ IM, Suframa, NIRE, telefone/fax e ajustes do perfil 0030. Município, fantasia,
 IM, Suframa, telefone e fax usam a configuração do SPED quando a da DeSTDA está
 vazia.
 
-Perfil 0030 padrão: `IND_ED` 3, `IND_ARQ` 7, `PRF_ISS` 9, `PRF_ICMS` 0,
-`PRF_RIDF`/`RUDF`/`LMC`/`RV`/`RI` 1, `IND_EC` 9, `IND_ISS`/`RT` 1, `IND_ICMS` 0,
-`IND_IPI` 1. `IND_ST` e `IND_AT` são derivados do movimento. Qualquer campo pode
-ser sobrescrito no `perfil` da configuração.
+Perfil 0030: o SEDIF v1.0.9.0 só aceita `IND_ED` (3), `IND_ARQ` (7), `PRF_ISS`
+(9), `PRF_ICMS` (0) e `IND_ST` (derivado do movimento). Todos os demais campos
+saem nulos, independentemente da configuração.
+
+## Ajustes após a primeira validação no SEDIF (23/11/2026)
+
+- CRC sai sem máscara, com 10 caracteres: `BA-013372/O-1` vira `BA013372O1`.
+- Telefone e fax (0005 e 0100) saem só com dígitos (máx. 12).
+- G600 sempre traz quatro G605 (IND_SIT 0 a 3); situações sem valor saem com
+  NF vazia e valor a declarar `0,00`.
+- G605 com IND_SIT 3 não preenche o valor das NFs (só o valor a declarar), e o
+  G600 não soma esse valor no total das NFs.
+- Com movimento, o arquivo traz um único G620 (saída interestadual, emissão
+  própria) e, para cada UF do 0000, dos 0002 e com valor, quatro G625
+  (IND_TP_ST 0 a 3).
+
+As regras de NF vazia no IND_SIT 3 e o G620 obrigatório foram deduzidas das
+críticas do SEDIF, não do manual. Reenvie o arquivo ao validador para
+confirmar.
 
 ## Endpoints
 
 Cliente: `/api/fiscal/destda/...`. Staff: `/api/admin/fiscal/destda/...` (com
 `clienteId`).
 
-| Método | Rota                       | Descrição                                       |
-| ------ | -------------------------- | ----------------------------------------------- |
-| GET    | `/configuracao`            | Obter a configuração                            |
-| PUT    | `/configuracao`            | Atualizar a configuração                        |
-| GET    | `/preview`                 | Prévia: totais, contadores e inconsistências    |
-| POST   | `/gerar`                   | Gera, armazena e baixa o TXT                    |
-| GET    | `/historico`               | Arquivos gerados                                |
-| GET    | `/arquivos/:id/download`   | Baixa novamente um arquivo gerado               |
+| Método | Rota                     | Descrição                                    |
+| ------ | ------------------------ | -------------------------------------------- |
+| GET    | `/configuracao`          | Obter a configuração                         |
+| PUT    | `/configuracao`          | Atualizar a configuração                     |
+| GET    | `/preview`               | Prévia: totais, contadores e inconsistências |
+| POST   | `/gerar`                 | Gera, armazena e baixa o TXT                 |
+| GET    | `/historico`             | Arquivos gerados                             |
+| GET    | `/arquivos/:id/download` | Baixa novamente um arquivo gerado            |
 
 `preview` e `gerar` recebem `competencia` (`AAAA-MM`) e `finalidade` (0 ou 1).
 

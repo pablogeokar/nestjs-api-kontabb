@@ -54,7 +54,7 @@ function entrada(totais: DestdaTotais): DestdaBuilderInput {
       codAssin: '900',
       cnpj: null,
       cpf: '98765432100',
-      crc: 'BA012345',
+      crc: 'BA-012345/O-1',
       uf: 'BA',
       codMun: '2927408',
     },
@@ -117,9 +117,9 @@ describe('buildDestdaFile', () => {
     );
     expect(lines).toContain('|0002|SP|111222333444|');
     expect(lines).toContain('|G020|2|01022026|28022026|');
-    expect(lines).toContain('|G600|1123,50|250,00|873,50|');
+    expect(lines).toContain('|G600|123,50|250,00|873,50|');
     expect(lines).toContain('|G605|1|123,50||123,50|');
-    expect(lines).toContain('|G605|3|1000,00|250,00|750,00|');
+    expect(lines).toContain('|G605|3||250,00|750,00|');
   });
 
   it('totaliza pai e filhos coerentemente e separa combustível no G620', () => {
@@ -174,6 +174,39 @@ describe('buildDestdaFile', () => {
     expect(built.totais.totalADeclarar).toBe('167.99');
   });
 
+  it('atende as críticas do SEDIF: 0030 nulo, CRC/fone, G605 x4 e G620 único', () => {
+    const base = entrada({
+      entradas: [{ indSit: '3', totalNf: 16923n, ajustes: 0n }],
+      consumoFinal: [],
+      st: [],
+    });
+    const built = buildDestdaFile({
+      ...base,
+      inscricoesSubstituto: [],
+      responsavel: { ...base.responsavel, fone: '(75) 3625-6773' },
+      contabilista: { ...base.contabilista, fone: '(75) 3625-6773' },
+    });
+    expect(built.lines).toEqual(
+      expect.arrayContaining([
+        '|0030|3|7|9|0||||||||||0||||',
+        '|0100|Contador Exemplo|900||98765432100|BA012345O1||||||BA|2927408|||7536256773|||',
+        '|G600|||169,23|',
+        '|G605|0|||0,00|',
+        '|G605|1|||0,00|',
+        '|G605|2|||0,00|',
+        '|G605|3|||169,23|',
+        '|G625|BA|0|||0,00|',
+        '|G625|BA|3|||0,00|',
+      ]),
+    );
+    expect(built.recordCounts['G620']).toBe(1);
+    expect(built.recordCounts['G625']).toBe(4);
+    expect(validateDestdaFile(built.bytes)).toMatchObject({
+      valid: true,
+      issues: [],
+    });
+  });
+
   it('gera arquivo sem movimento com G020 indicando guia sem dados', () => {
     const built = buildDestdaFile(entrada(vazio));
     expect(built.semMovimento).toBe(true);
@@ -194,7 +227,7 @@ describe('buildDestdaFile', () => {
     const totalLines = built.lines.length;
     expect(built.lines.at(-1)).toBe(`|9999|${totalLines}|`);
     expect(built.lines).toContain('|9900|0000|1|');
-    expect(built.lines).toContain('|9900|G605|1|');
+    expect(built.lines).toContain('|9900|G605|4|');
     expect(built.lines).toContain(
       '|9900|9900|' + built.recordCounts['9900'] + '|',
     );

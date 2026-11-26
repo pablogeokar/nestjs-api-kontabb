@@ -171,7 +171,10 @@ export function buildDestdaFile(input: DestdaBuilderInput): BuiltDestdaFile {
     totais.st.length === 0;
 
   const bloco0 = buildBloco0(input, inicio, fim);
-  const blocoG = buildBlocoG(totais, inicio, fim, semMovimento);
+  const blocoG = buildBlocoG(totais, inicio, fim, semMovimento, [
+    input.empresa.uf,
+    ...input.inscricoesSubstituto.map((i) => i.uf),
+  ]);
   const antesDoBloco9 = [...bloco0, ...blocoG];
   const records = Object.freeze([
     ...antesDoBloco9,
@@ -221,8 +224,8 @@ function buildBloco0(
       textField(responsavel.bairro),
       '', // CEP_CP
       '', // CP
-      textField(responsavel.fone),
-      textField(responsavel.fax),
+      telefoneField(responsavel.fone),
+      telefoneField(responsavel.fax),
       textField(responsavel.email),
     ),
     createSpedRecord(
@@ -231,19 +234,20 @@ function buildBloco0(
       textField(perfil.indArq),
       textField(perfil.prfIss),
       textField(perfil.prfIcms),
-      textField(perfil.prfRidf),
-      textField(perfil.prfRudf),
-      textField(perfil.prfLmc),
-      textField(perfil.prfRv),
-      textField(perfil.prfRi),
-      textField(perfil.indEc),
-      textField(perfil.indIss),
-      textField(perfil.indRt),
-      textField(perfil.indIcms),
+      // O SEDIF (v1.0.9.0) exige nulos todos os campos abaixo, exceto IND_ST.
+      '', // PRF_RIDF
+      '', // PRF_RUDF
+      '', // PRF_LMC
+      '', // PRF_RV
+      '', // PRF_RI
+      '', // IND_EC
+      '', // IND_ISS
+      '', // IND_RT
+      '', // IND_ICMS
       textField(perfil.indSt),
-      textField(perfil.indAt),
-      textField(perfil.indIpi),
-      textField(perfil.indRiAvulso),
+      '', // IND_AT
+      '', // IND_IPI
+      '', // IND_RI
     ),
     createSpedRecord(
       '0100',
@@ -251,7 +255,7 @@ function buildBloco0(
       textField(contabilista.codAssin),
       textField(contabilista.cnpj),
       textField(contabilista.cpf),
-      textField(contabilista.crc),
+      textField(normalizarCrc(contabilista.crc)),
       textField(contabilista.cep),
       textField(contabilista.endereco),
       textField(contabilista.numero),
@@ -261,8 +265,8 @@ function buildBloco0(
       textField(contabilista.codMun),
       '', // CEP_CP
       '', // CP
-      textField(contabilista.fone),
-      textField(contabilista.fax),
+      telefoneField(contabilista.fone),
+      telefoneField(contabilista.fax),
       textField(contabilista.email),
     ),
   );
@@ -313,6 +317,7 @@ function buildBlocoG(
   inicio: string,
   fim: string,
   semMovimento: boolean,
+  ufsObrigatoriasSt: readonly string[],
 ): SpedRecord[] {
   const conteudo: SpedRecord[] = [
     createSpedRecord(
@@ -324,21 +329,36 @@ function buildBlocoG(
   ];
 
   if (totais.entradas.length > 0) {
+    // O SEDIF exige as quatro situações (0 a 3) sob o G600. Na situação 3
+    // (antecipação sem encerramento de fase) o valor das NFs fica vazio.
+    const porSit = new Map(totais.entradas.map((l) => [l.indSit, l]));
+    const linhas = (['0', '1', '2', '3'] as const).map((indSit) => {
+      const linha = porSit.get(indSit);
+      const totalNf = linha?.totalNf ?? ZERO;
+      const ajustes = linha?.ajustes ?? ZERO;
+      return {
+        indSit,
+        nfInformada: indSit === '3' ? ZERO : totalNf,
+        ajustes,
+        declarar: valorADeclarar(totalNf, ajustes),
+      };
+    });
     conteudo.push(
       createSpedRecord(
         'G600',
-        ...tresValores(
-          soma(totais.entradas, (l) => l.totalNf),
-          soma(totais.entradas, (l) => l.ajustes),
-        ),
+        valorOuVazio(soma(linhas, (l) => l.nfInformada)),
+        valorOuVazio(soma(linhas, (l) => l.ajustes)),
+        moneyField(soma(linhas, (l) => l.declarar)),
       ),
     );
-    for (const linha of totais.entradas) {
+    for (const linha of linhas) {
       conteudo.push(
         createSpedRecord(
           'G605',
           linha.indSit,
-          ...tresValores(linha.totalNf, linha.ajustes),
+          valorOuVazio(linha.nfInformada),
+          valorOuVazio(linha.ajustes),
+          moneyField(linha.declarar),
         ),
       );
     }
@@ -365,38 +385,50 @@ function buildBlocoG(
     }
   }
 
-  const grupos = new Map<
-    string,
-    { indOper: DestdaIndOper; indEmit: DestdaIndEmit; linhas: DestdaLinhaSt[] }
-  >();
-  for (const linha of totais.st) {
-    const chave = `${linha.indOper}${linha.indEmit}`;
-    const grupo = grupos.get(chave) ?? {
-      indOper: linha.indOper,
-      indEmit: linha.indEmit,
-      linhas: [],
-    };
-    grupo.linhas.push(linha);
-    grupos.set(chave, grupo);
-  }
-  for (const grupo of grupos.values()) {
-    const semCombustivel = grupo.linhas.filter((l) => l.indTpSt !== '3');
-    const combustivel = grupo.linhas.filter((l) => l.indTpSt === '3');
-    const totalNf = soma(semCombustivel, (l) => l.totalNf);
-    const ajustes = soma(semCombustivel, (l) => l.ajustes);
-    const totalComb = soma(combustivel, (l) =>
-      valorADeclarar(l.totalNf, l.ajustes),
+  if (!semMovimento) {
+    // O SEDIF exige um único G620 (saídas interestaduais, emissão própria) e,
+    // sob ele, as quatro situações (0 a 3) para cada UF de origem (0000) e de
+    // substituto (0002), além das UFs com valor.
+    for (const linha of totais.st) {
+      if (linha.indOper !== '1' || linha.indEmit !== '0') {
+        throw new TypeError(
+          'DeSTDA: apenas saídas interestaduais com emissão própria são suportadas no G620.',
+        );
+      }
+    }
+    const ufs = new Set<string>([
+      ...ufsObrigatoriasSt,
+      ...totais.st.map((l) => l.uf),
+    ]);
+    const porChave = new Map(totais.st.map((l) => [`${l.uf}|${l.indTpSt}`, l]));
+    const linhas = [...ufs].sort().flatMap((uf) =>
+      (['0', '1', '2', '3'] as const).map((indTpSt) => {
+        const linha = porChave.get(`${uf}|${indTpSt}`);
+        return {
+          uf,
+          indTpSt,
+          totalNf: linha?.totalNf ?? ZERO,
+          ajustes: linha?.ajustes ?? ZERO,
+        };
+      }),
     );
+    const semCombustivel = linhas.filter((l) => l.indTpSt !== '3');
+    const combustivel = linhas.filter((l) => l.indTpSt === '3');
     conteudo.push(
       createSpedRecord(
         'G620',
-        grupo.indOper,
-        grupo.indEmit,
-        ...tresValores(totalNf, ajustes),
-        valorOuVazio(totalComb),
+        '1',
+        '0',
+        ...tresValores(
+          soma(semCombustivel, (l) => l.totalNf),
+          soma(semCombustivel, (l) => l.ajustes),
+        ),
+        valorOuVazio(
+          soma(combustivel, (l) => valorADeclarar(l.totalNf, l.ajustes)),
+        ),
       ),
     );
-    for (const linha of grupo.linhas) {
+    for (const linha of linhas) {
       conteudo.push(
         createSpedRecord(
           'G625',
@@ -439,10 +471,23 @@ function buildBloco9(antesDoBloco9: readonly SpedRecord[]): SpedRecord[] {
   ];
 }
 
-/** NF, ajustes (vazio quando zero) e valor a declarar. */
+/** Apenas dígitos (o SEDIF não aceita máscara no telefone). */
+function telefoneField(value: string | null | undefined): SpedFieldValue {
+  return textField((value ?? '').replace(/\D/gu, '') || null);
+}
+
+/**
+ * CRC no formato do SEDIF (10 caracteres): UF + 6 dígitos + tipo + dígito
+ * verificador, sem separadores. Ex.: "BA-013372/O-1" vira "BA013372O1".
+ */
+export function normalizarCrc(value: string): string {
+  return value.replace(/[^0-9A-Za-z]/gu, '').toUpperCase();
+}
+
+/** NF e ajustes (vazios quando zero) e valor a declarar (sempre informado). */
 function tresValores(totalNf: Centavos, ajustes: Centavos): SpedFieldValue[] {
   return [
-    moneyField(totalNf),
+    valorOuVazio(totalNf),
     valorOuVazio(ajustes),
     moneyField(valorADeclarar(totalNf, ajustes)),
   ];

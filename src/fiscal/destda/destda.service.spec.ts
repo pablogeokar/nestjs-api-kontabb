@@ -49,7 +49,7 @@ const contador = {
   id: 'contador-1',
   nome: 'Contador Exemplo',
   cpf: '98765432100',
-  crc: 'BA012345',
+  crc: 'BA-012345/O-1',
   cnpj: null,
   cep: null,
   logradouro: null,
@@ -149,7 +149,7 @@ describe('DestdaService', () => {
       '0002': 1,
       G600: 1,
       G615: 1,
-      G625: 1,
+      G625: 8,
     });
   });
 
