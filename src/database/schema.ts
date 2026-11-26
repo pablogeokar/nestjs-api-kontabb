@@ -16,6 +16,8 @@ export * from './schemas/folhas_pagamento';
 export * from './schemas/funcionarios_rh';
 export * from './schemas/visualizacoes_folhas';
 export * from './schemas/itens_folha_pagamento';
+export * from './schemas/rescisoes';
+export * from './schemas/rescisao_documentos';
 export * from './schemas/certificados_digitais';
 export * from './schemas/cfops';
 export * from './schemas/cfop_equivalencias';

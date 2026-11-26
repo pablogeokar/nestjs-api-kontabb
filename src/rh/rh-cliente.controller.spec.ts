@@ -36,6 +36,7 @@ describe('RhClienteController', () => {
       rhService as never,
       clientesService as never,
       storage as never,
+      {} as never,
     );
     return { controller, rhService, storage };
   }

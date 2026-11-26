@@ -1,23 +1,34 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   HttpCode,
   HttpStatus,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
   Post,
+  UploadedFile,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { RhService } from './rh.service';
+import { RhRescisaoService } from './rh-rescisao.service';
+import {
+  RhRescisaoUploadService,
+  type RhFileResult,
+} from './rh-rescisao-upload.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { StorageService } from '../storage/storage.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -37,20 +48,14 @@ import {
   extractDadosFerias,
   isReciboFerias,
 } from '../common/pdf-extraction-ferias';
+import {
+  detectRescisaoDocumentoTipo,
+  isRescisaoDocumentoTipo,
+  type RescisaoDocumentoTipo,
+} from '../common/pdf-extraction-rescisao';
 import { sanitizeFileName } from '../common/file-validation';
 import type { CurrentUser as CurrentUserType } from '../common/types';
 import { normalizeCnpjIdentifier } from '../common/cnpj-identifier';
-
-interface RhFileResult {
-  fileName: string;
-  success: boolean;
-  message: string;
-  cnpj?: string;
-  competencia?: string;
-  totalFuncionarios?: number;
-  tipo?: 'FOLHA_MENSAL' | 'FERIAS' | 'ADIANTAMENTO_13';
-  funcionarioNome?: string;
-}
 
 @ApiTags('RH (Admin)')
 @ApiBearerAuth('session-token')
@@ -65,6 +70,8 @@ export class RhUploadController {
     private readonly logger: AppLogger,
     private readonly rateLimit: RateLimitService,
     private readonly mail: MailService,
+    private readonly rescisaoService: RhRescisaoService,
+    private readonly rescisaoUpload: RhRescisaoUploadService,
   ) {}
 
   @Post('upload')
@@ -112,14 +119,28 @@ export class RhUploadController {
       throw new BadRequestException('Nenhum arquivo enviado.');
     }
 
-    const results: RhFileResult[] = [];
+    // Valida e extrai o texto de todos os arquivos primeiro: o TRCT precisa ser
+    // processado antes dos demais documentos da rescisão (que se anexam a ele).
+    const prepared = await Promise.all(
+      files.map((file) => this.prepareFile(file)),
+    );
+    const order = prepared
+      .map((item, index) => ({ item, index }))
+      .sort(
+        (a, b) =>
+          Number(b.item.rescisaoTipo === 'TRCT') -
+          Number(a.item.rescisaoTipo === 'TRCT'),
+      );
 
-    for (const file of files) {
-      const result = await this.processFile(file, {
-        requestId,
-        actorUserId: currentUser.id,
-      });
-      results.push(result);
+    const results = new Array<RhFileResult>(files.length);
+    for (const { item, index } of order) {
+      results[index] =
+        'result' in item
+          ? item.result
+          : await this.processPrepared(item, {
+              requestId,
+              actorUserId: currentUser.id,
+            });
     }
 
     return {
@@ -131,37 +152,163 @@ export class RhUploadController {
     };
   }
 
-  private async processFile(
-    file: Express.Multer.File,
-    ctx: { requestId: string; actorUserId: string },
-  ): Promise<RhFileResult> {
+  @Post('folhas/:folhaId/rescisao/documentos')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Anexar documento a uma rescisão',
+    description:
+      'Anexa manualmente um PDF (aviso prévio, guia do seguro-desemprego, etc.) a uma rescisão existente.',
+  })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'tipoDocumento'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        tipoDocumento: {
+          type: 'string',
+          enum: [
+            'TRCT',
+            'AVISO_PREVIO',
+            'EXAME_DEMISSIONAL',
+            'GUIA_SEGURO_DESEMPREGO',
+            'CARTA_RECOMENDACAO',
+            'HISTORICO_INSS',
+            'OUTRO',
+          ],
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Documento anexado.' })
+  @ApiResponse({ status: 400, description: 'Arquivo ou tipo inválido.' })
+  @ApiResponse({ status: 404, description: 'Rescisão não encontrada.' })
+  async anexarDocumentoRescisao(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: { tipoDocumento?: string },
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.rateLimit.consume({
+      key: `rh-upload:${currentUser.id}`,
+      limit: 10,
+      windowMs: 60_000,
+    });
+    const requestId = this.logger.generateRequestId();
+
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado.');
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('Apenas arquivos PDF são aceitos.');
+    }
+    if (!hasValidFileSignature(new Uint8Array(file.buffer), file.mimetype)) {
+      throw new BadRequestException(
+        'Conteúdo do arquivo não corresponde a um PDF válido.',
+      );
+    }
+    const tipo = body.tipoDocumento;
+    // O TRCT só entra pela criação da rescisão (upload automático).
+    if (!isRescisaoDocumentoTipo(tipo) || tipo === 'TRCT') {
+      throw new BadRequestException('Tipo de documento inválido.');
+    }
+
+    const rescisao = await this.rescisaoService.getRescisaoByFolha(folhaId);
+    if (!rescisao) throw new NotFoundException('Rescisão não encontrada.');
+
+    const r2Key = `rh/rescisoes/${rescisao.clienteId}/${rescisao.id}/${tipo.toLowerCase()}-${crypto.randomUUID()}.pdf`;
+    try {
+      await this.storage.upload(
+        r2Key,
+        Buffer.from(file.buffer),
+        'application/pdf',
+      );
+    } catch (error) {
+      this.logger.error('rh_rescisao_documento_storage_failed', error, {
+        requestId,
+      });
+      throw new BadRequestException(
+        'Falha ao armazenar o arquivo. Tente novamente.',
+      );
+    }
+
+    const result = await this.rescisaoService.anexarDocumento({
+      rescisaoId: rescisao.id,
+      tipo,
+      r2Key,
+      fileName: sanitizeFileName(file.originalname),
+      actorUserId: currentUser.id,
+      requestId,
+    });
+    if (!result.ok) {
+      await this.storage.delete(r2Key).catch(() => {});
+      throw new BadRequestException(
+        result.code === 'DOCUMENTO_DUPLICADO'
+          ? 'Este tipo de documento já foi anexado à rescisão.'
+          : 'Falha ao anexar o documento. Tente novamente.',
+      );
+    }
+    return { success: true, documentoId: result.documentoId };
+  }
+
+  private async prepareFile(file: Express.Multer.File): Promise<
+    | { result: RhFileResult; rescisaoTipo?: undefined }
+    | {
+        file: Express.Multer.File;
+        text: string;
+        rescisaoTipo: RescisaoDocumentoTipo | null;
+      }
+  > {
     if (file.mimetype !== 'application/pdf') {
       return {
-        fileName: file.originalname,
-        success: false,
-        message: 'Apenas arquivos PDF são aceitos.',
+        result: {
+          fileName: file.originalname,
+          success: false,
+          message: 'Apenas arquivos PDF são aceitos.',
+        },
       };
     }
 
     const bytes = new Uint8Array(file.buffer);
     if (!hasValidFileSignature(bytes, file.mimetype)) {
       return {
-        fileName: file.originalname,
-        success: false,
-        message: 'Conteúdo do arquivo não corresponde a um PDF válido.',
+        result: {
+          fileName: file.originalname,
+          success: false,
+          message: 'Conteúdo do arquivo não corresponde a um PDF válido.',
+        },
       };
     }
 
-    // Extract text from PDF
-    let text: string;
     try {
-      text = await extractPdfText(Buffer.from(file.buffer));
+      const text = await extractPdfText(Buffer.from(file.buffer));
+      return { file, text, rescisaoTipo: detectRescisaoDocumentoTipo(text) };
     } catch {
       return {
-        fileName: file.originalname,
-        success: false,
-        message: 'Falha ao extrair texto do PDF.',
+        result: {
+          fileName: file.originalname,
+          success: false,
+          message: 'Falha ao extrair texto do PDF.',
+        },
       };
+    }
+  }
+
+  private async processPrepared(
+    item: {
+      file: Express.Multer.File;
+      text: string;
+      rescisaoTipo: RescisaoDocumentoTipo | null;
+    },
+    ctx: { requestId: string; actorUserId: string },
+  ): Promise<RhFileResult> {
+    const { file, text, rescisaoTipo } = item;
+
+    if (rescisaoTipo) {
+      return this.rescisaoUpload.processFile(file, text, rescisaoTipo, ctx);
     }
 
     if (isReciboFerias(text)) {

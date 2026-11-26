@@ -268,6 +268,46 @@ export class MailService {
     return this.sendEmail(payload, 'ferias_notification');
   }
 
+  async sendRescisaoNotificationEmail(params: {
+    to: string | string[];
+    clientName: string;
+    funcionarioNome: string;
+    dataDesligamento: string;
+    totalLiquido: string;
+  }): Promise<boolean> {
+    const { to, clientName, funcionarioNome, dataDesligamento, totalLiquido } =
+      params;
+
+    if (!this.apiToken) {
+      this.logger.warn('mailtrap_not_configured', {
+        operation: 'rescisao_notification',
+        result: 'skipped',
+      });
+      return false;
+    }
+
+    const recipients = Array.isArray(to)
+      ? to.map((email) => ({ email }))
+      : [{ email: to }];
+
+    if (recipients.length === 0) return false;
+
+    const payload = {
+      from: { email: this.senderEmail, name: this.senderName },
+      to: recipients,
+      subject: `Rescisão de contrato disponível · ${funcionarioNome}`,
+      text: `Olá, ${clientName}\n\nA rescisão do colaborador ${funcionarioNome} (desligamento em ${dataDesligamento}) está disponível na área de RH do portal.\n\nResumo:\n• Colaborador: ${funcionarioNome}\n• Data de desligamento: ${dataDesligamento}\n• Total líquido da rescisão: R$ ${this.formatCurrency(totalLiquido)}\n\nAcesse o portal para consultar e baixar o TRCT e os demais documentos: ${this.portalUrl}/cliente\n\nAviso: Nunca enviamos documentos em anexo por e-mail.\n\n—\nKontabb · Contabilidade Borges`,
+      html: this.buildRescisaoHtml({
+        clientName,
+        funcionarioNome,
+        dataDesligamento,
+        totalLiquido,
+      }),
+    };
+
+    return this.sendEmail(payload, 'rescisao_notification');
+  }
+
   async sendWelcomeEmail(params: {
     to: string | string[];
     clientName: string;
@@ -808,6 +848,36 @@ export class MailService {
         <span style="font-size:16px;font-weight:700;color:#0B1F3A;">${esc(funcionarioNome)} · Competência ${esc(competencia)}</span>
         <table width="100%" style="margin-top:16px;"><tr>
           <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Período de Gozo</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(periodoGozo)}</span></td>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Total Líquido</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">R$ ${esc(this.formatCurrency(totalLiquido))}</span></td>
+        </tr></table>
+      </td></tr></table>
+      <p style="text-align:center;">
+        <a href="${esc(this.portalUrl)}/cliente" style="display:inline-block;background:#1456A3;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:600;">Acessar Portal</a>
+      </p>
+    `;
+
+    return this.layout.wrap(bodyContent);
+  }
+
+  private buildRescisaoHtml(params: {
+    clientName: string;
+    funcionarioNome: string;
+    dataDesligamento: string;
+    totalLiquido: string;
+  }): string {
+    const { clientName, funcionarioNome, dataDesligamento, totalLiquido } =
+      params;
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const bodyContent = `
+      <p style="font-size:20px;font-weight:700;color:#0B1F3A;">Olá, ${esc(clientName)}</p>
+      <p style="color:#5F6B7A;line-height:1.6;">A rescisão de contrato de <strong>${esc(funcionarioNome)}</strong> está disponível para consulta e download no portal.</p>
+      <table width="100%" style="background:#f5f7fa;border:1px solid #e8ecf2;border-radius:12px;margin:20px 0;"><tr><td style="padding:24px;">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Rescisão de Contrato</span><br>
+        <span style="font-size:16px;font-weight:700;color:#0B1F3A;">${esc(funcionarioNome)}</span>
+        <table width="100%" style="margin-top:16px;"><tr>
+          <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Desligamento</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">${esc(dataDesligamento)}</span></td>
           <td width="50%"><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:#8896A6;">Total Líquido</span><br><span style="font-size:15px;font-weight:600;color:#0B1F3A;">R$ ${esc(this.formatCurrency(totalLiquido))}</span></td>
         </tr></table>
       </td></tr></table>

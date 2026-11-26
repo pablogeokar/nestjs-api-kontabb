@@ -385,6 +385,16 @@ function validateValues(
       );
     }
   };
+  const checkTelefone = (line: ParsedLine, index: number, nome: string) => {
+    const value = line.fields[index] ?? '';
+    if (value && !/^\d{1,12}$/u.test(value)) {
+      fail(
+        'INVALID_NUMBER',
+        `${line.reg}.${nome} deve conter apenas dígitos (até 12).`,
+        line,
+      );
+    }
+  };
   const checkDate = (line: ParsedLine, index: number, nome: string) => {
     if (!isDate(line.fields[index] ?? '')) {
       fail(
@@ -448,7 +458,7 @@ function validateValues(
       case 'G600':
       case 'G610':
         if (line.fields.length === 3) {
-          checkMoney(line, 0, 'VL_TOT_NF', true);
+          checkMoney(line, 0, 'VL_TOT_NF', false);
           checkMoney(line, 1, 'VL_TOT_AJ', false);
           checkMoney(line, 2, 'VL_TOT_DA', true);
         }
@@ -456,7 +466,14 @@ function validateValues(
       case 'G605':
         if (line.fields.length === 4) {
           checkDomain(line, 0, ['0', '1', '2', '3'], 'IND_SIT');
-          checkMoney(line, 1, 'VL_TOT_ANTC_NF', true);
+          if (line.fields[0] === '3' && line.fields[1]) {
+            fail(
+              'INVALID_NUMBER',
+              'G605.VL_TOT_ANTC_NF não deve ser preenchido quando IND_SIT é 3.',
+              line,
+            );
+          }
+          checkMoney(line, 1, 'VL_TOT_ANTC_NF', false);
           checkMoney(line, 2, 'VL_TOT_AJ_ANTC', false);
           checkMoney(line, 3, 'VL_TOT_DA_ANTC', true);
         }
@@ -473,7 +490,7 @@ function validateValues(
         if (line.fields.length === 6) {
           checkDomain(line, 0, ['0', '1'], 'IND_OPER');
           checkDomain(line, 1, ['0', '1'], 'IND_EMIT');
-          checkMoney(line, 2, 'VL_TOT_ST_NF', true);
+          checkMoney(line, 2, 'VL_TOT_ST_NF', false);
           checkMoney(line, 3, 'VL_TOT_AJ_ST', false);
           checkMoney(line, 4, 'VL_TOT_ST_DEC', true);
           checkMoney(line, 5, 'VL_TOT_ST_COMB', false);
@@ -483,9 +500,56 @@ function validateValues(
         if (line.fields.length === 5) {
           checkUf(line, 0, 'UF');
           checkDomain(line, 1, ['0', '1', '2', '3'], 'IND_TP_ST');
-          checkMoney(line, 2, 'VL_TOT_ST_NF', true);
+          checkMoney(line, 2, 'VL_TOT_ST_NF', false);
           checkMoney(line, 3, 'VL_TOT_AJ_ST', false);
           checkMoney(line, 4, 'VL_TOT_DEC_ST', true);
+        }
+        break;
+      case '0005':
+        if (line.fields.length === 13) {
+          checkTelefone(line, 10, 'FONE');
+          checkTelefone(line, 11, 'FAX');
+        }
+        break;
+      case '0030':
+        if (line.fields.length === 17) {
+          // Campos que o SEDIF (v1.0.9.0) exige nulos.
+          const nulos: Array<[number, string]> = [
+            [4, 'PRF_RIDF'],
+            [5, 'PRF_RUDF'],
+            [6, 'PRF_LMC'],
+            [7, 'PRF_RV'],
+            [8, 'PRF_RI'],
+            [9, 'IND_EC'],
+            [10, 'IND_ISS'],
+            [11, 'IND_RT'],
+            [12, 'IND_ICMS'],
+            [14, 'IND_AT'],
+            [15, 'IND_IPI'],
+            [16, 'IND_RI'],
+          ];
+          for (const [index, nome] of nulos) {
+            if (line.fields[index]) {
+              fail(
+                'INVALID_DOMAIN',
+                `0030.${nome} deve ser nulo para esta versão do SEDIF.`,
+                line,
+              );
+            }
+          }
+        }
+        break;
+      case '0100':
+        if (line.fields.length === 17) {
+          if (!/^[A-Z]{2}\d{6}[A-Z]\d$/u.test(line.fields[4])) {
+            fail(
+              'INVALID_NUMBER',
+              '0100.CRC deve ter 10 caracteres: UF + 6 dígitos + tipo + dígito (ex.: BA013372O1).',
+              line,
+            );
+          }
+          checkTelefone(line, 14, 'FONE');
+          checkTelefone(line, 15, 'FAX');
         }
         break;
       default:
@@ -552,6 +616,38 @@ function validateTotals(
   const temValores = blocoG.some((line) =>
     ['G600', 'G610', 'G620'].includes(line.reg),
   );
+  const g620 = blocoG.filter((line) => line.reg === 'G620');
+  if (temValores) {
+    if (g620.length !== 1) {
+      wrong('É necessário declarar um único registro G620.', blocoG[0]);
+    } else {
+      const abertura = lines.find((line) => line.reg === '0000');
+      const ufs = new Set<string>(
+        [
+          abertura?.fields[5],
+          ...lines
+            .filter((line) => line.reg === '0002')
+            .map((line) => line.fields[0]),
+        ].filter((uf): uf is string => Boolean(uf)),
+      );
+      const declarados = new Set(
+        blocoG
+          .filter((line) => line.reg === 'G625')
+          .map((line) => `${line.fields[0]}|${line.fields[1]}`),
+      );
+      for (const uf of ufs) {
+        const faltam = ['0', '1', '2', '3'].filter(
+          (tipo) => !declarados.has(`${uf}|${tipo}`),
+        );
+        if (faltam.length > 0) {
+          wrong(
+            `A UF ${uf} deve ser declarada no G625 para os quatro IND_TP_ST (faltam: ${faltam.join(', ')}).`,
+            g620[0],
+          );
+        }
+      }
+    }
+  }
   if (g020 && g020.fields.length === 3) {
     const esperado = temValores ? '2' : '9';
     if (g020.fields[0] !== esperado) {
@@ -607,7 +703,20 @@ function conferirGrupo(
     confere(1, soma(2), 'VL_TOT_AJ');
     confere(2, soma(3), 'VL_TOT_DA');
   }
+  if (pai.reg === 'G600') {
+    const situacoes = filhos.map((filho) => filho.fields[0]).sort();
+    if (situacoes.join('') !== '0123') {
+      wrong(
+        'G600 deve possuir quatro G605, um para cada IND_SIT (0, 1, 2 e 3).',
+        pai,
+      );
+    }
+  }
   for (const filho of filhos) {
+    if (filho.reg === 'G605' && filho.fields[0] === '3') {
+      // NF vazia nesta situação: o valor a declarar é informado direto.
+      continue;
+    }
     const [nf, aj, da] =
       filho.reg === 'G625'
         ? [valorDe(filho, 2), valorDe(filho, 3), valorDe(filho, 4)]
