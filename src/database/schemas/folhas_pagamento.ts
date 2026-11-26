@@ -87,7 +87,7 @@ export const folhasPagamento = pgTable(
     ),
     check(
       'chk_folhas_tipo',
-      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS', 'ADIANTAMENTO_13')`,
+      sql`${table.tipo} IN ('FOLHA_MENSAL', 'FERIAS', 'ADIANTAMENTO_13', 'RESCISAO')`,
     ),
     check(
       'chk_folhas_totais',

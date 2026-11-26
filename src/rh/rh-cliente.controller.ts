@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { RhService } from './rh.service';
+import { RhRescisaoService } from './rh-rescisao.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { StorageService } from '../storage/storage.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -37,6 +38,7 @@ export class RhClienteController {
     private readonly rhService: RhService,
     private readonly clientesService: ClientesService,
     private readonly storage: StorageService,
+    private readonly rescisaoService: RhRescisaoService,
   ) {}
 
   @Get('folhas')
@@ -112,6 +114,61 @@ export class RhClienteController {
     if (!key) throw new NotFoundException('Documento não encontrado.');
     const url = await this.storage.getSignedUrl(key);
 
+    await this.rhService.recordFolhaView(folhaId, currentUser.id);
+    return { url };
+  }
+
+  @Get('folhas/:folhaId/rescisao')
+  @ApiOperation({ summary: 'Detalhe da rescisão e documentos do cliente' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Rescisão e documentos.' })
+  @ApiResponse({ status: 403, description: 'Acesso negado.' })
+  @ApiResponse({ status: 404, description: 'Rescisão não encontrada.' })
+  async getRescisao(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) throw new NotFoundException('Cliente não encontrado.');
+
+    const ownerClienteId = await this.rhService.getFolhaClienteId(folhaId);
+    if (!ownerClienteId) throw new NotFoundException('Folha não encontrada.');
+    if (ownerClienteId !== client.id)
+      throw new ForbiddenException('Acesso negado.');
+
+    const detalhe = await this.rescisaoService.getDetalhe(folhaId);
+    if (!detalhe) throw new NotFoundException('Rescisão não encontrada.');
+    await this.rhService.recordFolhaView(folhaId, currentUser.id);
+    return detalhe;
+  }
+
+  @Get('folhas/:folhaId/rescisao/documentos/:documentoId/download')
+  @ApiOperation({ summary: 'URL assinada de um documento da rescisão' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiParam({ name: 'documentoId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'URL assinada gerada.' })
+  @ApiResponse({ status: 403, description: 'Acesso negado.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async downloadRescisaoDocumento(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+    @Param('documentoId', new ParseUUIDPipe({ version: '4' }))
+    documentoId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const client = await this.clientesService.getClientForUser(currentUser.id);
+    if (!client) throw new NotFoundException('Cliente não encontrado.');
+
+    const ownerClienteId = await this.rhService.getFolhaClienteId(folhaId);
+    if (!ownerClienteId) throw new NotFoundException('Folha não encontrada.');
+    if (ownerClienteId !== client.id)
+      throw new ForbiddenException('Acesso negado.');
+
+    const documento = await this.rescisaoService.getDocumentoKey(
+      folhaId,
+      documentoId,
+    );
+    if (!documento) throw new NotFoundException('Documento não encontrado.');
+    const url = await this.storage.getSignedUrl(documento.arquivoKey);
     await this.rhService.recordFolhaView(folhaId, currentUser.id);
     return { url };
   }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -17,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { RhService } from './rh.service';
+import { RhRescisaoService } from './rh-rescisao.service';
 import { StorageService } from '../storage/storage.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StaffOnly } from '../auth/roles.decorator';
@@ -38,6 +40,7 @@ export class RhAdminController {
     private readonly rhService: RhService,
     private readonly storage: StorageService,
     private readonly logger: AppLogger,
+    private readonly rescisaoService: RhRescisaoService,
   ) {}
 
   @Get('folhas')
@@ -223,6 +226,72 @@ export class RhAdminController {
     @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
   ) {
     return this.rhService.listFolhaVisualizacoes(folhaId);
+  }
+
+  @Get('folhas/:folhaId/rescisao')
+  @ApiOperation({ summary: 'Detalhe da rescisão e documentos anexados' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Rescisão e documentos.' })
+  @ApiResponse({ status: 404, description: 'Rescisão não encontrada.' })
+  async getRescisao(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+  ) {
+    const detalhe = await this.rescisaoService.getDetalhe(folhaId);
+    if (!detalhe) throw new NotFoundException('Rescisão não encontrada.');
+    return detalhe;
+  }
+
+  @Get('folhas/:folhaId/rescisao/documentos/:documentoId/download')
+  @ApiOperation({ summary: 'URL assinada de um documento da rescisão' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiParam({ name: 'documentoId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'URL assinada gerada.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async downloadRescisaoDocumento(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+    @Param('documentoId', new ParseUUIDPipe({ version: '4' }))
+    documentoId: string,
+  ) {
+    const documento = await this.rescisaoService.getDocumentoKey(
+      folhaId,
+      documentoId,
+    );
+    if (!documento) throw new NotFoundException('Documento não encontrado.');
+    return { url: await this.storage.getSignedUrl(documento.arquivoKey) };
+  }
+
+  @Delete('folhas/:folhaId/rescisao/documentos/:documentoId')
+  @ApiOperation({ summary: 'Excluir um documento anexado à rescisão' })
+  @ApiParam({ name: 'folhaId', type: String, format: 'uuid' })
+  @ApiParam({ name: 'documentoId', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Documento excluído.' })
+  @ApiResponse({ status: 400, description: 'O TRCT não pode ser excluído.' })
+  @ApiResponse({ status: 404, description: 'Documento não encontrado.' })
+  async deleteRescisaoDocumento(
+    @Param('folhaId', new ParseUUIDPipe({ version: '4' })) folhaId: string,
+    @Param('documentoId', new ParseUUIDPipe({ version: '4' }))
+    documentoId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const result = await this.rescisaoService.deleteDocumento({
+      folhaId,
+      documentoId,
+      actorUserId: currentUser.id,
+      requestId: this.logger.generateRequestId(),
+    });
+    if (!result.ok) {
+      if (result.code === 'TRCT_PROTEGIDO') {
+        throw new BadRequestException(
+          'O TRCT só pode ser removido junto com a rescisão.',
+        );
+      }
+      throw new NotFoundException('Documento não encontrado.');
+    }
+    return {
+      success: true,
+      message: 'Documento excluído com sucesso.',
+      cleanupPending: result.cleanupPending,
+    };
   }
 
   @Get('dashboard')

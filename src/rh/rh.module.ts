@@ -3,6 +3,8 @@ import { RhUploadController } from './rh-upload.controller';
 import { RhAdminController } from './rh-admin.controller';
 import { RhClienteController } from './rh-cliente.controller';
 import { RhService } from './rh.service';
+import { RhRescisaoService } from './rh-rescisao.service';
+import { RhRescisaoUploadService } from './rh-rescisao-upload.service';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { ClientesModule } from '../clientes/clientes.module';
@@ -11,7 +13,7 @@ import { MailModule } from '../mail/mail.module';
 @Module({
   imports: [AuthModule, StorageModule, ClientesModule, MailModule],
   controllers: [RhUploadController, RhAdminController, RhClienteController],
-  providers: [RhService],
-  exports: [RhService],
+  providers: [RhService, RhRescisaoService, RhRescisaoUploadService],
+  exports: [RhService, RhRescisaoService],
 })
 export class RhModule {}

@@ -680,13 +680,18 @@ export class RhService {
             razaoSocial: clientes.razaoSocial,
             cnpj: clientes.cnpj,
           },
-          funcionarioNome: sql<string | null>`(
+          funcionarioNome: sql<string | null>`COALESCE((
             SELECT fr.nome_completo
             FROM itens_folha_pagamento ifp
             JOIN funcionarios_rh fr ON fr.id = ifp.funcionario_id
             WHERE ifp.folha_id = ${folhasPagamento.id}
             LIMIT 1
-          )`.as('funcionario_nome'),
+          ), (
+            SELECT r.funcionario_nome
+            FROM rescisoes r
+            WHERE r.folha_id = ${folhasPagamento.id}
+            LIMIT 1
+          ))`.as('funcionario_nome'),
           visualizado:
             sql<boolean>`EXISTS (SELECT 1 FROM visualizacoes_folhas WHERE visualizacoes_folhas.folha_id = ${folhasPagamento.id})`.as(
               'visualizado',
@@ -791,13 +796,18 @@ export class RhService {
         totalSalarioFamilia: folhasPagamento.totalSalarioFamilia,
         criadoEm: folhasPagamento.criadoEm,
         cliente: { razaoSocial: clientes.razaoSocial, cnpj: clientes.cnpj },
-        funcionarioNome: sql<string | null>`(
+        funcionarioNome: sql<string | null>`COALESCE((
           SELECT fr.nome_completo
           FROM itens_folha_pagamento ifp
           JOIN funcionarios_rh fr ON fr.id = ifp.funcionario_id
           WHERE ifp.folha_id = ${folhasPagamento.id}
           LIMIT 1
-        )`.as('funcionario_nome'),
+        ), (
+          SELECT r.funcionario_nome
+          FROM rescisoes r
+          WHERE r.folha_id = ${folhasPagamento.id}
+          LIMIT 1
+        ))`.as('funcionario_nome'),
       })
       .from(folhasPagamento)
       .leftJoin(clientes, eq(folhasPagamento.clienteId, clientes.id))
@@ -1144,8 +1154,16 @@ export class RhService {
       ),
       cleanup_jobs AS (
         INSERT INTO storage_cleanup_jobs (object_key, entidade_tipo, entidade_id)
-        SELECT arquivo_key, 'FOLHA_PAGAMENTO', id::text FROM deleted_folha
-        WHERE arquivo_key IS NOT NULL
+        SELECT object_key, 'FOLHA_PAGAMENTO', min(entidade_id) FROM (
+          SELECT arquivo_key AS object_key, id::text AS entidade_id
+          FROM deleted_folha WHERE arquivo_key IS NOT NULL
+          UNION ALL
+          SELECT d.arquivo_key, r.folha_id::text
+          FROM rescisao_documentos d
+          JOIN rescisoes r ON r.id = d.rescisao_id
+          JOIN deleted_folha f ON f.id = r.folha_id
+        ) keys
+        GROUP BY object_key
         ON CONFLICT (object_key) DO NOTHING
         RETURNING id
       ),
