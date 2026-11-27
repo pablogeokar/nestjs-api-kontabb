@@ -61,7 +61,14 @@ export class DestdaApuracaoService {
       })),
       antecipacao: resultado.antecipacao_parcial.itens.map((item) => ({
         situacao: item.situacao,
-        valorAntecipacao: item.calculo?.valor_antecipacao ?? null,
+        // Valor que o contribuinte de fato recolhe: com a redução condicionada
+        // (ex.: 20% ME/EPP, RICMS-BA art. 274) quando a regra a prevê.
+        valorAntecipacao:
+          ('reducao_condicionada' in item
+            ? item.reducao_condicionada?.valor_com_reducao
+            : null) ??
+          item.calculo?.valor_antecipacao ??
+          null,
       })),
     });
   }

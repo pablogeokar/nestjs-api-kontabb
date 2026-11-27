@@ -151,3 +151,10 @@ Cliente: `/api/fiscal/destda/...`. Staff: `/api/admin/fiscal/destda/...` (com
    programa oficial.
 6. O leiaute oficial usa campos numéricos para CNPJ. O sistema aceita o CNPJ
    alfanumérico do cadastro, mas o SEDIF pode não aceitá-lo ainda.
+
+## Antecipação parcial com redução (valor efetivamente recolhido)
+
+O G605 de IND_SIT 3 leva o valor que o contribuinte de fato recolhe. Quando a
+regra da UF prevê redução condicionada (ex.: 20% para ME/EPP, RICMS-BA art.
+274), usa-se `reducao_condicionada.valor_com_reducao`. Sem redução, usa-se
+`valor_antecipacao` (imposto integral).
